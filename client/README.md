@@ -196,8 +196,10 @@ Select a supported installed device in Ship Loadout to activate Scan Boost,
 Increase Speed, Reactor Boost, Turbo Weapons, Turbo Warp, Improved Beam Handling,
 Improved Projectile Handling, Shunt to Reactor, Recharge Reactor, Recharge Shields,
 or a typed Deflect device. The active effect label and displayed remaining time
-come from the server's acknowledgement; the server publishes resource and combat
-changes and announces when the effect ends.
+come from the server's native buff slot and removal tick when available. A
+matching native ObjectEffect lights a ship-local field, and effect removal clears
+it. The server publishes resource and combat changes and announces when the
+effect ends.
 
 Explorer pilots can click a mineable asteroid or gas cloud, open its prospecting
 window, and choose a server-listed ore slot. The server checks the ship, skill,
