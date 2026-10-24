@@ -157,7 +157,7 @@ impl MissionCatalog {
         inventory: &Inventory,
     ) -> Option<u32> {
         self.0.values().find_map(|mission| {
-            (matches!(mission.id, 3 | 90 | 102 | 104 | 341)
+            (matches!(mission.id, 3 | 5 | 90 | 102 | 104 | 341)
                 && mission.stages.len() >= 2
                 && mission.time_limit == 0
                 && !mission.forfeitable
@@ -402,6 +402,30 @@ impl MissionJournal {
                         && progress.counts.get(&index).copied().unwrap_or(0) >= objective.count
                 })
                 && (progress.stage as usize + 1) < definition.stages.len()
+            {
+                progress.stage += 1;
+                progress.counts.clear();
+                return Ok(Some((progress.id, progress.stage)));
+            }
+        }
+        Ok(None)
+    }
+
+    /// Returns:
+    ///     Option<(u32, u32)>: Mission ID and new stage after arriving at its sole required nav.
+    pub fn credit_arrival(
+        &mut self,
+        source_id: u32,
+        catalog: &MissionCatalog,
+    ) -> io::Result<Option<(u32, u32)>> {
+        for progress in &mut self.active {
+            let definition = catalog.get(progress.id)?;
+            let stage = &definition.stages[progress.stage as usize];
+            if stage.completion.len() == 1
+                && stage.completion[0].kind == 15
+                && stage.completion[0].data == i64::from(source_id)
+                && (progress.stage as usize + 1) < definition.stages.len()
+                && stage.rewards.is_empty()
             {
                 progress.stage += 1;
                 progress.counts.clear();

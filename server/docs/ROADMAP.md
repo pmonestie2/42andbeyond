@@ -116,12 +116,14 @@ mean the corresponding gameplay system is complete.
   base XP, with independent receipts and retry after one member's write fails.
   Skill-point spending and ordinary level-one character creation remain open.
 - The public mission catalog loads all 364 imported definitions; the runtime
-  currently offers five fully wired NPC missions: Finer Points of Negotiation
-  (3), Going for Repairs (90), Basic Shooting Range (102), its
+  currently offers six fully wired NPC missions: Finer Points of Negotiation
+  (3), Reactor Leak (5), Going for Repairs (90), Basic Shooting Range (102), its
   prerequisite-gated sequel Kill Scuttle Larva (104), and Cash for 'Roids
   (341). The twelve-slot journal,
   reached-stage descriptions and
-  durable kill counts publish through native player AUX. Combat objectives
+  durable kill counts publish through native player AUX. Reactor Leak advances
+  on two stationary arrivals within the archived C++ 2,500-unit nav range.
+  Combat objectives
   share the death-generation receipt with combat XP; NPC dialogue, required
   credit payments, intermediate XP/credit and owned-item rewards commit atomically. Skill
   unlocks are recorded durably, while the sandbox class catalog still grants

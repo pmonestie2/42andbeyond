@@ -61,6 +61,17 @@ impl PlayerSession {
             mission,
             mission_stage: active.map_or(0, |(_, stage)| stage),
         });
+        if let Some(mission_id) = mission {
+            let kind = if active.is_some() {
+                "objective"
+            } else {
+                "offer"
+            };
+            self.pending.push(packets::message(&format!(
+                "Mission {kind}: {}.",
+                catalog.get(mission_id)?.name
+            )));
+        }
         self.show_npc_node(1)
     }
 

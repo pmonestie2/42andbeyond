@@ -94,12 +94,54 @@ impl PlayerSession {
             self.motion
                 .advance(&mut self.position, &self.sector.bounds, dt);
         }
+        self.advance_mission_arrivals()?;
         self.dirty |= self.position != previous;
         self.advance_mining(dt)?;
         self.advance_looting(dt)?;
         self.advance_ship_resources(dt);
         self.fire_weapons()?;
         self.refresh_target_verbs(false);
+        Ok(())
+    }
+
+    /// Commit native ARRIVE_AT stages only while stationary within 2,500 units.
+    fn advance_mission_arrivals(&mut self) -> io::Result<()> {
+        if self.warp.active() || self.motion.speed.abs() >= 1. {
+            return Ok(());
+        }
+        let catalog = crate::missions::MissionCatalog::load()?;
+        let source_id =
+            self.inventory
+                .missions
+                .active
+                .iter()
+                .filter_map(|progress| {
+                    let stage = catalog
+                        .get(progress.id)
+                        .ok()?
+                        .stages
+                        .get(progress.stage as usize)?;
+                    let objective = stage.completion.first()?;
+                    (stage.completion.len() == 1 && objective.kind == 15)
+                        .then(|| u32::try_from(objective.data).ok())
+                        .flatten()
+                })
+                .find(|source_id| {
+                    self.sector.navpoints.iter().any(|nav| {
+                        nav.source_id == *source_id && nav.range_to(self.position) < 2500.
+                    })
+                });
+        let Some(source_id) = source_id else {
+            return Ok(());
+        };
+        let mut candidate = self.inventory.clone();
+        if let Some((mission, stage)) = candidate.missions.credit_arrival(source_id, &catalog)? {
+            self.commit_inventory(candidate)?;
+            self.pending.push(packets::message(&format!(
+                "Mission {}: stage {stage}.",
+                catalog.get(mission)?.name
+            )));
+        }
         Ok(())
     }
 

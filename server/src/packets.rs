@@ -1102,6 +1102,7 @@ pub fn resource_contents(node: &crate::resources::ResourceState, catalog: &ItemC
 pub fn corpse_create(corpse: &crate::loot_world::Corpse) -> Frame {
     map_object(&NavPoint {
         id: corpse.id,
+        source_id: 0,
         name: corpse.name.clone(),
         object_type: 25,
         asset: corpse.initial.asset,
@@ -2069,6 +2070,35 @@ mod tests {
         assert_eq!(super::map_object(&nav).body[4], 11);
     }
     use super::*;
+
+    /// Pin the small RPG AUX fixture shared with the C# earned-XP decoder.
+    #[test]
+    fn slim_rpg_progress_fixture_has_native_nested_flags_and_values() {
+        let rpg = aux_record(
+            16,
+            &[2, 3],
+            BTreeMap::from([
+                (4, 1u32.to_le_bytes().to_vec()),
+                (5, 1u32.to_le_bytes().to_vec()),
+                (6, 0.5f32.to_le_bytes().to_vec()),
+                (7, 50u32.to_le_bytes().to_vec()),
+                (8, 0f32.to_le_bytes().to_vec()),
+                (9, 50u32.to_le_bytes().to_vec()),
+                (10, 0f32.to_le_bytes().to_vec()),
+                (11, 50u32.to_le_bytes().to_vec()),
+            ]),
+        );
+        let encoded = aux_frame(0, aux_diff(18, BTreeMap::from([(6, rpg)])))
+            .encode()
+            .unwrap();
+        let expected = "35 00 1b 00 00 00 00 00 2b 00 01 02 04 00 06 ff f0 00 0f 05 05 \
+            01 00 00 00 01 00 00 00 00 00 00 3f 32 00 00 00 00 00 00 00 \
+            32 00 00 00 00 00 00 00 32 00 00 00"
+            .split_whitespace()
+            .map(|byte| u8::from_str_radix(byte, 16).unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(encoded, expected);
+    }
 
     #[test]
     fn warp_ready_uses_client_value_two_instead_of_boolean_one() {

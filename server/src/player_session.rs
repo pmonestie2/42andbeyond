@@ -3025,6 +3025,74 @@ mod tests {
     }
 
     #[test]
+    fn reactor_leak_requires_stationary_nav_arrivals_then_npc_turn_in() {
+        let mut ship = session();
+        ship.account.character.race = 0;
+        ship.account.character.profession = 1;
+        ship.skill_catalog = SkillCatalog::for_profile(&ship.account.character).unwrap();
+        ship.inventory.missions.completed.insert(3);
+        ship.sector = ship.sectors.sector(10201).unwrap();
+        ship.logged_in = true;
+        enter_npc_room(&mut ship, 41);
+        let prior = ship.pending.len();
+        ship.open_npc(41).unwrap();
+        assert_eq!(ship.npc_interaction.as_ref().unwrap().mission, Some(5));
+        assert_eq!(ship.pending[prior].opcode, 0x1d);
+        assert!(ship.pending[prior]
+            .body
+            .ends_with(b"Mission offer: Reactor Leak.\0"));
+        assert_eq!(ship.pending[prior + 1].opcode, 0x54);
+        for choice in [3, 4, 5] {
+            npc_choice(&mut ship, choice).unwrap();
+        }
+        assert_eq!(ship.inventory.missions.active[0].stage, 1);
+        ship.close_npc();
+
+        ship.sector = ship.sectors.sector(1020).unwrap();
+        let waste = ship
+            .sector
+            .navpoints
+            .iter()
+            .find(|nav| nav.source_id == 429)
+            .unwrap();
+        ship.position = waste.position;
+        ship.motion.speed = 50.;
+        ship.advance_player(0.).unwrap();
+        assert_eq!(ship.inventory.missions.active[0].stage, 1);
+        ship.motion.speed = 0.;
+        let blocked = ship.state_dir.join("inventory.json.tmp");
+        std::fs::create_dir(&blocked).unwrap();
+        assert!(ship.advance_player(0.).is_err());
+        assert_eq!(ship.inventory.missions.active[0].stage, 1);
+        std::fs::remove_dir(&blocked).unwrap();
+        ship.advance_player(0.).unwrap();
+        assert_eq!(ship.inventory.missions.active[0].stage, 2);
+        ship.advance_player(0.).unwrap();
+        assert_eq!(ship.inventory.missions.active[0].stage, 2);
+
+        let volatile = ship
+            .sector
+            .navpoints
+            .iter()
+            .find(|nav| nav.source_id == 1586)
+            .unwrap();
+        ship.position = volatile.position;
+        ship.advance_player(0.).unwrap();
+        assert_eq!(ship.inventory.missions.active[0].stage, 3);
+        ship.sector = ship.sectors.sector(10201).unwrap();
+        enter_npc_room(&mut ship, 41);
+        ship.open_npc(41).unwrap();
+        assert!(ship.inventory.missions.completed.contains(&5));
+        assert!(ship.inventory.mission_awarded_skills.contains(&46));
+        assert!(ship
+            .inventory
+            .cargo
+            .iter()
+            .flatten()
+            .any(|item| item.template == 3641 && item.quantity == 1));
+    }
+
+    #[test]
     fn scuttle_larva_mission_requires_prerequisite_and_awards_owned_item() {
         let mut ship = session();
         ship.account.character.race = 0;
@@ -3153,7 +3221,13 @@ mod tests {
         assert_eq!(ship.npc_interaction.as_ref().unwrap().mission, Some(90));
         npc_choice(&mut ship, 2).unwrap();
         ship.close_npc();
+        let prior = ship.pending.len();
         ship.open_npc(28).unwrap();
+        assert_eq!(ship.pending[prior].opcode, 0x1d);
+        assert!(ship.pending[prior]
+            .body
+            .ends_with(b"Mission objective: Going for Repairs.\0"));
+        assert_eq!(ship.pending[prior + 1].opcode, 0x54);
         for choice in [2, 3, 4, 5] {
             npc_choice(&mut ship, choice).unwrap();
         }

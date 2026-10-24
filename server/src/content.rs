@@ -24,6 +24,8 @@ fn navigation_type() -> u8 {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct NavPoint {
     pub id: u32,
+    #[serde(default)]
+    pub source_id: u32,
     pub name: String,
     pub object_type: u8,
     pub asset: u16,
