@@ -323,9 +323,13 @@ namespace FortyTwoAndBeyond.Protocol
         public readonly uint Source, Target;
         public readonly ushort Asset;
         public readonly ushort Duration;
+        public readonly long ReceivedAt;
         /// <summary>Store the native weapon-effect identity and display duration.</summary>
         public ShotEvent(long sequence, uint source, uint target, ushort asset, ushort duration)
-        { Sequence = sequence; Source = source; Target = target; Asset = asset; Duration = duration; }
+        {
+            Sequence = sequence; Source = source; Target = target; Asset = asset; Duration = duration;
+            ReceivedAt = System.Diagnostics.Stopwatch.GetTimestamp();
+        }
     }
 
     /// <summary>Native damage category reported by the combat server.</summary>
@@ -342,6 +346,7 @@ namespace FortyTwoAndBeyond.Protocol
         public readonly float Amount, Modifier;
         public readonly DamageKind Kind;
         public readonly DamageOutcome Outcome;
+        public readonly long ReceivedAt;
 
         /// <summary>Store one bounded native damage report, including misses and critical hits.</summary>
         public DamageEvent(long sequence, uint source, uint target, float amount,
@@ -349,6 +354,7 @@ namespace FortyTwoAndBeyond.Protocol
         {
             Sequence = sequence; Source = source; Target = target;
             Amount = amount; Modifier = modifier; Kind = kind; Outcome = outcome;
+            ReceivedAt = System.Diagnostics.Stopwatch.GetTimestamp();
         }
     }
 
@@ -808,6 +814,7 @@ namespace FortyTwoAndBeyond.Protocol
         public readonly ShipActor[] Players, Mobs;
         public readonly ShotEvent[] Shots;
         public readonly DamageEvent[] Damages;
+        public readonly CombatEngagement Engagement;
         public readonly uint PlayerId;
         public readonly GroupState Group;
         public readonly StationState Station;
@@ -911,6 +918,9 @@ namespace FortyTwoAndBeyond.Protocol
                     equipment.Mounted[i], world.ItemCatalog, serverTick);
             for (int i = 0; i < Ammo.Length; i++)
                 if (equipment.Ammo[i]?.Present == true) Ammo[i] = new ItemView(i, equipment.Ammo[i], world.ItemCatalog);
+            if (HasPosition && world.Mobs.TryGetValue(SelectedTargetId, out ShipActor target) && target.HasPosition)
+                Engagement = new CombatEngagement(PlayerId, Position, Orientation, target,
+                    Mounted, WeaponMounts, Shots, Damages, now);
         }
     }
 }

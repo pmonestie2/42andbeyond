@@ -13,7 +13,8 @@ internal static class Program
     {
         CheckReassembly(); CheckWorld(); CheckMissionJournal(); CheckMissionDialogue();
         CheckExperience(); CheckMiningPhases(); CheckLootTractor(); CheckWarpPhases(); CheckWeaponReady();
-        CheckDamageResults(); CheckDeviceEffects(); CheckAmmunitionTransfer(); CheckFlightThrottle();
+        CheckDamageResults(); CheckCombatEngagement(); CheckDeviceEffects();
+        CheckAmmunitionTransfer(); CheckFlightThrottle();
         CheckStationLayout(); CheckStationWalk(); CheckDemoRoster(); CheckAddress(); PeerChecks.Decode();
         Console.WriteLine("PASS: framing, ordering, fragmentation, duplicates, bounds, world decoding, private addresses");
         if (args.Length == 2 && args[0] == "--server") { PeerChecks.Live(args[1]); CheckServer(args[1]); }
@@ -399,6 +400,65 @@ internal static class Program
         byte[] invalid = (byte[])missed.Clone();
         Array.Copy(BitConverter.GetBytes(9u), 0, invalid, 8, 4);
         Reject(() => world.Apply(new Frame(0x64, invalid), 1));
+    }
+
+    /// <summary>Separate armed intent and approximate guidance from actual server shots.</summary>
+    private static void CheckCombatEngagement()
+    {
+        const uint mobId = 0x10000001;
+        var world = new World();
+        world.ItemCatalog[10] = new ItemTemplateInfo(10, 14, "Pulse Laser", "");
+        world.ItemCatalog[11] = new ItemTemplateInfo(11, 15, "Missile Rack", "");
+        world.Equipment.WeaponMounts = 2;
+        world.Equipment.TargetId = mobId;
+        world.Equipment.Mounted[3] = new ItemState
+            { Template = 10, Quantity = 1, Range = 900, WeaponState = 0x2001 };
+        world.Equipment.Mounted[4] = new ItemState
+            { Template = 11, Quantity = 1, Range = 1800, WeaponState = 0x2009 };
+        byte[] movement = new byte[38];
+        Array.Copy(BitConverter.GetBytes(1u), 0, movement, 2, 4);
+        Array.Copy(BitConverter.GetBytes(1f), 0, movement, 34, 4);
+        world.Apply(new Frame(0x3e, movement), 1);
+        world.Mobs[mobId] = new ShipActor(mobId, 0, 1, "Range target",
+            new Position(1630, 0, 0), new[] { 0f, 0f, 0f, 1f }, true,
+            false, true);
+        Snapshot armed = new Snapshot(world, "ready", true);
+        CombatEngagement engagement = armed.Engagement;
+        Assert(engagement != null && engagement.TargetId == mobId &&
+            engagement.CenterDistanceMeters == 1630 && engagement.Weapons.Length == 2 &&
+            engagement.Weapons[0].Armed && engagement.Weapons[0].BeyondListedRange &&
+            !engagement.Weapons[0].OutsideFiringArc && engagement.Weapons[1].OutOfAmmo &&
+            !engagement.Weapons[1].OutsideFiringArc && engagement.LastShot == null,
+            "Armed target guidance was confused with a server-confirmed shot.");
+        byte[] shot = Wire.Body(writer =>
+        {
+            writer.Write((ushort)7); writer.Write(1u); writer.Write(mobId);
+            writer.Write((ushort)44); writer.Write((byte)0); writer.Write(9u);
+            writer.Write(1000u); writer.Write((ushort)500);
+        });
+        world.Apply(new Frame(0x0b, shot), 1);
+        Snapshot launched = new Snapshot(world, "ready", true);
+        Assert(launched.Engagement.LastShot != null &&
+            launched.Engagement.LastShotAgeSeconds >= 0 &&
+            launched.Engagement.LastShotAgeSeconds < 1 && armed.Engagement.LastShot == null,
+            "Native 0x0b launch did not distinguish an actual shot from old armed intent.");
+        byte[] miss = Wire.Body(writer =>
+        {
+            writer.Write(0f); writer.Write(0f); writer.Write(3u); writer.Write(0u);
+            writer.Write(1u); writer.Write(mobId);
+        });
+        world.Apply(new Frame(0x64, miss), 1);
+        Snapshot missed = new Snapshot(world, "ready", true);
+        Assert(missed.Engagement.LastResult?.Outcome == DamageOutcome.Miss &&
+            missed.Engagement.LastResultAgeSeconds < 1 && launched.Engagement.LastResult == null,
+            "Native miss result did not reach engagement feedback.");
+        world.Mobs[mobId] = new ShipActor(mobId, 0, 1, "Behind",
+            new Position(-300, 0, 0), new[] { 0f, 0f, 0f, 1f }, true,
+            false, true);
+        Snapshot behind = new Snapshot(world, "ready", true);
+        Assert(behind.Engagement.Weapons[0].OutsideFiringArc &&
+            !behind.Engagement.Weapons[1].OutsideFiringArc,
+            "Directional weapon arc guidance disagreed with the server's 40-degree cone or missile exception.");
     }
 
     /// <summary>Recognize catalog-backed recharge and deflect devices and their server notices.</summary>
