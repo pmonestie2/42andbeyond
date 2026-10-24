@@ -20,7 +20,7 @@ namespace FortyTwoAndBeyond.Client
         private float CanvasWidth => Screen.width / Scale;
         private float CanvasHeight => Screen.height / Scale;
         private readonly Color cyan = new Color(.3f, .85f, 1), white = new Color(.86f, .93f, 1), muted = new Color(.46f, .62f, .72f), gold = new Color(1, .72f, .3f);
-        private GUIStyle heading, body, small, section, button, selected, playerButton, hostileButton, damageStyle, input, primaryButton, equipmentRow, equipmentText;
+        private GUIStyle heading, body, wrappedBody, small, section, button, selected, playerButton, hostileButton, damageStyle, input, primaryButton, equipmentRow, equipmentText;
         private Texture2D buttonTexture, selectedTexture, panelTexture, radarTexture, weaveTexture, frameTexture, legacyCornerTexture;
         internal GUIStyle BodyStyle => body;
         internal GUIStyle SmallStyle => small;
@@ -150,6 +150,7 @@ namespace FortyTwoAndBeyond.Client
             if (heading != null) return;
             heading = new GUIStyle(GUI.skin.label) { fontSize = 27, fontStyle = FontStyle.Bold }; heading.normal.textColor = white;
             body = new GUIStyle(GUI.skin.label) { fontSize = 16, fontStyle = FontStyle.Bold }; body.normal.textColor = white;
+            wrappedBody = new GUIStyle(body) { wordWrap = true };
             small = new GUIStyle(GUI.skin.label) { fontSize = 13 }; small.normal.textColor = muted;
             section = new GUIStyle(GUI.skin.label) { fontSize = 15, fontStyle = FontStyle.Bold }; section.normal.textColor = cyan;
             damageStyle = new GUIStyle(GUI.skin.label) { fontSize = 20, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
@@ -697,7 +698,10 @@ namespace FortyTwoAndBeyond.Client
             if (target == null || !target.HasPosition) return;
             bool canJumpstart = target.IsPlayer && target.MaxHull > 0 && target.Hull <= 0 &&
                 snapshot.AvailableAbilities.Contains(65u);
-            float height = target.IsPlayer ? canJumpstart ? 238 : 201 : 194;
+            string targetName = target.Name.ToUpperInvariant();
+            float nameHeight = Mathf.Max(26, wrappedBody.CalcHeight(new GUIContent(targetName), 355));
+            float nameExtra = nameHeight - 26;
+            float height = (target.IsPlayer ? canJumpstart ? 238 : 201 : 194) + nameExtra;
             float x = CanvasWidth >= 1500 ? CanvasWidth - 720 : (CanvasWidth - 390) * .5f;
             float y = CanvasHeight - height - 122;
             Panel(new Rect(x, y, 390, height));
@@ -705,25 +709,25 @@ namespace FortyTwoAndBeyond.Client
             Fill(new Rect(x + 15, y + 18, 6, 6), signal);
             GUI.Label(new Rect(x + 29, y + 12, 300, 20),
                 target.IsPlayer ? "PILOT / ALLIED CONTACT" : target.Hostile ? "THREAT / HOSTILE" : "CONTACT / NEUTRAL", section);
-            GUI.Label(new Rect(x + 15, y + 37, 355, 26), target.Name.ToUpperInvariant(), body);
+            GUI.Label(new Rect(x + 15, y + 37, 355, nameHeight), targetName, wrappedBody);
             float distance = target.Position.Distance(snapshot.Position);
             bool firingAtTarget = snapshot.WeaponsFiring && snapshot.SelectedTargetId == target.Id;
-            GUI.Label(new Rect(x + 15, y + 65, 355, 20),
+            GUI.Label(new Rect(x + 15, y + 65 + nameExtra, 355, 20),
                 $"RANGE {distance / 1000:0.00} km   ·   " + (firingAtTarget ? "WEAPONS FIRING" : "WEAPONS SAFE"), small);
-            GUI.Label(new Rect(x + 15, y + 91, 169, 18), target.Shield >= 0 ?
+            GUI.Label(new Rect(x + 15, y + 91 + nameExtra, 169, 18), target.Shield >= 0 ?
                 $"SHIELD  {Mathf.Clamp01(target.Shield) * 100:0}%" : "SHIELD  NO DATA", small);
-            GUI.Label(new Rect(x + 204, y + 91, 169, 18), target.MaxHull > 0 ?
+            GUI.Label(new Rect(x + 204, y + 91 + nameExtra, 169, 18), target.MaxHull > 0 ?
                 $"HULL  {Mathf.Max(0, target.Hull):0}/{target.MaxHull:0}" : "HULL  NO DATA", small);
-            if (target.Shield >= 0) Meter(new Rect(x + 15, y + 112, 169, 7), "", target.Shield, cyan);
-            if (target.MaxHull > 0) Meter(new Rect(x + 204, y + 112, 169, 7), "", target.Hull / target.MaxHull, gold);
+            if (target.Shield >= 0) Meter(new Rect(x + 15, y + 112 + nameExtra, 169, 7), "", target.Shield, cyan);
+            if (target.MaxHull > 0) Meter(new Rect(x + 204, y + 112 + nameExtra, 169, 7), "", target.Hull / target.MaxHull, gold);
             if (!target.IsPlayer)
             {
                 GUI.enabled = client.Ready && !client.Incapacitated;
-                if (GUI.Button(new Rect(x + 15, y + 136, 229, 38),
+                if (GUI.Button(new Rect(x + 15, y + 136 + nameExtra, 229, 38),
                     firingAtTarget ? "STOP WEAPONS" : "FIRE ON TARGET", firingAtTarget ? hostileButton : primaryButton))
                 { if (firingAtTarget) client.StopWeapons(); else client.ToggleWeapons(target.Id); }
                 GUI.enabled = true;
-                if (GUI.Button(new Rect(x + 253, y + 136, 120, 38), "FOLLOW", button)) client.FollowSelected();
+                if (GUI.Button(new Rect(x + 253, y + 136 + nameExtra, 120, 38), "FOLLOW", button)) client.FollowSelected();
                 return;
             }
             bool member = snapshot.Group.Members.Any(item => item.Id == target.Id);
@@ -734,17 +738,17 @@ namespace FortyTwoAndBeyond.Client
             bool sentRecently = invitePendingId == target.Id && Time.unscaledTime - invitePendingAt < 5 &&
                 client.Status == "Group invitation sent.";
             GUI.enabled = leader && !member && !full && !pending && !sentRecently;
-            if (GUI.Button(new Rect(x + 15, y + 136, 229, 38),
+            if (GUI.Button(new Rect(x + 15, y + 136 + nameExtra, 229, 38),
                 member ? "IN YOUR GROUP" : !leader ? "LEADER INVITES" : full ? "GROUP FULL" :
                 pending ? "WAITING FOR SERVER" : sentRecently ? "INVITATION SENT" : "INVITE TO GROUP", button))
             { client.InvitePlayer(target.Id); invitePendingId = target.Id; invitePendingAt = Time.unscaledTime; }
             GUI.enabled = true;
-            if (GUI.Button(new Rect(x + 253, y + 136, 120, 38), "FOLLOW", button)) client.FollowSelected();
+            if (GUI.Button(new Rect(x + 253, y + 136 + nameExtra, 120, 38), "FOLLOW", button)) client.FollowSelected();
             if (canJumpstart)
             {
                 GUI.enabled = client.Ready && !client.Incapacitated &&
                     snapshot.CastingAbilityId == uint.MaxValue && snapshot.SelectedTargetId == target.Id;
-                if (GUI.Button(new Rect(x + 15, y + 185, 358, 36),
+                if (GUI.Button(new Rect(x + 15, y + 185 + nameExtra, 358, 36),
                     snapshot.SelectedTargetId == target.Id ? "JUMPSTART PILOT" : "SELECTING JUMPSTART TARGET", selected))
                     client.ActivateAbility(65u);
                 GUI.enabled = true;
@@ -1084,9 +1088,11 @@ namespace FortyTwoAndBeyond.Client
             {
                 string status = actor.MaxHull > 0 ?
                     $"HULL {Mathf.Clamp01(actor.Hull / actor.MaxHull) * 100:0}%" : "HULL UNKNOWN";
-                string titleLine = actor.Name + "   " + (actor.Position.Distance(snapshot.Position) / 1000).ToString("0.0") + " km";
+                string detail = (actor.Position.Distance(snapshot.Position) / 1000).ToString("0.0") + " km   ·   " + status;
                 GUIStyle style = contactId == actor.Id ? selected : actor.Hostile ? hostileButton : actor.IsPlayer ? playerButton : button;
-                if (GUILayout.Button(titleLine + "\n" + status, style, GUILayout.Height(47))) SelectContact(actor.Id);
+                string label = actor.Name + "\n" + detail;
+                float rowHeight = Mathf.Max(70, style.CalcHeight(new GUIContent(label), 226) + 8);
+                if (GUILayout.Button(label, style, GUILayout.Height(rowHeight))) SelectContact(actor.Id);
             }
         }
 
@@ -1252,6 +1258,7 @@ namespace FortyTwoAndBeyond.Client
         /// <returns>bool: Whether the user selected a textured equipment row.</returns>
         private bool DrawEquipmentRow(string title, uint type, bool active, float height)
         {
+            height = Mathf.Max(height, equipmentText.CalcHeight(new GUIContent(title), 245) + 12);
             Rect row = GUILayoutUtility.GetRect(0, height, GUILayout.ExpandWidth(true));
             bool clicked = GUI.Button(row, "", active ? selected : equipmentRow);
             GUI.DrawTexture(new Rect(row.x + 7, row.y + (height - 27) * .5f, 27, 27), icons.ForType(type));

@@ -11,6 +11,7 @@ namespace FortyTwoAndBeyond.Client
         private readonly FlightHud flightHud;
         private Vector2 formulaScroll, detailScroll;
         private bool open;
+        private GUIStyle wrappedBody, wrappedSmall;
         private float CanvasWidth => Screen.width / flightHud.Scale;
         private float CanvasHeight => Screen.height / flightHud.Scale;
         public bool IsOpen => open;
@@ -26,6 +27,11 @@ namespace FortyTwoAndBeyond.Client
         public void Draw(Snapshot snapshot)
         {
             if (snapshot?.Station == null || snapshot.Dialogue != null) { open = false; return; }
+            if (wrappedBody == null)
+            {
+                wrappedBody = new GUIStyle(flightHud.BodyStyle) { wordWrap = true };
+                wrappedSmall = new GUIStyle(flightHud.SmallStyle) { wordWrap = true };
+            }
             Rect toggle = new Rect((CanvasWidth - 180) * .5f + 100, 27, 180, 30);
             if (GUI.Button(toggle, open ? "CLOSE BENCH" : "WORKBENCH", flightHud.ButtonStyle))
             {
@@ -120,8 +126,9 @@ namespace FortyTwoAndBeyond.Client
                 foreach (ItemView item in snapshot.Cargo.Where(item => item != null))
                 {
                     GUI.enabled = production.Target == null;
-                    if (GUILayout.Button($"{item.Slot:00}  {item.Name} ×{item.Quantity}",
-                        flightHud.ButtonStyle, GUILayout.Height(29)))
+                    string label = $"{item.Slot:00}  {item.Name} ×{item.Quantity}";
+                    float height = Mathf.Max(32, flightHud.ButtonStyle.CalcHeight(new GUIContent(label), 296) + 5);
+                    if (GUILayout.Button(label, flightHud.ButtonStyle, GUILayout.Height(height)))
                         client.InsertAnalysisSample(item.Slot);
                 }
                 GUI.enabled = true;
@@ -133,7 +140,8 @@ namespace FortyTwoAndBeyond.Client
                 foreach (ProductionFormula formula in production.Formulas)
                 {
                     string label = $"L{formula.Level}  {formula.Name}";
-                    if (GUILayout.Button(label, flightHud.ButtonStyle, GUILayout.Height(29)))
+                    float height = Mathf.Max(32, flightHud.ButtonStyle.CalcHeight(new GUIContent(label), 296) + 5);
+                    if (GUILayout.Button(label, flightHud.ButtonStyle, GUILayout.Height(height)))
                         client.SelectProductionRecipe(formula.Template);
                 }
                 if (production.Formulas.Length == 0)
@@ -149,7 +157,7 @@ namespace FortyTwoAndBeyond.Client
         {
             ProductionView production = snapshot.Production;
             detailScroll = GUILayout.BeginScrollView(detailScroll);
-            GUILayout.Label(production.Target?.Name ?? "SELECT AN ITEM", flightHud.BodyStyle);
+            GUILayout.Label(production.Target?.Name ?? "SELECT AN ITEM", wrappedBody);
             if (production.Target != null)
             {
                 GUILayout.Label($"Cost  {production.Cost:N0} credits   ·   Available  {snapshot.Credits:N0}",
@@ -172,19 +180,16 @@ namespace FortyTwoAndBeyond.Client
                     string availability = production.Mode == 3 ?
                         production.Validity == 16 ? $"{present}/{required} recovered" :
                         $"{required} possible" : $"{present}/{required} available";
-                    GUILayout.BeginHorizontal(GUILayout.Height(29));
-                    GUILayout.Label($"{required} × {first.Name}", flightHud.BodyStyle,
-                        GUILayout.Width(225));
+                    GUILayout.Label($"{required} × {first.Name}", wrappedBody);
                     GUILayout.Label(availability, present == required ? flightHud.SectionStyle :
-                        flightHud.SmallStyle, GUILayout.Width(155));
-                    GUILayout.EndHorizontal();
+                        wrappedSmall);
+                    GUILayout.Space(3);
                 }
                 GUILayout.Space(8);
                 string result = production.Validity == 13 ? "Ready" :
                     production.Validity == 16 ? "Completed" :
                     production.Failure.Length > 0 ? production.Failure : "Waiting for server";
-                GUILayout.Label(result, production.Ready ? flightHud.SectionStyle :
-                    flightHud.SmallStyle);
+                GUILayout.Label(result, production.Ready ? flightHud.SectionStyle : wrappedSmall);
                 GUI.enabled = production.Ready;
                 if (GUILayout.Button(production.Mode == 1 ? "MANUFACTURE ONE" :
                     production.Mode == 2 ? "ANALYZE SAMPLE" :

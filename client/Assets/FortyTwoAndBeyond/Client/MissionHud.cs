@@ -30,8 +30,8 @@ namespace FortyTwoAndBeyond.Client
         /// </summary>
         private Rect ButtonRect(Snapshot snapshot)
         {
-            float x = snapshot?.Station == null ? CanvasWidth - 670 : CanvasWidth - 570;
-            return new Rect(x, 25, 110, 28);
+            float x = snapshot?.Station == null ? CanvasWidth - 696 : CanvasWidth - 596;
+            return new Rect(x, 25, 136, 28);
         }
 
         /// <summary>
@@ -79,7 +79,8 @@ namespace FortyTwoAndBeyond.Client
             foreach (MissionState mission in visible)
             {
                 string label = $"{mission.Slot + 1:00}  {mission.Name}";
-                if (GUILayout.Button(label, flightHud.ButtonStyle, GUILayout.Height(38)))
+                float height = Mathf.Max(38, flightHud.ButtonStyle.CalcHeight(new GUIContent(label), 224) + 7);
+                if (GUILayout.Button(label, flightHud.ButtonStyle, GUILayout.Height(height)))
                 { selectedSlot = (int)mission.Slot; historyScroll = Vector2.zero; }
             }
             if (visible.Length == 0)
@@ -96,7 +97,7 @@ namespace FortyTwoAndBeyond.Client
         /// <summary>Present the accepted mission's current and earlier stage text.</summary>
         private void DrawMission(MissionState mission)
         {
-            GUILayout.Label(mission.Name, flightHud.BodyStyle);
+            GUILayout.Label(mission.Name, detailText);
             if (mission.Summary.Length > 0)
             {
                 GUILayout.Label(mission.Summary, detailText);
@@ -104,7 +105,7 @@ namespace FortyTwoAndBeyond.Client
             }
             uint playableStages = mission.StageCount > 0 ? mission.StageCount - 1 : 0;
             GUILayout.Label($"CURRENT OBJECTIVE  ·  STAGE {mission.Stage} OF {playableStages}",
-                flightHud.BodyStyle);
+                detailText);
             GUILayout.Label(mission.Objective.Length > 0 ? mission.Objective :
                 "Awaiting the next server objective.", detailText);
             if (mission.ReachedStages.Count <= 1) return;
