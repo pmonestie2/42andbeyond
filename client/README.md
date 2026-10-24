@@ -149,7 +149,10 @@ kick members or disband. Invitations expire after the server's 30-second window.
 The roster lists the other members, with your own role in its heading. The leader
 can choose Slot Back, Block or Pipe formation and release it later. Members can
 form up within 5 km of the leader, or leave formation without leaving the group.
-The leader can share the selected target with the group.
+The leader can share the selected target with the group. If the server accepts
+that target for a member who can see it, the member's target panel follows the server's
+selection, even when an older contact was selected locally. A recent local click
+stays visible while its target request is pending.
 
 Press Enter for chat. The checkbox chooses group chat or sector chat. A short
 message history remains visible. Slash commands still work, including `/invite
@@ -184,7 +187,8 @@ The Turbo Weapons button and B key activate a matching equipped device. The
 server decides energy cost, firing-rate bonus, and duration; the HUD reflects
 the server's activation and expiry messages.
 Select a supported installed device in Ship Loadout to activate Scan Boost,
-Increase Speed, Reactor Boost, Turbo Weapons, Recharge Reactor, Recharge Shields,
+Increase Speed, Reactor Boost, Turbo Weapons, Turbo Warp, Improved Beam Handling,
+Improved Projectile Handling, Shunt to Reactor, Recharge Reactor, Recharge Shields,
 or a typed Deflect device. The active effect label and displayed remaining time
 come from the server's acknowledgement; the server publishes resource and combat
 changes and announces when the effect ends.

@@ -207,9 +207,10 @@ namespace FortyTwoAndBeyond.Client
                 snapshot = next; if (worker.Error == null) status = next.Status;
                 lastSnapshotAt = Time.unscaledTime;
                 if (sector != next.Sector) { ClearWorld(); sector = next.Sector; target = 0; positioned = false; }
+                hud?.ObserveAuthoritativeTarget(next);
                 ApplyWorld(next);
                 ApplyStationAvatars(next);
-                remoteShips.Apply(next.Players.Concat(next.Mobs).ToArray());
+                remoteShips.Apply(next.Players.Concat(next.Mobs).ToArray(), next.Group);
                 combatEffects.Apply(next);
                 if (poseChanged) authoritativePoseAt = Time.unscaledTime;
                 if (!positioned && next.HasPosition) { renderedPosition = Convert(next.Position); positioned = true; }
@@ -832,6 +833,7 @@ namespace FortyTwoAndBeyond.Client
         /// <summary>Release scene instances belonging to the departed sector.</summary>
         private void ClearWorld()
         {
+            hud?.ResetTargetSelection();
             stationWalk.EnterRoom(uint.MaxValue); nextStationPoseAt = 0;
             combatEffects?.Clear(); remoteShips?.Clear(); miningHud?.Clear();
             foreach (Transform body in bodies.Values) Destroy(body.gameObject);

@@ -13,7 +13,7 @@ internal static class Program
     {
         CheckReassembly(); CheckWorld(); CheckMissionJournal(); CheckMissionDialogue();
         CheckExperience(); CheckMiningPhases(); CheckLootTractor(); CheckWarpPhases(); CheckWeaponReady();
-        CheckDamageResults(); CheckCombatEngagement(); CheckDeviceEffects();
+        CheckDamageResults(); CheckCombatEngagement(); CheckContactSelection(); CheckDeviceEffects();
         CheckAmmunitionTransfer(); CheckFlightThrottle();
         CheckStationLayout(); CheckStationWalk(); CheckDemoRoster(); CheckAddress(); PeerChecks.Decode();
         Console.WriteLine("PASS: framing, ordering, fragmentation, duplicates, bounds, world decoding, private addresses");
@@ -461,16 +461,44 @@ internal static class Program
             "Directional weapon arc guidance disagreed with the server's 40-degree cone or missile exception.");
     }
 
-    /// <summary>Recognize catalog-backed recharge and deflect devices and their server notices.</summary>
+    /// <summary>Reconcile local clicks with a target shared by the server.</summary>
+    private static void CheckContactSelection()
+    {
+        var selection = new ContactSelection();
+        uint[] visible = { 10, 20 };
+        Assert(selection.Observe(10, visible, 0) == ContactSelectionChange.None &&
+            selection.SelectedId == 10, "Initial authoritative actor target was hidden.");
+        selection.SelectLocal(20, 1);
+        selection.Observe(10, visible, 1.1);
+        Assert(selection.SelectedId == 20, "An old snapshot erased a pending local click.");
+        Assert(selection.Observe(20, visible, 1.2) == ContactSelectionChange.LocalAcknowledged &&
+            selection.SelectedId == 20, "A local target acknowledgement looked like a group share.");
+        Assert(selection.Observe(10, visible, 2) == ContactSelectionChange.ServerSelected &&
+            selection.SelectedId == 10, "A server-shared target did not replace the stale HUD contact.");
+        selection.ClearLocal();
+        selection.Observe(10, visible, 2.1);
+        Assert(selection.SelectedId == 0, "An unchanged server target reopened a dismissed panel.");
+        selection.SelectLocal(20, 3);
+        selection.Observe(10, visible, 6.1);
+        Assert(selection.SelectedId == 10, "An unacknowledged local target stayed selected indefinitely.");
+        selection.Observe(10, new uint[] { 20 }, 6.2);
+        Assert(selection.SelectedId == 0, "A departed server target stayed selected.");
+        selection.Reset();
+        selection.Observe(20, visible, 7);
+        Assert(selection.SelectedId == 20, "A new sector retained previous target history.");
+    }
+
+    /// <summary>Recognize catalog-backed active devices and their server notices.</summary>
     private static void CheckDeviceEffects()
     {
         foreach (string description in new[]
         {
             "Recharge Reactor", "Recharge Shields", "Deflect Impact", "Deflect Explosive",
-            "Deflect Plasma", "Deflect Energy", "Deflect EMP", "Deflect Chemical", "Resist Psionic"
+            "Deflect Plasma", "Deflect Energy", "Deflect EMP", "Deflect Chemical", "Resist Psionic",
+            "Turbo Warp", "Improved Beam Handling", "Improved Projectile Handling", "Shunt to Reactor"
         })
             Assert(DeviceEffects.LabelFor(description + " (Activated)") == description,
-                "A server-supported recharge or typed deflect device is missing from the catalog allowlist.");
+                "A server-supported active device is missing from the catalog allowlist.");
         Assert(DeviceEffects.LabelFor("Unknown (Activated)") == "",
             "An unsupported device was offered as activatable.");
         const string fixture =
@@ -488,7 +516,7 @@ internal static class Program
         {
             byte[] text = System.Text.Encoding.UTF8.GetBytes(message + "\0");
             world.Apply(new Frame(0x1d, Wire.Body(writer =>
-            { writer.Write((ushort)text.Length); writer.Write((byte)0); writer.Write(text); })), 1);
+            { writer.Write((ushort)text.Length); writer.Write((byte)11); writer.Write(text); })), 1);
         };
         notice("Recharge Reactor active for 90 seconds.");
         Snapshot active = new Snapshot(world, "ready", true);
@@ -506,6 +534,10 @@ internal static class Program
         Assert(world.ActiveDeviceLabel == "Deflect Plasma",
             "Typed deflect activation notice was not recognized.");
         notice("Deflect Plasma ended.");
+        notice("Shunt to Reactor active for 30 seconds.");
+        Assert(world.ActiveDeviceLabel == "Shunt to Reactor" && world.ActiveDeviceEndsAt != 0,
+            "Shunt activation notice did not establish an active timer.");
+        notice("Shunt to Reactor ended.");
         notice("Recharge Reactor active for seconds.");
         Assert(world.ActiveDeviceLabel == "",
             "Malformed active-device duration created a false effect state.");

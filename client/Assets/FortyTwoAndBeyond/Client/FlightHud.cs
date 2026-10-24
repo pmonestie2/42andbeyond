@@ -35,11 +35,27 @@ namespace FortyTwoAndBeyond.Client
         private Vector2 cargoScroll, mountScroll;
         public bool EquipmentOpen => equipmentOpen;
         public bool SettingsOpen => settingsOpen;
+        private readonly ContactSelection contactSelection = new ContactSelection();
+        private uint contactId => contactSelection.SelectedId;
+        private float serverSelectedUntil;
         public uint SelectedContactId => contactId;
         /// <summary>Keep keyboard-selected contacts aligned with the tactical HUD.</summary>
-        public void SelectContact(uint id) { contactId = id; wreckId = 0; client.SelectContact(id); }
+        public void SelectContact(uint id)
+        { contactSelection.SelectLocal(id, Time.unscaledTime); wreckId = 0; client.SelectContact(id); }
         /// <summary>Dismiss fixed ship and wreck panels when another world target takes focus.</summary>
-        public void ClearSelection() { contactId = 0; wreckId = 0; }
+        public void ClearSelection() { contactSelection.ClearLocal(); wreckId = 0; }
+        /// <summary>Forget target history when leaving the current sector or character.</summary>
+        public void ResetTargetSelection() { contactSelection.Reset(); wreckId = 0; serverSelectedUntil = 0; }
+        /// <summary>Show a visible actor chosen by the server, including group target shares.</summary>
+        public void ObserveAuthoritativeTarget(Snapshot snapshot)
+        {
+            uint[] visible = snapshot.Players.Concat(snapshot.Mobs).Where(actor => actor.HasPosition)
+                .Select(actor => actor.Id).ToArray();
+            ContactSelectionChange change = contactSelection.Observe(snapshot.SelectedTargetId, visible,
+                Time.unscaledTime);
+            if (change == ContactSelectionChange.ServerSelected && contactId != 0)
+            { wreckId = 0; serverSelectedUntil = Time.unscaledTime + 3f; }
+        }
         /// <returns>Whether a visible ship was selected at an actual screen point.</returns>
         public bool SelectContactAtPointer(Snapshot snapshot, Vector2 pointer)
         {
@@ -70,14 +86,14 @@ namespace FortyTwoAndBeyond.Client
             SelectWreck(selectedWreck); return true;
         }
         /// <summary>Show a chosen corpse without retaining the previous ship lock.</summary>
-        private void SelectWreck(uint id) { wreckId = id; contactId = 0; lootScroll = Vector2.zero; }
+        private void SelectWreck(uint id) { wreckId = id; contactSelection.ClearLocal(); lootScroll = Vector2.zero; }
         /// <summary>Open or close the ship equipment overlay.</summary>
         public void ToggleEquipment() { equipmentOpen = !equipmentOpen; }
         private string chatText = "";
         private string inviteName = "";
         public bool InputFocused { get; private set; }
         private bool groupChat;
-        private uint contactId, wreckId;
+        private uint wreckId;
         private Vector2 lootScroll;
         private uint invitePendingId;
         private float invitePendingAt;
@@ -745,6 +761,7 @@ namespace FortyTwoAndBeyond.Client
             if (!target.IsPlayer)
             {
                 GUI.Label(new Rect(x + 15, y + 134 + nameExtra, 355, 18),
+                    Time.unscaledTime < serverSelectedUntil ? "TARGET UPDATED BY SERVER" :
                     CombatGuidance(engagement, firingAtTarget), small);
                 if (engagement?.LastResult != null && engagement.LastResultAgeSeconds <= 2f)
                 {
