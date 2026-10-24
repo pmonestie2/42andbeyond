@@ -122,6 +122,43 @@ namespace FortyTwoAndBeyond.Client
             }
         }
 
+        /// <summary>Draw server-owned combat, trade, and explore progress beside the skill list.</summary>
+        private void DrawExperience(Rect panel, ExperienceState progress)
+        {
+            Rect area = new Rect(panel.x + 18, panel.y + 112, panel.width - 36, 86);
+            flightHud.Panel(area);
+            if (progress == null)
+            {
+                GUI.Label(new Rect(area.x + 12, area.y + 12, area.width - 24, 23),
+                    "Waiting for pilot progression…", flightHud.SmallStyle);
+                return;
+            }
+            GUI.Label(new Rect(area.x + 12, area.y + 5, area.width - 24, 23),
+                $"PILOT PROGRESSION  ·  {progress.AvailableSkillPoints} SKILL POINTS", flightHud.BodyStyle);
+            DrawTrack(area, 0, "COMBAT", progress.CombatLevel, progress.CombatFraction,
+                new Color(.94f, .38f, .28f));
+            DrawTrack(area, 1, "TRADE", progress.TradeLevel, progress.TradeFraction,
+                new Color(.98f, .75f, .34f));
+            DrawTrack(area, 2, "EXPLORE", progress.ExploreLevel, progress.ExploreFraction,
+                new Color(.37f, .82f, .95f));
+        }
+
+        /// <summary>Draw one authoritative level and fraction of its next-level bar.</summary>
+        private void DrawTrack(Rect area, int column, string name, uint level, float fraction, Color fill)
+        {
+            float width = (area.width - 32) / 3f;
+            float x = area.x + 12 + column * (width + 4);
+            GUI.Label(new Rect(x, area.y + 32, width, 21),
+                $"{name}  L{level}  {fraction * 100:0}%", flightHud.SmallStyle);
+            Rect track = new Rect(x, area.y + 61, width - 8, 7);
+            Color previous = GUI.color;
+            GUI.color = new Color(.12f, .21f, .28f); GUI.DrawTexture(track, Texture2D.whiteTexture);
+            GUI.color = fill;
+            GUI.DrawTexture(new Rect(track.x, track.y, track.width * Mathf.Clamp01(fraction), track.height),
+                Texture2D.whiteTexture);
+            GUI.color = previous;
+        }
+
         /// <summary>Show only abilities that this character received in native RPG packets.</summary>
         public void Draw(Snapshot snapshot)
         {
@@ -146,9 +183,10 @@ namespace FortyTwoAndBeyond.Client
                 if (GUI.Button(new Rect(panel.x + 18 + i * 81, panel.y + 68, 77, 37),
                     label, flightHud.ButtonStyle)) assigningSlot = i;
             }
+            DrawExperience(panel, snapshot.Experience);
             AbilityDefinition[] available = catalog.Where(item => item.id >= 0 && snapshot.AvailableAbilities.Contains((uint)item.id))
                 .OrderBy(item => item.name).ToArray();
-            GUILayout.BeginArea(new Rect(panel.x + 18, panel.y + 116, panel.width - 36, panel.height - 165));
+            GUILayout.BeginArea(new Rect(panel.x + 18, panel.y + 208, panel.width - 36, panel.height - 257));
             scroll = GUILayout.BeginScrollView(scroll);
             if (available.Length == 0)
                 GUILayout.Label("Waiting for class abilities from the server…", flightHud.SmallStyle);

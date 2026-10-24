@@ -180,7 +180,8 @@ distance, reactor energy, and shared resource claim before it awards ore to carg
 The panel shows the resource level, depletion, and stock from native packets.
 The Skills button lists abilities advertised by the connected character's native
 RPG packet. Selecting one sends the native activation command, and the panel
-shows the server's charge and cooldown updates. The server applies target, range,
+shows the server's combat, trade and explore levels, next-level progress bars,
+available skill points, charge and cooldown updates. The server applies target, range,
 energy, charge, and cooldown rules. Refresh display labels from
 the public Rust catalog with `python3 client/Tools/sync_ability_catalog.py`
 after server skill-content changes. Click one of six slots in the Skills panel,

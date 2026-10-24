@@ -74,7 +74,7 @@ namespace FortyTwoAndBeyond.Protocol
                 if (rpg.Present[field])
                 {
                     if (field == 2) SkipSkillSlots();
-                    else if (field == 3) SkipAbilitySlotsForMissions();
+                    else if (field == 3) SkipAbilitySlots();
                     else if (field == 6 || field == 8 || field == 10) Float();
                     else if (field == 0 || field == 1 || field == 4 || field == 5 ||
                         field == 7 || field == 9 || field == 11 || field == 12 || field == 15) UInt();
@@ -82,28 +82,6 @@ namespace FortyTwoAndBeyond.Protocol
                 }
                 else if (rpg.Default[field] && (field == 2 || field == 3) && Byte() != 5)
                     throw new InvalidDataException("Invalid RPG reset before missions.");
-            }
-        }
-
-        /// <summary>Consume native ability availability records preceding a mission journal.</summary>
-        private void SkipAbilitySlotsForMissions()
-        {
-            Flags slots = Mask(170);
-            for (int slot = 0; slot < 170; slot++)
-            {
-                if (slots.Present[slot])
-                {
-                    Flags entry = Mask(7);
-                    for (int field = 0; field < 7; field++)
-                    {
-                        if (!entry.Present[field]) continue;
-                        if (field == 0) Byte();
-                        else if (field == 3 || field == 4) UInt();
-                        else throw new InvalidDataException("Unknown ability field before missions.");
-                    }
-                }
-                else if (slots.Default[slot] && Byte() != 5)
-                    throw new InvalidDataException("Invalid ability reset before missions.");
             }
         }
 

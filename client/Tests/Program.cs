@@ -11,7 +11,8 @@ internal static class Program
     /// <summary>Run pure protocol checks, with explicit opt-in to a disposable local server.</summary>
     private static void Main(string[] args)
     {
-        CheckReassembly(); CheckWorld(); CheckMissionJournal(); CheckMissionDialogue(); CheckFlightThrottle();
+        CheckReassembly(); CheckWorld(); CheckMissionJournal(); CheckMissionDialogue();
+        CheckExperience(); CheckFlightThrottle();
         CheckStationLayout(); CheckDemoRoster(); CheckAddress(); PeerChecks.Decode();
         Console.WriteLine("PASS: framing, ordering, fragmentation, duplicates, bounds, world decoding, private addresses");
         if (args.Length == 2 && args[0] == "--server") { PeerChecks.Live(args[1]); CheckServer(args[1]); }
@@ -164,6 +165,34 @@ internal static class Program
         notice("Mission objective: Finer Points of Negotiation.");
         Assert(world.Dialogue.MissionKind == MissionDialogueKind.Objective,
             "An active mission objective notice was not identified.");
+    }
+
+    /// <summary>Decode a server-encoded RPG AUX fixture and keep display revisions immutable.</summary>
+    private static void CheckExperience()
+    {
+        const string fixture =
+            "35001b00000000002b000102040006fff0000f050501000000010000000000003f" +
+            "3200000000000000320000000000000032000000";
+        byte[] packet = Enumerable.Range(0, fixture.Length / 2)
+            .Select(index => Convert.ToByte(fixture.Substring(index * 2, 2), 16)).ToArray();
+        Assert(packet.Length == 53 && Wire.U16(packet, 0) == packet.Length && Wire.U16(packet, 2) == 0x1b,
+            "Experience fixture has an invalid native frame header.");
+        byte[] body = packet.Skip(4).ToArray();
+        var world = new World(); world.Apply(new Frame(0x1b, body), 1);
+        Snapshot first = new Snapshot(world, "ready", true);
+        Assert(first.Experience != null && first.Experience.CombatLevel == 50 &&
+            first.Experience.CombatFraction == .5f && first.Experience.TradeLevel == 50 &&
+            first.Experience.TradeFraction == 0 && first.Experience.ExploreLevel == 50 &&
+            first.Experience.ExploreFraction == 0 && first.Experience.AvailableSkillPoints == 1 &&
+            first.Experience.EarnedSkillPoints == 1,
+            "Native RPG fields did not decode into the three XP tracks and skill points.");
+        byte[] updated = (byte[])body.Clone(); updated[27] = 0x40;
+        world.Apply(new Frame(0x1b, updated), 1);
+        Assert(world.Experience.CombatFraction == .75f && first.Experience.CombatFraction == .5f,
+            "An updated XP bar changed an earlier immutable snapshot.");
+        byte[] invalid = (byte[])body.Clone();
+        Array.Copy(BitConverter.GetBytes(1.5f), 0, invalid, 25, 4);
+        Reject(() => world.Apply(new Frame(0x1b, invalid), 1));
     }
 
     /// <summary>Keep held flight controls reachable after focus and text entry.</summary>

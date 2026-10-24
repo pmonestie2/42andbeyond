@@ -322,6 +322,28 @@ namespace FortyTwoAndBeyond.Protocol
             }
         }
 
+        /// <summary>Consume native ability availability records before later RPG fields.</summary>
+        private void SkipAbilitySlots()
+        {
+            Flags slots = Mask(170);
+            for (int slot = 0; slot < 170; slot++)
+            {
+                if (slots.Present[slot])
+                {
+                    Flags entry = Mask(7);
+                    for (int field = 0; field < 7; field++)
+                    {
+                        if (!entry.Present[field]) continue;
+                        if (field == 0) Byte();
+                        else if (field == 3 || field == 4) UInt();
+                        else throw new InvalidDataException("Unknown ability field before RPG progress.");
+                    }
+                }
+                else if (slots.Default[slot] && Byte() != 5)
+                    throw new InvalidDataException("Invalid ability reset before RPG progress.");
+            }
+        }
+
         /// <returns>AbilityProgress: Native cast progress, or null for another AUX update.</returns>
         public static AbilityProgress ReadAbilityProgress(byte[] body)
         {
