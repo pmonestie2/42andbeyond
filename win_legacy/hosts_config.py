@@ -23,7 +23,28 @@ def local_hosts(original: bytes, marker: bytes) -> bytes:
 
 
 def restore_local_hosts(original: bytes, applied: bytes, current: bytes) -> bytes | None:
-    """Returns:
-        bytes | None: Original content only when our applied file is unchanged.
+    """Undo the primary override while preserving currently active profile aliases.
+
+    Returns:
+        bytes | None: Restored content, or None if unrelated content changed.
     """
-    return original if current == applied else None
+    if current == applied:
+        return original
+
+    def profile_line(line: bytes) -> bool:
+        """Identify launcher profile entries for concurrent cleanup.
+
+        Returns:
+            bool: Whether this line carries a private-profile ownership marker.
+        """
+        return line.partition(b'#')[2].strip().startswith(b'42andbeyond-local-instance ')
+
+    current_lines = current.splitlines(keepends=True)
+    current_base = b''.join(line for line in current_lines if not profile_line(line))
+    applied_base = b''.join(line for line in applied.splitlines(keepends=True) if not profile_line(line))
+    if current_base.rstrip(b'\r\n') != applied_base.rstrip(b'\r\n'):
+        return None
+    base = b''.join(line for line in original.splitlines(keepends=True) if not profile_line(line))
+    profiles = b''.join(line for line in current_lines if profile_line(line))
+    separator = b'\r\n' if profiles and base and not base.endswith(b'\n') else b''
+    return base + separator + profiles

@@ -5,11 +5,17 @@ Run these commands from the repository root on Windows with Python 3.11+:
 ```powershell
 C:\PYTHON\python.exe -m pip install -r win_legacy/requirements.txt
 C:\PYTHON\python.exe -m win_legacy.start_proxy --server 192.168.47.1 --check
-.\win_legacy\launch_original_client.cmd --server 192.168.47.1 --no-build
+.\win_legacy\launch_original_client.cmd --server 192.168.47.1 --no-build --scale normal
 ```
 
 The example address is the Mac host on this VMware network. For another setup,
 replace it with the server's private LAN IP and bind the server to that address.
+
+Use `--scale normal` for native pixels or `--scale double` for Windows DPI
+scaling (2x at a 200% Windows display setting). Omit `--scale` to keep the
+existing settings. Only the game executable receives this override; its previous
+compatibility settings are restored on exit. Concurrent changes are preserved,
+with recovery backups retained in `server/logs/dpi-before-*.json`.
 
 Run the launcher from an elevated console so it can temporarily update the hosts
 file. Supply `--client` and `--proxy` if the installed executable paths differ
@@ -24,5 +30,30 @@ restored when the owned game/proxy process tree exits; backups are retained when
 another program changes a file concurrently. Keep the console open while playing.
 
 Use a private LAN server address for Net7Proxy. The Unity client can connect to
-`127.0.0.1` directly. No multi-instance executable or process-memory patching is
-included. Tests mock configuration and process calls; live launch needs Windows.
+`127.0.0.1` directly. Tests use disposable files, socket listeners and mocked
+process/configuration calls; a full game launch needs Windows.
+
+To run multiple clients, open a separate elevated console for each instance:
+
+```powershell
+.\win_legacy\launch_original_client.cmd --server 192.168.47.1 --no-build --scale normal --instance pilot1
+.\win_legacy\launch_original_client.cmd --server 192.168.47.1 --no-build --scale double --instance pilot2
+```
+
+Use a different server account in each client; logging into the same account
+replaces its existing session. Finish one client's startup dialog before opening
+the next. Keep each launcher console open. The original installed client may
+stay open while named instances run.
+
+Each name reserves one of eight private loopback addresses (`127.0.0.2` through
+`127.0.0.9`) and has its own game configuration, proxy, DPI settings and process
+job under `server/state/clients/<name>`. Immutable game assets use hard links when
+possible. Closing an instance stops only its owned process tree and relays and
+removes only its unchanged hosts entry. Private files remain for the next launch.
+
+Named instances require the known client and Net7Proxy 2.46 builds. Their hashes
+are validated before setup. Only the private client's singleton-name string is
+patched; the installed executables remain unchanged. The suspended owned proxy
+gets a verified loopback data override in memory before it starts. A separate
+wildcard development certificate covers instance hostnames. Unsupported builds
+or unexpected private executable edits are rejected.

@@ -26,9 +26,10 @@ def openssl_path() -> Path:
 
 
 class LocalProxyCertificate:
-    def __init__(self, proxy: Path) -> None:
+    def __init__(self, proxy: Path, *, instances: bool = False) -> None:
         self.directory = proxy.parent
-        self.generated = ROOT / 'state' / 'proxy-certificate'
+        self.generated = ROOT / 'state' / ('proxy-instance-certificate' if instances else 'proxy-certificate')
+        self.instances = instances
         self.edits: list[ConfigurationEdit] = []
         self.thumbprint: str | None = None
 
@@ -39,6 +40,10 @@ class LocalProxyCertificate:
                        creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)
 
     def __enter__(self) -> 'LocalProxyCertificate':
+        if self.instances:
+            from .windows_sync import named_mutex
+            with named_mutex('Global\\FortyTwoAndBeyondInstanceCertificate'):
+                return self.prepare()
         return self.prepare()
 
     def prepare(self) -> 'LocalProxyCertificate':
@@ -84,7 +89,7 @@ class LocalProxyCertificate:
     def generate(self, certificate: Path, key: Path) -> None:
         subprocess.run([str(openssl_path()), 'req', '-x509', '-newkey', 'rsa:2048', '-nodes',
                         '-sha256', '-days', '365', '-subj', '/CN=local.net-7.org',
-                        '-addext', 'subjectAltName=DNS:local.net-7.org',
+                        '-addext', 'subjectAltName=DNS:local.net-7.org' + (',DNS:*.local.net-7.org' if self.instances else ''),
                         '-addext', 'basicConstraints=critical,CA:FALSE',
                         '-addext', 'keyUsage=critical,digitalSignature,keyEncipherment',
                         '-addext', 'extendedKeyUsage=serverAuth',

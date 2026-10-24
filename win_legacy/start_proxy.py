@@ -78,7 +78,8 @@ def ensure_server(server: str, no_build: bool = False) -> subprocess.Popen[bytes
     raise TimeoutError('Local server did not become ready; no proxy launched')
 
 
-def launch(plan: ProxyPlan, no_build: bool = False) -> None:
+def launch(plan: ProxyPlan, no_build: bool = False, scale: str | None = None) -> None:
+    """Launch the owned client with reversible configuration and optional DPI scaling."""
     if os.name != 'nt':
         raise RuntimeError('Net7Proxy and the graphical game require Windows; the Rust server itself is portable')
     for path, name in ((plan.client, 'client.exe'), (plan.proxy, 'net7proxy.exe')):
@@ -86,15 +87,21 @@ def launch(plan: ProxyPlan, no_build: bool = False) -> None:
             raise FileNotFoundError(f'Missing {name}: {path}')
     from .local_windows import LocalCertificateDns, ProxyJob, ensure_no_game
     from .proxy_certificate import LocalProxyCertificate
+    from .client_scaling import ClientScaling
+    from .local_profiles import isolate_existing_windows, wait_for_client_window
+    from .windows_sync import named_mutex
     ensure_no_game(plan.client, plan.proxy)
     owned_server = ensure_server(plan.server, no_build)
     try:
         # The DNS override is restored only after the owned proxy/game job ends.
         # Neither normal production clients nor unrelated processes are stopped.
-        with LocalCertificateDns(), LocalClientConfiguration(plan.client), LocalProxyCertificate(plan.proxy):
+        with LocalCertificateDns(), LocalClientConfiguration(plan.client), LocalProxyCertificate(plan.proxy), ClientScaling(plan.client, scale):
             job = ProxyJob()
             try:
-                job.start(plan.arguments(), plan.proxy.parent)
+                with named_mutex('Global\\FortyTwoAndBeyondClientStartup', timeout=0):
+                    isolate_existing_windows(plan.client)
+                    job.start(plan.arguments(), plan.proxy.parent)
+                    wait_for_client_window(job)
                 logs = ROOT / 'logs'
                 logs.mkdir(exist_ok=True)
                 (logs / 'local-launch.json').write_text(json.dumps({'proxy_pid': job.pid,
@@ -124,21 +131,37 @@ def main() -> None:
     parser.add_argument('--proxy', type=Path, default=Path('C:/Program Files (x86)/Net-7/bin/net7proxy.exe'))
     parser.add_argument('--check', action='store_true', help='Print the launch plan without starting or contacting anything')
     parser.add_argument('--no-build', action='store_true')
+    parser.add_argument('--scale', choices=('normal', 'double'), help='Temporary client DPI scaling; otherwise keep existing settings')
+    parser.add_argument('--instance', help='Named private client, e.g. pilot1; use distinct names to play concurrently')
     args = parser.parse_args()
     try:
+        if args.instance is not None:
+            from .local_profiles import validate_instance_name
+            args.instance = validate_instance_name(args.instance)
         plan = ProxyPlan(proxy_server_address(args.server), args.client.resolve(), args.proxy.resolve())
         if args.check:
             print(subprocess.list2cmdline(plan.arguments()))
+            if args.instance is not None:
+                print(f'Private instance: {args.instance}; independent client/proxy under server/state/clients/{args.instance}.')
+                print('Launch allocates a private loopback IP, patches only the private client singleton, and configures only its owned proxy memory.')
+            if args.scale is not None:
+                print(f'Client scaling: {args.scale}; previous DPI compatibility settings are restored on exit.')
             account_file = ROOT / 'state/account.local.json'
             if account_file.exists():
                 account = json.loads(account_file.read_text())
                 print(f'Local account: {account["username"]}; character: {account["character"]["name"]}; race={account["character"]["race"]}; profession={account["character"]["profession"]}. Password is not printed.')
             else:
                 print('Local-only demo account: local / local; one sector; no production config or credentials are read.')
-            print('During launch only: local.net-7.org maps to the local proxy; the previous hosts file is restored when it exits.')
-            print('Client auth/network/registration INI endpoints temporarily use local.net-7.org and are restored on exit.')
+            if args.instance is None:
+                print('During launch only: local.net-7.org maps to the local proxy; the previous hosts file is restored when it exits.')
+                print('Client auth/network/registration INI endpoints temporarily use local.net-7.org and are restored on exit.')
+            else:
+                print('Private INIs use an instance hostname; cleanup removes only that instance DNS entry and owned processes.')
+        elif args.instance is not None:
+            from .local_profiles import launch_profile
+            launch_profile(args.instance, plan.server, plan.client, plan.proxy, no_build=args.no_build, scale=args.scale)
         else:
-            launch(plan, args.no_build)
+            launch(plan, no_build=args.no_build, scale=args.scale)
     except (OSError, ValueError, RuntimeError, subprocess.CalledProcessError) as error:
         parser.exit(1, f'Local launch failed: {error}\n')
 

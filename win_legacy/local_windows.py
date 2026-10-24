@@ -81,7 +81,8 @@ class ProxyJob:
         self.process: int | None = None
         self.pid: int | None = None
 
-    def start(self, arguments: list[str], directory: Path) -> None:
+    def start(self, arguments: list[str], directory: Path, *, loopback: str | None = None) -> None:
+        """Start only the owned proxy, configuring its private interface before resume."""
         job = win32job.CreateJobObject(None, '')
         settings = win32job.QueryInformationJobObject(job, win32job.JobObjectExtendedLimitInformation)
         settings['BasicLimitInformation']['LimitFlags'] |= win32job.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
@@ -95,6 +96,9 @@ class ProxyJob:
         process, thread, pid, _ = win32process.CreateProcess(arguments[0], subprocess.list2cmdline(arguments), None, None, False,
             win32con.CREATE_SUSPENDED | win32con.CREATE_NO_WINDOW, None, str(directory), startup)
         try:
+            if loopback is not None:
+                from .proxy_loopback import configure_proxy_loopback
+                configure_proxy_loopback(int(process), Path(arguments[0]), loopback)
             win32job.AssignProcessToJobObject(self.job, process)
             win32process.ResumeThread(thread)
             self.process, self.pid = process.Detach(), pid
