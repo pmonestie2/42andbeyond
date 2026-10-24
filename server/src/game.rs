@@ -101,6 +101,9 @@ impl GameState {
             state.attach_session(id)?;
         }
         state.load_saved_loot_worlds()?;
+        for world in state.loot_worlds.values() {
+            lock_loot(world)?.release_missing_killers(&state.connected)?;
+        }
         // A restart can occur before a departing player's cleanup tick. Clear
         // those account identities from each loaded sector's saved hate table.
         for (&sector, combat) in &state.combats {
@@ -649,6 +652,13 @@ impl GameState {
             .filter(|(_, session)| session.connected())
             .map(|(id, _)| *id)
             .collect();
+        for world in self.loot_worlds.values() {
+            if let Err(error) = lock_loot(world)?.release_missing_killers(&connected) {
+                if first_error.is_none() {
+                    first_error = Some(error);
+                }
+            }
+        }
         for id in self.connected.difference(&connected) {
             self.groups.leave(*id);
             self.groups_dirty = true;

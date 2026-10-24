@@ -219,6 +219,66 @@ fn grouped_nav_explore_xp_replays_failed_recipient_after_restart() {
 }
 
 #[test]
+/// A current group peer waits for the credited pilot's private corpse lock.
+fn logged_out_killer_releases_corpse_lock_for_group_peer() {
+    let mut game = game();
+    let alice = FIRST_PLAYER_ID;
+    let bob = alice + 1;
+    login(&mut game, alice, 22521, "alice");
+    login(&mut game, bob, 22522, "bob");
+    game.groups.invite(alice, bob).unwrap();
+    game.groups.accept(bob).unwrap();
+    let catalog = crate::loot::LootCatalog::from_mobs(
+        vec![crate::loot::MobDrops {
+            id: 99,
+            kind: Some(1),
+            drops: vec![crate::loot::DropEntry {
+                source_id: 1,
+                item: 2837,
+                chance_percent: 100.,
+                quantity: 1,
+                kind: 0,
+                usage_chance: 0,
+            }],
+        }],
+        &crate::items::ItemCatalog::load().unwrap(),
+    )
+    .unwrap();
+    let now = crate::resources::unix_ms();
+    let world = &game.loot_worlds[&1076];
+    let id = lock_loot(world)
+        .unwrap()
+        .spawn(
+            crate::loot_world::CorpseBirth {
+                death: crate::loot_world::MobDeath {
+                    spawn: 999,
+                    generation: 1,
+                },
+                template: 99,
+                name: "Test drone".into(),
+                level: 1,
+                killer: alice,
+                position: [0.; 3],
+                now_ms: now,
+            },
+            &catalog,
+            &crate::items::ItemCatalog::load().unwrap(),
+        )
+        .unwrap()
+        .unwrap();
+    assert!(lock_loot(world)
+        .unwrap()
+        .prepare_collection(bob, id, None, now + 1)
+        .is_err());
+    game.sessions.get_mut(&alice).unwrap().logout().unwrap();
+    game.advance_at(0., now + 1).unwrap();
+    assert!(lock_loot(&game.loot_worlds[&1076])
+        .unwrap()
+        .prepare_collection(bob, id, None, now + 1)
+        .is_ok());
+}
+
+#[test]
 fn group_kill_freezes_two_awards_and_replays_only_failed_recipient() {
     let initial = game();
     let root = initial.root.clone();

@@ -192,7 +192,10 @@ mean the corresponding gameplay system is complete.
    missing content needs investigation rather than invented item assignments.
    MOB drops now connect combat deaths to native corpse/loot handlers. Combat
    XP now survives retries for individual and grouped kills; faction rewards,
-   group loot policies and native item pickup need more work.
+   configurable group loot policies and native item pickup need more work.
+   The archived default killer lock now excludes group members during its
+   150-second private window and releases durably when the credited pilot
+   logs out; the killer's first permitted open also releases the lock.
    The catalog resolves 8,506 public drop rows for
    2,042 MOB templates; 77 rejected rows remain explicit diagnostics.
 5. Native refinery/crafting playtests, additional NPC services, trade progression,

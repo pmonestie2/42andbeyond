@@ -2461,9 +2461,15 @@ mod tests {
         other
             .attach_loot_world(Arc::clone(&ship.loot_world))
             .unwrap();
+        other.group_contacts.push(GroupContact {
+            id: ship.player_id(),
+            sector: ship.sector.id,
+            position: ship.position,
+            incapacitated: false,
+        });
         other.publish_corpses().unwrap();
         other.target = ship.target;
-        assert!(other.open_loot().is_err());
+        assert!(other.open_loot().is_err()); // Default group policy retains killer lock.
         ship.open_loot().unwrap(); // The archived opening releases private ownership.
         other.open_loot().unwrap();
         ship.begin_looting(0).unwrap();

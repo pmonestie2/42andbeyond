@@ -63,12 +63,6 @@ impl PlayerSession {
         self.restore_loot_claim()
     }
 
-    fn loot_group_allowed(&self, killer: u32) -> bool {
-        self.group_contacts
-            .iter()
-            .any(|contact| contact.id == killer)
-    }
-
     fn check_loot_position(&self, corpse: u32, range: f32) -> io::Result<()> {
         if !self.logged_in
             || self.sector.station.is_some()
@@ -97,9 +91,8 @@ impl PlayerSession {
         }
         let shared = Arc::clone(&self.loot_world);
         let mut world = lock_loot(&shared)?;
-        let group = self.loot_group_allowed(world.get(self.target)?.killer);
         if let Some(collection) =
-            world.prepare_collection(self.player_id(), self.target, None, unix_ms(), group)?
+            world.prepare_collection(self.player_id(), self.target, None, unix_ms())?
         {
             let credits = collection.credits;
             let candidate = self.inventory.collected_loot(&collection, &self.items)?;
@@ -142,8 +135,7 @@ impl PlayerSession {
         let remaining =
             (distance(self.position, corpse.position) / self.equipment.ship.tractor_speed - 0.15)
                 .max(0.1);
-        let group = self.loot_group_allowed(corpse.killer);
-        world.claim(self.player_id(), self.target, slot, unix_ms(), group)?;
+        world.claim(self.player_id(), self.target, slot, unix_ms())?;
         let cast = LootCast {
             corpse: self.target,
             slot,
@@ -219,7 +211,7 @@ impl PlayerSession {
                 Ok(_) => {
                     // Restore a prior authenticated reservation before groups
                     // are rebuilt. Collection checks current permissions again.
-                    world.claim(self.player_id(), cast.corpse, cast.slot, unix_ms(), true)
+                    world.claim(self.player_id(), cast.corpse, cast.slot, unix_ms())
                 }
                 Err(error) => Err(error),
             }
@@ -266,15 +258,8 @@ impl PlayerSession {
     fn collect_loot(&mut self, cast: &LootCast) -> io::Result<()> {
         let shared = Arc::clone(&self.loot_world);
         let mut world = lock_loot(&shared)?;
-        let group = self.loot_group_allowed(world.get(cast.corpse)?.killer);
         let collection = world
-            .prepare_collection(
-                self.player_id(),
-                cast.corpse,
-                Some(cast.slot),
-                unix_ms(),
-                group,
-            )?
+            .prepare_collection(self.player_id(), cast.corpse, Some(cast.slot), unix_ms())?
             .ok_or_else(|| invalid("Loot collection produced no item."))?;
         if collection
             .item

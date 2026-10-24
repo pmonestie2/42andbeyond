@@ -92,6 +92,9 @@ pub struct Corpse {
     pub killer: u32,
     pub position: [f32; 3],
     pub created_ms: u64,
+    /// Native killer lock ends when the credited player logs out or opens it.
+    #[serde(default)]
+    pub released: bool,
     pub initial: CorpseContents,
     #[serde(skip)]
     receipts: BTreeMap<u32, LootReceipt>,
@@ -136,13 +139,12 @@ impl Corpse {
             && (stock.credits > 0 || stock.items.iter().any(Option::is_some)))
     }
 
-    fn authorize(&self, player: u32, now_ms: u64, same_group: bool) -> io::Result<()> {
+    fn authorize(&self, player: u32, now_ms: u64) -> io::Result<()> {
         if !self.available(now_ms)? {
             return Err(invalid("Corpse is empty or expired."));
         }
-        let opened = self.receipts.values().any(|receipt| receipt.credits);
+        let opened = self.released || self.receipts.values().any(|receipt| receipt.credits);
         if player != self.killer
-            && !same_group
             && !opened
             && now_ms < self.created_ms.saturating_add(PRIVATE_LOOT_MS)
         {
@@ -512,6 +514,7 @@ impl LootWorld {
                 killer: birth.killer,
                 position: birth.position,
                 created_ms: birth.now_ms,
+                released: false,
                 initial,
                 receipts: BTreeMap::new(),
                 claim: None,
@@ -550,6 +553,30 @@ impl LootWorld {
             let _ = fs::remove_file(&temporary);
             return Err(error);
         }
+        Ok(())
+    }
+
+    /// Persist native private-lock release for corpses whose killer is offline.
+    pub fn release_missing_killers(
+        &mut self,
+        connected: &std::collections::HashSet<u32>,
+    ) -> io::Result<()> {
+        if !self
+            .state
+            .corpses
+            .values()
+            .any(|corpse| !corpse.released && !connected.contains(&corpse.killer))
+        {
+            return Ok(());
+        }
+        let mut candidate = self.state.clone();
+        for corpse in candidate.corpses.values_mut() {
+            if !corpse.released && !connected.contains(&corpse.killer) {
+                corpse.released = true;
+            }
+        }
+        self.save(&candidate)?;
+        self.state = candidate;
         Ok(())
     }
 
@@ -592,20 +619,13 @@ impl LootWorld {
         Ok(())
     }
 
-    pub fn claim(
-        &mut self,
-        owner: u32,
-        corpse: u32,
-        slot: usize,
-        now_ms: u64,
-        same_group: bool,
-    ) -> io::Result<()> {
+    pub fn claim(&mut self, owner: u32, corpse: u32, slot: usize, now_ms: u64) -> io::Result<()> {
         let corpse = self
             .state
             .corpses
             .get_mut(&corpse)
             .ok_or_else(|| invalid("Unknown corpse."))?;
-        corpse.authorize(owner, now_ms, same_group)?;
+        corpse.authorize(owner, now_ms)?;
         if slot >= LOOT_SLOTS || corpse.remaining()?.items[slot].is_none() {
             return Err(invalid("Corpse slot is empty or invalid."));
         }
@@ -632,10 +652,9 @@ impl LootWorld {
         id: u32,
         slot: Option<usize>,
         now_ms: u64,
-        same_group: bool,
     ) -> io::Result<Option<LootCollection<'_>>> {
         let corpse = self.get(id)?;
-        corpse.authorize(owner, now_ms, same_group)?;
+        corpse.authorize(owner, now_ms)?;
         if let Some(slot) = slot {
             if slot >= LOOT_SLOTS || corpse.claim != Some((owner, slot)) {
                 return Err(invalid("Loot claim is no longer valid."));
@@ -848,11 +867,11 @@ mod tests {
         let path = path();
         let mut world = LootWorld::load(path.clone(), 1076, &items).unwrap();
         let id = world.spawn(birth(1), &catalog(), &items).unwrap().unwrap();
-        assert!(world.claim(BOB, id, 0, 1001, false).is_err());
-        world.claim(ALICE, id, 0, 1001, false).unwrap();
-        assert!(world.claim(BOB, id, 0, 1001, true).is_err());
+        assert!(world.claim(BOB, id, 0, 1001).is_err());
+        world.claim(ALICE, id, 0, 1001).unwrap();
+        assert!(world.claim(BOB, id, 0, 1001).is_err());
         let award = world
-            .prepare_collection(ALICE, id, Some(0), 1002, false)
+            .prepare_collection(ALICE, id, Some(0), 1002)
             .unwrap()
             .unwrap();
         let mut inventory = Inventory::starter(&items).unwrap();
@@ -879,7 +898,7 @@ mod tests {
         assert!(missing
             .register_receipts(ALICE, &inventory.loot_receipts)
             .is_err());
-        assert!(restored.claim(ALICE, id, 0, 1003, false).is_err());
+        assert!(restored.claim(ALICE, id, 0, 1003).is_err());
         // A different player's conflicting claim is rejected on reconstruction.
         assert!(restored
             .register_receipts(BOB, &inventory.loot_receipts)
@@ -894,11 +913,9 @@ mod tests {
         let path = path();
         let mut world = LootWorld::load(path.clone(), 1076, &items).unwrap();
         let id = world.spawn(birth(1), &catalog(), &items).unwrap().unwrap();
-        assert!(world
-            .prepare_collection(BOB, id, None, 1001, false)
-            .is_err());
+        assert!(world.prepare_collection(BOB, id, None, 1001).is_err());
         let opening = world
-            .prepare_collection(BOB, id, None, 1000 + PRIVATE_LOOT_MS, false)
+            .prepare_collection(BOB, id, None, 1000 + PRIVATE_LOOT_MS)
             .unwrap()
             .unwrap();
         let bob = Inventory::starter(&items)
@@ -907,14 +924,12 @@ mod tests {
             .unwrap();
         opening.commit();
         assert!(world
-            .prepare_collection(ALICE, id, None, 1000 + PRIVATE_LOOT_MS, false)
+            .prepare_collection(ALICE, id, None, 1000 + PRIVATE_LOOT_MS)
             .unwrap()
             .is_none());
-        world
-            .claim(BOB, id, 0, 1000 + PRIVATE_LOOT_MS, false)
-            .unwrap();
+        world.claim(BOB, id, 0, 1000 + PRIVATE_LOOT_MS).unwrap();
         let award = world
-            .prepare_collection(BOB, id, Some(0), 1000 + PRIVATE_LOOT_MS, false)
+            .prepare_collection(BOB, id, Some(0), 1000 + PRIVATE_LOOT_MS)
             .unwrap()
             .unwrap();
         assert_eq!(award.credits, 0);
@@ -936,8 +951,38 @@ mod tests {
             .available(1000 + CORPSE_LIFETIME_MS)
             .unwrap());
         assert!(world
-            .claim(ALICE, id, 0, 1000 + CORPSE_LIFETIME_MS, false)
+            .claim(ALICE, id, 0, 1000 + CORPSE_LIFETIME_MS)
             .is_err());
+        fs::remove_file(&path).unwrap();
+        fs::remove_dir(path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    /// A failed world save retains the lock until a later release succeeds.
+    fn killer_logout_releases_private_corpse_only_after_durable_world_write() {
+        let items = ItemCatalog::load().unwrap();
+        let path = path();
+        let mut world = LootWorld::load(path.clone(), 1076, &items).unwrap();
+        let id = world.spawn(birth(1), &catalog(), &items).unwrap().unwrap();
+        world
+            .release_missing_killers(&std::collections::HashSet::from([ALICE]))
+            .unwrap();
+        assert!(!world.get(id).unwrap().released);
+        let blocked = path.with_extension("json.tmp");
+        fs::create_dir(&blocked).unwrap();
+        assert!(world
+            .release_missing_killers(&std::collections::HashSet::new())
+            .is_err());
+        assert!(!world.get(id).unwrap().released);
+        assert!(world.prepare_collection(BOB, id, None, 1001).is_err());
+        fs::remove_dir(blocked).unwrap();
+        world
+            .release_missing_killers(&std::collections::HashSet::new())
+            .unwrap();
+        assert!(world.prepare_collection(BOB, id, None, 1001).is_ok());
+        let mut restored = LootWorld::load(path.clone(), 1076, &items).unwrap();
+        assert!(restored.get(id).unwrap().released);
+        assert!(restored.prepare_collection(BOB, id, None, 1001).is_ok());
         fs::remove_file(&path).unwrap();
         fs::remove_dir(path.parent().unwrap()).unwrap();
     }
