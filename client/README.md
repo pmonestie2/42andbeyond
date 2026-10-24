@@ -183,7 +183,9 @@ stack is sent for loading, and the server checks its launcher family. Defeated
 mobs leave server-owned wrecks. Click a wreck to open its fixed loot panel;
 within 6 km, open it; within 2 km, tractor listed items into cargo. The client tracks
 the server's timed tractor packet and blocks repeat collection until completion
-or cancellation. Wreck and prospecting windows share a native interface packet;
+or cancellation. **Close Wreck** sends the native close action and cancels an
+active tractor; the wreck can be reopened while it remains visible. Wreck and
+prospecting windows share a native interface packet;
 the client keeps their state separate. The Open Wreck control follows the
 server's native loot verb. The radar shows nearby
 contacts and navigation targets.

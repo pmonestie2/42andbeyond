@@ -275,10 +275,16 @@ internal static class PeerChecks
                 int lootSlot = Array.FindIndex(stock, item => item?.Present == true);
                 Require(lootSlot >= 0, "Guaranteed Ishuan Revenant Young drop was missing from the corpse inventory.");
                 uint template = stock[lootSlot].Template;
+                observer.CloseLoot(wreck.Id);
+                Wait(observer, visitor, () => observer.World.OpenLootId == 0,
+                    "Native wreck close did not clear the server interface.");
+                observer.OpenLoot(wreck.Id);
+                Wait(observer, visitor, () => observer.World.OpenLootId == wreck.Id,
+                    "Wreck did not reopen after the native close action.");
                 observer.TakeLoot(wreck.Id, lootSlot);
                 Wait(observer, visitor, () => observer.World.Equipment.Cargo.Any(item => item?.Template == template),
                     "Tractor collection did not add the wreck item to cargo.");
-                Console.WriteLine("PASS: wreck targeting, open permission, guaranteed item stock and tractor collection");
+                Console.WriteLine("PASS: wreck targeting, open/close/reopen, guaranteed item stock and tractor collection");
                 Console.WriteLine("PASS: group invitation, decline, accept, roster, group chat, kick, rejoin, leave, disband; server mob spawn/status, weapon effects and damage");
             }
             Wait(observer, null, () => !observer.World.Players.ContainsKey(peerId), "Logged-out player remained visible.");

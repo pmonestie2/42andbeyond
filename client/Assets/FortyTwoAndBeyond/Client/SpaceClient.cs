@@ -705,6 +705,13 @@ namespace FortyTwoAndBeyond.Client
                 worker.Submit(new ClientCommand(CommandKind.OpenLoot, id));
         }
 
+        /// <summary>Close the current wreck window through its native server action.</summary>
+        public void CloseLoot(uint id)
+        {
+            if (Ready && snapshot.OpenLootId == id)
+                worker.Submit(new ClientCommand(CommandKind.CloseLoot, id));
+        }
+
         /// <summary>Tractor one server-owned wreck slot into cargo.</summary>
         public void TakeLoot(uint id, int slot)
         {

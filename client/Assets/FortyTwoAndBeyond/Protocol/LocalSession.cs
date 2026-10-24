@@ -572,6 +572,16 @@ namespace FortyTwoAndBeyond.Protocol
             Status = "Selecting wreck: " + corpse.Name;
         }
 
+        /// <summary>Close the server-owned wreck window and cancel any active tractor.</summary>
+        public void CloseLoot(uint corpse)
+        {
+            if (!Ready || gate != 0 || corpse == 0 || World.OpenLootId != corpse ||
+                World.Equipment.TargetId != corpse) return;
+            Send(0x2c, Wire.Body(w =>
+            { w.Write(Player); w.Write(1u); w.Write(corpse); w.Write(0u); }));
+            Status = "Closing wreck";
+        }
+
         /// <summary>Begin the server's timed tractor collection for one visible wreck slot.</summary>
         public void TakeLoot(uint corpse, int slot)
         {

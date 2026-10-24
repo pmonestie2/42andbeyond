@@ -5,7 +5,7 @@ using System.Threading;
 
 namespace FortyTwoAndBeyond.Protocol
 {
-    public enum CommandKind { Thrust, Steer, Warp, Gate, Dock, Launch, EnterStationRoom, StationPose, OpenNpc, ChooseNpc, BuyVendor, SellVendor, EquipCargo, UnequipMount, StoreCargo, RetrieveVault, OpenProduction, CloseProduction, SelectProductionRecipe, SelectProductionCategory, SetProductionLevels, StartProduction, InsertAnalysisSample, ReturnAnalysisSample, ActivateWeapon, ActivateDevice, ActivateTurboWeapons, Chat, ToggleWeapons, Formation, SelectTarget, FollowTarget, InvitePlayer, AnswerConfirmation, StopWeapons, OpenLoot, TakeLoot, OpenResource, CloseResource, ProspectResource, ActivateAbility, RequestRescue, ChooseRescue, SelfJumpstart }
+    public enum CommandKind { Thrust, Steer, Warp, Gate, Dock, Launch, EnterStationRoom, StationPose, OpenNpc, ChooseNpc, BuyVendor, SellVendor, EquipCargo, UnequipMount, StoreCargo, RetrieveVault, OpenProduction, CloseProduction, SelectProductionRecipe, SelectProductionCategory, SetProductionLevels, StartProduction, InsertAnalysisSample, ReturnAnalysisSample, ActivateWeapon, ActivateDevice, ActivateTurboWeapons, Chat, ToggleWeapons, Formation, SelectTarget, FollowTarget, InvitePlayer, AnswerConfirmation, StopWeapons, OpenLoot, CloseLoot, TakeLoot, OpenResource, CloseResource, ProspectResource, ActivateAbility, RequestRescue, ChooseRescue, SelfJumpstart }
 
     public readonly struct ClientCommand
     {
@@ -116,6 +116,7 @@ namespace FortyTwoAndBeyond.Protocol
                                 case CommandKind.AnswerConfirmation: session.AnswerConfirmation(command.Target != 0); break;
                                 case CommandKind.StopWeapons: session.StopWeapons(); break;
                                 case CommandKind.OpenLoot: session.OpenLoot(command.Target); break;
+                                case CommandKind.CloseLoot: session.CloseLoot(command.Target); break;
                                 case CommandKind.TakeLoot: session.TakeLoot(command.Target, command.Slot); break;
                                 case CommandKind.OpenResource: session.OpenResource(command.Target); break;
                                 case CommandKind.CloseResource: session.CloseResource(); break;

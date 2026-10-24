@@ -841,7 +841,9 @@ namespace FortyTwoAndBeyond.Client
             float height = open ? tractoring ? 272 : 250 : 126;
             float x = (CanvasWidth - 360) * .5f, y = CanvasHeight - height - 122;
             Panel(new Rect(x, y, 360, height));
-            GUI.Label(new Rect(x + 12, y + 8, 336, 22), wreck.Name, body);
+            GUI.Label(new Rect(x + 12, y + 8, open ? 250 : 336, 22), wreck.Name, body);
+            if (open && GUI.Button(new Rect(x + 274, y + 5, 74, 26), "CLOSE", button))
+                client.CloseLoot(wreckId);
             float distance = wreck.Position.Distance(snapshot.Position);
             GUI.Label(new Rect(x + 12, y + 33, 336, 20), $"WRECK RANGE  {distance / 1000:0.00} km", small);
             bool? lootVerb = snapshot.Verbs.Available(wreckId, 3);
@@ -1154,6 +1156,9 @@ namespace FortyTwoAndBeyond.Client
                     GUI.enabled = true;
                     if (lootVerb == false) GUILayout.Label("Move closer or leave warp to open", small);
                     if (tractoring) GUILayout.Label($"TRACTORING  {snapshot.LootProgress * 100:0}%  ·  {snapshot.LootRemainingSeconds:0.0}s", small);
+                    if (snapshot.OpenLootId == wreckId &&
+                        GUILayout.Button(tractoring ? "STOP TRACTOR AND CLOSE" : "CLOSE WRECK", button))
+                        client.CloseLoot(wreckId);
                     CorpseLoot contents = snapshot.Loot.FirstOrDefault(item => item.Id == wreckId);
                     if (snapshot.OpenLootId == wreckId && contents != null)
                         foreach (ItemView item in contents.Items.Where(item => item != null))
