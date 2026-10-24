@@ -79,6 +79,12 @@ pub fn mob_xp(mob_level: u32, combat_level: u32) -> u64 {
     }
 }
 
+/// Returns:
+///     u64: Archived prospecting XP for ore stack size and current explore level.
+pub fn mining_xp(ore_level: u32, quantity: u32, explore_level: u32) -> u64 {
+    260 * u64::from(ore_level) * u64::from(quantity) / (u64::from(explore_level) + 10)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -99,6 +105,12 @@ mod tests {
         assert_eq!(track(50, 2 * 645_000 + 322_500).unwrap().skill_points, 2);
         assert_eq!(track(50, 2 * 645_000 + 322_500).unwrap().fraction, 0.5);
         assert!(track(51, 0).is_err());
+    }
+
+    #[test]
+    fn mining_xp_uses_the_current_exploration_level() {
+        assert_eq!(mining_xp(2, 4, 0), 208);
+        assert_eq!(mining_xp(2, 4, 50), 34);
     }
 
     /// Existing inventory JSON gains the sandbox baseline without losing XP.

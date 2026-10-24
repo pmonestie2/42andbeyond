@@ -2199,6 +2199,17 @@ mod tests {
     }
 
     #[test]
+    fn weapon_ready_state_fixture_matches_nested_ship_aux() {
+        let encoded = weapon_state(1, 3, 5000, 1234., 0x2089).encode().unwrap();
+        let expected = "27 00 1b 00 01 00 00 00 1d 00 01 02 00 00 00 00 01 00 00 \
+            02 08 82 00 00 02 c0 01 88 13 00 00 00 40 9a 44 89 20 00 00"
+            .split_whitespace()
+            .map(|byte| u8::from_str_radix(byte, 16).unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(encoded, expected);
+    }
+
+    #[test]
     fn graphical_sector_parameters_include_a_real_backdrop() {
         let sector: Sector = serde_json::from_str(include_str!("../data/sector.json")).unwrap();
         let frame = server_parameters(&sector);

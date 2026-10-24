@@ -118,6 +118,10 @@ mean the corresponding gameplay system is complete.
   Queued awards replay after replacement, including sectors without a current
   player. Accepted in-range group members now receive their own frozen native
   base XP, with independent receipts and retry after one member's write fails.
+  Nav approaches now grant one-time exploration XP using the archived signature
+  bands, with durable discovered-nav IDs; mining XP uses the pilot's earned
+  exploration level instead of a fixed sandbox level. Group exploration XP
+  sharing remains open.
   Skill-point spending and ordinary level-one character creation remain open.
 - The public mission catalog loads all 364 imported definitions; the runtime
   currently offers seven fully wired NPC missions: Finer Points of Negotiation

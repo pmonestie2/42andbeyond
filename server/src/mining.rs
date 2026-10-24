@@ -365,8 +365,13 @@ impl PlayerSession {
         candidate
             .harvests
             .insert(cast.node, mutation.receipt.clone());
-        let xp =
-            260 * u64::from(self.items.get(cast.template)?.level) * u64::from(cast.quantity) / 60; // development Explore level 50
+        let explore_level =
+            crate::experience::track(candidate.xp_start_level, candidate.explore_xp)?.level;
+        let xp = crate::experience::mining_xp(
+            u32::from(self.items.get(cast.template)?.level),
+            cast.quantity,
+            explore_level,
+        );
         candidate.explore_xp = candidate
             .explore_xp
             .checked_add(xp)

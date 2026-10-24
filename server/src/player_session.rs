@@ -36,6 +36,8 @@ mod ability_actions;
 mod combat_experience;
 #[path = "dev_session.rs"]
 mod dev_session;
+#[path = "exploration.rs"]
+mod exploration;
 #[path = "follow_service.rs"]
 mod follow_service;
 #[path = "gating_service.rs"]
@@ -2620,6 +2622,22 @@ mod tests {
                 .unwrap();
         assert_eq!(saved, ship.inventory);
         assert!(mine_slot(&mut other, 0).is_err()); // no double award from another client
+    }
+
+    #[test]
+    fn mining_xp_uses_earned_explore_level_instead_of_sandbox_fifty() {
+        let mut ship = mining_ship();
+        ship.inventory.xp_start_level = 0;
+        mine_slot(&mut ship, 0).unwrap();
+        let cast = ship.mining.clone().unwrap();
+        let ore_level = u32::from(ship.items.get(cast.template).unwrap().level);
+        for _ in 0..100 {
+            ship.advance_mining(0.25).unwrap();
+        }
+        assert_eq!(
+            ship.inventory.explore_xp,
+            crate::experience::mining_xp(ore_level, cast.quantity, 0)
+        );
     }
 
     #[test]

@@ -104,6 +104,7 @@ impl PlayerSession {
                 .advance(&mut self.position, &self.sector.bounds, dt);
         }
         self.advance_mission_arrivals()?;
+        self.advance_exploration()?;
         self.dirty |= self.position != previous;
         self.advance_mining(dt)?;
         self.advance_looting(dt)?;

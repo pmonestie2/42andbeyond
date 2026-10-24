@@ -88,6 +88,8 @@ pub struct Inventory {
     #[serde(default)]
     pub explore_xp: u64,
     #[serde(default)]
+    pub explored_navs: std::collections::BTreeSet<u32>,
+    #[serde(default)]
     pub trade_xp: u64,
     /// Legacy sandbox inventories default to three level-50 tracks.
     #[serde(default = "sandbox_xp_start_level")]
@@ -235,6 +237,7 @@ impl Inventory {
             combat_xp: 0,
             combat_awards: BTreeMap::new(),
             explore_xp: 0,
+            explored_navs: std::collections::BTreeSet::new(),
             trade_xp: 0,
             xp_start_level: sandbox_xp_start_level(),
             refine_job: None,
@@ -287,6 +290,9 @@ impl Inventory {
         }
         if self.xp_start_level > crate::experience::MAX_LEVEL {
             return Err(invalid("Invalid XP starting level."));
+        }
+        if self.explored_navs.len() > 10_000 || self.explored_navs.contains(&0) {
+            return Err(invalid("Invalid explored navigation history."));
         }
         if self.combat_awards.len() > 20_000
             || self
