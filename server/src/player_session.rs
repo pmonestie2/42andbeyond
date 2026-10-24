@@ -3093,6 +3093,79 @@ mod tests {
     }
 
     #[test]
+    fn supply_run_checks_possession_consumes_cargo_and_learns_formula_once() {
+        let mut ship = session();
+        ship.account.character.race = 0;
+        ship.account.character.profession = 1;
+        ship.skill_catalog = SkillCatalog::for_profile(&ship.account.character).unwrap();
+        ship.inventory.missions.completed.extend([3, 5]);
+        ship.sector = ship.sectors.sector(10201).unwrap();
+        ship.logged_in = true;
+        enter_npc_room(&mut ship, 41);
+        ship.open_npc(41).unwrap();
+        assert_eq!(ship.npc_interaction.as_ref().unwrap().mission, Some(6));
+        for choice in [2, 3, 4] {
+            npc_choice(&mut ship, choice).unwrap();
+        }
+        ship.close_npc();
+        let prior = ship.pending.len();
+        assert!(ship.open_npc(41).is_err());
+        assert!(ship.npc_interaction.is_none());
+        assert_eq!(ship.pending.len(), prior);
+        assert_eq!(ship.inventory.missions.active[0].stage, 1);
+
+        for template in [1231, 1247, 1265] {
+            ship.inventory = ship
+                .inventory
+                .received(template, 1, u32::MAX as usize, &ship.items)
+                .unwrap();
+        }
+        ship.open_npc(41).unwrap();
+        assert_eq!(ship.inventory.missions.active[0].stage, 2);
+        assert_eq!(ship.inventory.cargo.iter().flatten().count(), 3);
+        ship.close_npc();
+
+        enter_npc_room(&mut ship, 45);
+        ship.open_npc(45).unwrap();
+        npc_choice(&mut ship, 2).unwrap();
+        let blocked = ship.state_dir.join("inventory.json.tmp");
+        std::fs::create_dir(&blocked).unwrap();
+        assert!(npc_choice(&mut ship, 3).is_err());
+        assert_eq!(ship.inventory.missions.active[0].stage, 2);
+        assert!(ship
+            .inventory
+            .cargo
+            .iter()
+            .flatten()
+            .any(|item| item.template == 1231));
+        std::fs::remove_dir(&blocked).unwrap();
+        npc_choice(&mut ship, 3).unwrap();
+        assert_eq!(ship.inventory.missions.active[0].stage, 3);
+        assert_eq!(ship.inventory.credits, 11_000);
+        assert!(!ship
+            .inventory
+            .cargo
+            .iter()
+            .flatten()
+            .any(|item| [1231, 1247, 1265].contains(&item.template)));
+        ship.close_npc();
+
+        enter_npc_room(&mut ship, 41);
+        ship.open_npc(41).unwrap();
+        assert!(ship.inventory.missions.completed.contains(&6));
+        assert!(ship.inventory.known_formulas.contains(&508));
+        assert!(ship.inventory.mission_awarded_skills.contains(&10));
+        assert_eq!(ship.inventory.combat_xp, 2500);
+        assert_eq!(ship.inventory.explore_xp, 2500);
+        assert_eq!(ship.inventory.trade_xp, 2500);
+        let saved: crate::inventory::Inventory =
+            serde_json::from_slice(&std::fs::read(ship.state_dir.join("inventory.json")).unwrap())
+                .unwrap();
+        assert_eq!(saved.missions, ship.inventory.missions);
+        assert_eq!(saved.known_formulas, ship.inventory.known_formulas);
+    }
+
+    #[test]
     fn scuttle_larva_mission_requires_prerequisite_and_awards_owned_item() {
         let mut ship = session();
         ship.account.character.race = 0;

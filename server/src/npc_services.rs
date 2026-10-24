@@ -49,6 +49,7 @@ impl PlayerSession {
             npc.name
         );
         self.close_npc();
+        let pending_start = self.pending.len();
         let catalog = crate::missions::MissionCatalog::load()?;
         let active = catalog.active_for_npc(identity, &self.inventory.missions);
         let mission = active
@@ -61,18 +62,26 @@ impl PlayerSession {
             mission,
             mission_stage: active.map_or(0, |(_, stage)| stage),
         });
+        if let Err(error) = self.show_npc_node(1) {
+            self.npc_interaction = None;
+            self.pending.truncate(pending_start);
+            return Err(error);
+        }
         if let Some(mission_id) = mission {
             let kind = if active.is_some() {
                 "objective"
             } else {
                 "offer"
             };
-            self.pending.push(packets::message(&format!(
-                "Mission {kind}: {}.",
-                catalog.get(mission_id)?.name
-            )));
+            self.pending.insert(
+                pending_start,
+                packets::message(&format!(
+                    "Mission {kind}: {}.",
+                    catalog.get(mission_id)?.name
+                )),
+            );
         }
-        self.show_npc_node(1)
+        Ok(())
     }
 
     /// Returns:
@@ -173,6 +182,38 @@ impl PlayerSession {
         for objective in &current_stage.completion {
             match objective.kind {
                 1 if objective.data == i64::from(self.npc_interaction.as_ref().unwrap().npc) => {}
+                2 | 13 => {
+                    let template = u32::try_from(objective.data)
+                        .map_err(|_| invalid("Mission item requirement is invalid."))?;
+                    let available: u64 = candidate
+                        .cargo
+                        .iter()
+                        .flatten()
+                        .filter(|item| item.template == template)
+                        .map(|item| u64::from(item.quantity))
+                        .sum();
+                    if available < u64::from(objective.count) || objective.count == 0 {
+                        return Err(invalid("Required mission cargo is missing."));
+                    }
+                    if objective.kind == 2 {
+                        let mut remaining = objective.count;
+                        for slot in &mut candidate.cargo {
+                            let Some(item) = slot.as_mut().filter(|item| item.template == template)
+                            else {
+                                continue;
+                            };
+                            let taken = remaining.min(item.quantity);
+                            item.quantity -= taken;
+                            remaining -= taken;
+                            if item.quantity == 0 {
+                                *slot = None;
+                            }
+                            if remaining == 0 {
+                                break;
+                            }
+                        }
+                    }
+                }
                 14 => {
                     let fee = u64::try_from(objective.data)
                         .map_err(|_| invalid("Mission credit requirement is invalid."))?;
@@ -239,6 +280,12 @@ impl PlayerSession {
                         ));
                     }
                     candidate.mission_awarded_skills.insert(skill);
+                }
+                11 => {
+                    let item = u32::try_from(amount)
+                        .map_err(|_| invalid("Mission formula template is invalid."))?;
+                    self.items.get(item)?;
+                    candidate.known_formulas.insert(item);
                 }
                 _ => return Err(invalid("Mission reward type is not implemented yet.")),
             }

@@ -1,8 +1,8 @@
 # Public mission content checkpoint
 
-Mission runtime work is deferred while combat and native navigation are repaired.
-The importer is complete enough to preserve the available public definitions;
-these records are not yet offered or rewarded by the game server.
+The importer preserves the available public definitions. The server currently
+offers a small, explicitly supported set of NPC missions; see ROADMAP.md for
+the wired IDs and remaining objective families.
 
 `tools/import_missions.py` reads only the public SQL `missions` table through
 `public_rows`. `data/missions.json` contains all 364 missions and 1,430 stages.
@@ -28,6 +28,17 @@ issues before costs/rewards, and store inventory plus mission progress in one
 atomic transaction. The archived progress bitmask and partial cost/reward mutation
 bugs should not be reproduced. Native mission AUX has12 slots and20 stage
 records per slot; the existing macro's job pickup target is a separate policy.
+
+Supply Run (6) uses reward kind11 with data508. All 24 imported kind11 reward
+entries reference manufacturable item templates; missions127 and130 explicitly
+describe a "schematic" or "blueprints" for their kind11 rewards, and mission49
+says the same reward grants the ability to build its ammunition. Item508 is
+EarthCorps Defender Missile ammo, whose three catalog components are exactly
+the three items collected and handed in during Supply Run. The runtime maps
+kind11 to a durable known formula. This is a content-backed inference: the
+archived active reward enum ends at kind10 and the source SQL is not checked
+into this repository. Kind12 remains unsupported, and other mission rewards
+are still gated case by case before their missions are offered.
 
 Rebuild with `C:\PYTHON\python.exe server/tools/import_missions.py PATH_TO_SQL`.
 Synthetic tests verify stage ordering, rules/attributes, script operands, repairs,
