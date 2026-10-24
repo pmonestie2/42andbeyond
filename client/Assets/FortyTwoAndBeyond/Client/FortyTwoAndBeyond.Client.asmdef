@@ -1,0 +1,5 @@
+{
+  "name": "FortyTwoAndBeyond.Client",
+  "rootNamespace": "FortyTwoAndBeyond.Client",
+  "references": ["FortyTwoAndBeyond.Protocol"]
+}

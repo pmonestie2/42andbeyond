@@ -1,0 +1,5 @@
+{
+  "name": "FortyTwoAndBeyond.Editor",
+  "references": ["FortyTwoAndBeyond.Client", "FortyTwoAndBeyond.Protocol"],
+  "includePlatforms": ["Editor"]
+}

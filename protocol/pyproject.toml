@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "beyond-protocol"
+version = "0.1.0"
+description = "Shared Earth and Beyond wire protocol and session library"
+requires-python = ">=3.11"
+
+[tool.setuptools.packages.find]
+include = ["beyond_protocol*"]
+
+[tool.setuptools.package-data]
+beyond_protocol = ["py.typed"]
