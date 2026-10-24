@@ -43,6 +43,7 @@ class SectorImportTests(unittest.TestCase):
         self.assertEqual(len(result['navpoints']), 1)
         nav = result['navpoints'][0]
         self.assertEqual((nav['id'], nav['source_id'], nav['scale']), (100001, 1, 1.))
+        self.assertGreater(nav['radius'], 0.)
         self.assertEqual(nav['orientation'], [0., 0., 0., 1.])
         self.assertEqual(nav['gate_destination'], 1077)
         self.assertTrue(nav['navigation_present'])

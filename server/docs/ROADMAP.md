@@ -97,6 +97,10 @@ mean the corresponding gameplay system is complete.
   avatar pose in the NPC's advertised room. Room departure closes the active
   conversation and vendor window; restored vendor sessions are checked against
   the saved room. Disposable native vendor/restart smoke passes with room entry.
+- Numeric base asset radii now cover all 7,108 public static nav objects; gate
+  and dock buttons/admission measure the original 5,000 m from object surface.
+  A metadata-only comparison and boundary tests pass. Native graphical checks
+  across other gates and stations remain pending.
 
 ## Next implementation work
 

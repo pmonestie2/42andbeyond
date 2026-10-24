@@ -14,6 +14,7 @@ import tempfile
 import unicodedata
 
 from build import ROOT
+from import_asset_radii import load_radii
 from import_sector import export_sector, number, public_rows
 from import_spawns import PublicSpawns
 from import_resources import PublicResources
@@ -25,11 +26,12 @@ def export_universe(dump: Path, output: Path, *, default_sector_output: Path | N
     sectors: list[object] = []
     spawns = PublicSpawns(dump)
     resources = PublicResources(dump)
+    radii = load_radii(ROOT / 'data/asset_radii.json')
     with tempfile.TemporaryDirectory(prefix='enb-public-maps-') as folder:
         path = Path(folder) / 'sector.json'
         for index, sector_id in enumerate(ids):
             with redirect_stdout(io.StringIO()):
-                export_sector(dump, sector_id, path)
+                export_sector(dump, sector_id, path, radii=radii)
             sector = json.loads(path.read_text())
             sector['mobs'] = spawns.for_sector(sector_id)
             sector['resources'] = resources.for_sector(sector_id)

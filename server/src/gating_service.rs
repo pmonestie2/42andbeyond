@@ -26,8 +26,8 @@ impl PlayerSession {
             .iter()
             .find(|nav| nav.id == target && nav.object_type == 11)
             .ok_or_else(|| invalid("Select a sector gate first."))?;
-        if distance(self.position, gate.position) > 2500. {
-            return Err(invalid("Move within 2500m of the gate first."));
+        if gate.range_to(self.position) > 5000. {
+            return Err(invalid("Move within 5000m of the gate surface first."));
         }
         let destination = gate
             .gate_destination

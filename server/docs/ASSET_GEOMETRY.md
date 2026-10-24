@@ -27,6 +27,14 @@ center; actual displacement, home position and explicit absolute-distance leash
 checks remain center-based. Spawn-marker geometry is separate and still pending;
 roaming boundaries currently use the marker center and configured region radius.
 
+All 7,108 public static navigation objects now carry their base asset radius;
+7,078 have a positive radius and 30 decorative objects have a catalog value of
+zero. The default Alpha map and standalone Alpha content carry the same numeric
+metadata. A deep comparison verified that only static nav radius fields changed.
+Gate and station buttons and admission use the unscaled receiver surface
+distance and the archived 5,000 metre docking range. The previous server gate
+threshold of 2,500 metres was a prototype limit.
+
 Player weapon admission follows the additional archived
 `Equipable::CheckRange` size contribution: target surface distance must be at
 most weapon range plus target radius times visual scale. At scale one the two
@@ -38,7 +46,7 @@ Native follow also measures target surface distance. MOB contacts carry their
 explicit radius; player contacts use the archived player radius of 245 metres.
 The existing positive movement clamp stops ten metres from that surface instead
 of letting a large tick pass inside it. Reverse movement still uses signed
-velocity. Resource/husk radius overrides, static navigation geometry, arbitrary
+velocity. Resource/husk radius overrides, arbitrary
 SQL object-radius patches and exact collision/avoidance are separate work.
 
 Regenerate the numeric catalog with:

@@ -13,7 +13,7 @@ impl PlayerSession {
         if !self.logged_in
             || self.target != target
             || self.hull <= 0.
-            || distance(self.position, station.position) > 5000.
+            || station.range_to(self.position) > 5000.
             || self.warp.active()
         {
             return Err(invalid(

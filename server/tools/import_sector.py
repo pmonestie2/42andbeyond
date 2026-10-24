@@ -14,6 +14,7 @@ import re
 from typing import TypedDict
 
 from build import ROOT
+from import_asset_radii import load_radii
 from import_mob import mysql_rows
 
 SECTOR_TABLES = frozenset({'sectors', 'systems', 'sector_objects', 'sector_nav_points'})
@@ -67,6 +68,7 @@ class NavigationObject(TypedDict):
     name: str
     object_type: int
     asset: int
+    radius: float
     position: list[float]
     orientation: list[float]
     hsv: list[float]
@@ -79,7 +81,10 @@ class NavigationObject(TypedDict):
     huge: bool
 
 
-def export_sector(dump: Path, sector_id: int, output: Path) -> None:
+def export_sector(dump: Path, sector_id: int, output: Path,
+                  *, radii: dict[int, float] | None = None) -> None:
+    if radii is None:
+        radii = load_radii(ROOT / 'data/asset_radii.json')
     sector: SqlRow | None = None
     objects: list[SqlRow] = []
     systems: dict[int, str] = {}
@@ -110,13 +115,16 @@ def export_sector(dump: Path, sector_id: int, output: Path) -> None:
         orientation = [number(row, f'orientation_{axis}') for axis in 'uvwz']
         length = math.sqrt(sum(value*value for value in orientation))
         orientation = [value / length for value in orientation] if length > 0.00001 else [0., 0., 0., 1.]
+        asset = int(number(row, 'base_asset_id'))
+        if asset not in radii:
+            raise ValueError(f'Static object asset {asset} has no native radius')
         navpoints.append({'id': 100000 + identifier, 'source_id': identifier,
                           'name': row['name'] or f'Object {identifier}',
                           # Database object types are not native Create.Type.
                           # Unsupported static content remains decorative until
                           # its behavior has an actor implementation.
                           'object_type': kind if kind in (3, 11, 12, 37) else 37,
-                          'asset': int(number(row, 'base_asset_id')),
+                          'asset': asset, 'radius': radii[asset],
                           'position': [number(row, f'position_{axis}') for axis in 'xyz'],
                           'orientation': orientation,
                           'hsv': [number(row, field) for field in ('h', 's', 'v')],

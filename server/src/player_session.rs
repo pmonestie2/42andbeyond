@@ -1694,6 +1694,47 @@ mod tests {
         ship.target = 100000;
         ship
     }
+    #[test]
+    fn gate_and_station_admission_use_exported_unscaled_surface_radii() {
+        let mut gate_ship = gate_ship();
+        let gate = gate_ship
+            .sector
+            .navpoints
+            .iter()
+            .find(|nav| nav.id == 100000)
+            .unwrap()
+            .clone();
+        assert!(gate.radius > 0.);
+        gate_ship.position = [
+            gate.position[0] + gate.radius + 5001.,
+            gate.position[1],
+            gate.position[2],
+        ];
+        assert!(gate_ship.begin_gating(gate.id).is_err());
+        gate_ship.position[0] -= 2.;
+        gate_ship.begin_gating(gate.id).unwrap();
+
+        let mut dock_ship = session();
+        dock_ship.sector = dock_ship.sectors.sector(1076).unwrap();
+        dock_ship.logged_in = true;
+        let station = dock_ship
+            .sector
+            .navpoints
+            .iter()
+            .find(|nav| nav.object_type == 12)
+            .unwrap()
+            .clone();
+        assert!(station.radius > 0.);
+        dock_ship.target = station.id;
+        dock_ship.position = [
+            station.position[0] + station.radius + 5001.,
+            station.position[1],
+            station.position[2],
+        ];
+        assert!(dock_ship.begin_docking(station.id).is_err());
+        dock_ship.position[0] -= 2.;
+        dock_ship.begin_docking(station.id).unwrap();
+    }
     fn make_gate_camera_due(ship: &mut PlayerSession) {
         ship.gate_transit.as_mut().unwrap().started_at_ms =
             crate::resources::unix_ms() - crate::gating::GATE_CAMERA_DELAY_MS;
@@ -2621,6 +2662,18 @@ mod tests {
             ship.pending.last().unwrap(),
             &packets::target_verbs(gate.id, &[(10, 0)])
         );
+        ship.position[0] = gate.position[0] + gate.radius + 5000.;
+        ship.refresh_target_verbs(true);
+        assert_eq!(
+            ship.pending.last().unwrap(),
+            &packets::target_verbs(gate.id, &[(10, 0)])
+        );
+        ship.position[0] += 1.;
+        ship.refresh_target_verbs(true);
+        assert_eq!(
+            ship.pending.last().unwrap(),
+            &packets::target_verbs(gate.id, &[(10, 2)])
+        );
         ship.pending.clear();
         ship.advance_player(0.).unwrap();
         assert!(!ship.pending.iter().any(|frame| frame.opcode == 0x5c));
@@ -2638,6 +2691,18 @@ mod tests {
         assert_eq!(
             ship.pending.last().unwrap(),
             &packets::target_verbs(station.id, &[(8, 0)])
+        );
+        ship.position[0] = station.position[0] + station.radius + 5000.;
+        ship.refresh_target_verbs(true);
+        assert_eq!(
+            ship.pending.last().unwrap(),
+            &packets::target_verbs(station.id, &[(8, 0)])
+        );
+        ship.position[0] += 1.;
+        ship.refresh_target_verbs(true);
+        assert_eq!(
+            ship.pending.last().unwrap(),
+            &packets::target_verbs(station.id, &[(8, 2)])
         );
     }
 

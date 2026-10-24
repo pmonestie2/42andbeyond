@@ -22,6 +22,7 @@
       "name": "Sector Gate to Asteroid Belt Beta",
       "object_type": 11,
       "asset": 48,
+      "radius": 1796.7482,
       "position": [
         -123130.0,
         -160490.0,
@@ -51,6 +52,7 @@
       "name": "ECS Dauntless",
       "object_type": 12,
       "asset": 166,
+      "radius": 2216.4021,
       "position": [
         49390.0,
         -146520.0,
@@ -80,6 +82,7 @@
       "name": "Sado Pit",
       "object_type": 37,
       "asset": 127,
+      "radius": 85.6768,
       "position": [
         -152740.0,
         -63860.0,
@@ -109,6 +112,7 @@
       "name": "Saturn Beltway 6",
       "object_type": 37,
       "asset": 127,
+      "radius": 85.6768,
       "position": [
         153440.0,
         21150.0,
@@ -138,6 +142,7 @@
       "name": "InfinitiCorp Beltway 6",
       "object_type": 37,
       "asset": 127,
+      "radius": 85.6768,
       "position": [
         -44720.0,
         -135460.0,
@@ -167,6 +172,7 @@
       "name": "Lower Fields Checkpoint",
       "object_type": 37,
       "asset": 127,
+      "radius": 85.6768,
       "position": [
         95840.0,
         -144070.0,
@@ -196,6 +202,7 @@
       "name": "Sonora Formation",
       "object_type": 37,
       "asset": 127,
+      "radius": 85.6768,
       "position": [
         64970.0,
         -62260.0,
@@ -225,6 +232,7 @@
       "name": "Klondike Circle",
       "object_type": 37,
       "asset": 127,
+      "radius": 85.6768,
       "position": [
         42550.0,
         -83040.0,
@@ -254,6 +262,7 @@
       "name": "No-Man's Land",
       "object_type": 37,
       "asset": 127,
+      "radius": 85.6768,
       "position": [
         56523.9,
         -66113.2,
@@ -283,6 +292,7 @@
       "name": "Jackson Clump",
       "object_type": 37,
       "asset": 127,
+      "radius": 85.6768,
       "position": [
         103830.0,
         -84380.0,
@@ -312,6 +322,7 @@
       "name": "Klondike Pit",
       "object_type": 37,
       "asset": 127,
+      "radius": 85.6768,
       "position": [
         141298.0,
         -114393.0,
@@ -341,6 +352,7 @@
       "name": "InfinitiCorp Sector Headquarters",
       "object_type": 37,
       "asset": 377,
+      "radius": 3784.2214,
       "position": [
         -99960.0,
         340.0,
@@ -370,6 +382,7 @@
       "name": "Asteroid AA-244",
       "object_type": 37,
       "asset": 127,
+      "radius": 85.6768,
       "position": [
         -11961.1,
         12096.8,
@@ -399,6 +412,7 @@
       "name": "Asteroid AA-374",
       "object_type": 37,
       "asset": 486,
+      "radius": 809.659,
       "position": [
         164620.0,
         -61860.0,
@@ -428,6 +442,7 @@
       "name": "Sector Gate to Saturn",
       "object_type": 11,
       "asset": 48,
+      "radius": 1796.7482,
       "position": [
         187195.0,
         -16192.0,
@@ -457,6 +472,7 @@
       "name": "AS 4x200",
       "object_type": 37,
       "asset": 492,
+      "radius": 582.7339,
       "position": [
         -76567.3,
         96971.3,
@@ -486,6 +502,7 @@
       "name": "AS 4x200",
       "object_type": 37,
       "asset": 492,
+      "radius": 582.7339,
       "position": [
         -51132.8,
         -140694.0,
@@ -515,6 +532,7 @@
       "name": "AS 4x200",
       "object_type": 37,
       "asset": 492,
+      "radius": 582.7339,
       "position": [
         -129320.0,
         -55102.6,
@@ -544,6 +562,7 @@
       "name": "AS 4x200",
       "object_type": 37,
       "asset": 492,
+      "radius": 582.7339,
       "position": [
         -114318.0,
         -32106.4,
@@ -573,6 +592,7 @@
       "name": "AS 4x200",
       "object_type": 37,
       "asset": 492,
+      "radius": 582.7339,
       "position": [
         -132182.0,
         26148.0,
@@ -602,6 +622,7 @@
       "name": "AS 4x200",
       "object_type": 37,
       "asset": 492,
+      "radius": 582.7339,
       "position": [
         -122687.0,
         77259.8,
@@ -631,6 +652,7 @@
       "name": "AS 4x400",
       "object_type": 37,
       "asset": 492,
+      "radius": 582.7339,
       "position": [
         -64901.5,
         -130505.0,
@@ -660,6 +682,7 @@
       "name": "AS 4x400",
       "object_type": 37,
       "asset": 492,
+      "radius": 582.7339,
       "position": [
         -64165.4,
         -116529.0,
@@ -689,6 +712,7 @@
       "name": "AS 4x400",
       "object_type": 37,
       "asset": 492,
+      "radius": 582.7339,
       "position": [
         -45299.9,
         -121550.0,
@@ -718,6 +742,7 @@
       "name": "Mining Station",
       "object_type": 37,
       "asset": 412,
+      "radius": 2212.949,
       "position": [
         -47429.6,
         112666.0,
@@ -747,6 +772,7 @@
       "name": "Asteroid 3x500k",
       "object_type": 37,
       "asset": 491,
+      "radius": 586.6614,
       "position": [
         -88427.0,
         94543.3,
@@ -776,6 +802,7 @@
       "name": "Asteroid 3x500k",
       "object_type": 37,
       "asset": 491,
+      "radius": 586.6614,
       "position": [
         -159878.0,
         -70372.8,
@@ -805,6 +832,7 @@
       "name": "Asteroid 3x500k",
       "object_type": 37,
       "asset": 491,
+      "radius": 586.6614,
       "position": [
         -102182.0,
         -103697.0,
@@ -834,6 +862,7 @@
       "name": "Asteroid 3x500k",
       "object_type": 37,
       "asset": 491,
+      "radius": 586.6614,
       "position": [
         -84996.9,
         -108869.0,
@@ -863,6 +892,7 @@
       "name": "Asteroid 3x500k",
       "object_type": 37,
       "asset": 491,
+      "radius": 586.6614,
       "position": [
         -69044.1,
         -114148.0,
@@ -892,6 +922,7 @@
       "name": "Asteroid 3x500k",
       "object_type": 37,
       "asset": 491,
+      "radius": 586.6614,
       "position": [
         -55281.6,
         -121183.0,
@@ -921,6 +952,7 @@
       "name": "Asteroid 3x500k",
       "object_type": 37,
       "asset": 491,
+      "radius": 586.6614,
       "position": [
         -118302.0,
         -84766.9,
@@ -950,6 +982,7 @@
       "name": "Asteroid 3x500k",
       "object_type": 37,
       "asset": 491,
+      "radius": 586.6614,
       "position": [
         -50178.6,
         -118709.0,
@@ -979,6 +1012,7 @@
       "name": "Asteroid 3x500k",
       "object_type": 37,
       "asset": 491,
+      "radius": 586.6614,
       "position": [
         -106353.0,
         -61647.1,
@@ -1008,6 +1042,7 @@
       "name": "Asteroid 3x500k",
       "object_type": 37,
       "asset": 491,
+      "radius": 586.6614,
       "position": [
         -117275.0,
         -29251.7,
@@ -1037,6 +1072,7 @@
       "name": "Asteroid 3x500k",
       "object_type": 37,
       "asset": 491,
+      "radius": 586.6614,
       "position": [
         -162327.0,
         -71874.6,
@@ -1066,6 +1102,7 @@
       "name": "Asteroid 3x500k",
       "object_type": 37,
       "asset": 491,
+      "radius": 586.6614,
       "position": [
         -131533.0,
         76.1269,
@@ -1095,6 +1132,7 @@
       "name": "Asteroid 3x500k",
       "object_type": 37,
       "asset": 491,
+      "radius": 586.6614,
       "position": [
         -124941.0,
         19578.3,
@@ -1124,6 +1162,7 @@
       "name": "Asteroid 3x500k",
       "object_type": 37,
       "asset": 491,
+      "radius": 586.6614,
       "position": [
         -117272.0,
         39963.2,
@@ -1153,6 +1192,7 @@
       "name": "Asteroid 3x500k",
       "object_type": 37,
       "asset": 491,
+      "radius": 586.6614,
       "position": [
         -120376.0,
         33261.9,
@@ -1182,6 +1222,7 @@
       "name": "Asteroid 3x500k",
       "object_type": 37,
       "asset": 491,
+      "radius": 586.6614,
       "position": [
         -114390.0,
         80880.4,
@@ -1211,6 +1252,7 @@
       "name": "Asteroid 3x500k",
       "object_type": 37,
       "asset": 491,
+      "radius": 586.6614,
       "position": [
         -103633.0,
         83048.4,
@@ -1240,6 +1282,7 @@
       "name": "Asteroid 3x500k",
       "object_type": 37,
       "asset": 491,
+      "radius": 586.6614,
       "position": [
         -86108.0,
         113728.0,
@@ -1269,6 +1312,7 @@
       "name": "Asteroid 3x500k",
       "object_type": 37,
       "asset": 491,
+      "radius": 586.6614,
       "position": [
         -86108.0,
         113728.0,
@@ -1298,6 +1342,7 @@
       "name": "Sector Gate to Earth",
       "object_type": 11,
       "asset": 48,
+      "radius": 1796.7482,
       "position": [
         -135496.0,
         137789.0,
@@ -1327,6 +1372,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         12470.3,
         -101926.0,
@@ -1356,6 +1402,7 @@
       "name": "AS 2x300",
       "object_type": 37,
       "asset": 490,
+      "radius": 809.659,
       "position": [
         -171560.0,
         -10704.7,
@@ -1385,6 +1432,7 @@
       "name": "Toughnut Pit",
       "object_type": 37,
       "asset": 127,
+      "radius": 85.6768,
       "position": [
         -171970.0,
         -13614.8,
@@ -1414,6 +1462,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         22470.3,
         -101926.0,
@@ -1443,6 +1492,7 @@
       "name": "Cresson Pit",
       "object_type": 37,
       "asset": 127,
+      "radius": 85.6768,
       "position": [
         -58239.5,
         142059.0,
@@ -1472,6 +1522,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         52470.3,
         -101926.0,
@@ -1501,6 +1552,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         72931.8,
         -101822.0,
@@ -1530,6 +1582,7 @@
       "name": "AS 2x600",
       "object_type": 37,
       "asset": 490,
+      "radius": 809.659,
       "position": [
         -61518.8,
         111136.0,
@@ -1559,6 +1612,7 @@
       "name": "AS 2x600",
       "object_type": 37,
       "asset": 490,
+      "radius": 809.659,
       "position": [
         -155165.0,
         -76050.7,
@@ -1588,6 +1642,7 @@
       "name": "AS 4x715",
       "object_type": 37,
       "asset": 492,
+      "radius": 582.7339,
       "position": [
         -68725.9,
         108348.0,
@@ -1617,6 +1672,7 @@
       "name": "AS 2x600",
       "object_type": 37,
       "asset": 490,
+      "radius": 809.659,
       "position": [
         -65563.0,
         101334.0,
@@ -1646,6 +1702,7 @@
       "name": "AS 2x600",
       "object_type": 37,
       "asset": 490,
+      "radius": 809.659,
       "position": [
         -120189.0,
         -28859.2,
@@ -1675,6 +1732,7 @@
       "name": "AS 2x600",
       "object_type": 37,
       "asset": 490,
+      "radius": 809.659,
       "position": [
         -159878.0,
         -67910.1,
@@ -1704,6 +1762,7 @@
       "name": "AS 2x600",
       "object_type": 37,
       "asset": 490,
+      "radius": 809.659,
       "position": [
         -155909.0,
         -63044.7,
@@ -1733,6 +1792,7 @@
       "name": "AS 4x715",
       "object_type": 37,
       "asset": 492,
+      "radius": 582.7339,
       "position": [
         -107040.0,
         76755.6,
@@ -1762,6 +1822,7 @@
       "name": "AS 2x300",
       "object_type": 37,
       "asset": 490,
+      "radius": 809.659,
       "position": [
         -59475.0,
         99520.8,
@@ -1791,6 +1852,7 @@
       "name": "AS 4x715",
       "object_type": 37,
       "asset": 492,
+      "radius": 582.7339,
       "position": [
         -132574.0,
         11257.0,
@@ -1820,6 +1882,7 @@
       "name": "Asteroid 3x750k",
       "object_type": 37,
       "asset": 491,
+      "radius": 586.6614,
       "position": [
         -71332.1,
         98935.6,
@@ -1849,6 +1912,7 @@
       "name": "AS 2x600",
       "object_type": 37,
       "asset": 490,
+      "radius": 809.659,
       "position": [
         -106908.0,
         63622.2,
@@ -1878,6 +1942,7 @@
       "name": "AS 2x300",
       "object_type": 37,
       "asset": 490,
+      "radius": 809.659,
       "position": [
         -122179.0,
         65514.7,
@@ -1907,6 +1972,7 @@
       "name": "AS 4x715",
       "object_type": 37,
       "asset": 492,
+      "radius": 582.7339,
       "position": [
         -98772.3,
         91288.2,
@@ -1936,6 +2002,7 @@
       "name": "Asteroid 3x750k",
       "object_type": 37,
       "asset": 491,
+      "radius": 586.6614,
       "position": [
         -121692.0,
         24152.1,
@@ -1965,6 +2032,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         100000.0,
         -35000.0,
@@ -1994,6 +2062,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         103750.0,
         -35000.0,
@@ -2023,6 +2092,7 @@
       "name": "Beltway Junction",
       "object_type": 37,
       "asset": 127,
+      "radius": 85.6768,
       "position": [
         -101625.0,
         101848.0,
@@ -2052,6 +2122,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         80000.0,
         -35000.0,
@@ -2081,6 +2152,7 @@
       "name": "Saturn Beltway 1",
       "object_type": 37,
       "asset": 127,
+      "radius": 85.6768,
       "position": [
         -52480.9,
         105728.0,
@@ -2110,6 +2182,7 @@
       "name": "Saturn Beltway 3",
       "object_type": 37,
       "asset": 127,
+      "radius": 85.6768,
       "position": [
         48393.3,
         107668.0,
@@ -2139,6 +2212,7 @@
       "name": "InfinitiCorp Beltway 3",
       "object_type": 37,
       "asset": 127,
+      "radius": 85.6768,
       "position": [
         -124903.0,
         -28124.1,
@@ -2168,6 +2242,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         37500.0,
         -35000.0,
@@ -2197,6 +2272,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         98750.0,
         -35000.0,
@@ -2226,6 +2302,7 @@
       "name": "Saturn Beltway 2",
       "object_type": 37,
       "asset": 127,
+      "radius": 85.6768,
       "position": [
         -4383.34,
         112220.0,
@@ -2255,6 +2332,7 @@
       "name": "Saturn Beltway 4",
       "object_type": 37,
       "asset": 127,
+      "radius": 85.6768,
       "position": [
         87191.0,
         88915.7,
@@ -2284,6 +2362,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         101250.0,
         -35000.0,
@@ -2313,6 +2392,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         50000.0,
         -35000.0,
@@ -2342,6 +2422,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         55000.0,
         -35000.0,
@@ -2371,6 +2452,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         61250.0,
         -35000.0,
@@ -2400,6 +2482,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         36250.0,
         -35000.0,
@@ -2429,6 +2512,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         14970.3,
         -101926.0,
@@ -2458,6 +2542,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         87470.3,
         -101926.0,
@@ -2487,6 +2572,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         84970.3,
         -101926.0,
@@ -2516,6 +2602,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         83750.0,
         -35000.0,
@@ -2545,6 +2632,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         53750.0,
         -35000.0,
@@ -2574,6 +2662,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         71250.0,
         -35000.0,
@@ -2603,6 +2692,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         11220.3,
         -101926.0,
@@ -2632,6 +2722,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         67500.0,
         -35000.0,
@@ -2661,6 +2752,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         82470.3,
         -101926.0,
@@ -2690,6 +2782,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         95000.0,
         -35000.0,
@@ -2719,6 +2812,7 @@
       "name": "InfinitiCorp Beltway 1",
       "object_type": 37,
       "asset": 127,
+      "radius": 85.6768,
       "position": [
         -119730.0,
         59170.8,
@@ -2748,6 +2842,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         31250.0,
         -35000.0,
@@ -2777,6 +2872,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         39970.3,
         -101926.0,
@@ -2806,6 +2902,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         69970.3,
         -101926.0,
@@ -2835,6 +2932,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         86250.0,
         -35000.0,
@@ -2864,6 +2962,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         43750.0,
         -35000.0,
@@ -2893,6 +2992,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         92500.0,
         -35000.0,
@@ -2922,6 +3022,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         9970.33,
         -101926.0,
@@ -2951,6 +3052,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         89970.3,
         -101926.0,
@@ -2980,6 +3082,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         27470.3,
         -101926.0,
@@ -3009,6 +3112,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         91250.0,
         -35000.0,
@@ -3038,6 +3142,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         26250.0,
         -35000.0,
@@ -3067,6 +3172,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         103750.0,
         -35000.0,
@@ -3096,6 +3202,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         28720.3,
         -101926.0,
@@ -3125,6 +3232,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         44970.3,
         -101926.0,
@@ -3154,6 +3262,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         105000.0,
         -35000.0,
@@ -3183,6 +3292,7 @@
       "name": "InfinitiCorp Beltway 4",
       "object_type": 37,
       "asset": 127,
+      "radius": 85.6768,
       "position": [
         -112617.0,
         -73388.1,
@@ -3212,6 +3322,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         32470.3,
         -101926.0,
@@ -3241,6 +3352,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         31250.0,
         -35000.0,
@@ -3270,6 +3382,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         73750.0,
         -35000.0,
@@ -3299,6 +3412,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         96250.0,
         -35000.0,
@@ -3328,6 +3442,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         43720.3,
         -101926.0,
@@ -3357,6 +3472,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         17470.3,
         -101926.0,
@@ -3386,6 +3502,7 @@
       "name": "EarthCorps Checkpoint",
       "object_type": 37,
       "asset": 127,
+      "radius": 85.6768,
       "position": [
         47966.3,
         -106953.0,
@@ -3415,6 +3532,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         108750.0,
         -35000.0,
@@ -3444,6 +3562,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         30000.0,
         -35000.0,
@@ -3473,6 +3592,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         41220.3,
         -101926.0,
@@ -3502,6 +3622,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         54970.3,
         -101926.0,
@@ -3531,6 +3652,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         25000.0,
         -35000.0,
@@ -3560,6 +3682,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         108750.0,
         -35000.0,
@@ -3589,6 +3712,7 @@
       "name": "InfinitiCorp Beltway 7",
       "object_type": 37,
       "asset": 127,
+      "radius": 85.6768,
       "position": [
         -103.922,
         -141931.0,
@@ -3618,6 +3742,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         69970.3,
         -101926.0,
@@ -3647,6 +3772,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         48750.0,
         -35000.0,
@@ -3676,6 +3802,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         66250.0,
         -35000.0,
@@ -3705,6 +3832,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         106250.0,
         -35000.0,
@@ -3734,6 +3862,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         56220.3,
         -101926.0,
@@ -3763,6 +3892,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         48720.3,
         -101926.0,
@@ -3792,6 +3922,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         47500.0,
         -35000.0,
@@ -3821,6 +3952,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         33720.3,
         -101926.0,
@@ -3850,6 +3982,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         72500.0,
         -35000.8,
@@ -3879,6 +4012,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         18720.3,
         -101926.0,
@@ -3908,6 +4042,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         51250.0,
         -35000.0,
@@ -3937,6 +4072,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         62500.0,
         -35000.0,
@@ -3966,6 +4102,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         86220.3,
         -101926.0,
@@ -3995,6 +4132,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         41250.0,
         -35000.0,
@@ -4024,6 +4162,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         56250.0,
         -35000.0,
@@ -4053,6 +4192,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         51220.3,
         -101926.0,
@@ -4082,6 +4222,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         40000.0,
         -35000.0,
@@ -4111,6 +4252,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         71220.3,
         -101926.0,
@@ -4140,6 +4282,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         37470.3,
         -101926.0,
@@ -4169,6 +4312,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         60000.0,
         -35000.0,
@@ -4198,6 +4342,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         77470.3,
         -101926.0,
@@ -4227,6 +4372,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         9970.33,
         -101926.0,
@@ -4256,6 +4402,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         79970.3,
         -101926.0,
@@ -4285,6 +4432,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         63750.0,
         -35000.0,
@@ -4314,6 +4462,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         88750.0,
         -35000.0,
@@ -4343,6 +4492,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         58750.0,
         -35000.0,
@@ -4372,6 +4522,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         6220.33,
         -101926.0,
@@ -4401,6 +4552,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         67500.0,
         -35000.0,
@@ -4430,6 +4582,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         26250.0,
         -35000.0,
@@ -4459,6 +4612,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         22470.3,
         -101926.0,
@@ -4488,6 +4642,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         85000.0,
         -35000.0,
@@ -4517,6 +4672,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         63720.3,
         -101926.0,
@@ -4546,6 +4702,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         58720.3,
         -101926.0,
@@ -4575,6 +4732,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         47470.3,
         -101926.0,
@@ -4604,6 +4762,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         74970.3,
         -101926.0,
@@ -4633,6 +4792,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         48750.0,
         -35000.0,
@@ -4662,6 +4822,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         52500.0,
         -35000.0,
@@ -4691,6 +4852,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         17470.3,
         -101926.0,
@@ -4720,6 +4882,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         92470.3,
         -101926.0,
@@ -4749,6 +4912,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         87470.3,
         -101926.0,
@@ -4778,6 +4942,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         73750.0,
         -35000.0,
@@ -4807,6 +4972,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         96250.0,
         -35000.0,
@@ -4836,6 +5002,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         51250.0,
         -35000.0,
@@ -4865,6 +5032,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         13720.3,
         -101926.0,
@@ -4894,6 +5062,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         70000.0,
         -35000.0,
@@ -4923,6 +5092,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         7470.33,
         -101926.0,
@@ -4952,6 +5122,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         97500.0,
         -35000.0,
@@ -4981,6 +5152,7 @@
       "name": "InfinitiCorp Beltway 2",
       "object_type": 37,
       "asset": 127,
+      "radius": 85.6768,
       "position": [
         -129430.0,
         16493.3,
@@ -5010,6 +5182,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         37470.3,
         -101926.0,
@@ -5039,6 +5212,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         67470.3,
         -101926.0,
@@ -5068,6 +5242,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         41250.0,
         -35000.0,
@@ -5097,6 +5272,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         83750.0,
         -35000.0,
@@ -5126,6 +5302,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         59970.3,
         -101926.0,
@@ -5155,6 +5332,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         24970.3,
         -101926.0,
@@ -5184,6 +5362,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         106250.0,
         -35000.0,
@@ -5213,6 +5392,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         77500.0,
         -35000.0,
@@ -5242,6 +5422,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         26220.3,
         -101926.0,
@@ -5271,6 +5452,7 @@
       "name": "AS 2x600",
       "object_type": 37,
       "asset": 490,
+      "radius": 809.659,
       "position": [
         -92118.2,
         -126301.0,
@@ -5300,6 +5482,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         47470.3,
         -101926.0,
@@ -5329,6 +5512,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         110000.0,
         -35000.0,
@@ -5358,6 +5542,7 @@
       "name": "InfinitiCorp Beltway 5",
       "object_type": 37,
       "asset": 127,
+      "radius": 85.6768,
       "position": [
         -88692.1,
         -114772.0,
@@ -5387,6 +5572,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         74970.3,
         -101926.0,
@@ -5416,6 +5602,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         54970.3,
         -101926.0,
@@ -5445,6 +5632,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         76250.0,
         -35000.0,
@@ -5474,6 +5662,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         33750.0,
         -35000.0,
@@ -5503,6 +5692,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         29970.3,
         -101926.0,
@@ -5532,6 +5722,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         46220.3,
         -101926.0,
@@ -5561,6 +5752,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         51220.3,
         -101926.0,
@@ -5590,6 +5782,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         68750.0,
         -35000.0,
@@ -5619,6 +5812,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         32500.0,
         -35000.0,
@@ -5648,6 +5842,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         38720.3,
         -101926.0,
@@ -5677,6 +5872,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         57470.3,
         -101926.0,
@@ -5706,6 +5902,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         27500.0,
         -35000.0,
@@ -5735,6 +5932,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         23720.3,
         -101926.0,
@@ -5764,6 +5962,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         78750.0,
         -35000.0,
@@ -5793,6 +5992,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         78720.3,
         -101926.0,
@@ -5822,6 +6022,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         67470.3,
         -101926.0,
@@ -5851,6 +6052,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         111250.0,
         -35000.0,
@@ -5880,6 +6082,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         46250.0,
         -35000.0,
@@ -5909,6 +6112,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         61250.0,
         -35000.0,
@@ -5938,6 +6142,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         48720.3,
         -101926.0,
@@ -5967,6 +6172,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         45000.0,
         -35000.0,
@@ -5996,6 +6202,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         31220.3,
         -101926.0,
@@ -6025,6 +6232,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         42470.3,
         -101926.0,
@@ -6054,6 +6262,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         75000.0,
         -35000.0,
@@ -6083,6 +6292,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         64970.3,
         -101926.0,
@@ -6112,6 +6322,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         81220.3,
         -101926.0,
@@ -6141,6 +6352,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         65000.0,
         -35000.0,
@@ -6170,6 +6382,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         93750.0,
         -35000.0,
@@ -6199,6 +6412,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         91220.3,
         -101926.0,
@@ -6228,6 +6442,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         38750.0,
         -35000.0,
@@ -6257,6 +6472,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         53750.0,
         -35000.0,
@@ -6286,6 +6502,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         27470.3,
         -101926.0,
@@ -6315,6 +6532,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         90000.0,
         -35000.0,
@@ -6344,6 +6562,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         68720.3,
         -101926.0,
@@ -6373,6 +6592,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         34970.3,
         -101926.0,
@@ -6402,6 +6622,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         7470.33,
         -101926.0,
@@ -6431,6 +6652,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         57470.3,
         -101926.0,
@@ -6460,6 +6682,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         33750.0,
         -35000.0,
@@ -6489,6 +6712,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         57500.0,
         -35000.0,
@@ -6518,6 +6742,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         84970.3,
         -101926.0,
@@ -6547,6 +6772,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         79970.3,
         -101926.0,
@@ -6576,6 +6802,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         12470.3,
         -101926.0,
@@ -6605,6 +6832,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         66250.0,
         -35000.0,
@@ -6634,6 +6862,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         86250.0,
         -35000.0,
@@ -6663,6 +6892,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         56250.0,
         -35000.0,
@@ -6692,6 +6922,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         8720.33,
         -101926.0,
@@ -6721,6 +6952,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         68750.0,
         -35000.0,
@@ -6750,6 +6982,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         63750.0,
         -35000.0,
@@ -6779,6 +7012,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         19970.3,
         -101926.0,
@@ -6808,6 +7042,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         82500.0,
         -35000.0,
@@ -6837,6 +7072,7 @@
       "name": "Saturn Beltway 5",
       "object_type": 37,
       "asset": 127,
+      "radius": 85.6768,
       "position": [
         122138.0,
         48434.7,
@@ -6866,6 +7102,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         76220.3,
         -101926.0,
@@ -6895,6 +7132,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         42470.3,
         -101926.0,
@@ -6924,6 +7162,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         59970.3,
         -101926.0,
@@ -6953,6 +7192,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         88750.0,
         -35000.0,
@@ -6982,6 +7222,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         46250.0,
         -35000.0,
@@ -7011,6 +7252,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         89970.3,
         -101926.0,
@@ -7040,6 +7282,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         92470.3,
         -101926.0,
@@ -7069,6 +7312,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         29970.3,
         -101926.0,
@@ -7098,6 +7342,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         98750.0,
         -35000.0,
@@ -7127,6 +7372,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         76250.0,
         -35000.0,
@@ -7156,6 +7402,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         93750.0,
         -35000.0,
@@ -7185,6 +7432,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         16220.3,
         -101926.0,
@@ -7214,6 +7462,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         44970.3,
         -101926.0,
@@ -7243,6 +7492,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         102500.0,
         -35000.0,
@@ -7272,6 +7522,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         64970.3,
         -101926.0,
@@ -7301,6 +7552,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         34970.3,
         -101926.0,
@@ -7330,6 +7582,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         71250.0,
         -35000.0,
@@ -7359,6 +7612,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         38750.0,
         -35000.0,
@@ -7388,6 +7642,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         28750.0,
         -35000.0,
@@ -7417,6 +7672,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         14970.3,
         -101926.0,
@@ -7446,6 +7702,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         62470.3,
         -101926.0,
@@ -7475,6 +7732,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         111250.0,
         -35000.0,
@@ -7504,6 +7762,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         78750.0,
         -35000.0,
@@ -7533,6 +7792,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         61220.3,
         -101926.0,
@@ -7562,6 +7822,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         52470.3,
         -101926.0,
@@ -7591,6 +7852,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         107500.0,
         -35000.0,
@@ -7620,6 +7882,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         36250.0,
         -35000.0,
@@ -7649,6 +7912,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         81250.0,
         -35000.0,
@@ -7678,6 +7942,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         53720.3,
         -101927.0,
@@ -7707,6 +7972,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         67500.0,
         -35000.0,
@@ -7736,6 +8002,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         35000.0,
         -35000.0,
@@ -7765,6 +8032,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         36220.3,
         -101926.0,
@@ -7794,6 +8062,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         70000.0,
         -35000.0,
@@ -7823,6 +8092,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         21220.3,
         -101926.0,
@@ -7852,6 +8122,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         81250.0,
         -35000.0,
@@ -7881,6 +8152,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         83720.3,
         -101926.0,
@@ -7910,6 +8182,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         58750.0,
         -35000.0,
@@ -7939,6 +8212,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         43750.0,
         -35000.0,
@@ -7968,6 +8242,7 @@
       "name": "Techatticup Pit",
       "object_type": 37,
       "asset": 127,
+      "radius": 85.6768,
       "position": [
         27091.3,
         158484.0,
@@ -7997,6 +8272,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         49970.3,
         -101926.0,
@@ -8026,6 +8302,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         42500.0,
         -35000.0,
@@ -8055,6 +8332,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         73720.3,
         -101926.0,
@@ -8084,6 +8362,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         39970.3,
         -101926.0,
@@ -8113,6 +8392,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         19970.3,
         -101926.0,
@@ -8142,6 +8422,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         77470.3,
         -101926.0,
@@ -8171,6 +8452,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         82470.3,
         -101926.0,
@@ -8200,6 +8482,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         92963.7,
         -35951.6,
@@ -8229,6 +8512,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         88720.3,
         -101926.0,
@@ -8258,6 +8542,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         101250.0,
         -35000.0,
@@ -8287,6 +8572,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         24970.3,
         -101926.0,
@@ -8316,6 +8602,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         87500.0,
         -35000.0,
@@ -8345,6 +8632,7 @@
       "name": "Dutch Flat",
       "object_type": 37,
       "asset": 490,
+      "radius": 809.659,
       "position": [
         109440.0,
         -76013.2,
@@ -8374,6 +8662,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         66220.3,
         -101926.0,
@@ -8403,6 +8692,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         49970.3,
         -101926.0,
@@ -8432,6 +8722,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         62470.3,
         -101926.0,
@@ -8461,6 +8752,7 @@
       "name": "Border Demarcation",
       "object_type": 37,
       "asset": 198,
+      "radius": 88.5213,
       "position": [
         32470.3,
         -101926.0,
@@ -8490,6 +8782,7 @@
       "name": "AS 2x1100",
       "object_type": 37,
       "asset": 490,
+      "radius": 809.659,
       "position": [
         -68400.1,
         -134489.0,
@@ -8519,6 +8812,7 @@
       "name": "Asteroid 1x139",
       "object_type": 37,
       "asset": 246,
+      "radius": 122.9954,
       "position": [
         -73443.6,
         -116911.0,
@@ -8548,6 +8842,7 @@
       "name": "AS 2x600",
       "object_type": 37,
       "asset": 490,
+      "radius": 809.659,
       "position": [
         -86229.9,
         -102617.0,
@@ -8577,6 +8872,7 @@
       "name": "AS 2x1100",
       "object_type": 37,
       "asset": 490,
+      "radius": 809.659,
       "position": [
         -67664.1,
         -120347.0,
@@ -8606,6 +8902,7 @@
       "name": "AS 4x715",
       "object_type": 37,
       "asset": 492,
+      "radius": 582.7339,
       "position": [
         -91447.1,
         -97888.6,
@@ -8635,6 +8932,7 @@
       "name": "AS 4x715",
       "object_type": 37,
       "asset": 492,
+      "radius": 582.7339,
       "position": [
         -86787.7,
         -96260.6,
@@ -8664,6 +8962,7 @@
       "name": "Asteroid 3x750k",
       "object_type": 37,
       "asset": 491,
+      "radius": 586.6614,
       "position": [
         -98832.1,
         -90989.1,
@@ -8693,6 +8992,7 @@
       "name": "AS 4x715",
       "object_type": 37,
       "asset": 492,
+      "radius": 582.7339,
       "position": [
         -60299.2,
         -120423.0,
@@ -8722,6 +9022,7 @@
       "name": "AS 4x715",
       "object_type": 37,
       "asset": 492,
+      "radius": 582.7339,
       "position": [
         -100533.0,
         -87974.4,
@@ -8751,6 +9052,7 @@
       "name": "AS 2x600",
       "object_type": 37,
       "asset": 490,
+      "radius": 809.659,
       "position": [
         -121215.0,
         -83672.7,
@@ -8780,6 +9082,7 @@
       "name": "AS 2x600",
       "object_type": 37,
       "asset": 490,
+      "radius": 809.659,
       "position": [
         -115541.0,
         -80959.7,
@@ -8809,6 +9112,7 @@
       "name": "AS 2x600",
       "object_type": 37,
       "asset": 490,
+      "radius": 809.659,
       "position": [
         -102153.0,
         -76724.9,
@@ -8838,6 +9142,7 @@
       "name": "AS 2x600",
       "object_type": 37,
       "asset": 490,
+      "radius": 809.659,
       "position": [
         -105266.0,
         -71990.1,
@@ -8867,6 +9172,7 @@
       "name": "AS 4x715",
       "object_type": 37,
       "asset": 492,
+      "radius": 582.7339,
       "position": [
         -107370.0,
         -71997.0,
@@ -8896,6 +9202,7 @@
       "name": "AS 4x715",
       "object_type": 37,
       "asset": 492,
+      "radius": 582.7339,
       "position": [
         -102711.0,
         -70368.9,
@@ -8925,6 +9232,7 @@
       "name": "AS 2x1100",
       "object_type": 37,
       "asset": 490,
+      "radius": 809.659,
       "position": [
         -104973.0,
         -67845.7,
@@ -8954,6 +9262,7 @@
       "name": "Asteroid 3x750k",
       "object_type": 37,
       "asset": 491,
+      "radius": 586.6614,
       "position": [
         -120942.0,
         -75632.3,
@@ -8983,6 +9292,7 @@
       "name": "Asteroid 1x139",
       "object_type": 37,
       "asset": 246,
+      "radius": 122.9954,
       "position": [
         -109275.0,
         -53221.8,
@@ -9012,6 +9322,7 @@
       "name": "Asteroid 3x750k",
       "object_type": 37,
       "asset": 491,
+      "radius": 586.6614,
       "position": [
         -104111.0,
         -47989.6,
@@ -9041,6 +9352,7 @@
       "name": "AS 2x600",
       "object_type": 37,
       "asset": 490,
+      "radius": 809.659,
       "position": [
         -105916.0,
         -46214.0,
@@ -9070,6 +9382,7 @@
       "name": "Asteroid 3x750k",
       "object_type": 37,
       "asset": 491,
+      "radius": 586.6614,
       "position": [
         -113831.0,
         -88235.7,
@@ -9099,6 +9412,7 @@
       "name": "AS 4x715",
       "object_type": 37,
       "asset": 492,
+      "radius": 582.7339,
       "position": [
         -129319.0,
         -47705.6,
@@ -9128,6 +9442,7 @@
       "name": "AS 2x300",
       "object_type": 37,
       "asset": 490,
+      "radius": 809.659,
       "position": [
         -114947.0,
         -35445.0,
@@ -9157,6 +9472,7 @@
       "name": "AS 2x600",
       "object_type": 37,
       "asset": 490,
+      "radius": 809.659,
       "position": [
         -119478.0,
         -35351.6,
@@ -9186,6 +9502,7 @@
       "name": "AS 4x715",
       "object_type": 37,
       "asset": 492,
+      "radius": 582.7339,
       "position": [
         -154588.0,
         -73154.7,
@@ -9215,6 +9532,7 @@
       "name": "AS 2x600",
       "object_type": 37,
       "asset": 490,
+      "radius": 809.659,
       "position": [
         -157965.0,
         -75254.3,
@@ -9244,6 +9562,7 @@
       "name": "Asteroid 3x750k",
       "object_type": 37,
       "asset": 491,
+      "radius": 586.6614,
       "position": [
         -119046.0,
         -25517.9,
@@ -9273,6 +9592,7 @@
       "name": "Asteroid 3x750k",
       "object_type": 37,
       "asset": 491,
+      "radius": 586.6614,
       "position": [
         -131036.0,
         -22755.6,
@@ -9302,6 +9622,7 @@
       "name": "Asteroid 3x750k",
       "object_type": 37,
       "asset": 491,
+      "radius": 586.6614,
       "position": [
         -121692.0,
         -17453.8,
@@ -9331,6 +9652,7 @@
       "name": "AS 2x600",
       "object_type": 37,
       "asset": 490,
+      "radius": 809.659,
       "position": [
         -134446.0,
         468.58,
@@ -9360,6 +9682,7 @@
       "name": "AS 2x1100",
       "object_type": 37,
       "asset": 490,
+      "radius": 809.659,
       "position": [
         -123891.0,
         10534.1,
@@ -9389,6 +9712,7 @@
       "name": "AS 2x300",
       "object_type": 37,
       "asset": 490,
+      "radius": 809.659,
       "position": [
         -174682.0,
         -21180.3,
@@ -9418,6 +9742,7 @@
       "name": "AS 2x600",
       "object_type": 37,
       "asset": 490,
+      "radius": 809.659,
       "position": [
         -141003.0,
         20779.1,
@@ -9447,6 +9772,7 @@
       "name": "Asteroid 1x139",
       "object_type": 37,
       "asset": 246,
+      "radius": 122.9954,
       "position": [
         -117671.0,
         25148.4,
@@ -9476,6 +9802,7 @@
       "name": "AS 4x715",
       "object_type": 37,
       "asset": 492,
+      "radius": 582.7339,
       "position": [
         -137476.0,
         27834.2,
@@ -9505,6 +9832,7 @@
       "name": "AS 2x300",
       "object_type": 37,
       "asset": 490,
+      "radius": 809.659,
       "position": [
         -130813.0,
         29695.9,
@@ -9534,6 +9862,7 @@
       "name": "Asteroid 1x139",
       "object_type": 37,
       "asset": 246,
+      "radius": 122.9954,
       "position": [
         -121672.0,
         37200.5,
@@ -9563,6 +9892,7 @@
       "name": "AS 2x600",
       "object_type": 37,
       "asset": 490,
+      "radius": 809.659,
       "position": [
         -128888.0,
         45740.2,
@@ -9592,6 +9922,7 @@
       "name": "AS 4x715",
       "object_type": 37,
       "asset": 492,
+      "radius": 582.7339,
       "position": [
         -113911.0,
         47935.3,
@@ -9621,6 +9952,7 @@
       "name": "AS 2x1100",
       "object_type": 37,
       "asset": 490,
+      "radius": 809.659,
       "position": [
         -116173.0,
         50458.6,
@@ -9650,6 +9982,7 @@
       "name": "AS 4x715",
       "object_type": 37,
       "asset": 492,
+      "radius": 582.7339,
       "position": [
         -121232.0,
         61232.9,
@@ -9679,6 +10012,7 @@
       "name": "Asteroid 3x750k",
       "object_type": 37,
       "asset": 491,
+      "radius": 586.6614,
       "position": [
         -111630.0,
         59916.3,
@@ -9708,6 +10042,7 @@
       "name": "Asteroid 1x139",
       "object_type": 37,
       "asset": 246,
+      "radius": 122.9954,
       "position": [
         -107610.0,
         60912.5,
@@ -9737,6 +10072,7 @@
       "name": "Asteroid 3x750k",
       "object_type": 37,
       "asset": 491,
+      "radius": 586.6614,
       "position": [
         -113572.0,
         64714.7,
@@ -9766,6 +10102,7 @@
       "name": "AS 2x1100",
       "object_type": 37,
       "asset": 490,
+      "radius": 809.659,
       "position": [
         -109727.0,
         72501.4,
@@ -9795,6 +10132,7 @@
       "name": "Asteroid 3x750k",
       "object_type": 37,
       "asset": 491,
+      "radius": 586.6614,
       "position": [
         -113675.0,
         87007.9,
@@ -9824,6 +10162,7 @@
       "name": "AS 4x715",
       "object_type": 37,
       "asset": 492,
+      "radius": 582.7339,
       "position": [
         -96107.9,
         97704.4,
@@ -9853,6 +10192,7 @@
       "name": "Asteroid 1x139",
       "object_type": 37,
       "asset": 246,
+      "radius": 122.9954,
       "position": [
         -87720.4,
         97324.8,
@@ -9882,6 +10222,7 @@
       "name": "AS 2x1100",
       "object_type": 37,
       "asset": 490,
+      "radius": 809.659,
       "position": [
         -84727.9,
         107529.0,
@@ -9911,6 +10252,7 @@
       "name": "AS 4x715",
       "object_type": 37,
       "asset": 492,
+      "radius": 582.7339,
       "position": [
         -77363.1,
         107453.0,
@@ -9940,6 +10282,7 @@
       "name": "Asteroid 3x1000k",
       "object_type": 37,
       "asset": 491,
+      "radius": 586.6614,
       "position": [
         -119808.0,
         43727.9,
@@ -9969,6 +10312,7 @@
       "name": "Asteroid 3x1000k",
       "object_type": 37,
       "asset": 491,
+      "radius": 586.6614,
       "position": [
         -118701.0,
         89771.4,
@@ -9998,6 +10342,7 @@
       "name": "Asteroid 3x1000k",
       "object_type": 37,
       "asset": 491,
+      "radius": 586.6614,
       "position": [
         -92684.5,
         -100468.0,
@@ -10027,6 +10372,7 @@
       "name": "Asteroid 3x1000k",
       "object_type": 37,
       "asset": 491,
+      "radius": 586.6614,
       "position": [
         -57169.7,
         -133451.0,
@@ -10056,6 +10402,7 @@
       "name": "Asteroid 3x1000k",
       "object_type": 37,
       "asset": 491,
+      "radius": 586.6614,
       "position": [
         -160271.0,
         -65581.0,
@@ -10085,6 +10432,7 @@
       "name": "Asteroid 3x1000k",
       "object_type": 37,
       "asset": 491,
+      "radius": 586.6614,
       "position": [
         -137267.0,
         35611.1,
@@ -10114,6 +10462,7 @@
       "name": "Asteroid 3x1000k",
       "object_type": 37,
       "asset": 491,
+      "radius": 586.6614,
       "position": [
         -104669.0,
         87080.8,
@@ -10143,6 +10492,7 @@
       "name": "Bedrock Cluster",
       "object_type": 37,
       "asset": 1881,
+      "radius": 676.4669,
       "position": [
         54982.2,
         -54733.5,
@@ -10172,6 +10522,7 @@
       "name": "Mining Station",
       "object_type": 37,
       "asset": 412,
+      "radius": 2212.949,
       "position": [
         -183198.0,
         -13761.9,
@@ -10201,6 +10552,7 @@
       "name": "Mining Station",
       "object_type": 37,
       "asset": 412,
+      "radius": 2212.949,
       "position": [
         -150185.0,
         -75127.9,
@@ -10230,6 +10582,7 @@
       "name": "Asteroid 1x280",
       "object_type": 37,
       "asset": 246,
+      "radius": 122.9954,
       "position": [
         -65660.4,
         98857.4,
@@ -10259,6 +10612,7 @@
       "name": "Asteroid 1x280",
       "object_type": 37,
       "asset": 246,
+      "radius": 122.9954,
       "position": [
         -119576.0,
         -37827.9,
@@ -10288,6 +10642,7 @@
       "name": "Asteroid 1x280",
       "object_type": 37,
       "asset": 246,
+      "radius": 122.9954,
       "position": [
         -133833.0,
         -8500.16,
@@ -10317,6 +10672,7 @@
       "name": "Asteroid 1x280",
       "object_type": 37,
       "asset": 246,
+      "radius": 122.9954,
       "position": [
         -137440.0,
         20426.5,
@@ -10346,6 +10702,7 @@
       "name": "Asteroid 1x280",
       "object_type": 37,
       "asset": 246,
+      "radius": 122.9954,
       "position": [
         -116890.0,
         73459.3,
@@ -10375,6 +10732,7 @@
       "name": "Asteroid 1x420",
       "object_type": 37,
       "asset": 246,
+      "radius": 122.9954,
       "position": [
         -53598.8,
         98548.1,
@@ -10404,6 +10762,7 @@
       "name": "Asteroid 1x420",
       "object_type": 37,
       "asset": 246,
+      "radius": 122.9954,
       "position": [
         -157579.0,
         -73013.8,
@@ -10433,6 +10792,7 @@
       "name": "Asteroid 1x420",
       "object_type": 37,
       "asset": 246,
+      "radius": 122.9954,
       "position": [
         -81756.7,
         -132670.0,
@@ -10462,6 +10822,7 @@
       "name": "Asteroid 1x420",
       "object_type": 37,
       "asset": 246,
+      "radius": 122.9954,
       "position": [
         -95242.4,
         -116772.0,
@@ -10491,6 +10852,7 @@
       "name": "Asteroid 1x420",
       "object_type": 37,
       "asset": 246,
+      "radius": 122.9954,
       "position": [
         -104567.0,
         -73688.0,
@@ -10520,6 +10882,7 @@
       "name": "Asteroid 1x420",
       "object_type": 37,
       "asset": 246,
+      "radius": 122.9954,
       "position": [
         -137100.0,
         -10402.1,
@@ -10549,6 +10912,7 @@
       "name": "Asteroid 1x420",
       "object_type": 37,
       "asset": 246,
+      "radius": 122.9954,
       "position": [
         -123485.0,
         4691.8,
@@ -10578,6 +10942,7 @@
       "name": "Asteroid 1x420",
       "object_type": 37,
       "asset": 246,
+      "radius": 122.9954,
       "position": [
         -115767.0,
         44616.2,
@@ -10607,6 +10972,7 @@
       "name": "Asteroid 1x420",
       "object_type": 37,
       "asset": 246,
+      "radius": 122.9954,
       "position": [
         -131302.0,
         48777.1,
@@ -10636,6 +11002,7 @@
       "name": "Asteroid 1x420",
       "object_type": 37,
       "asset": 246,
+      "radius": 122.9954,
       "position": [
         -100628.0,
         87969.2,
@@ -10665,6 +11032,7 @@
       "name": "Asteroid 1x420",
       "object_type": 37,
       "asset": 246,
+      "radius": 122.9954,
       "position": [
         -107714.0,
         97918.8,
@@ -10694,6 +11062,7 @@
       "name": "Asteroid 1x420",
       "object_type": 37,
       "asset": 246,
+      "radius": 122.9954,
       "position": [
         -95274.0,
         95885.5,
@@ -10723,6 +11092,7 @@
       "name": "Derelict Mining Station",
       "object_type": 37,
       "asset": 412,
+      "radius": 2212.949,
       "position": [
         122206.0,
         84655.5,
@@ -10752,6 +11122,7 @@
       "name": "Incapacitated Earthcorps Patrol",
       "object_type": 37,
       "asset": 0,
+      "radius": 92.7889,
       "position": [
         78307.8,
         83787.1,
@@ -10781,6 +11152,7 @@
       "name": "Red Dragon Beacon",
       "object_type": 37,
       "asset": 2193,
+      "radius": 79.304,
       "position": [
         21208.1,
         164167.0,
@@ -10810,6 +11182,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 246,
+      "radius": 122.9954,
       "position": [
         -47038.7,
         100072.0,
@@ -10839,6 +11212,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 492,
+      "radius": 582.7339,
       "position": [
         -53008.2,
         110218.0,
@@ -10868,6 +11242,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 490,
+      "radius": 809.659,
       "position": [
         -44373.1,
         103179.0,
@@ -10897,6 +11272,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 492,
+      "radius": 582.7339,
       "position": [
         -65166.1,
         101524.0,
@@ -10926,6 +11302,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 489,
+      "radius": 358.1054,
       "position": [
         -38538.4,
         111927.0,
@@ -10955,6 +11332,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 490,
+      "radius": 809.659,
       "position": [
         -39161.6,
         115223.0,
@@ -10984,6 +11362,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 492,
+      "radius": 582.7339,
       "position": [
         -43782.7,
         113578.0,
@@ -11013,6 +11392,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 490,
+      "radius": 809.659,
       "position": [
         -49500.4,
         115144.0,
@@ -11042,6 +11422,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 492,
+      "radius": 582.7339,
       "position": [
         -35705.9,
         102202.0,
@@ -11071,6 +11452,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 491,
+      "radius": 586.6614,
       "position": [
         -40098.1,
         91847.4,
@@ -11100,6 +11482,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 489,
+      "radius": 358.1054,
       "position": [
         -29281.0,
         115387.0,
@@ -11129,6 +11512,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 490,
+      "radius": 809.659,
       "position": [
         -27386.4,
         98336.4,
@@ -11158,6 +11542,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 490,
+      "radius": 809.659,
       "position": [
         -22508.2,
         102160.0,
@@ -11187,6 +11572,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 489,
+      "radius": 358.1054,
       "position": [
         -22301.6,
         114887.0,
@@ -11216,6 +11602,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 246,
+      "radius": 122.9954,
       "position": [
         -14425.2,
         106213.0,
@@ -11245,6 +11632,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 491,
+      "radius": 586.6614,
       "position": [
         -14724.3,
         114987.0,
@@ -11274,6 +11662,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 489,
+      "radius": 358.1054,
       "position": [
         -6558.86,
         117960.0,
@@ -11303,6 +11692,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 489,
+      "radius": 358.1054,
       "position": [
         -6260.63,
         106628.0,
@@ -11332,6 +11722,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 491,
+      "radius": 586.6614,
       "position": [
         1045.93,
         108715.0,
@@ -11361,6 +11752,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 492,
+      "radius": 582.7339,
       "position": [
         1642.39,
         115276.0,
@@ -11390,6 +11782,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 492,
+      "radius": 582.7339,
       "position": [
         -45405.3,
         127515.0,
@@ -11419,6 +11812,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 491,
+      "radius": 586.6614,
       "position": [
         -60930.5,
         124387.0,
@@ -11448,6 +11842,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 246,
+      "radius": 122.9954,
       "position": [
         -72434.8,
         129190.0,
@@ -11477,6 +11872,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 492,
+      "radius": 582.7339,
       "position": [
         -59255.1,
         137455.0,
@@ -11506,6 +11902,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 490,
+      "radius": 809.659,
       "position": [
         -63834.5,
         139466.0,
@@ -11535,6 +11932,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 492,
+      "radius": 582.7339,
       "position": [
         -54787.4,
         137232.0,
@@ -11564,6 +11962,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 492,
+      "radius": 582.7339,
       "position": [
         -50654.8,
         139242.0,
@@ -11593,6 +11992,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 491,
+      "radius": 586.6614,
       "position": [
         -48867.8,
         142816.0,
@@ -11622,6 +12022,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 489,
+      "radius": 358.1054,
       "position": [
         -52106.8,
         146279.0,
@@ -11651,6 +12052,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 492,
+      "radius": 582.7339,
       "position": [
         -57691.4,
         148959.0,
@@ -11680,6 +12082,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 489,
+      "radius": 358.1054,
       "position": [
         -63834.5,
         146391.0,
@@ -11709,6 +12112,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 246,
+      "radius": 122.9954,
       "position": [
         -65621.5,
         142928.0,
@@ -11738,6 +12142,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 246,
+      "radius": 122.9954,
       "position": [
         50326.3,
         113067.0,
@@ -11767,6 +12172,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 489,
+      "radius": 358.1054,
       "position": [
         17229.6,
         103103.0,
@@ -11796,6 +12202,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 492,
+      "radius": 582.7339,
       "position": [
         18963.1,
         112312.0,
@@ -11825,6 +12232,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 490,
+      "radius": 809.659,
       "position": [
         25108.4,
         105721.0,
@@ -11854,6 +12262,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 491,
+      "radius": 586.6614,
       "position": [
         34672.6,
         111121.0,
@@ -11883,6 +12292,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 492,
+      "radius": 582.7339,
       "position": [
         34495.4,
         106216.0,
@@ -11912,6 +12322,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 246,
+      "radius": 122.9954,
       "position": [
         39765.3,
         112803.0,
@@ -11941,6 +12352,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 492,
+      "radius": 582.7339,
       "position": [
         45654.9,
         101748.0,
@@ -11970,6 +12382,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 491,
+      "radius": 586.6614,
       "position": [
         47990.6,
         111630.0,
@@ -11999,6 +12412,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 246,
+      "radius": 122.9954,
       "position": [
         55731.3,
         98666.6,
@@ -12028,6 +12442,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 489,
+      "radius": 358.1054,
       "position": [
         69203.7,
         105765.0,
@@ -12057,6 +12472,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 490,
+      "radius": 809.659,
       "position": [
         63742.3,
         106311.0,
@@ -12086,6 +12502,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 491,
+      "radius": 586.6614,
       "position": [
         71661.5,
         91382.7,
@@ -12115,6 +12532,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 490,
+      "radius": 809.659,
       "position": [
         73391.0,
         63528.9,
@@ -12144,6 +12562,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 246,
+      "radius": 122.9954,
       "position": [
         76395.0,
         96297.8,
@@ -12173,6 +12592,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 492,
+      "radius": 582.7339,
       "position": [
         79489.9,
         88651.6,
@@ -12202,6 +12622,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 491,
+      "radius": 586.6614,
       "position": [
         84041.2,
         92929.8,
@@ -12231,6 +12652,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 491,
+      "radius": 586.6614,
       "position": [
         188325.0,
         -12371.9,
@@ -12260,6 +12682,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 492,
+      "radius": 582.7339,
       "position": [
         178618.0,
         -16902.2,
@@ -12289,6 +12712,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 489,
+      "radius": 358.1054,
       "position": [
         165067.0,
         -1866.74,
@@ -12318,6 +12742,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 246,
+      "radius": 122.9954,
       "position": [
         176514.0,
         -11239.4,
@@ -12347,6 +12772,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 490,
+      "radius": 809.659,
       "position": [
         180397.0,
         86.2274,
@@ -12376,6 +12802,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 492,
+      "radius": 582.7339,
       "position": [
         170852.0,
         -1208.13,
@@ -12405,6 +12832,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 491,
+      "radius": 586.6614,
       "position": [
         170690.0,
         8984.9,
@@ -12434,6 +12862,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 489,
+      "radius": 358.1054,
       "position": [
         160173.0,
         8661.31,
@@ -12463,6 +12892,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 246,
+      "radius": 122.9954,
       "position": [
         160335.0,
         18045.4,
@@ -12492,6 +12922,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 492,
+      "radius": 582.7339,
       "position": [
         144000.0,
         31199.9,
@@ -12521,6 +12952,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 489,
+      "radius": 358.1054,
       "position": [
         153701.0,
         24193.5,
@@ -12550,6 +12982,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 491,
+      "radius": 586.6614,
       "position": [
         145660.0,
         21645.0,
@@ -12579,6 +13012,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 246,
+      "radius": 122.9954,
       "position": [
         147878.0,
         28561.1,
@@ -12608,6 +13042,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 489,
+      "radius": 358.1054,
       "position": [
         143995.0,
         32282.4,
@@ -12637,6 +13072,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 492,
+      "radius": 582.7339,
       "position": [
         138332.0,
         29208.3,
@@ -12666,6 +13102,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 490,
+      "radius": 809.659,
       "position": [
         138494.0,
         36650.8,
@@ -12695,6 +13132,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 491,
+      "radius": 586.6614,
       "position": [
         133640.0,
         35032.9,
@@ -12724,6 +13162,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 246,
+      "radius": 122.9954,
       "position": [
         130243.0,
         38754.1,
@@ -12753,6 +13192,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 489,
+      "radius": 358.1054,
       "position": [
         131053.0,
         42959.0,
@@ -12782,6 +13222,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 492,
+      "radius": 582.7339,
       "position": [
         125067.0,
         42473.6,
@@ -12811,6 +13252,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 246,
+      "radius": 122.9954,
       "position": [
         125552.0,
         48136.4,
@@ -12840,6 +13282,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 490,
+      "radius": 809.659,
       "position": [
         113436.0,
         68870.5,
@@ -12869,6 +13312,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 491,
+      "radius": 586.6614,
       "position": [
         124812.0,
         63345.1,
@@ -12898,6 +13342,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 492,
+      "radius": 582.7339,
       "position": [
         89088.6,
         83732.6,
@@ -12927,6 +13372,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 246,
+      "radius": 122.9954,
       "position": [
         93517.7,
         87774.2,
@@ -12956,6 +13402,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 490,
+      "radius": 809.659,
       "position": [
         95212.0,
         77430.8,
@@ -12985,6 +13432,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 246,
+      "radius": 122.9954,
       "position": [
         92467.0,
         75174.2,
@@ -13014,6 +13462,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 492,
+      "radius": 582.7339,
       "position": [
         105310.0,
         77212.9,
@@ -13043,6 +13492,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 491,
+      "radius": 586.6614,
       "position": [
         101566.0,
         67010.4,
@@ -13072,6 +13522,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 490,
+      "radius": 809.659,
       "position": [
         107911.0,
         68328.8,
@@ -13101,6 +13552,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 489,
+      "radius": 358.1054,
       "position": [
         90637.3,
         49092.4,
@@ -13130,6 +13582,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 489,
+      "radius": 358.1054,
       "position": [
         116036.0,
         62695.1,
@@ -13159,6 +13612,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 491,
+      "radius": 586.6614,
       "position": [
         108809.0,
         55065.1,
@@ -13188,6 +13642,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 491,
+      "radius": 586.6614,
       "position": [
         115417.0,
         59386.0,
@@ -13217,6 +13672,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 246,
+      "radius": 122.9954,
       "position": [
         116052.0,
         51253.4,
@@ -13246,6 +13702,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 489,
+      "radius": 358.1054,
       "position": [
         114066.0,
         80817.0,
@@ -13275,6 +13732,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 490,
+      "radius": 809.659,
       "position": [
         130892.0,
         75639.6,
@@ -13304,6 +13762,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 491,
+      "radius": 586.6614,
       "position": [
         132703.0,
         91304.8,
@@ -13333,6 +13792,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 246,
+      "radius": 122.9954,
       "position": [
         120671.0,
         100512.0,
@@ -13362,6 +13822,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 490,
+      "radius": 809.659,
       "position": [
         181654.0,
         -30173.7,
@@ -13391,6 +13852,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 246,
+      "radius": 122.9954,
       "position": [
         194617.0,
         -24204.1,
@@ -13420,6 +13882,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 491,
+      "radius": 586.6614,
       "position": [
         30199.1,
         138337.0,
@@ -13449,6 +13912,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 489,
+      "radius": 358.1054,
       "position": [
         11437.6,
         135438.0,
@@ -13478,6 +13942,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 490,
+      "radius": 809.659,
       "position": [
         28493.5,
         151982.0,
@@ -13507,6 +13972,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 246,
+      "radius": 122.9954,
       "position": [
         13313.7,
         158804.0,
@@ -13536,6 +14002,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 492,
+      "radius": 582.7339,
       "position": [
         27640.7,
         165285.0,
@@ -13565,6 +14032,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 489,
+      "radius": 358.1054,
       "position": [
         6936.53,
         145791.0,
@@ -13594,6 +14062,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 246,
+      "radius": 122.9954,
       "position": [
         977.727,
         132790.0,
@@ -13623,6 +14092,7 @@
       "name": "Asteroid",
       "object_type": 37,
       "asset": 492,
+      "radius": 582.7339,
       "position": [
         -12890.0,
         149799.0,
@@ -13652,6 +14122,7 @@
       "name": "Relk Goodspeed",
       "object_type": 37,
       "asset": 434,
+      "radius": 127.8559,
       "position": [
         184163.0,
         -18713.6,
@@ -13681,6 +14152,7 @@
       "name": "Red Dragon Informant",
       "object_type": 37,
       "asset": 1023,
+      "radius": 36.4922,
       "position": [
         -99697.5,
         97573.2,
@@ -13710,6 +14182,7 @@
       "name": "Unknown Space - Danger",
       "object_type": 37,
       "asset": 217,
+      "radius": 40.1152,
       "position": [
         49.0,
         -146.0,

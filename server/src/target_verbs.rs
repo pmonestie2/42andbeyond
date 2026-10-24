@@ -70,11 +70,11 @@ impl PlayerSession {
             .find(|nav| nav.id == self.target)
         {
             if let Some((verb, range)) = match nav.object_type {
-                11 => Some((10, 2500.)), // native Gate -> action 18
+                11 => Some((10, 5000.)), // native Gate -> action 18
                 12 => Some((8, 5000.)),  // native Dock -> action 28
                 _ => None,
             } {
-                let attribute = if can_act && distance(self.position, nav.position) <= range {
+                let attribute = if can_act && nav.range_to(self.position) <= range {
                     0
                 } else {
                     2
