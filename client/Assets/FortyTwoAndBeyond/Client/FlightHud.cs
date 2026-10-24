@@ -11,13 +11,14 @@ namespace FortyTwoAndBeyond.Client
     public sealed class FlightHud : IDisposable
     {
         private readonly SpaceClient client;
+        private readonly EquipmentIcons icons;
         private static readonly Vector2[] LabelOffsets = { new Vector2(12, -48), new Vector2(12, 12),
             new Vector2(-184, -48), new Vector2(-184, 12) };
         public float Scale => Mathf.Max(.01f, Mathf.Min(1f, Screen.width / 1280f, Screen.height / 760f));
         private float CanvasWidth => Screen.width / Scale;
         private float CanvasHeight => Screen.height / Scale;
         private readonly Color cyan = new Color(.3f, .85f, 1), white = new Color(.86f, .93f, 1), muted = new Color(.46f, .62f, .72f), gold = new Color(1, .72f, .3f);
-        private GUIStyle heading, body, small, section, button, selected, playerButton, hostileButton, damageStyle, input, primaryButton, equipmentRow;
+        private GUIStyle heading, body, small, section, button, selected, playerButton, hostileButton, damageStyle, input, primaryButton, equipmentRow, equipmentText;
         private Texture2D buttonTexture, selectedTexture, panelTexture, radarTexture, weaveTexture, frameTexture, legacyCornerTexture;
         internal GUIStyle BodyStyle => body;
         internal GUIStyle SmallStyle => small;
@@ -99,7 +100,7 @@ namespace FortyTwoAndBeyond.Client
         private string sector = "";
 
         /// <summary>Bind the HUD to its concrete foreground controller.</summary>
-        public FlightHud(SpaceClient client) { this.client = client; }
+        public FlightHud(SpaceClient client) { this.client = client; icons = new EquipmentIcons(); }
 
         /// <returns>float: Available height for the contacts or crew roster.</returns>
         private float SocialHeight(Snapshot snapshot)
@@ -168,6 +169,9 @@ namespace FortyTwoAndBeyond.Client
             primaryButton.normal.background = selectedTexture; primaryButton.normal.textColor = white;
             primaryButton.hover.background = selectedTexture; primaryButton.hover.textColor = cyan;
             equipmentRow = new GUIStyle(button) { fontSize = 13, padding = new RectOffset(8, 6, 4, 4) };
+            equipmentText = new GUIStyle(GUI.skin.label) { fontSize = 13, fontStyle = FontStyle.Bold,
+                wordWrap = true, alignment = TextAnchor.MiddleLeft };
+            equipmentText.normal.textColor = white;
         }
 
         /// <returns>A shared transparent scanner dial with concentric range rings.</returns>
@@ -1161,7 +1165,8 @@ namespace FortyTwoAndBeyond.Client
                             "   ·   " + ammo.Quantity + " ROUNDS");
                 }
                 else if (item != null) title += "\nCONDITION " + (Mathf.Clamp01(item.Structure) * 100).ToString("0") + "%";
-                if (GUILayout.Button(title, selectedMount == slot ? selected : equipmentRow, GUILayout.Height(item == null ? 38 : 59)))
+                uint iconType = item?.Type ?? (slot == 0 ? 2u : slot == 1 ? 7u : slot == 2 ? 6u : slot < 9 ? 14u : 11u);
+                if (DrawEquipmentRow(title, iconType, selectedMount == slot, item == null ? 41 : 61))
                     { selectedMount = selectedMount == slot ? -1 : slot; inspectMount = true; }
             }
             GUILayout.EndScrollView(); GUILayout.EndArea();
@@ -1180,11 +1185,21 @@ namespace FortyTwoAndBeyond.Client
                 string category = ItemCategory(item.Type);
                 string title = item.Name + (item.Quantity > 1 ? "  ×" + item.Quantity : "") +
                     "\n" + category + "   ·   " + (Mathf.Clamp01(item.Structure) * 100).ToString("0") + "% CONDITION";
-                if (GUILayout.Button(title, selectedCargo == item.Slot ? selected : equipmentRow, GUILayout.Height(56)))
+                if (DrawEquipmentRow(title, item.Type, selectedCargo == item.Slot, 59))
                     { selectedCargo = selectedCargo == item.Slot ? -1 : item.Slot; inspectMount = false; }
             }
             if (used == 0) GUILayout.Label("Cargo hold empty", small);
             GUILayout.EndScrollView(); GUILayout.EndArea();
+        }
+
+        /// <returns>bool: Whether the user selected a textured equipment row.</returns>
+        private bool DrawEquipmentRow(string title, uint type, bool active, float height)
+        {
+            Rect row = GUILayoutUtility.GetRect(0, height, GUILayout.ExpandWidth(true));
+            bool clicked = GUI.Button(row, "", active ? selected : equipmentRow);
+            GUI.DrawTexture(new Rect(row.x + 7, row.y + (height - 27) * .5f, 27, 27), icons.ForType(type));
+            GUI.Label(new Rect(row.x + 39, row.y + 3, row.width - 46, height - 6), title, equipmentText);
+            return clicked;
         }
 
         /// <returns>string: Plain language category for one item type.</returns>
@@ -1273,6 +1288,7 @@ namespace FortyTwoAndBeyond.Client
             if (selectedTexture != null) UnityEngine.Object.Destroy(selectedTexture);
             if (panelTexture != null) UnityEngine.Object.Destroy(panelTexture);
             if (radarTexture != null) UnityEngine.Object.Destroy(radarTexture);
+            icons.Dispose();
         }
     }
 }
