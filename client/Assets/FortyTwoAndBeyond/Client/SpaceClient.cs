@@ -57,6 +57,7 @@ namespace FortyTwoAndBeyond.Client
         public string DemoRosterHost { get; private set; }
         public bool Ready => worker != null && worker.Running && snapshot != null && snapshot.Ready;
         public bool Chart => chart;
+        public float ChartRadiusKm => mapZoom / 10f;
         public MapObject Target => snapshot?.Objects.FirstOrDefault(item => item.Id == target);
         public int RenderedBodyCount => bodies.Count;
         public int Fps => displayFps;
@@ -399,17 +400,20 @@ namespace FortyTwoAndBeyond.Client
             }
         }
 
-        /// <summary>Select the closest projected navigation target under the pointer.</summary>
+        /// <summary>Route the actual mouse click through world target selection.</summary>
         private void SelectAtPointer()
+        { SelectAtPointer(new Vector2(Input.mousePosition.x, Screen.height - Input.mousePosition.y)); }
+
+        /// <summary>Select the closest projected world target at a screen point.</summary>
+        public void SelectAtPointer(Vector2 pointer)
         {
             if (snapshot == null) return; float best = 35; uint selected = 0;
-            Vector2 pointer = new Vector2(Input.mousePosition.x, Screen.height - Input.mousePosition.y);
             if (hud.SelectContactAtPointer(snapshot, pointer) || hud.SelectWreckAtPointer(snapshot, pointer) ||
                 miningHud.SelectAtPointer(snapshot, pointer)) return;
             foreach (MapObject item in snapshot.Objects.Where(item => item.Navigable))
             {
                 Vector3 point = Project(item.Position); if (point.z <= 0) continue;
-                float distance = Vector2.Distance(new Vector2(point.x, point.y), new Vector2(Input.mousePosition.x, Screen.height - Input.mousePosition.y));
+                float distance = Vector2.Distance(new Vector2(point.x, point.y), pointer);
                 if (distance < best) { best = distance; selected = item.Id; }
             }
             if (selected != 0) target = selected;

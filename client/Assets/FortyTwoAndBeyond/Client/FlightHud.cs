@@ -17,14 +17,14 @@ namespace FortyTwoAndBeyond.Client
         private float CanvasWidth => Screen.width / Scale;
         private float CanvasHeight => Screen.height / Scale;
         private readonly Color cyan = new Color(.3f, .85f, 1), white = new Color(.86f, .93f, 1), muted = new Color(.46f, .62f, .72f), gold = new Color(1, .72f, .3f);
-        private GUIStyle heading, body, small, section, button, selected, playerButton, hostileButton, damageStyle, input, primaryButton;
-        private Texture2D buttonTexture, selectedTexture, panelTexture, radarTexture, weaveTexture, frameTexture;
+        private GUIStyle heading, body, small, section, button, selected, playerButton, hostileButton, damageStyle, input, primaryButton, equipmentRow;
+        private Texture2D buttonTexture, selectedTexture, panelTexture, radarTexture, weaveTexture, frameTexture, legacyCornerTexture;
         internal GUIStyle BodyStyle => body;
         internal GUIStyle SmallStyle => small;
         internal GUIStyle SectionStyle => section;
         internal GUIStyle ButtonStyle => button;
         private Vector2 scroll;
-        private bool navigation = true, equipmentOpen, settingsOpen;
+        private bool navigation = true, equipmentOpen, settingsOpen, crewTab, inspectMount;
         private ControlAction? bindingAction;
         private Vector2 settingsScroll;
         private int selectedCargo = -1, selectedMount = -1;
@@ -101,19 +101,9 @@ namespace FortyTwoAndBeyond.Client
         /// <summary>Bind the HUD to its concrete foreground controller.</summary>
         public FlightHud(SpaceClient client) { this.client = client; }
 
-        /// <returns>float: Compact contact panel height while retaining scroll space for larger groups.</returns>
+        /// <returns>float: Available height for the contacts or crew roster.</returns>
         private float SocialHeight(Snapshot snapshot)
-        {
-            float content = 205 + Mathf.Min(socialContacts.Length, 4) * 45;
-            if (snapshot != null)
-            {
-                if (snapshot.Group.Joined) content += 100 + snapshot.Group.Members.Length * 26;
-                if (snapshot.Confirmation != null && snapshot.Confirmation.Kind != ConfirmationKind.Jumpstart) content += 65;
-                if (contactId != 0) content += 95;
-                if (nearbyWrecks.Length > 0) content += 52;
-            }
-            return Mathf.Clamp(content, 220, Mathf.Max(220, Mathf.Min(440, CanvasHeight - 360)));
-        }
+        { return Mathf.Max(220, Mathf.Min(440, CanvasHeight - 360)); }
 
         /// <returns>Whether the pointer is over foreground controls.</returns>
         public bool ContainsPointer()
@@ -122,7 +112,7 @@ namespace FortyTwoAndBeyond.Client
             return !client.Connected || (settingsOpen && SettingsRect().Contains(p)) ||
                 (equipmentOpen && EquipmentRect().Contains(p)) ||
                 ((contactId != 0 || wreckId != 0) &&
-                    new Rect((CanvasWidth - 360) * .5f, CanvasHeight - 380, 360, 260).Contains(p)) ||
+                    new Rect((CanvasWidth - 390) * .5f, CanvasHeight - 420, 390, 300).Contains(p)) ||
                 new Rect(24, 100, 280, SocialHeight(client.CurrentSnapshot)).Contains(p) ||
                 (p.x < 354 && p.y > CanvasHeight - 235) ||
                 new Rect(CanvasWidth - 320, 20, 300, CanvasHeight - 40).Contains(p) ||
@@ -159,6 +149,7 @@ namespace FortyTwoAndBeyond.Client
             panelTexture = SurfaceTexture(new Color(.02f, .055f, .085f, .98f), new Color(.004f, .014f, .03f, .98f), 64, 64);
             weaveTexture = Resources.Load<Texture2D>("HudWeave");
             frameTexture = Resources.Load<Texture2D>("HudFrame");
+            legacyCornerTexture = Resources.Load<Texture2D>("LegacyHud01");
             if (weaveTexture != null) weaveTexture.wrapMode = TextureWrapMode.Repeat;
             buttonTexture = SurfaceTexture(new Color(.065f, .17f, .23f, 1), new Color(.018f, .052f, .085f, 1), 32, 32);
             selectedTexture = SurfaceTexture(new Color(.15f, .38f, .45f, 1), new Color(.045f, .15f, .22f, 1), 32, 32);
@@ -176,6 +167,7 @@ namespace FortyTwoAndBeyond.Client
             primaryButton = new GUIStyle(button) { alignment = TextAnchor.MiddleCenter, fontSize = 17 };
             primaryButton.normal.background = selectedTexture; primaryButton.normal.textColor = white;
             primaryButton.hover.background = selectedTexture; primaryButton.hover.textColor = cyan;
+            equipmentRow = new GUIStyle(button) { fontSize = 13, padding = new RectOffset(8, 6, 4, 4) };
         }
 
         /// <returns>A shared transparent scanner dial with concentric range rings.</returns>
@@ -219,6 +211,13 @@ namespace FortyTwoAndBeyond.Client
             Fill(new Rect(rect.x, rect.y, 3, 22), cyan);
             Fill(new Rect(rect.x + rect.width - 3, rect.y + rect.height - 22, 3, 22), cyan);
             Fill(new Rect(rect.x + rect.width - 22, rect.y + rect.height - 3, 22, 3), cyan);
+            if (legacyCornerTexture != null)
+            {
+                Color previous = GUI.color;
+                GUI.color = new Color(.34f, .85f, 1f, .3f);
+                GUI.DrawTexture(new Rect(rect.xMax - 30, rect.y + 6, 22, 22), legacyCornerTexture);
+                GUI.color = previous;
+            }
         }
 
         /// <summary>Draw a shield, energy or hull gauge over a dim track.</summary>
@@ -231,7 +230,7 @@ namespace FortyTwoAndBeyond.Client
 
         /// <returns>The centered equipment overlay bounds.</returns>
         private Rect EquipmentRect()
-        { return new Rect((CanvasWidth - 760) * .5f, Mathf.Max(95, (CanvasHeight - 610) * .5f), 760, Mathf.Min(610, CanvasHeight - 130)); }
+        { return new Rect((CanvasWidth - 960) * .5f, Mathf.Max(80, (CanvasHeight - 620) * .5f), 960, Mathf.Min(620, CanvasHeight - 125)); }
 
         /// <returns>The centered keyboard settings overlay bounds.</returns>
         private Rect SettingsRect()
@@ -292,11 +291,17 @@ namespace FortyTwoAndBeyond.Client
                 refreshAt = Time.unscaledTime + .25f; sector = snapshot.Sector;
             }
             TrackDamage(snapshot);
-            if (Event.current.type == EventType.Repaint) { WorldLabels(snapshot); PlayerLabels(snapshot); WreckLabels(snapshot); DamageLabels(snapshot); }
+            if (Event.current.type == EventType.Repaint)
+            {
+                if (client.Chart) ChartGrid(snapshot);
+                if (client.Chart) ChartMarkers(snapshot); else WorldLabels(snapshot);
+                PlayerLabels(snapshot); WreckLabels(snapshot); DamageLabels(snapshot);
+            }
             Navigation(snapshot);
             Radar(snapshot);
             Social(snapshot);
-            if (!client.AbilitiesOpen && !client.Incapacitated) { TargetLock(snapshot); WreckPanel(snapshot); }
+            if (!client.AbilitiesOpen && !client.Incapacitated)
+            { if (!client.Chart) TargetLock(snapshot); WreckPanel(snapshot); }
             if (equipmentOpen) Equipment(snapshot);
             InputFocused = GUI.GetNameOfFocusedControl() == "Group invite";
             ChatEntry();
@@ -648,7 +653,7 @@ namespace FortyTwoAndBeyond.Client
                 center.y - dy * 67 / 20000 - size * .5f, size, size), color);
         }
 
-        /// <summary>Keep the selected ship's range and survivability visible during flight.</summary>
+        /// <summary>Present the selected ship as an actionable combat or rescue target.</summary>
         private void TargetLock(Snapshot snapshot)
         {
             if (wreckId != 0) return;
@@ -657,51 +662,56 @@ namespace FortyTwoAndBeyond.Client
             if (target == null || !target.HasPosition) return;
             bool canJumpstart = target.IsPlayer && target.MaxHull > 0 && target.Hull <= 0 &&
                 snapshot.AvailableAbilities.Contains(65u);
-            float height = target.IsPlayer ? canJumpstart ? 207 : 165 : 108;
-            float x = (CanvasWidth - 340) * .5f, y = CanvasHeight - height - 122;
-            Panel(new Rect(x, y, 340, height));
+            float height = target.IsPlayer ? canJumpstart ? 238 : 201 : 194;
+            float x = (CanvasWidth - 390) * .5f, y = CanvasHeight - height - 122;
+            Panel(new Rect(x, y, 390, height));
             Color signal = target.IsPlayer ? cyan : target.Hostile ? new Color(1f, .42f, .32f) : gold;
-            Fill(new Rect(x + 12, y + 13, 5, 5), signal);
-            GUI.Label(new Rect(x + 25, y + 7, 290, 18),
-                target.IsPlayer ? "PLAYER TARGET" : target.Hostile ? "HOSTILE TARGET" : "MOB TARGET", small);
-            GUI.Label(new Rect(x + 12, y + 26, 315, 24), target.Name.ToUpperInvariant(), body);
+            Fill(new Rect(x + 15, y + 18, 6, 6), signal);
+            GUI.Label(new Rect(x + 29, y + 12, 300, 20),
+                target.IsPlayer ? "PILOT / ALLIED CONTACT" : target.Hostile ? "THREAT / HOSTILE" : "CONTACT / NEUTRAL", section);
+            GUI.Label(new Rect(x + 15, y + 37, 355, 26), target.Name.ToUpperInvariant(), body);
             float distance = target.Position.Distance(snapshot.Position);
-            string state = snapshot.WeaponsFiring && snapshot.SelectedTargetId == target.Id ? "  ·  FIRING" : "";
-            GUI.Label(new Rect(x + 12, y + 51, 310, 20), $"RANGE  {distance / 1000:0.00} km{state}", small);
-            if (target.Shield >= 0)
-                Meter(new Rect(x + 12, y + 77, 150, 8), "SHIELD", target.Shield, cyan);
-            if (target.MaxHull > 0)
-                Meter(new Rect(x + 178, y + 77, 150, 8), "HULL", target.Hull / target.MaxHull, gold);
-            if (target.IsPlayer)
+            bool firingAtTarget = snapshot.WeaponsFiring && snapshot.SelectedTargetId == target.Id;
+            GUI.Label(new Rect(x + 15, y + 65, 355, 20),
+                $"RANGE {distance / 1000:0.00} km   ·   " + (firingAtTarget ? "WEAPONS FIRING" : "WEAPONS SAFE"), small);
+            GUI.Label(new Rect(x + 15, y + 91, 169, 18), target.Shield >= 0 ?
+                $"SHIELD  {Mathf.Clamp01(target.Shield) * 100:0}%" : "SHIELD  NO DATA", small);
+            GUI.Label(new Rect(x + 204, y + 91, 169, 18), target.MaxHull > 0 ?
+                $"HULL  {Mathf.Max(0, target.Hull):0}/{target.MaxHull:0}" : "HULL  NO DATA", small);
+            if (target.Shield >= 0) Meter(new Rect(x + 15, y + 112, 169, 7), "", target.Shield, cyan);
+            if (target.MaxHull > 0) Meter(new Rect(x + 204, y + 112, 169, 7), "", target.Hull / target.MaxHull, gold);
+            if (!target.IsPlayer)
             {
-                bool member = snapshot.Group.Members.Any(item => item.Id == target.Id);
-                bool leader = !snapshot.Group.Joined || snapshot.Group.IsLeader;
-                bool full = snapshot.Group.Joined && snapshot.Group.Members.Length >= 5;
-                bool pending = invitePendingId == target.Id && Time.unscaledTime - invitePendingAt < 5 &&
-                    (Time.unscaledTime - invitePendingAt < .2f || client.Status == "Requesting group invitation");
-                bool sentRecently = invitePendingId == target.Id && Time.unscaledTime - invitePendingAt < 5 &&
-                    client.Status == "Group invitation sent.";
-                GUI.enabled = leader && !member && !full && !pending && !sentRecently;
-                if (GUI.Button(new Rect(x + 12, y + 102, 316, 30),
-                    member ? "ALREADY IN YOUR GROUP" : !leader ? "ONLY YOUR LEADER CAN INVITE" :
-                    full ? "GROUP IS FULL" : pending ? "WAITING FOR SERVER…" : sentRecently ? "INVITATION SENT" :
-                    "INVITE " + target.Name.ToUpperInvariant() + " TO GROUP", button))
-                { client.InvitePlayer(target.Id); invitePendingId = target.Id; invitePendingAt = Time.unscaledTime; }
+                GUI.enabled = client.Ready && !client.Incapacitated;
+                if (GUI.Button(new Rect(x + 15, y + 136, 229, 38),
+                    firingAtTarget ? "STOP WEAPONS" : "FIRE ON TARGET", firingAtTarget ? hostileButton : primaryButton))
+                { if (firingAtTarget) client.StopWeapons(); else client.ToggleWeapons(target.Id); }
                 GUI.enabled = true;
-                if (pending) GUI.Label(new Rect(x + 12, y + 138, 316, 20), "Invitation request pending", small);
-                else if (invitePendingId == target.Id && Time.unscaledTime - invitePendingAt < 8 &&
-                    client.Status != "Requesting group invitation")
-                    GUI.Label(new Rect(x + 12, y + 138, 316, 20), client.Status, small);
-                if (canJumpstart)
-                {
-                    GUI.enabled = client.Ready && !client.Incapacitated &&
-                        snapshot.CastingAbilityId == uint.MaxValue && snapshot.SelectedTargetId == target.Id;
-                    if (GUI.Button(new Rect(x + 12, y + 164, 316, 30),
-                        snapshot.SelectedTargetId == target.Id ?
-                        "JUMPSTART " + target.Name.ToUpperInvariant() : "SELECTING JUMPSTART TARGET…", selected))
-                        client.ActivateAbility(65u);
-                    GUI.enabled = true;
-                }
+                if (GUI.Button(new Rect(x + 253, y + 136, 120, 38), "FOLLOW", button)) client.FollowSelected();
+                return;
+            }
+            bool member = snapshot.Group.Members.Any(item => item.Id == target.Id);
+            bool leader = !snapshot.Group.Joined || snapshot.Group.IsLeader;
+            bool full = snapshot.Group.Joined && snapshot.Group.Members.Length >= 5;
+            bool pending = invitePendingId == target.Id && Time.unscaledTime - invitePendingAt < 5 &&
+                (Time.unscaledTime - invitePendingAt < .2f || client.Status == "Requesting group invitation");
+            bool sentRecently = invitePendingId == target.Id && Time.unscaledTime - invitePendingAt < 5 &&
+                client.Status == "Group invitation sent.";
+            GUI.enabled = leader && !member && !full && !pending && !sentRecently;
+            if (GUI.Button(new Rect(x + 15, y + 136, 229, 38),
+                member ? "IN YOUR GROUP" : !leader ? "LEADER INVITES" : full ? "GROUP FULL" :
+                pending ? "WAITING FOR SERVER" : sentRecently ? "INVITATION SENT" : "INVITE TO GROUP", button))
+            { client.InvitePlayer(target.Id); invitePendingId = target.Id; invitePendingAt = Time.unscaledTime; }
+            GUI.enabled = true;
+            if (GUI.Button(new Rect(x + 253, y + 136, 120, 38), "FOLLOW", button)) client.FollowSelected();
+            if (canJumpstart)
+            {
+                GUI.enabled = client.Ready && !client.Incapacitated &&
+                    snapshot.CastingAbilityId == uint.MaxValue && snapshot.SelectedTargetId == target.Id;
+                if (GUI.Button(new Rect(x + 15, y + 185, 358, 36),
+                    snapshot.SelectedTargetId == target.Id ? "JUMPSTART PILOT" : "SELECTING JUMPSTART TARGET", selected))
+                    client.ActivateAbility(65u);
+                GUI.enabled = true;
             }
         }
 
@@ -741,6 +751,99 @@ namespace FortyTwoAndBeyond.Client
             }
             GUI.enabled = true;
             GUILayout.EndScrollView(); GUILayout.EndArea();
+        }
+
+        /// <summary>Draw a sector coordinate grid, range scale and own-ship axis under chart markers.</summary>
+        private void ChartGrid(Snapshot snapshot)
+        {
+            float left = 320, right = CanvasWidth - 330, top = 92, bottom = CanvasHeight - 120;
+            if (right <= left || bottom <= top) return;
+            Rect map = new Rect(left, top, right - left, bottom - top);
+            Fill(map, new Color(.006f, .028f, .047f, .73f));
+            float radiusKm = client.ChartRadiusKm;
+            float pixelsPerKm = CanvasHeight / (radiusKm * 2f);
+            float stepKm = radiusKm < 35 ? 5 : radiusKm < 90 ? 10 : radiusKm < 250 ? 25 : 50;
+            float ownEastKm = snapshot.Position.Y / 1000f, ownNorthKm = snapshot.Position.X / 1000f;
+            float centerX = CanvasWidth * .5f, centerY = CanvasHeight * .5f;
+            float startEast = Mathf.Floor((ownEastKm - radiusKm * 2) / stepKm) * stepKm;
+            float endEast = ownEastKm + radiusKm * 2;
+            for (float east = startEast; east <= endEast; east += stepKm)
+            {
+                float x = centerX + (east - ownEastKm) * pixelsPerKm;
+                if (x < left || x > right) continue;
+                bool major = Mathf.Abs(Mathf.Repeat(east, stepKm * 4)) < .01f;
+                Fill(new Rect(x, top, major ? 2 : 1, map.height),
+                    new Color(.14f, .5f, .6f, major ? .24f : .12f));
+            }
+            float startNorth = Mathf.Floor((ownNorthKm - radiusKm * 2) / stepKm) * stepKm;
+            float endNorth = ownNorthKm + radiusKm * 2;
+            for (float north = startNorth; north <= endNorth; north += stepKm)
+            {
+                float y = centerY - (north - ownNorthKm) * pixelsPerKm;
+                if (y < top || y > bottom) continue;
+                bool major = Mathf.Abs(Mathf.Repeat(north, stepKm * 4)) < .01f;
+                Fill(new Rect(left, y, map.width, major ? 2 : 1),
+                    new Color(.14f, .5f, .6f, major ? .24f : .12f));
+            }
+            Fill(new Rect(left, top, map.width, 1), new Color(.26f, .73f, .85f, .35f));
+            Fill(new Rect(left, bottom - 1, map.width, 1), new Color(.26f, .73f, .85f, .35f));
+            Fill(new Rect(left, top, 1, map.height), new Color(.26f, .73f, .85f, .35f));
+            Fill(new Rect(right - 1, top, 1, map.height), new Color(.26f, .73f, .85f, .35f));
+            Fill(new Rect(centerX - 8, centerY, 16, 1), white);
+            Fill(new Rect(centerX, centerY - 8, 1, 16), white);
+            Fill(new Rect(left + 14, top + 13, 262, 47), new Color(.004f, .018f, .032f, .87f));
+            GUI.Label(new Rect(left + 23, top + 17, 243, 20), "SECTOR CHART  /  XY", section);
+            GUI.Label(new Rect(left + 23, top + 37, 243, 18),
+                "GRID " + stepKm.ToString("0") + " km  ·  SCROLL TO ZOOM", small);
+            Fill(new Rect(right - 119, bottom - 42, 105, 30), new Color(.004f, .018f, .032f, .87f));
+            Fill(new Rect(right - 108, bottom - 19, stepKm * pixelsPerKm, 2), cyan);
+            GUI.Label(new Rect(right - 108, bottom - 38, 94, 18),
+                stepKm.ToString("0") + " km", small);
+        }
+
+        /// <summary>Place readable destinations across the sector chart without label collisions.</summary>
+        private void ChartMarkers(Snapshot snapshot)
+        {
+            var occupied = new List<Rect>();
+            foreach (ShipActor actor in snapshot.Players.Concat(snapshot.Mobs).Where(item => item.HasPosition))
+            {
+                Vector3 point = client.ProjectPlayer(actor.Id);
+                if (point.z > 0) occupied.Add(new Rect(point.x / Scale + 8, point.y / Scale - 18, 245, 42));
+            }
+            int labeled = 0, marked = 0;
+            uint selectedId = client.Target?.Id ?? 0;
+            foreach (MapObject item in destinations.OrderByDescending(item => item.Id == selectedId))
+            {
+                Vector3 point = client.Project(item.Position);
+                float x = point.x / Scale, y = point.y / Scale;
+                if (point.z <= 0 || x < 337 || x > CanvasWidth - 347 ||
+                    y < 108 || y > CanvasHeight - 138) continue;
+                bool active = item.Id == selectedId;
+                if (marked++ < 90)
+                {
+                    Color marker = active ? gold : item.Kind == 11 ? new Color(.8f, .68f, 1f) : cyan;
+                    Fill(new Rect(x - (active ? 6 : 3), y - (active ? 6 : 3), active ? 12 : 6, active ? 12 : 6), marker);
+                }
+                if (!active && labeled >= 9) continue;
+                Rect label = default; bool placed = false;
+                foreach (Vector2 offset in LabelOffsets)
+                {
+                    Rect candidate = new Rect(x + offset.x, y + offset.y, 182, 38);
+                    if (candidate.xMin < 339 || candidate.xMax > CanvasWidth - 349 ||
+                        candidate.yMin < 112 || candidate.yMax > CanvasHeight - 143 ||
+                        occupied.Any(other => other.Overlaps(candidate))) continue;
+                    label = candidate; placed = true; break;
+                }
+                if (!placed) continue;
+                occupied.Add(label); labeled++;
+                Color color = active ? gold : item.Kind == 11 ? new Color(.8f, .68f, 1f) : cyan;
+                Fill(label, new Color(.004f, .018f, .035f, .9f));
+                Fill(new Rect(label.x, label.y, 3, label.height), color);
+                GUI.Label(new Rect(label.x + 9, label.y + 1, 170, 18), item.Name, body);
+                GUI.Label(new Rect(label.x + 9, label.y + 20, 170, 17),
+                    (item.Kind == 11 ? "GATE" : item.Kind == 12 ? "STATION" : "NAV") + "   ·   " +
+                    (item.Position.Distance(snapshot.Position) / 1000).ToString("0.0") + " km", small);
+            }
         }
 
         /// <summary>Project limited markers without enlarging physical models.</summary>
@@ -807,6 +910,7 @@ namespace FortyTwoAndBeyond.Client
                 Fill(new Rect(point.x - radius, point.y + radius - 7, 2, 9), color);
                 Fill(new Rect(point.x + radius - 9, point.y + radius, 9, 2), color);
                 Fill(new Rect(point.x + radius - 1, point.y + radius - 7, 2, 9), color);
+                if (client.Chart && !active) continue;
                 float labelX = point.x + radius + 6, labelY = point.y - 16;
                 Fill(new Rect(labelX, labelY, 250, active ? 58 : 41), new Color(.005f, .018f, .032f, .88f));
                 Fill(new Rect(labelX, labelY, 3, active ? 58 : 41), color);
@@ -869,13 +973,75 @@ namespace FortyTwoAndBeyond.Client
             }
         }
 
-        /// <summary>Offer authoritative group controls and a selectable nearby-contact roster.</summary>
+        /// <summary>Show threats first, with a separate crew management tab.</summary>
         private void Social(Snapshot snapshot)
         {
             float height = SocialHeight(snapshot);
-            Panel(new Rect(24, 100, 280, height));
-            GUILayout.BeginArea(new Rect(34, 108, 260, height - 16));
+            Rect panel = new Rect(24, 100, 280, height);
+            Panel(panel);
+            GUI.Label(new Rect(37, 113, 240, 22), "TACTICAL SCANNER", section);
+            int hostileCount = socialContacts.Count(actor => actor.Hostile);
+            GUI.Label(new Rect(37, 137, 245, 18),
+                $"{hostileCount} THREATS   ·   {socialContacts.Length} CONTACTS", small);
+            if (GUI.Button(new Rect(37, 165, 124, 31), "CONTACTS", crewTab ? button : selected)) crewTab = false;
+            if (GUI.Button(new Rect(166, 165, 124, 31),
+                snapshot.Confirmation != null && snapshot.Confirmation.Kind != ConfirmationKind.Jumpstart ? "CREW  !" : "CREW",
+                crewTab ? selected : button)) crewTab = true;
+            GUILayout.BeginArea(new Rect(35, 205, 256, height - 119));
             contactsScroll = GUILayout.BeginScrollView(contactsScroll);
+            if (crewTab) CrewRoster(snapshot);
+            else
+            {
+                DrawContactGroup(snapshot, "HOSTILE SIGNALS", socialContacts.Where(actor => actor.Hostile));
+                DrawContactGroup(snapshot, "PILOTS", socialContacts.Where(actor => actor.IsPlayer && !actor.Hostile));
+                DrawContactGroup(snapshot, "NEUTRAL SIGNALS", socialContacts.Where(actor => !actor.IsPlayer && !actor.Hostile));
+                if (socialContacts.Length == 0) GUILayout.Label("No ships in scanner range", small);
+                if (snapshot.WeaponsFiring && GUILayout.Button("STOP ALL WEAPONS", hostileButton, GUILayout.Height(31))) client.StopWeapons();
+                if (nearbyWrecks.Length > 0) GUILayout.Label("SALVAGE", section);
+                foreach (MapObject wreck in nearbyWrecks)
+                    if (GUILayout.Button(wreck.Name + "  ·  " +
+                        (wreck.Position.Distance(snapshot.Position) / 1000).ToString("0.0") + " km",
+                        wreckId == wreck.Id ? selected : button, GUILayout.Height(33))) SelectWreck(wreck.Id);
+                MapObject selectedWreck = nearbyWrecks.FirstOrDefault(item => item.Id == wreckId);
+                if (selectedWreck != null)
+                {
+                    bool nearby = selectedWreck.Position.Distance(snapshot.Position) < 2000;
+                    GUI.enabled = nearby;
+                    if (GUILayout.Button(snapshot.OpenLootId == wreckId ? "WRECK OPEN" : "OPEN WRECK", button)) client.OpenLoot(wreckId);
+                    GUI.enabled = true;
+                    if (!nearby) GUILayout.Label("Move within 2 km to loot", small);
+                    CorpseLoot contents = snapshot.Loot.FirstOrDefault(item => item.Id == wreckId);
+                    if (snapshot.OpenLootId == wreckId && contents != null)
+                        foreach (ItemView item in contents.Items.Where(item => item != null))
+                            if (GUILayout.Button("TRACTOR  " + item.Name + "  ×" + item.Quantity, button))
+                                client.TakeLoot(wreckId, item.Slot);
+                }
+            }
+            GUILayout.EndScrollView(); GUILayout.EndArea();
+            float top = CanvasHeight - 235;
+            Panel(new Rect(24, top, 330, 115));
+            GUI.Label(new Rect(34, top + 6, 310, 105), string.Join("\n", snapshot.Messages.Reverse().Take(5).Reverse()), small);
+        }
+
+        /// <summary>Draw scanner contacts grouped by threat and affiliation.</summary>
+        private void DrawContactGroup(Snapshot snapshot, string title, IEnumerable<ShipActor> actors)
+        {
+            ShipActor[] group = actors.ToArray();
+            if (group.Length == 0) return;
+            GUILayout.Space(8); GUILayout.Label(title + "  /  " + group.Length, section);
+            foreach (ShipActor actor in group)
+            {
+                string status = actor.MaxHull > 0 ?
+                    $"HULL {Mathf.Clamp01(actor.Hull / actor.MaxHull) * 100:0}%" : "HULL UNKNOWN";
+                string titleLine = actor.Name + "   " + (actor.Position.Distance(snapshot.Position) / 1000).ToString("0.0") + " km";
+                GUIStyle style = contactId == actor.Id ? selected : actor.Hostile ? hostileButton : actor.IsPlayer ? playerButton : button;
+                if (GUILayout.Button(titleLine + "\n" + status, style, GUILayout.Height(47))) SelectContact(actor.Id);
+            }
+        }
+
+        /// <summary>Manage invitations and formation separately from tactical contacts.</summary>
+        private void CrewRoster(Snapshot snapshot)
+        {
             GUILayout.Label(snapshot.Group.Joined ? "CREW" + (snapshot.Group.IsLeader ? "  /  LEADER" : "") : "CREW  /  SOLO", section);
             GUILayout.Label("Invite any online toon by name", small);
             GUI.SetNextControlName("Group invite");
@@ -927,133 +1093,147 @@ namespace FortyTwoAndBeyond.Client
                 if (snapshot.Group.IsLeader && GUILayout.Button("Disband", button)) client.SendChat("/disband");
                 GUILayout.EndHorizontal();
             }
-            GUILayout.Space(12); GUILayout.Label($"CONTACTS  /  {socialContacts.Length}", section);
-            foreach (ShipActor actor in socialContacts)
-            {
-                string kind = actor.IsPlayer ? "PLAYER" : actor.Hostile ? "HOSTILE" : "NPC";
-                GUIStyle contactStyle = contactId == actor.Id ? selected : actor.IsPlayer ? playerButton : actor.Hostile ? hostileButton : button;
-                if (GUILayout.Button($"{actor.Name}\n{kind}   ·   {actor.Position.Distance(snapshot.Position) / 1000:0.0} km",
-                    contactStyle, GUILayout.Height(46)))
-                    SelectContact(actor.Id);
-            }
-            ShipActor contact = snapshot.Players.Concat(snapshot.Mobs).FirstOrDefault(a => a.Id == contactId);
-            if (contact != null)
-            {
-                GUILayout.Space(8); GUILayout.Label(contact.Name, body);
-                if (contact.Shield >= 0) GUILayout.Label($"Shield  {contact.Shield * 100:0}%", small);
-                if (contact.MaxHull > 0) GUILayout.Label($"Hull  {contact.Hull:0} / {contact.MaxHull:0}", small);
-                if (GUILayout.Button("Follow target  ·  " + client.Bindings.Display(ControlAction.Follow), button)) client.FollowSelected();
-                if (contact.IsPlayer && GUILayout.Button("Invite to group", button)) client.InvitePlayer(contact.Id);
-                if (!contact.IsPlayer && GUILayout.Button((snapshot.WeaponsFiring ? "Stop weapons  ·  " : "Fire weapons  ·  ") +
-                    client.Bindings.Display(ControlAction.Fire), button))
-                { if (snapshot.WeaponsFiring) client.StopWeapons(); else client.ToggleWeapons(contact.Id); }
-            }
-            if (snapshot.WeaponsFiring && GUILayout.Button("STOP ALL WEAPONS  ·  " + client.Bindings.Display(ControlAction.Fire), button)) client.StopWeapons();
-            MapObject[] wrecks = nearbyWrecks;
-            if (wrecks.Length > 0) GUILayout.Label("WRECKS", body);
-            foreach (MapObject wreck in wrecks)
-                if (GUILayout.Button(wreck.Name + "  ·  " + (wreck.Position.Distance(snapshot.Position) / 1000).ToString("0.0") + " km",
-                    wreckId == wreck.Id ? selected : button)) SelectWreck(wreck.Id);
-            MapObject selectedWreck = wrecks.FirstOrDefault(item => item.Id == wreckId);
-            if (selectedWreck != null)
-            {
-                bool nearby = selectedWreck.Position.Distance(snapshot.Position) < 2000;
-                GUI.enabled = nearby;
-                if (GUILayout.Button(snapshot.OpenLootId == wreckId ? "Wreck open" : "Open wreck", button)) client.OpenLoot(wreckId);
-                GUI.enabled = true;
-                if (!nearby) GUILayout.Label("Move within 2 km to loot", small);
-                CorpseLoot contents = snapshot.Loot.FirstOrDefault(item => item.Id == wreckId);
-                if (snapshot.OpenLootId == wreckId && contents != null)
-                {
-                    ItemView[] stock = contents.Items.Where(item => item != null).ToArray();
-                    if (stock.Length == 0) GUILayout.Label("No items remain", small);
-                    foreach (ItemView item in stock)
-                        if (GUILayout.Button("TRACTOR  " + item.Name + "  ×" + item.Quantity, button))
-                            client.TakeLoot(wreckId, item.Slot);
-                }
-            }
-            GUILayout.EndScrollView(); GUILayout.EndArea();
-            float top = CanvasHeight - 235;
-            Panel(new Rect(24, top, 330, 115));
-            GUI.Label(new Rect(34, top + 6, 310, 105), string.Join("\n", snapshot.Messages.Reverse().Take(5).Reverse()), small);
         }
 
-        /// <summary>Draw server-reported cargo and hardpoints with explicit equip controls.</summary>
+        /// <summary>Draw cargo, hardpoints and a large item inspection bay.</summary>
         private void Equipment(Snapshot snapshot)
         {
             Rect rect = EquipmentRect(); Panel(rect);
-            GUI.Label(new Rect(rect.x + 20, rect.y + 16, 650, 32), "SHIP LOADOUT", heading);
-            if (GUI.Button(new Rect(rect.xMax - 47, rect.y + 15, 28, 28), "×", button)) equipmentOpen = false;
-            GUI.Label(new Rect(rect.x + 20, rect.y + 50, 700, 24),
-                $"{snapshot.WeaponMounts} weapon hardpoints  ·  {snapshot.DeviceMounts} device slots  ·  Server equipment", small);
-            float columnHeight = rect.height - 225;
-            GUILayout.BeginArea(new Rect(rect.x + 20, rect.y + 83, 344, columnHeight));
+            float left = rect.x + 20, top = rect.y + 15;
+            GUI.Label(new Rect(left, top, 570, 32), "SHIP LOADOUT", heading);
+            if (GUI.Button(new Rect(rect.xMax - 48, top, 28, 28), "×", button)) equipmentOpen = false;
+            GUI.Label(new Rect(left, top + 37, 800, 20),
+                $"{snapshot.WeaponMounts} WEAPON HARDPOINTS   ·   {snapshot.DeviceMounts} DEVICE SLOTS   ·   SERVER EQUIPMENT", small);
+            float listTop = top + 70, listHeight = rect.height - 278;
+            float mountX = left, cargoX = left + 319, detailX = left + 638;
+            DrawMountedList(snapshot, new Rect(mountX, listTop, 300, listHeight));
+            DrawCargoList(snapshot, new Rect(cargoX, listTop, 300, listHeight));
+            DrawItemDetail(snapshot, new Rect(detailX, listTop, 282, listHeight));
+            ItemView cargo = selectedCargo >= 0 && selectedCargo < snapshot.Cargo.Length ? snapshot.Cargo[selectedCargo] : null;
+            ItemView mounted = selectedMount >= 0 && selectedMount < snapshot.Mounted.Length ? snapshot.Mounted[selectedMount] : null;
             int usedCargo = snapshot.Cargo.Count(item => item != null);
-            GUILayout.Label($"CARGO HOLD   {usedCargo}/{snapshot.Cargo.Length}", body);
-            cargoScroll = GUILayout.BeginScrollView(cargoScroll);
-            foreach (ItemView item in snapshot.Cargo)
-            {
-                if (item == null) continue;
-                string title = $"{item.Slot:00}  {item.Name}" + (item.Quantity > 1 ? $"  ×{item.Quantity}" : "");
-                if (GUILayout.Button(title, selectedCargo == item.Slot ? selected : button, GUILayout.Height(28)))
-                    selectedCargo = selectedCargo == item.Slot ? -1 : item.Slot;
-            }
-            GUILayout.EndScrollView(); GUILayout.EndArea();
-            GUILayout.BeginArea(new Rect(rect.x + 393, rect.y + 83, 344, columnHeight));
-            GUILayout.Label("INSTALLED HARDPOINTS", body);
+            bool fits = FitsHardpoint(cargo, selectedMount, snapshot);
+            float actionY = rect.yMax - 104;
+            Fill(new Rect(left, actionY - 13, rect.width - 40, 1), new Color(.3f, .65f, .75f, .65f));
+            GUI.Label(new Rect(left, actionY - 1, 920, 19),
+                "SELECT CARGO + A COMPATIBLE SLOT TO INSTALL   /   SELECT A FILLED SLOT TO REMOVE", small);
+            GUI.enabled = client.Ready && fits;
+            if (GUI.Button(new Rect(left, actionY + 27, 300, 37),
+                cargo?.Type == 10 ? "LOAD AMMO  →" : "INSTALL  →", primaryButton))
+                client.EquipCargo(selectedCargo, selectedMount);
+            GUI.enabled = client.Ready && mounted != null && usedCargo < snapshot.Cargo.Length;
+            if (GUI.Button(new Rect(cargoX, actionY + 27, 300, 37),
+                usedCargo < snapshot.Cargo.Length ? "←  REMOVE TO CARGO" : "CARGO HOLD FULL", button))
+                client.UnequipMount(selectedMount);
+            bool weapon = mounted != null && mounted.Type >= 14 && mounted.Type <= 16 &&
+                selectedMount >= 3 && selectedMount < 3 + snapshot.WeaponMounts;
+            GUI.enabled = client.Ready && !client.Incapacitated && snapshot.Station == null && weapon;
+            if (GUI.Button(new Rect(detailX, actionY + 27, 282, 37),
+                weapon && (mounted.WeaponState & 1) != 0 ? "STOP SELECTED WEAPON" : "FIRE SELECTED WEAPON", hostileButton))
+                client.ActivateWeapon(selectedMount);
+            GUI.enabled = true;
+        }
+
+        /// <summary>List installed systems by slot and report weapon ammunition state.</summary>
+        private void DrawMountedList(Snapshot snapshot, Rect rect)
+        {
+            GUILayout.BeginArea(rect);
+            GUILayout.Label("INSTALLED / HARDPOINTS", section);
             mountScroll = GUILayout.BeginScrollView(mountScroll);
             for (int slot = 0; slot < snapshot.Mounted.Length; slot++)
             {
                 bool available = slot < 3 || slot >= 3 && slot < 3 + snapshot.WeaponMounts ||
                     slot >= 9 && slot < 9 + snapshot.DeviceMounts;
                 if (!available) continue;
+                if (slot == 0) GUILayout.Label("CORE SYSTEMS", small);
+                if (slot == 3) GUILayout.Label("WEAPONS", small);
+                if (slot == 9) GUILayout.Label("DEVICES", small);
                 ItemView item = snapshot.Mounted[slot];
-                string title = $"{slot:00}  " + (item?.Name ?? (slot < 3 ? new[] { "Reactor", "Engine", "Shield" }[slot] : slot < 9 ? "Weapon" : "Device") + " · EMPTY");
+                string slotName = slot < 3 ? new[] { "SHIELD", "REACTOR", "ENGINE" }[slot] : slot < 9 ?
+                    "WEAPON " + (slot - 2) : "DEVICE " + (slot - 8);
+                string title = slotName + "  /  " + (item?.Name ?? "EMPTY");
                 bool weapon = item != null && item.Type >= 14 && item.Type <= 16;
                 if (weapon)
                 {
-                    string state = (item.WeaponState & 1) != 0 ? "FIRING" : "SAFE";
-                    ItemView ammo = snapshot.Ammo[slot];
-                    title += "\n" + state + (item.Type == 14 ? "  ·  BEAM" :
-                        ammo == null ? "  ·  NO AMMO" : $"  ·  {ammo.Name} ×{ammo.Quantity}");
+                    ItemView ammo = slot < snapshot.Ammo.Length ? snapshot.Ammo[slot] : null;
+                    title += "\n" + ((item.WeaponState & 1) != 0 ? "● FIRING" : "○ SAFE") +
+                        (item.Type == 14 ? "   ·   BEAM" : ammo == null ? "   ·   NO AMMO" :
+                            "   ·   " + ammo.Quantity + " ROUNDS");
                 }
-                if (GUILayout.Button(title, selectedMount == slot ? selected : button,
-                    GUILayout.Height(weapon ? 43 : 28)))
-                    selectedMount = selectedMount == slot ? -1 : slot;
+                else if (item != null) title += "\nCONDITION " + (Mathf.Clamp01(item.Structure) * 100).ToString("0") + "%";
+                if (GUILayout.Button(title, selectedMount == slot ? selected : equipmentRow, GUILayout.Height(item == null ? 38 : 59)))
+                    { selectedMount = selectedMount == slot ? -1 : slot; inspectMount = true; }
             }
             GUILayout.EndScrollView(); GUILayout.EndArea();
-            float foot = rect.yMax - 70;
-            ItemView cargo = selectedCargo >= 0 && selectedCargo < snapshot.Cargo.Length ? snapshot.Cargo[selectedCargo] : null;
-            ItemView mounted = selectedMount >= 0 && selectedMount < snapshot.Mounted.Length ? snapshot.Mounted[selectedMount] : null;
-            ItemView inspected = cargo ?? mounted;
-            GUI.Label(new Rect(rect.x + 20, foot - 82, 714, 25),
-                inspected != null ? $"{inspected.Name.ToUpperInvariant()}   ·   TEMPLATE {inspected.Template}   ·   ×{inspected.Quantity}" :
-                "Select cargo or installed gear to inspect its condition.", body);
-            if (inspected != null)
+        }
+
+        /// <summary>List cargo with category, stack count and condition.</summary>
+        private void DrawCargoList(Snapshot snapshot, Rect rect)
+        {
+            GUILayout.BeginArea(rect);
+            int used = snapshot.Cargo.Count(item => item != null);
+            GUILayout.Label($"CARGO HOLD  /  {used} OF {snapshot.Cargo.Length}", section);
+            cargoScroll = GUILayout.BeginScrollView(cargoScroll);
+            foreach (ItemView item in snapshot.Cargo)
             {
-                string details = $"Quality {inspected.Quality * 100:0}%   ·   Structure {inspected.Structure * 100:0}%";
-                if (inspected.Range > 0) details += $"   ·   Range {inspected.Range:0} m";
-                if (inspected.Price > 0) details += $"   ·   Quote {inspected.Price:N0} credits";
-                GUI.Label(new Rect(rect.x + 20, foot - 54, 714, 22), details, small);
-                if (!string.IsNullOrWhiteSpace(inspected.Info))
-                    GUI.Label(new Rect(rect.x + 20, foot - 32, 714, 20), inspected.Info, small);
+                if (item == null) continue;
+                string category = ItemCategory(item.Type);
+                string title = item.Name + (item.Quantity > 1 ? "  ×" + item.Quantity : "") +
+                    "\n" + category + "   ·   " + (Mathf.Clamp01(item.Structure) * 100).ToString("0") + "% CONDITION";
+                if (GUILayout.Button(title, selectedCargo == item.Slot ? selected : equipmentRow, GUILayout.Height(56)))
+                    { selectedCargo = selectedCargo == item.Slot ? -1 : item.Slot; inspectMount = false; }
             }
-            bool fits = FitsHardpoint(cargo, selectedMount, snapshot);
-            bool cargoSpace = usedCargo < snapshot.Cargo.Length;
-            GUI.enabled = client.Ready && fits;
-            string installLabel = cargo?.Type == 10 ? "LOAD ONE AMMUNITION  →" : "INSTALL SELECTED CARGO  →";
-            if (GUI.Button(new Rect(rect.x + 20, foot, 330, 34), installLabel, button))
-                client.EquipCargo(selectedCargo, selectedMount);
-            GUI.enabled = client.Ready && mounted != null && cargoSpace;
-            if (GUI.Button(new Rect(rect.x + 393, foot, 344, 34), cargoSpace ? "REMOVE TO CARGO" : "CARGO HOLD FULL", button))
-                client.UnequipMount(selectedMount);
-            bool mountedWeapon = mounted != null && mounted.Type >= 14 && mounted.Type <= 16 &&
-                selectedMount >= 3 && selectedMount < 3 + snapshot.WeaponMounts;
-            GUI.enabled = client.Ready && !client.Incapacitated && snapshot.Station == null && mountedWeapon;
-            if (mountedWeapon && GUI.Button(new Rect(rect.x + 20, foot + 37, 717, 30),
-                (mounted.WeaponState & 1) != 0 ? "STOP SELECTED WEAPON" : "FIRE SELECTED WEAPON", button))
-                client.ActivateWeapon(selectedMount);
-            GUI.enabled = true;
+            if (used == 0) GUILayout.Label("Cargo hold empty", small);
+            GUILayout.EndScrollView(); GUILayout.EndArea();
+        }
+
+        /// <returns>string: Plain language category for one item type.</returns>
+        private static string ItemCategory(uint type)
+        {
+            switch (type)
+            {
+                case 2: return "SHIELD";
+                case 7: return "REACTOR";
+                case 6: return "ENGINE";
+                case 10: return "AMMUNITION";
+                case 11: return "DEVICE";
+                case 14: case 15: case 16: return "WEAPON";
+                default: return "SUPPLY";
+            }
+        }
+
+        /// <summary>Show detailed condition and stats for the focused cargo or installed item.</summary>
+        private void DrawItemDetail(Snapshot snapshot, Rect rect)
+        {
+            ItemView cargo = selectedCargo >= 0 && selectedCargo < snapshot.Cargo.Length ? snapshot.Cargo[selectedCargo] : null;
+            ItemView mount = selectedMount >= 0 && selectedMount < snapshot.Mounted.Length ? snapshot.Mounted[selectedMount] : null;
+            ItemView item = inspectMount ? mount ?? cargo : cargo ?? mount;
+            Panel(rect);
+            float x = rect.x + 13, y = rect.y + 14, width = rect.width - 26;
+            GUI.Label(new Rect(x, y, width, 22), "ITEM INSPECTOR", section);
+            if (item == null)
+            {
+                GUI.Label(new Rect(x, y + 44, width, 65),
+                    "Select cargo or an installed system to inspect its stats.", body);
+                GUI.Label(new Rect(x, y + 110, width, 65),
+                    "Install controls below require one cargo item and a compatible hardpoint.", small);
+                return;
+            }
+            GUI.Label(new Rect(x, y + 40, width, 26), item.Name.ToUpperInvariant(), body);
+            GUI.Label(new Rect(x, y + 69, width, 20), ItemCategory(item.Type) + "   ·   TEMPLATE " + item.Template, small);
+            GUI.Label(new Rect(x, y + 98, width, 18),
+                "QUALITY  " + (Mathf.Clamp01(item.Quality) * 100).ToString("0") + "%", small);
+            Meter(new Rect(x, y + 121, width, 8), "", item.Quality, cyan);
+            GUI.Label(new Rect(x, y + 141, width, 18),
+                "STRUCTURE  " + (Mathf.Clamp01(item.Structure) * 100).ToString("0") + "%", small);
+            Meter(new Rect(x, y + 164, width, 8), "", item.Structure, gold);
+            if (item.Range > 0) GUI.Label(new Rect(x, y + 186, width, 24),
+                "RANGE  " + item.Range.ToString("N0") + " m", body);
+            if (item.Price > 0) GUI.Label(new Rect(x, y + 216, width, 20),
+                "VALUE  " + item.Price.ToString("N0") + " CREDITS", small);
+            GUI.Label(new Rect(x, y + 242, width, 20), "STACK  ×" + item.Quantity, small);
+            if (!string.IsNullOrWhiteSpace(item.Info) && item.Info.Count(char.IsLetter) >= 3 && !item.Info.Contains("^"))
+                GUI.Label(new Rect(x, y + 268, width, 48), item.Info, small);
         }
 
         /// <summary>Check the item category against the unlocked ship hardpoint.</summary>

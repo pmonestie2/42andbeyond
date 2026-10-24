@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using FortyTwoAndBeyond.Client;
 using FortyTwoAndBeyond.Protocol;
 using UnityEditor;
@@ -16,13 +17,15 @@ namespace FortyTwoAndBeyond.Editor
         private static double deadline, captureAt;
         private static bool connected;
         private static int stage;
+        private static bool uiSmoke;
         private static ClientWorker peer;
 
         /// <summary>Resume the smoke driver after the Play-mode domain reload.</summary>
         static VisualSmoke()
         {
             if (Array.IndexOf(Environment.GetCommandLineArgs(), "--42andbeyond-visual-smoke") < 0) return;
-            deadline = EditorApplication.timeSinceStartup + 300;
+            uiSmoke = Array.IndexOf(Environment.GetCommandLineArgs(), "--42andbeyond-ui-smoke") >= 0;
+            deadline = EditorApplication.timeSinceStartup + (uiSmoke ? 90 : 300);
             EditorApplication.update += Tick;
         }
 
@@ -49,6 +52,7 @@ namespace FortyTwoAndBeyond.Editor
             if (client.ChoosingCharacter) client.ChooseCharacter(client.Characters[0].Slot);
             if (client.ConnectionError != null) { Fail(client.ConnectionError); return; }
             if (client.CurrentSnapshot == null || !client.CurrentSnapshot.Ready || !client.CurrentSnapshot.HasPosition || client.CurrentSnapshot.Objects.Length == 0) return;
+            if (uiSmoke) { TickUi(client); return; }
             if (stage == 0)
             {
                 if (peer == null) peer = new ClientWorker("127.0.0.1", "peer", "pass");
@@ -128,6 +132,74 @@ namespace FortyTwoAndBeyond.Editor
                 if (!File.Exists("Builds/verification/" + name + ".png")) { Fail("Missing capture: " + name); return; }
             Debug.Log("PASS: 3D scenery, flight/chart rendering, asteroid/station/gate approaches and actual sector travel to " + client.CurrentSnapshot.Sector);
             ClosePeer();
+            EditorApplication.update -= Tick;
+            EditorApplication.Exit(0);
+        }
+
+        /// <summary>Capture the target and equipment panels in an isolated graphical run.</summary>
+        private static void TickUi(SpaceClient client)
+        {
+            if (stage == 0)
+            {
+                ShipActor mob = client.CurrentSnapshot.Mobs.FirstOrDefault(actor => actor.HasPosition);
+                if (mob == null) return;
+                client.SelectContact(mob.Id);
+                captureAt = EditorApplication.timeSinceStartup + 2;
+                stage = 1;
+                return;
+            }
+            if (EditorApplication.timeSinceStartup < captureAt) return;
+            Directory.CreateDirectory("Builds/verification");
+            if (stage == 1)
+            {
+                ScreenCapture.CaptureScreenshot("Builds/verification/mob-target.png");
+                captureAt = EditorApplication.timeSinceStartup + 1;
+                stage = 2;
+                return;
+            }
+            if (stage == 2)
+            {
+                if (!File.Exists("Builds/verification/mob-target.png")) { Fail("Missing mob target capture."); return; }
+                FieldInfo field = typeof(SpaceClient).GetField("hud", BindingFlags.Instance | BindingFlags.NonPublic);
+                FlightHud hud = field?.GetValue(client) as FlightHud;
+                if (hud == null) { Fail("UI smoke could not find flight HUD."); return; }
+                hud.ToggleEquipment();
+                typeof(FlightHud).GetField("selectedMount", BindingFlags.Instance | BindingFlags.NonPublic)?.SetValue(hud, 3);
+                typeof(FlightHud).GetField("inspectMount", BindingFlags.Instance | BindingFlags.NonPublic)?.SetValue(hud, true);
+                captureAt = EditorApplication.timeSinceStartup + 2;
+                stage = 3;
+                return;
+            }
+            if (stage == 3)
+            {
+                ScreenCapture.CaptureScreenshot("Builds/verification/equipment.png");
+                captureAt = EditorApplication.timeSinceStartup + 1;
+                stage = 4;
+                return;
+            }
+            if (stage == 4)
+            {
+                if (!File.Exists("Builds/verification/equipment.png")) { Fail("Missing equipment capture."); return; }
+                FieldInfo field = typeof(SpaceClient).GetField("hud", BindingFlags.Instance | BindingFlags.NonPublic);
+                (field?.GetValue(client) as FlightHud)?.ToggleEquipment();
+                client.SetChart(true);
+                captureAt = EditorApplication.timeSinceStartup + 2;
+                stage = 5;
+                return;
+            }
+            if (stage == 5)
+            {
+                MapObject marker = client.CurrentSnapshot.Objects.First(item => item.Navigable && item.Name == "Bedrock Cluster");
+                Vector3 point = client.Project(marker.Position);
+                client.SelectAtPointer(new Vector2(point.x, point.y));
+                if (client.Target?.Id != marker.Id) { Fail("Chart marker did not select its destination."); return; }
+                ScreenCapture.CaptureScreenshot("Builds/verification/ui-chart.png");
+                captureAt = EditorApplication.timeSinceStartup + 1;
+                stage = 6;
+                return;
+            }
+            if (!File.Exists("Builds/verification/ui-chart.png")) { Fail("Missing chart capture."); return; }
+            Debug.Log("PASS: tactical target, equipment and chart panels captured.");
             EditorApplication.update -= Tick;
             EditorApplication.Exit(0);
         }

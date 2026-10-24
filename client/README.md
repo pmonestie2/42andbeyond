@@ -267,3 +267,14 @@ Launcher regression checks (macOS, no game clients are driven):
 ```sh
 python3 -m unittest discover -s client/Tests -p test_launcher.py -v
 ```
+
+### Optional original-client HUD corner
+
+The HUD can use the original `HUD01.dds` 8×8 corner tile when it is present at
+`Assets/FortyTwoAndBeyond/Resources/LegacyHud01.dds`. It falls back to the
+built-in corner if the file is absent. This optional binary is ignored by Git.
+The locally verified source is `Data/client/mixfiles/mixfile_art_03.mix` in the
+owned Windows Earth & Beyond installation: entry 681, offset 16,047,960,
+length 240 bytes. The extracted DDS SHA-256 is
+`f5396a236a48343948e7a6a62c45df735b2c6f35ac4a3594e30e6df2f5c3bf32`.
+Keep the extracted DDS bytes unchanged; Unity creates its local `.meta` file.

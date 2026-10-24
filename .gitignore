@@ -19,3 +19,6 @@ __pycache__/
 /server/state/
 /server/logs/
 *.local.json
+# Optional, privately extracted original-client HUD tile (never redistribute).
+/client/Assets/FortyTwoAndBeyond/Resources/LegacyHud01.dds
+/client/Assets/FortyTwoAndBeyond/Resources/LegacyHud01.dds.meta

@@ -125,6 +125,7 @@ namespace FortyTwoAndBeyond.Client
                     new Color(.38f, .87f, .82f);
                 Fill(new Rect(point.x - 5, point.y - 5, 10, 2), signal);
                 Fill(new Rect(point.x - 5, point.y - 5, 2, 10), signal);
+                if (client.Chart && selectedId != resource.Id) continue;
                 Fill(new Rect(point.x + 9, point.y - 12, 172, 42), new Color(.005f, .018f, .032f, .86f));
                 Fill(new Rect(point.x + 9, point.y - 12, 3, 42), signal);
                 GUI.Label(new Rect(point.x + 18, point.y - 10, 160, 20), resource.Name, flightHud.BodyStyle);
