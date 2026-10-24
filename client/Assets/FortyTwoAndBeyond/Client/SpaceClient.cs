@@ -11,6 +11,7 @@ namespace FortyTwoAndBeyond.Client
     {
         public const float MetersToWorld = .01f;
         private ClientWorker worker;
+        private DemoRosterWorker demoRoster;
         private KeyBindings bindings;
         private CharacterPickerWorker picker;
         private CharacterRecord[] characters;
@@ -29,7 +30,7 @@ namespace FortyTwoAndBeyond.Client
             snapshot.MaxHull > 0 && snapshot.Hull <= 0;
         private Transform ship, worldRoot, environment, hangar;
         private readonly Dictionary<uint, Transform> bodies = new Dictionary<uint, Transform>();
-        private string host = "192.168.47.128", username = "toon", password = "pass", status = "Ready to connect", sector = "";
+        private string host = "192.168.47.1", username = "", password = "", status = "Ready to connect", sector = "";
         private uint target;
         private bool chart, positioned;
         private bool chatOpen;
@@ -48,6 +49,9 @@ namespace FortyTwoAndBeyond.Client
         public bool PickingCharacter => picker != null;
         public CharacterRecord[] Characters => picker?.Characters ?? characters;
         public string LoginError => picker?.Error ?? worker?.Error;
+        public DemoAccount[] DemoAccounts => demoRoster?.Accounts;
+        public string DemoRosterError => demoRoster?.Error;
+        public string DemoRosterHost { get; private set; }
         public bool Ready => worker != null && worker.Running && snapshot != null && snapshot.Ready;
         public bool Chart => chart;
         public MapObject Target => snapshot?.Objects.FirstOrDefault(item => item.Id == target);
@@ -96,6 +100,18 @@ namespace FortyTwoAndBeyond.Client
                 StartLocalSession("127.0.0.1", "local", "local");
             if (System.Array.IndexOf(args, "--42andbeyond-vm") >= 0)
                 StartLocalSession("192.168.47.128", "toon", "pass");
+            if (System.Array.IndexOf(args, "--42andbeyond-local") < 0 &&
+                System.Array.IndexOf(args, "--42andbeyond-vm") < 0)
+                DiscoverDemoAccounts(host);
+        }
+
+        /// <summary>Query only the server's published sandbox class roster.</summary>
+        public void DiscoverDemoAccounts(string address)
+        {
+            demoRoster?.Dispose(); demoRoster = null;
+            DemoRosterHost = null;
+            try { demoRoster = new DemoRosterWorker(address); DemoRosterHost = address; }
+            catch (System.ArgumentException error) { status = error.Message; }
         }
 
         /// <summary>Join the previous worker before replacing the connection.</summary>
@@ -601,6 +617,6 @@ namespace FortyTwoAndBeyond.Client
         }
 
         /// <summary>Stop networking before releasing shared rendering assets.</summary>
-        private void OnDestroy() { worker?.Dispose(); worker = null; picker?.Dispose(); picker = null; combatEffects?.Dispose(); art?.Dispose(); hud?.Dispose(); }
+        private void OnDestroy() { worker?.Dispose(); worker = null; picker?.Dispose(); picker = null; demoRoster?.Dispose(); demoRoster = null; combatEffects?.Dispose(); art?.Dispose(); hud?.Dispose(); }
     }
 }

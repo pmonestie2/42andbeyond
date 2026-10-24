@@ -103,9 +103,13 @@ choose one before entering space. The current Windows VM has narrow inbound
 firewall rules for TCP 3807 and UDP 3501, 3806, and 3808 from the Mac's VMware
 host interface. If VMware assigns it a different address, edit the host in the
 shortcut or type the new address in the login panel.
-For the Mac-hosted server, enter its private address in the login panel; the
-current VMware host bridge uses `192.168.47.1`. The VM launcher still selects
-the Windows server explicitly.
+The normal login form starts with the Mac-hosted server's current VMware bridge
+address, `192.168.47.1`. Its **Published sandbox pilots** section reads only the
+server's advertised demo class codes. Choose a class to fill its public
+`play<class>` account and matching password, then select **Enter Space**. All
+nine classes appear when provisioned on that server. **Discover** refreshes the
+list after changing the address. You can still type any other authorized account
+manually. The VM launcher selects the Windows server explicitly.
 
 Enter in flight opens the server chat command line. Type `/d_jump BBW` or
 `/d_spawn 46 3` and press Enter to use the server's developer commands.

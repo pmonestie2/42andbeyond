@@ -521,12 +521,42 @@ namespace FortyTwoAndBeyond.Client
         /// <summary>Draw the account form without saving credentials.</summary>
         private void Connection(ref string host, ref string username, ref string password)
         {
-            var rect = new Rect(CanvasWidth / 2 - 220, CanvasHeight / 2 - 170, 440, 340); Panel(rect);
-            GUILayout.BeginArea(new Rect(rect.x + 24, rect.y + 20, 392, 300));
-            GUILayout.Label("42 AND BEYOND", heading); GUILayout.Label("LOCAL UNIVERSE", small); GUILayout.Space(24);
-            GUILayout.Label("Server IPv4", small); host = GUILayout.TextField(host);
+            var rect = new Rect(CanvasWidth / 2 - 220, CanvasHeight / 2 - 260, 440, 520); Panel(rect);
+            GUILayout.BeginArea(new Rect(rect.x + 24, rect.y + 20, 392, 480));
+            GUILayout.Label("42 AND BEYOND", heading); GUILayout.Label("LOCAL UNIVERSE", small); GUILayout.Space(10);
+            GUILayout.Label("Server IPv4", small);
+            GUILayout.BeginHorizontal();
+            host = GUILayout.TextField(host);
+            if (GUILayout.Button("DISCOVER", button, GUILayout.Width(112))) client.DiscoverDemoAccounts(host);
+            GUILayout.EndHorizontal();
+            GUILayout.Space(10);
+            GUILayout.Label("PUBLISHED SANDBOX PILOTS", section);
+            GUILayout.Label("Choose a class to fill its public demo login.", small);
+            DemoAccount[] demos = host == client.DemoRosterHost ? client.DemoAccounts : null;
+            if (demos == null)
+                GUILayout.Label(host == client.DemoRosterHost ?
+                    client.DemoRosterError ?? "Reading the server's demo roster…" :
+                    "Select Discover after changing the server address.", small);
+            else if (demos.Length == 0)
+                GUILayout.Label("This server advertises no demo pilots.", small);
+            else
+            {
+                for (int row = 0; row < demos.Length; row += 3)
+                {
+                    GUILayout.BeginHorizontal();
+                    for (int column = row; column < row + 3 && column < demos.Length; column++)
+                    {
+                        DemoAccount demo = demos[column];
+                        if (GUILayout.Button(demo.ClassName, button, GUILayout.Width(126), GUILayout.Height(33)))
+                        { username = demo.Username; password = demo.Password; }
+                    }
+                    GUILayout.EndHorizontal();
+                }
+            }
+            GUILayout.Space(12);
+            GUILayout.Label("ACCOUNT LOGIN", section);
             GUILayout.Label("Account", small); username = GUILayout.TextField(username);
-            GUILayout.Label("Password", small); password = GUILayout.PasswordField(password, '*'); GUILayout.Space(16);
+            GUILayout.Label("Password", small); password = GUILayout.PasswordField(password, '*'); GUILayout.Space(10);
             if (GUILayout.Button("ENTER SPACE", button, GUILayout.Height(36))) client.StartLocalSession(host, username, password);
             GUILayout.Label(client.Status, small); GUILayout.EndArea();
         }
@@ -603,7 +633,9 @@ namespace FortyTwoAndBeyond.Client
             uint selectedId = contactId != 0 ? contactId : snapshot.SelectedTargetId;
             ShipActor target = snapshot.Players.Concat(snapshot.Mobs).FirstOrDefault(actor => actor.Id == selectedId);
             if (target == null || !target.HasPosition) return;
-            float height = target.IsPlayer ? 165 : 108;
+            bool canJumpstart = target.IsPlayer && target.MaxHull > 0 && target.Hull <= 0 &&
+                snapshot.AvailableAbilities.Contains(65u);
+            float height = target.IsPlayer ? canJumpstart ? 207 : 165 : 108;
             float x = (CanvasWidth - 340) * .5f, y = CanvasHeight - height - 122;
             Panel(new Rect(x, y, 340, height));
             Color signal = target.IsPlayer ? cyan : target.Hostile ? new Color(1f, .42f, .32f) : gold;
@@ -638,6 +670,16 @@ namespace FortyTwoAndBeyond.Client
                 else if (invitePendingId == target.Id && Time.unscaledTime - invitePendingAt < 8 &&
                     client.Status != "Requesting group invitation")
                     GUI.Label(new Rect(x + 12, y + 138, 316, 20), client.Status, small);
+                if (canJumpstart)
+                {
+                    GUI.enabled = client.Ready && !client.Incapacitated &&
+                        snapshot.CastingAbilityId == uint.MaxValue && snapshot.SelectedTargetId == target.Id;
+                    if (GUI.Button(new Rect(x + 12, y + 164, 316, 30),
+                        snapshot.SelectedTargetId == target.Id ?
+                        "JUMPSTART " + target.Name.ToUpperInvariant() : "SELECTING JUMPSTART TARGET…", selected))
+                        client.ActivateAbility(65u);
+                    GUI.enabled = true;
+                }
             }
         }
 

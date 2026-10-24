@@ -156,10 +156,14 @@ namespace FortyTwoAndBeyond.Client
             {
                 snapshot.AbilityCooldownSeconds.TryGetValue((uint)ability.skill, out float recovery);
                 bool charging = snapshot.CastRemainingSeconds > 0;
-                string description = $"{ability.description}\nEnergy {ability.energy:0} · Charge {ability.charge:0.#} s · Cooldown {ability.cooldown:0.#} s · Range {ability.range} m";
+                string description = ability.id == 65 ?
+                    "Jumpstart an incapacitated ship. Energy depends on its hull upgrade. " +
+                    "Charge 5 s · No cooldown · Hull restored: 10% per trained skill level." :
+                    $"{ability.description}\nEnergy {ability.energy:0} · Charge {ability.charge:0.#} s · Cooldown {ability.cooldown:0.#} s · Range {ability.range} m";
                 string label = recovery > 0 ? $"{ability.name}  ·  READY IN {recovery:0.#} S" :
                     charging && snapshot.CastingAbilityId == (uint)ability.id ?
                     $"{ability.name}  ·  CHARGING {snapshot.CastRemainingSeconds:0.#} S" :
+                    ability.id == 65 ? "Jumpstart  ·  ENERGY DEPENDS ON TARGET" :
                     $"{ability.name}  ·  RANK {ability.rank}  ·  {ability.energy:0} ENERGY";
                 GUI.enabled = assigningSlot >= 0 || recovery <= 0 && !charging;
                 if (GUILayout.Button(new GUIContent(label, description), flightHud.ButtonStyle, GUILayout.Height(34)))

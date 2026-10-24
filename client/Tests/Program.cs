@@ -10,7 +10,7 @@ internal static class Program
     /// <summary>Run pure protocol checks, with explicit opt-in to a disposable local server.</summary>
     private static void Main(string[] args)
     {
-        CheckReassembly(); CheckWorld(); CheckStationLayout(); CheckAddress(); PeerChecks.Decode();
+        CheckReassembly(); CheckWorld(); CheckStationLayout(); CheckDemoRoster(); CheckAddress(); PeerChecks.Decode();
         Console.WriteLine("PASS: framing, ordering, fragmentation, duplicates, bounds, world decoding, private addresses");
         if (args.Length == 2 && args[0] == "--server") { PeerChecks.Live(args[1]); CheckServer(args[1]); }
         else if (args.Length != 0) throw new ArgumentException("Usage: ProtocolChecks [--server PRIVATE_IP]");
@@ -107,6 +107,24 @@ internal static class Program
         world.Apply(new Frame(0xa0, Wire.Body(w => { w.Write(2u); w.Write(uint.MaxValue); w.Write(1u); })), 1);
         Assert(world.StationAvatars.Count == 0 && roomSnapshot.StationAvatars.Length == 1,
             "Station peer departure changed an earlier display snapshot.");
+    }
+
+    /// <summary>Require a published roster to contain only the nine known demo classes.</summary>
+    private static void CheckDemoRoster()
+    {
+        byte[] reply = { 1, 9, (byte)'t', (byte)'e', (byte)'t', (byte)'t',
+            (byte)'t', (byte)'s', (byte)'j', (byte)'d', (byte)'j', (byte)'s',
+            (byte)'j', (byte)'e', (byte)'p', (byte)'w', (byte)'p', (byte)'p',
+            (byte)'p', (byte)'s' };
+        DemoAccount[] accounts = DemoRoster.Decode(reply);
+        Assert(accounts.Length == 9 && accounts[0].ClassName == "Terran Enforcer" &&
+            accounts[6].Username == "playpw" && accounts[8].Password == "playps",
+            "Published demo classes or their documented login convention changed.");
+        byte[] duplicate = (byte[])reply.Clone(); duplicate[18] = (byte)'t'; duplicate[19] = (byte)'e';
+        Reject(() => DemoRoster.Decode(duplicate));
+        byte[] unknown = (byte[])reply.Clone(); unknown[18] = (byte)'x';
+        Reject(() => DemoRoster.Decode(unknown));
+        Reject(() => DemoRoster.Decode(new byte[] { 1, 10 }));
     }
 
     /// <summary>Ensure development credentials cannot be submitted to public endpoints.</summary>
