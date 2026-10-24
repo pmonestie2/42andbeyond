@@ -20,7 +20,8 @@ The original workspace remains intact as a migration backup.
 - The archived C++ reference set is restored under `reference/cpp`, verified by
   Git blob hashes against `reference/manifest.json`.
 
-This is an independent local Git repository. A remote has not been assigned.
+This is an independent Git repository with its public remote at
+https://github.com/pmonestie2/42andbeyond.
 
 ## Migration verification
 
