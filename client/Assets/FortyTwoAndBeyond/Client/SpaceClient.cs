@@ -27,6 +27,7 @@ namespace FortyTwoAndBeyond.Client
         private RecoveryHud recoveryHud;
         private VaultHud vaultHud;
         private ProductionHud productionHud;
+        private MissionHud missionHud;
         private TurboHud turboHud;
         public bool AbilitiesOpen => abilityHud != null && abilityHud.IsOpen;
         public bool Incapacitated => snapshot != null && snapshot.Station == null &&
@@ -82,6 +83,7 @@ namespace FortyTwoAndBeyond.Client
             recoveryHud = new RecoveryHud(this, hud);
             vaultHud = new VaultHud(this, hud);
             productionHud = new ProductionHud(this, hud);
+            missionHud = new MissionHud(this, hud);
             turboHud = new TurboHud(this, hud);
             worldRoot = new GameObject("Server world").transform; worldRoot.SetParent(transform, false);
             remoteShips = new RemoteShips(art, worldRoot);
@@ -257,7 +259,8 @@ namespace FortyTwoAndBeyond.Client
             if (yaw != previousYaw || pitch != previousPitch)
             { worker.Submit(new ClientCommand(CommandKind.Steer, yaw: yaw, pitch: pitch)); previousYaw = yaw; previousPitch = pitch; }
             if (bindings.Pressed(ControlAction.Follow)) FollowSelected();
-            if (!hud.ContainsPointer() && !miningHud.ContainsPointer() && !abilityHud.ContainsPointer())
+            if (!hud.ContainsPointer() && !miningHud.ContainsPointer() &&
+                !abilityHud.ContainsPointer() && !missionHud.ContainsPointer())
             {
                 if (Input.GetMouseButton(1) && !chart)
                 { orbitYaw += Input.GetAxis("Mouse X") * 3; orbitPitch = Mathf.Clamp(orbitPitch - Input.GetAxis("Mouse Y") * 3, -65, 65); }
@@ -732,6 +735,9 @@ namespace FortyTwoAndBeyond.Client
                 if (!hud.SettingsOpen && !hud.EquipmentOpen && !AbilitiesOpen && !Incapacitated) miningHud.Draw(snapshot);
                 if (!hud.SettingsOpen && !hud.EquipmentOpen && !Incapacitated) abilityHud.Draw(snapshot);
                 if (!hud.SettingsOpen && !hud.EquipmentOpen && !AbilitiesOpen) turboHud.Draw(snapshot);
+                if (!hud.SettingsOpen && !hud.EquipmentOpen && !AbilitiesOpen &&
+                    !productionHud.IsOpen && !vaultHud.IsOpen) missionHud.Draw(snapshot);
+                else missionHud.Close();
                 if (!hud.SettingsOpen && Incapacitated) recoveryHud.Draw(snapshot);
             }
             finally { GUI.matrix = previous; }

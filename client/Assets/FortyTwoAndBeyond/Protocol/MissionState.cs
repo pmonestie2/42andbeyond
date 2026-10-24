@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 
 namespace FortyTwoAndBeyond.Protocol
 {
@@ -8,14 +10,21 @@ namespace FortyTwoAndBeyond.Protocol
     {
         public readonly uint Slot, StageCount, Stage;
         public readonly string Name, Summary, Objective;
+        public readonly IReadOnlyList<string> ReachedStages;
         public readonly bool Visible;
 
         /// <summary>Keep one mission journal row immutable across worker snapshots.</summary>
         public MissionState(uint slot, string name, string summary, uint stageCount, uint stage,
-            string objective, bool visible)
+            string[] reachedStages, bool visible)
         {
             Slot = slot; Name = name; Summary = summary; StageCount = stageCount;
-            Stage = stage; Objective = objective; Visible = visible;
+            Stage = stage;
+            string[] copiedStages = (string[])reachedStages.Clone();
+            for (int index = 0; index < copiedStages.Length; index++)
+                if (copiedStages[index] == null) copiedStages[index] = "";
+            ReachedStages = Array.AsReadOnly(copiedStages);
+            Objective = copiedStages.Length == 0 ? "" : copiedStages[copiedStages.Length - 1];
+            Visible = visible;
         }
     }
 
@@ -113,7 +122,8 @@ namespace FortyTwoAndBeyond.Protocol
                 if (!slots.Present[slot]) continue;
                 Flags entry = Mask(19);
                 uint id = (uint)slot, count = 0, stage = 0;
-                string name = "", summary = "", objective = "";
+                string name = "", summary = "";
+                string[] reachedStages = Array.Empty<string>();
                 bool visible = false;
                 for (int field = 0; field < 19; field++)
                 {
@@ -127,37 +137,41 @@ namespace FortyTwoAndBeyond.Protocol
                             case 13: visible = Byte() != 0; break;
                             case 14: count = UInt(); break;
                             case 15: stage = UInt(); break;
-                            case 16: objective = ReadMissionStages(); break;
+                            case 16: reachedStages = ReadMissionStages(); break;
                             default: throw new InvalidDataException("Unknown mission AUX field.");
                         }
                     }
                     else if (entry.Default[field] && field == 16 && Byte() != 5)
                         throw new InvalidDataException("Invalid mission stages reset.");
                 }
-                if (id != slot || count > 20 || stage == 0 || stage > count ||
+                if (id != slot || count == 0 || count > 20 || stage == 0 || stage >= count ||
                     name.Length > 63 || summary.Length > 127)
                     throw new InvalidDataException("Invalid mission journal entry.");
-                missions[slot] = new MissionState(id, name, summary, count, stage, objective, visible);
+                missions[slot] = new MissionState(id, name, summary, count, stage,
+                    reachedStages.Take(checked((int)stage)).ToArray(), visible);
             }
         }
 
-        /// <returns>string: Current objective text from the mission's stage list.</returns>
-        private string ReadMissionStages()
+        /// <summary>
+        /// Returns:
+        ///     string[]: Native descriptions for the reached stage slots.
+        /// </summary>
+        private string[] ReadMissionStages()
         {
             Flags stages = Mask(20);
-            string objective = "";
+            var reached = new string[20];
             for (int slot = 0; slot < 20; slot++)
             {
                 if (stages.Present[slot])
                 {
                     Flags entry = Mask(2);
-                    if (entry.Present[0]) objective = Text();
+                    if (entry.Present[0]) reached[slot] = Text();
                     if (entry.Present[1]) throw new InvalidDataException("Unknown mission stage field.");
                 }
                 else if (stages.Default[slot] && Byte() != 5)
                     throw new InvalidDataException("Invalid mission stage reset.");
             }
-            return objective;
+            return reached;
         }
     }
 }

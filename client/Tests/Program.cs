@@ -96,11 +96,12 @@ internal static class Program
         const string fixture =
             "1600fe0f76001efc0f0300000000140042617369632053686f6f74696e672052616e6765" +
             "44004c6561726e2061626f757420636f6d6261742066726f6d204c742e205261696e652e20" +
-            "285265776172643a20456e7261676520736b696c6c2c20436f6d62617420585029010400000001000000" +
-            "160000feff0f9689004c742e205261696e65206861732073656e7420796f7520746f2064657374726f79" +
+            "285265776172643a20456e7261676520736b696c6c2c20436f6d62617420585029010500000001000000" +
+            "160000feff0f96a0004c742e205261696e65206861732073656e7420796f7520746f2064657374726f79" +
             "20736f6d65207065736b7920726f67756520547261736820436f6c6c6563746f7220426f747320696e20" +
             "4c756e6120536563746f722e20546865792063616e20626520666f756e64206e6561722074686520426173" +
-            "69632053686f6f74696e672052616e6765732e050505050505050505050505050505050505050505050505050505050505";
+            "69632053686f6f74696e672052616e6765732e2028302f33207461726765747320646566656174656429" +
+            "050505050505050505050505050505050505050505050505050505050505";
         byte[] missions = Enumerable.Range(0, fixture.Length / 2)
             .Select(index => Convert.ToByte(fixture.Substring(index * 2, 2), 16)).ToArray();
         byte[] aux = Wire.Body(writer =>
@@ -111,7 +112,8 @@ internal static class Program
         var world = new World(); world.Apply(new Frame(0x1b, aux), 1);
         Snapshot first = new Snapshot(world, "ready", true);
         Assert(first.Missions[0]?.Name == "Basic Shooting Range" &&
-            first.Missions[0].Stage == 1 && first.Missions[0].Objective.Contains("Trash Collector Bots"),
+            first.Missions[0].StageCount == 5 && first.Missions[0].Stage == 1 &&
+            first.Missions[0].Objective.Contains("(0/3 targets defeated)"),
             "Native mission journal did not decode its first active stage.");
         Assert(first.Missions.Skip(1).All(mission => mission == null),
             "Native mission reset slots remained populated.");

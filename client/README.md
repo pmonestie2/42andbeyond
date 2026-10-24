@@ -196,6 +196,9 @@ the quoted action when the server marks it ready. Level buttons filter formulas;
 Refine Stack uses the server's available run count. Closing the workbench cancels
 an unfinished job without spending its materials or credits. The server sends
 the completed item, cargo and credit updates.
+The Missions button shows accepted missions, the current stage objective, and
+earlier stage descriptions from the native journal. Kill counts and return
+instructions update when the server publishes mission progress.
 Models are placeholders rather than the original NPC assets. Station interiors
 and the full original combat and equipment UI remain unfinished.
 
