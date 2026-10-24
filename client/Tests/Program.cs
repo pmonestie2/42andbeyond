@@ -14,6 +14,7 @@ internal static class Program
         CheckReassembly(); CheckWorld(); CheckMissionJournal(); CheckMissionDialogue();
         CheckExperience(); CheckMiningPhases(); CheckLootTractor(); CheckWarpPhases(); CheckNavigationSelection(); CheckWeaponReady();
         CheckDamageResults(); CheckCombatEngagement(); CheckContactSelection(); CheckTargetVerbs(); CheckDeviceEffects();
+        CheckNativeDeviceBuff();
         CheckAmmunitionTransfer(); CheckFlightThrottle();
         CheckStationLayout(); CheckStationWalk(); CheckDemoRoster(); CheckAddress(); PeerChecks.Decode();
         Console.WriteLine("PASS: framing, ordering, fragmentation, duplicates, bounds, world decoding, private addresses");
@@ -531,6 +532,37 @@ internal static class Program
         byte[] excessive = (byte[])body.Clone();
         excessive[7] = 65;
         Reject(() => TargetVerbs.Decode(excessive));
+    }
+
+    /// <summary>Decode the server's native buff slot and matching visual lifecycle.</summary>
+    private static void CheckNativeDeviceBuff()
+    {
+        byte[] bytes(string hex) => Enumerable.Range(0, hex.Length / 2)
+            .Select(index => Convert.ToByte(hex.Substring(index * 2, 2), 16)).ToArray();
+        const uint player = 0x40000006;
+        var world = new World();
+        world.Apply(new Frame(0x1b, bytes(
+            "060000402200010200000000400000120000d2000d00547572626f20576561706f6e7300da2c0000")), player);
+        Assert(world.ActiveBuff.Name == "Turbo Weapons" && world.ActiveBuff.RemovalTick == 11482 &&
+            world.ActiveDeviceLabel == "Turbo Weapons",
+            "Native ship AUX field42 did not publish the Turbo Weapons buff icon name and removal tick.");
+        world.Apply(new Frame(0x09, bytes("03060000405c028e920930ca050000")), player);
+        Snapshot active = new Snapshot(world, "ready", true);
+        Assert(active.DeviceBuff != null && active.DeviceBuff.Name == "Turbo Weapons" &&
+            active.DeviceBuff.VisualActive && active.DeviceBuff.VisualDescriptor == 604 &&
+            active.DeviceBuff.VisualEffectId == 0x3009928e,
+            "Native ObjectEffect was not associated with the timed device buff.");
+        Assert(world.ActiveBuff.RemainingSeconds(1482) == 10 &&
+            world.ActiveBuff.RemainingSeconds(12482) == 0 &&
+            new TimedDeviceBuff("Turbo Weapons", 200, 0, 0).RemainingSeconds(uint.MaxValue - 799) == 1,
+            "Wrapping server tick did not drive a bounded buff countdown.");
+        world.Apply(new Frame(0x1b, bytes(
+            "060000401500010200000000400000120000d20000000000000000")), player);
+        world.Apply(new Frame(0x0f, bytes("8e920930")), player);
+        Assert(new Snapshot(world, "ready", true).DeviceBuff == null &&
+            active.DeviceBuff.VisualActive && active.DeviceBuff.Name == "Turbo Weapons",
+            "Native buff expiry mutated a previous immutable snapshot or left the buff active.");
+        Reject(() => NativeObjectEffect.Decode(bytes("03060000405c028e920930ca05")));
     }
 
     /// <summary>Recognize catalog-backed active devices and their server notices.</summary>

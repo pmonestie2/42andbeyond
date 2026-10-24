@@ -432,6 +432,8 @@ namespace FortyTwoAndBeyond.Protocol
         public uint CastingAbilityId { get; private set; } = uint.MaxValue;
         public string ActiveDeviceLabel { get; private set; } = "";
         public long ActiveDeviceEndsAt { get; private set; }
+        public TimedDeviceBuff ActiveBuff { get; private set; } = TimedDeviceBuff.Empty;
+        private bool awaitingDeviceVisual;
         public bool TurboWeaponsActive => ActiveDeviceLabel == "Turbo Weapons";
         public long CastEndsAt { get; private set; }
         public Dictionary<uint, long> AbilityCooldownEnds { get; } = new Dictionary<uint, long>();
@@ -500,7 +502,7 @@ namespace FortyTwoAndBeyond.Protocol
                 case 0x4f:
                     if (b.Length != 6) throw new InvalidDataException("Invalid station identity.");
                     Station = b[4] == 0 ? new StationState(Wire.U32(b, 0)) : null;
-                    if (Station != null) { ActiveDeviceLabel = ""; ActiveDeviceEndsAt = 0; }
+                    if (Station != null) { ActiveDeviceLabel = ""; ActiveDeviceEndsAt = 0; ActiveBuff = TimedDeviceBuff.Empty; awaitingDeviceVisual = false; }
                     Production = new ProductionState();
                     StationAvatars.Clear();
                     Dialogue = null; Vendor = Array.Empty<ItemState>();
@@ -574,10 +576,20 @@ namespace FortyTwoAndBeyond.Protocol
                     LootActivity looting = LootActivity.FromTractor(b, player, corpseId);
                     if (looting != null) LootActivity = looting;
                     break;
+                case 0x09:
+                    NativeObjectEffect objectEffect = NativeObjectEffect.Decode(b);
+                    if (awaitingDeviceVisual && objectEffect?.OwnerId == player && ActiveBuff.Active)
+                    {
+                        ActiveBuff = ActiveBuff.WithVisual(objectEffect.EffectId, objectEffect.Descriptor);
+                        awaitingDeviceVisual = false;
+                    }
+                    break;
                 case 0x0f:
                     if (b.Length != 4) throw new InvalidDataException("Invalid effect removal.");
                     if (MiningActivity?.EffectId == Wire.U32(b, 0)) MiningActivity = null;
                     if (LootActivity?.EffectId == Wire.U32(b, 0)) LootActivity = null;
+                    if (ActiveBuff.VisualDescriptor != 0 && ActiveBuff.VisualEffectId == Wire.U32(b, 0))
+                        ActiveBuff = ActiveBuff.WithVisual(0, 0);
                     break;
                 case 4:
                     Wire.Require(b, 0, 23);
@@ -601,6 +613,7 @@ namespace FortyTwoAndBeyond.Protocol
                 case 0x1d:
                     Wire.Require(b, 0, 3);
                     string message = Wire.Text(b, 3, b.Length - 3);
+                    awaitingDeviceVisual = false;
                     if (message.StartsWith("Prospected ", StringComparison.Ordinal) ||
                         message.StartsWith("Prospecting interrupted", StringComparison.Ordinal) ||
                         message.StartsWith("Reactor depleted while prospecting", StringComparison.Ordinal))
@@ -676,8 +689,15 @@ namespace FortyTwoAndBeyond.Protocol
                     }
                     else if (Wire.U32(b, 0) == player)
                     {
-                        WarpState warp = AuxState.ReadOwn(b, Equipment);
+                        WarpState warp = AuxState.ReadOwn(b, Equipment, out TimedDeviceBuff buff);
                         if (warp != null) Warp = warp;
+                        if (buff != null)
+                        {
+                            ActiveBuff = buff;
+                            awaitingDeviceVisual = buff.Active;
+                            ActiveDeviceLabel = buff.Active ? buff.Name : "";
+                            if (!buff.Active) ActiveDeviceEndsAt = 0;
+                        }
                     }
                     else if (Station != null && Production.LabId != 0 &&
                         Wire.U32(b, 0) == Production.LabId)
@@ -832,6 +852,7 @@ namespace FortyTwoAndBeyond.Protocol
         public readonly uint CastingAbilityId;
         public readonly bool TurboWeaponsActive;
         public readonly string ActiveDeviceLabel;
+        public readonly DeviceBuffView DeviceBuff;
         public readonly float ActiveDeviceRemainingSeconds;
         public readonly float CastRemainingSeconds;
         public readonly IReadOnlyDictionary<uint, float> AbilityCooldownSeconds;
@@ -878,6 +899,8 @@ namespace FortyTwoAndBeyond.Protocol
             Vendor = new ItemView[world.Vendor.Length];
             AvailableAbilities = (uint[])world.AvailableAbilities.Clone();
             long now = System.Diagnostics.Stopwatch.GetTimestamp();
+            DeviceBuff = world.ActiveBuff.Active ? new DeviceBuffView(world.ActiveBuff,
+                world.EstimatedServerTick(now)) : null;
             CastingAbilityId = world.CastingAbilityId;
             TurboWeaponsActive = world.TurboWeaponsActive;
             ActiveDeviceLabel = world.ActiveDeviceLabel;

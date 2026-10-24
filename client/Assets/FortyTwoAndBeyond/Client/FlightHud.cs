@@ -1220,8 +1220,8 @@ namespace FortyTwoAndBeyond.Client
         /// <summary>Keep own reactor, shield, and hull state visible during combat and travel.</summary>
         private void ShipVitals(Snapshot snapshot)
         {
-            bool deviceActive = !string.IsNullOrEmpty(snapshot.ActiveDeviceLabel);
-            float height = deviceActive ? 153 : 132;
+            bool deviceActive = snapshot.DeviceBuff != null || !string.IsNullOrEmpty(snapshot.ActiveDeviceLabel);
+            float height = deviceActive ? 167 : 132;
             Rect panel = new Rect(375, CanvasHeight - 135 - height, 290, height);
             Panel(panel);
             GUI.Label(new Rect(panel.x + 13, panel.y + 8, 264, 20), "SHIP SYSTEMS", section);
@@ -1238,8 +1238,19 @@ namespace FortyTwoAndBeyond.Client
                 $"HULL  {Mathf.Max(0, snapshot.Hull):0}/{snapshot.MaxHull:0}" : "HULL  SYNCING", small);
             Meter(new Rect(panel.x + 13, panel.y + 121, 264, 6), "", hull, gold);
             if (deviceActive)
-                GUI.Label(new Rect(panel.x + 13, panel.y + 132, 264, 18),
-                    $"DEVICE  {snapshot.ActiveDeviceLabel.ToUpperInvariant()}  {snapshot.ActiveDeviceRemainingSeconds:0}s", small);
+            {
+                string name = snapshot.DeviceBuff?.Name ?? snapshot.ActiveDeviceLabel;
+                float remaining = snapshot.DeviceBuff?.RemainingSeconds ?? snapshot.ActiveDeviceRemainingSeconds;
+                if (remaining < 0 && snapshot.ActiveDeviceRemainingSeconds > 0)
+                    remaining = snapshot.ActiveDeviceRemainingSeconds;
+                Fill(new Rect(panel.x + 12, panel.y + 135, 266, 26), new Color(.05f, .16f, .2f));
+                Fill(new Rect(panel.x + 17, panel.y + 139, 18, 18), gold);
+                Fill(new Rect(panel.x + 22, panel.y + 143, 8, 10), new Color(.07f, .14f, .19f));
+                GUI.Label(new Rect(panel.x + 42, panel.y + 138, 175, 21),
+                    name.ToUpperInvariant(), small);
+                GUI.Label(new Rect(panel.x + 218, panel.y + 138, 57, 21),
+                    remaining < 0 ? "SYNC" : $"{Mathf.CeilToInt(remaining)}s", small);
+            }
         }
 
         /// <summary>Manage invitations and formation separately from tactical contacts.</summary>

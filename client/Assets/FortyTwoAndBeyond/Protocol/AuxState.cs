@@ -120,14 +120,17 @@ namespace FortyTwoAndBeyond.Protocol
         /// Returns:
         ///     WarpState: An authoritative warp revision, or null when this diff omits warp fields.
         /// </summary>
-        public static WarpState ReadOwn(byte[] body, EquipmentState equipment)
+        public static WarpState ReadOwn(byte[] body, EquipmentState equipment, out TimedDeviceBuff buff)
         {
             var reader = new AuxState(body); Flags fields = reader.Mask(58);
             uint? privateWarp = null, globalWarp = null;
-            for (int i = 0; i <= 36; i++)
+            buff = null;
+            for (int i = 0; i <= 42; i++)
             {
-                if (!fields.Present[i] && fields.Default[i] && (i == 4 || i == 6 || i == 35 || i == 36))
+                if (!fields.Present[i] && fields.Default[i] && (i == 4 || i == 6 || i >= 35 && i <= 41))
                 { if (reader.Byte() != 5) throw new InvalidDataException("Invalid nested AUX reset."); continue; }
+                if (!fields.Present[i] && fields.Default[i] && i == 42)
+                { if (reader.Byte() != 5) throw new InvalidDataException("Invalid buff reset."); buff = TimedDeviceBuff.Empty; continue; }
                 if (!fields.Present[i]) continue;
                 switch (i)
                 {
@@ -145,12 +148,49 @@ namespace FortyTwoAndBeyond.Protocol
                     case 31: privateWarp = reader.UInt(); break;
                     case 32: globalWarp = reader.UInt(); break;
                     case 36: reader.Inventory(equipment); break;
+                    case 42: buff = reader.ReadBuff(); break;
                     default: return null;
                 }
             }
             if (privateWarp.HasValue != globalWarp.HasValue)
                 throw new InvalidDataException("Incomplete native warp phase.");
             return privateWarp.HasValue ? WarpState.Decode(privateWarp.Value, globalWarp.Value) : null;
+        }
+
+        /// Returns:
+        ///     TimedDeviceBuff: Slot-zero native device buff, or null when that slot did not change.
+        private TimedDeviceBuff ReadBuff()
+        {
+            Flags slots = Mask(16);
+            TimedDeviceBuff result = null;
+            for (int slot = 0; slot < 16; slot++)
+            {
+                if (!slots.Present[slot] && slots.Default[slot])
+                {
+                    if (Byte() != 5) throw new InvalidDataException("Invalid buff slot reset.");
+                    if (slot == 0) result = TimedDeviceBuff.Empty;
+                    continue;
+                }
+                if (!slots.Present[slot]) continue;
+                Flags fields = Mask(5);
+                string name = "";
+                uint removalTick = 0;
+                for (int field = 0; field < 5; field++)
+                {
+                    if (!fields.Present[field]) continue;
+                    switch (field)
+                    {
+                        case 0: name = Text(); break;
+                        case 2: Byte(); break;
+                        case 3: removalTick = UInt(); break;
+                        default: throw new InvalidDataException("Unsupported native buff field.");
+                    }
+                }
+                if (slot == 0)
+                    result = name.Length == 0 || removalTick == 0 ? TimedDeviceBuff.Empty :
+                        new TimedDeviceBuff(name, removalTick, 0, 0);
+            }
+            return result;
         }
         /// <summary>Read ship inventory updates in native field order.</summary>
         private void Inventory(EquipmentState equipment)
