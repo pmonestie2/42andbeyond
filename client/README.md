@@ -106,7 +106,8 @@ shortcut or type the new address in the login panel.
 The normal login form starts with the Mac-hosted server's current VMware bridge
 address, `192.168.47.1`. Its **Published sandbox pilots** section reads only the
 server's advertised demo class codes. Choose a class to fill its public
-`play<class>` account and matching password, then select **Enter Space**. All
+`p`-prefixed class code as both account and password (for example, `pje`/`pje`),
+then select **Enter Space**. All
 nine classes appear when provisioned on that server. **Discover** refreshes the
 list after changing the address. You can still type any other authorized account
 manually. The VM launcher selects the Windows server explicitly.

@@ -118,7 +118,8 @@ internal static class Program
             (byte)'p', (byte)'s' };
         DemoAccount[] accounts = DemoRoster.Decode(reply);
         Assert(accounts.Length == 9 && accounts[0].ClassName == "Terran Enforcer" &&
-            accounts[6].Username == "playpw" && accounts[8].Password == "playps",
+            accounts[0].Username == "pte" && accounts[6].Username == "ppw" &&
+            accounts[8].Password == "pps",
             "Published demo classes or their documented login convention changed.");
         byte[] duplicate = (byte[])reply.Clone(); duplicate[18] = (byte)'t'; duplicate[19] = (byte)'e';
         Reject(() => DemoRoster.Decode(duplicate));

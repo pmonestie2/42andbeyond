@@ -15,7 +15,7 @@ namespace FortyTwoAndBeyond.Protocol
 
         /// <summary>Keep only a public class code and its documented demo login.</summary>
         public DemoAccount(string code, string className)
-        { Code = code; ClassName = className; Username = "play" + code; }
+        { Code = code; ClassName = className; Username = "p" + code; }
     }
 
     /// <summary>Decode the server's narrow published-demo roster.</summary>
