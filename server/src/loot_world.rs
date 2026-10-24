@@ -57,8 +57,17 @@ pub struct CorpseBirth {
 pub struct KillAward {
     pub sector: u32,
     pub death: MobDeath,
+    /// Pilot receiving XP; the corpse separately retains the actual killer.
     pub killer: u32,
     pub level: u32,
+    #[serde(default)]
+    pub amount: Option<u64>,
+}
+
+/// A recipient and frozen XP amount resolved from the group at death capture.
+pub struct KillCredit {
+    pub player: u32,
+    pub amount: Option<u64>,
 }
 
 impl KillAward {
@@ -209,6 +218,7 @@ impl LootWorld {
                     || award.death.generation == 0
                     || award.killer & 0xff000000 != 0x40000000
                     || !(1..=100).contains(&award.level)
+                    || award.amount.is_some_and(|amount| amount > 8000)
                     || state
                         .deaths
                         .get(&award.death.spawn)
@@ -272,6 +282,21 @@ impl LootWorld {
         combat: &crate::sector_combat::SectorCombat,
         now_ms: u64,
     ) -> io::Result<()> {
+        self.capture_deaths_with(combat, now_ms, |killer, _| {
+            Ok(vec![KillCredit {
+                player: killer,
+                amount: None,
+            }])
+        })
+    }
+
+    /// Freeze eligible group recipients in the same durable death transaction.
+    pub fn capture_deaths_with(
+        &mut self,
+        combat: &crate::sector_combat::SectorCombat,
+        now_ms: u64,
+        recipients: impl Fn(u32, u32) -> io::Result<Vec<KillCredit>>,
+    ) -> io::Result<()> {
         let catalog = LootCatalog::load()?;
         let items = ItemCatalog::load()?;
         for mob in &combat.actors {
@@ -295,13 +320,48 @@ impl LootWorld {
                 position: mob.position,
                 now_ms,
             };
+            let credits = recipients(killer, birth.level)?;
+            Self::validate_credits(killer, &credits)?;
             if catalog.get(mob.definition.template_id).is_some() {
-                self.spawn(birth, &catalog, &items)?;
+                self.spawn_for(birth, &catalog, &items, &credits)?;
             } else {
-                self.record_kill_only(&birth)?;
+                self.record_kill_only(&birth, &credits)?;
             }
         }
         Ok(())
+    }
+
+    /// Reject duplicate or foreign recipient entries before writing a death.
+    fn validate_credits(killer: u32, credits: &[KillCredit]) -> io::Result<()> {
+        if credits.is_empty()
+            || credits.len() > 6
+            || !credits.iter().any(|credit| credit.player == killer)
+            || credits.iter().any(|credit| {
+                credit.player & 0xff000000 != 0x40000000
+                    || credit.amount.is_some_and(|amount| amount > 8000)
+            })
+            || credits.iter().enumerate().any(|(index, credit)| {
+                credits[index + 1..]
+                    .iter()
+                    .any(|other| other.player == credit.player)
+            })
+        {
+            return Err(invalid("Invalid combat XP recipients."));
+        }
+        Ok(())
+    }
+
+    /// Append every recipient to the same candidate world state.
+    fn add_awards(candidate: &mut WorldFile, birth: &CorpseBirth, credits: &[KillCredit]) {
+        candidate
+            .awards
+            .extend(credits.iter().map(|credit| KillAward {
+                sector: candidate.sector,
+                death: birth.death,
+                killer: credit.player,
+                level: birth.level,
+                amount: credit.amount,
+            }));
     }
     pub fn corpses(&self) -> impl Iterator<Item = &Corpse> {
         self.state.corpses.values()
@@ -331,7 +391,7 @@ impl LootWorld {
     }
 
     /// Record player combat XP for a public MOB with no loot table.
-    fn record_kill_only(&mut self, birth: &CorpseBirth) -> io::Result<()> {
+    fn record_kill_only(&mut self, birth: &CorpseBirth, credits: &[KillCredit]) -> io::Result<()> {
         if birth.death.spawn == 0
             || birth.death.generation == 0
             || birth.now_ms == 0
@@ -344,7 +404,7 @@ impl LootWorld {
             return Ok(());
         }
         let mut candidate = self.state.clone();
-        if candidate.awards.len() >= 8192 {
+        if candidate.awards.len() + credits.len() > 8192 {
             return Err(invalid("Unclaimed combat award queue is full."));
         }
         candidate.deaths.insert(
@@ -354,12 +414,7 @@ impl LootWorld {
                 killed_ms: birth.now_ms,
             },
         );
-        candidate.awards.push(KillAward {
-            sector: self.state.sector,
-            death: birth.death,
-            killer: birth.killer,
-            level: birth.level,
-        });
+        Self::add_awards(&mut candidate, birth, credits);
         self.save(&candidate)?;
         self.state = candidate;
         Ok(())
@@ -376,6 +431,26 @@ impl LootWorld {
         birth: CorpseBirth,
         catalog: &LootCatalog,
         items: &ItemCatalog,
+    ) -> io::Result<Option<u32>> {
+        let killer = birth.killer;
+        self.spawn_for(
+            birth,
+            catalog,
+            items,
+            &[KillCredit {
+                player: killer,
+                amount: None,
+            }],
+        )
+    }
+
+    /// Write corpse stock and every XP recipient in one world transaction.
+    fn spawn_for(
+        &mut self,
+        birth: CorpseBirth,
+        catalog: &LootCatalog,
+        items: &ItemCatalog,
+        credits: &[KillCredit],
     ) -> io::Result<Option<u32>> {
         if self.state.sector >= 10000
             || birth.death.spawn == 0
@@ -401,7 +476,7 @@ impl LootWorld {
         });
         if candidate.corpses.len() >= 4096
             || candidate.next_id >= CORPSE_LIMIT
-            || candidate.awards.len() >= 8192
+            || candidate.awards.len() + credits.len() > 8192
         {
             return Err(invalid("Corpse world capacity reached."));
         }
@@ -418,12 +493,7 @@ impl LootWorld {
                 killed_ms: birth.now_ms,
             },
         );
-        candidate.awards.push(KillAward {
-            sector: self.state.sector,
-            death: birth.death,
-            killer: birth.killer,
-            level: birth.level,
-        });
+        Self::add_awards(&mut candidate, &birth, credits);
         candidate.corpses.insert(
             id,
             Corpse {
@@ -739,7 +809,15 @@ mod tests {
         let items = ItemCatalog::load().unwrap();
         let path = path();
         let mut world = LootWorld::load(path.clone(), 1076, &items).unwrap();
-        world.record_kill_only(&birth(1)).unwrap();
+        world
+            .record_kill_only(
+                &birth(1),
+                &[KillCredit {
+                    player: 0x40000001,
+                    amount: None,
+                }],
+            )
+            .unwrap();
         assert_eq!(world.corpses().count(), 0);
         assert_eq!(world.pending_awards(ALICE).len(), 1);
         let mut restored = LootWorld::load(path.clone(), 1076, &items).unwrap();

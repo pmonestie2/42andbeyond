@@ -5,7 +5,7 @@ use crate::accounts::AccountDirectory;
 use crate::content::Sector;
 use crate::events::ClientEvent;
 use crate::groups::GroupManager;
-use crate::loot_world::{lock_loot, LootWorld};
+use crate::loot_world::{lock_loot, KillCredit, LootWorld};
 use crate::packets;
 use crate::peers::PeerSnapshot;
 use crate::player_session::{Outbound, PlayerSession};
@@ -411,6 +411,53 @@ impl GameState {
             .handle_udp(port, peer, packet)
     }
 
+    /// Returns:
+    ///     Vec<KillCredit>: Eligible pilots and their XP fixed at death capture.
+    fn group_kill_credits(
+        &self,
+        killer: u32,
+        sector: u32,
+        level: u32,
+    ) -> io::Result<Vec<KillCredit>> {
+        let Some(owner) = self.sessions.get(&killer) else {
+            return Ok(vec![KillCredit {
+                player: killer,
+                amount: None,
+            }]);
+        };
+        if !owner.logged_in || owner.sector.id != sector {
+            return Ok(vec![KillCredit {
+                player: killer,
+                amount: None,
+            }]);
+        }
+        let members = self.groups.members(killer);
+        let recipients = if members.contains(&killer) {
+            members
+        } else {
+            vec![killer]
+        };
+        let mut credits = Vec::new();
+        for player in recipients {
+            let Some(session) = self.sessions.get(&player) else {
+                continue;
+            };
+            if player != killer
+                && (!session.logged_in
+                    || session.sector.id != sector
+                    || crate::mob::distance(owner.position, session.position) >= 40_000.
+                    || session.peer_snapshot().is_none_or(|peer| peer.hull <= 0.))
+            {
+                continue;
+            }
+            credits.push(KillCredit {
+                player,
+                amount: Some(crate::experience::mob_xp(level, session.combat_level()?)),
+            });
+        }
+        Ok(credits)
+    }
+
     /// Commit owner receipts before removing durable sector kill events.
     fn settle_combat_awards(&mut self) -> io::Result<()> {
         let worlds: Vec<_> = self.loot_worlds.values().cloned().collect();
@@ -479,8 +526,11 @@ impl GameState {
         let mut hits = Vec::new();
         for (&sector, combat) in &self.combats {
             if let Some(world) = self.loot_worlds.get(&sector) {
-                lock_loot(world)?
-                    .capture_deaths(&*lock_combat(combat)?, crate::resources::unix_ms())?;
+                lock_loot(world)?.capture_deaths_with(
+                    &*lock_combat(combat)?,
+                    crate::resources::unix_ms(),
+                    |killer, level| self.group_kill_credits(killer, sector, level),
+                )?;
             }
             let threats: Vec<_> = self
                 .sessions
@@ -524,8 +574,11 @@ impl GameState {
         }
         for (&sector, combat) in &self.combats {
             if let Some(world) = self.loot_worlds.get(&sector) {
-                lock_loot(world)?
-                    .capture_deaths(&*lock_combat(combat)?, crate::resources::unix_ms())?;
+                lock_loot(world)?.capture_deaths_with(
+                    &*lock_combat(combat)?,
+                    crate::resources::unix_ms(),
+                    |killer, level| self.group_kill_credits(killer, sector, level),
+                )?;
             }
         }
         self.settle_combat_awards()?;

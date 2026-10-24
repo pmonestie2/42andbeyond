@@ -166,6 +166,72 @@ fn shared_combat_kill_awards_one_durable_combat_xp_receipt() {
 }
 
 #[test]
+fn group_kill_freezes_two_awards_and_replays_only_failed_recipient() {
+    let initial = game();
+    let root = initial.root.clone();
+    let sector = initial.initial_sector.clone();
+    let bind = initial.bind;
+    drop(initial);
+    for path in [
+        root.join("inventory.json"),
+        root.join("accounts/bob/inventory.json"),
+    ] {
+        let mut inventory: serde_json::Value =
+            serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        inventory["xp_start_level"] = serde_json::json!(1);
+        fs::write(path, serde_json::to_vec(&inventory).unwrap()).unwrap();
+    }
+    let mut game = GameState::new(sector.clone(), bind, root.clone()).unwrap();
+    let alice = FIRST_PLAYER_ID;
+    let bob = alice + 1;
+    login(&mut game, alice, 22461, "alice");
+    login(&mut game, bob, 22462, "bob");
+    game.groups.invite(alice, bob).unwrap();
+    game.groups.accept(bob).unwrap();
+    game.sessions.get_mut(&alice).unwrap().position = [0.; 3];
+    game.sessions.get_mut(&bob).unwrap().position = [40_000., 0., 0.];
+    assert_eq!(game.group_kill_credits(alice, 1076, 1).unwrap().len(), 1);
+    game.sessions.get_mut(&bob).unwrap().position = [100., 0., 0.];
+    let combat = Arc::clone(&game.sessions[&alice].combat);
+    lock_combat(&combat).unwrap().actors[0].damage_by(1_000_000., alice);
+
+    let blocked = root.join("accounts/bob/inventory.json.tmp");
+    fs::create_dir(&blocked).unwrap();
+    assert!(game.advance_at(0., crate::resources::unix_ms()).is_err());
+    let alice_inventory: serde_json::Value =
+        serde_json::from_slice(&fs::read(root.join("inventory.json")).unwrap()).unwrap();
+    let bob_inventory: serde_json::Value =
+        serde_json::from_slice(&fs::read(root.join("accounts/bob/inventory.json")).unwrap())
+            .unwrap();
+    assert_eq!(alice_inventory["combat_xp"], 1000);
+    assert_eq!(bob_inventory["combat_xp"], 0);
+    let pending = lock_loot(&game.loot_worlds[&1076])
+        .unwrap()
+        .pending_awards(bob);
+    assert_eq!(pending.len(), 1);
+    assert_eq!(pending[0].amount, Some(1000));
+    drop(game);
+
+    fs::remove_dir(blocked).unwrap();
+    let mut restored = GameState::new(sector, bind, root.clone()).unwrap();
+    login(&mut restored, bob, 22463, "bob");
+    restored
+        .advance_at(0., crate::resources::unix_ms())
+        .unwrap();
+    let alice_inventory: serde_json::Value =
+        serde_json::from_slice(&fs::read(root.join("inventory.json")).unwrap()).unwrap();
+    let bob_inventory: serde_json::Value =
+        serde_json::from_slice(&fs::read(root.join("accounts/bob/inventory.json")).unwrap())
+            .unwrap();
+    assert_eq!(alice_inventory["combat_xp"], 1000);
+    assert_eq!(bob_inventory["combat_xp"], 1000);
+    assert!(lock_loot(&restored.loot_worlds[&1076])
+        .unwrap()
+        .pending_awards(bob)
+        .is_empty());
+}
+
+#[test]
 fn native_jumpstart_action_recovers_an_incapacitated_player_without_a_group() {
     let mut game = game();
     let source = FIRST_PLAYER_ID;

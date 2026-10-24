@@ -112,8 +112,9 @@ mean the corresponding gameplay system is complete.
   durable sector award even when the MOB has no loot table; the player's XP and
   death-generation receipt commit together before the world event is removed.
   Queued awards replay after replacement, including sectors without a current
-  player. Group XP sharing, skill-point spending and ordinary level-one
-  character creation remain open.
+  player. Accepted in-range group members now receive their own frozen native
+  base XP, with independent receipts and retry after one member's write fails.
+  Skill-point spending and ordinary level-one character creation remain open.
 - Vault transfers require an authoritative station sector. Rejected space
   transfers preserve the inventory and send the current cargo/vault state.
 - Public Turbo Weapons devices now supply a timed self-buff through the same
@@ -154,8 +155,9 @@ mean the corresponding gameplay system is complete.
    Prospecting and shared depletion pass behavioral and two-client protocol tests.
    2,228 resource nodes have no eligible ore in this SQL export and stay hidden;
    missing content needs investigation rather than invented item assignments.
-   MOB drops now connect combat deaths to native corpse/loot handlers. Full combat
-   XP, faction rewards, group loot policies and native item pickup need more work.
+   MOB drops now connect combat deaths to native corpse/loot handlers. Combat
+   XP now survives retries for individual and grouped kills; faction rewards,
+   group loot policies and native item pickup need more work.
    The catalog resolves 8,506 public drop rows for
    2,042 MOB templates; 77 rejected rows remain explicit diagnostics.
 5. Native refinery/crafting playtests, additional NPC services, trade progression,

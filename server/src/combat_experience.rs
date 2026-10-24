@@ -3,6 +3,15 @@ use super::*;
 use crate::loot_world::KillAward;
 
 impl PlayerSession {
+    /// Returns:
+    ///     u32: Current durable combat level for a frozen kill award.
+    pub(crate) fn combat_level(&self) -> io::Result<u32> {
+        Ok(
+            crate::experience::track(self.inventory.xp_start_level, self.inventory.combat_xp)?
+                .level,
+        )
+    }
+
     /// Persist this kill once before the sector can remove its award event.
     ///
     /// Raises:
@@ -14,6 +23,7 @@ impl PlayerSession {
             || award.death.spawn == 0
             || award.death.generation == 0
             || !(1..=100).contains(&award.level)
+            || award.amount.is_some_and(|amount| amount > 8000)
         {
             return Err(invalid("Invalid combat XP award owner or death."));
         }
@@ -26,10 +36,10 @@ impl PlayerSession {
         {
             return Ok(());
         }
-        let level =
-            crate::experience::track(self.inventory.xp_start_level, self.inventory.combat_xp)?
-                .level;
-        let amount = crate::experience::mob_xp(award.level, level);
+        let amount = match award.amount {
+            Some(amount) => amount,
+            None => crate::experience::mob_xp(award.level, self.combat_level()?),
+        };
         let mut candidate = self.inventory.clone();
         candidate.combat_xp = candidate
             .combat_xp
