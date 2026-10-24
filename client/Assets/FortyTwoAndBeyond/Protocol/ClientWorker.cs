@@ -5,7 +5,7 @@ using System.Threading;
 
 namespace FortyTwoAndBeyond.Protocol
 {
-    public enum CommandKind { Thrust, Steer, Warp, Gate, Dock, Launch, EnterStationRoom, OpenNpc, ChooseNpc, BuyVendor, SellVendor, EquipCargo, UnequipMount, StoreCargo, RetrieveVault, OpenProduction, CloseProduction, SelectProductionRecipe, SelectProductionCategory, SetProductionLevels, StartProduction, InsertAnalysisSample, ReturnAnalysisSample, ActivateWeapon, ActivateDevice, ActivateTurboWeapons, Chat, ToggleWeapons, Formation, SelectTarget, FollowTarget, InvitePlayer, AnswerConfirmation, StopWeapons, OpenLoot, TakeLoot, OpenResource, CloseResource, ProspectResource, ActivateAbility, RequestRescue, ChooseRescue, SelfJumpstart }
+    public enum CommandKind { Thrust, Steer, Warp, Gate, Dock, Launch, EnterStationRoom, StationPose, OpenNpc, ChooseNpc, BuyVendor, SellVendor, EquipCargo, UnequipMount, StoreCargo, RetrieveVault, OpenProduction, CloseProduction, SelectProductionRecipe, SelectProductionCategory, SetProductionLevels, StartProduction, InsertAnalysisSample, ReturnAnalysisSample, ActivateWeapon, ActivateDevice, ActivateTurboWeapons, Chat, ToggleWeapons, Formation, SelectTarget, FollowTarget, InvitePlayer, AnswerConfirmation, StopWeapons, OpenLoot, TakeLoot, OpenResource, CloseResource, ProspectResource, ActivateAbility, RequestRescue, ChooseRescue, SelfJumpstart }
 
     public readonly struct ClientCommand
     {
@@ -14,10 +14,18 @@ namespace FortyTwoAndBeyond.Protocol
         public readonly int Slot;
         public readonly float Yaw, Pitch;
         public readonly string Text;
+        public readonly uint StationRoom, StationAction;
+        public readonly float StationOrientation, StationX, StationZ;
 
         /// <summary>Store one immutable main-thread input for the network worker.</summary>
-        public ClientCommand(CommandKind kind, uint target = 0, float yaw = 0, float pitch = 0, string text = "", int slot = 0)
-        { Kind = kind; Target = target; Yaw = yaw; Pitch = pitch; Text = text; Slot = slot; }
+        public ClientCommand(CommandKind kind, uint target = 0, float yaw = 0, float pitch = 0,
+            string text = "", int slot = 0, uint stationRoom = uint.MaxValue, uint stationAction = 0,
+            float stationOrientation = 0, float stationX = 0, float stationZ = 0)
+        {
+            Kind = kind; Target = target; Yaw = yaw; Pitch = pitch; Text = text; Slot = slot;
+            StationRoom = stationRoom; StationAction = stationAction;
+            StationOrientation = stationOrientation; StationX = stationX; StationZ = stationZ;
+        }
     }
 
     /// <summary>Own one session thread; publish immutable snapshots without engine calls.</summary>
@@ -77,6 +85,9 @@ namespace FortyTwoAndBeyond.Protocol
                                 case CommandKind.Dock: session.Dock(command.Target); break;
                                 case CommandKind.Launch: session.Launch(); break;
                                 case CommandKind.EnterStationRoom: session.EnterStationRoom(command.Target); break;
+                                case CommandKind.StationPose: session.StationPose(command.StationRoom,
+                                    command.StationOrientation, command.StationX, command.StationZ,
+                                    command.StationAction); break;
                                 case CommandKind.OpenNpc: session.OpenNpc(command.Target); break;
                                 case CommandKind.ChooseNpc: session.ChooseNpc((byte)command.Target); break;
                                 case CommandKind.BuyVendor: session.BuyVendor(command.Slot); break;

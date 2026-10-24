@@ -62,6 +62,15 @@ namespace FortyTwoAndBeyond.Protocol
             using (var writer = new BinaryWriter(stream)) { write(writer); return stream.ToArray(); }
         }
 
+        /// <summary>
+        /// Returns:
+        ///     byte[]: The native 28-byte station avatar pose body.
+        /// </summary>
+        public static byte[] StationAvatarPose(uint player, uint room, float orientation,
+            float x, float z, uint action)
+        { return Body(writer => { writer.Write(player); writer.Write(room); writer.Write(orientation);
+            writer.Write(x); writer.Write(0f); writer.Write(z); writer.Write(action); }); }
+
         /// <summary>Write a network-order integer.</summary>
         public static void Big(BinaryWriter writer, uint value)
         { writer.Write(new[] { (byte)(value >> 24), (byte)(value >> 16), (byte)(value >> 8), (byte)value }); }

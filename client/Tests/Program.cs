@@ -13,7 +13,7 @@ internal static class Program
     {
         CheckReassembly(); CheckWorld(); CheckMissionJournal(); CheckMissionDialogue();
         CheckExperience(); CheckFlightThrottle();
-        CheckStationLayout(); CheckDemoRoster(); CheckAddress(); PeerChecks.Decode();
+        CheckStationLayout(); CheckStationWalk(); CheckDemoRoster(); CheckAddress(); PeerChecks.Decode();
         Console.WriteLine("PASS: framing, ordering, fragmentation, duplicates, bounds, world decoding, private addresses");
         if (args.Length == 2 && args[0] == "--server") { PeerChecks.Live(args[1]); CheckServer(args[1]); }
         else if (args.Length != 0) throw new ArgumentException("Usage: ProtocolChecks [--server PRIVATE_IP]");
@@ -260,6 +260,31 @@ internal static class Program
         world.Apply(new Frame(0xa0, Wire.Body(w => { w.Write(2u); w.Write(uint.MaxValue); w.Write(1u); })), 1);
         Assert(world.StationAvatars.Count == 0 && roomSnapshot.StationAvatars.Length == 1,
             "Station peer departure changed an earlier display snapshot.");
+    }
+
+    /// <summary>Bound walking and verify the native room-pose packet layout.</summary>
+    private static void CheckStationWalk()
+    {
+        var walk = new StationWalkState(); walk.EnterRoom(2);
+        Assert(walk.Room == 2 && walk.X == 0 && walk.Z == LocalSession.StationEntryZ,
+            "Room entry did not reset the local avatar at the entrance.");
+        Assert(walk.Advance(.1f, true, false, false, false) && walk.Moving && walk.Z > LocalSession.StationEntryZ,
+            "Forward walking did not move the avatar into the room.");
+        Assert(walk.Advance(.1f, true, false, false, true) && walk.Orientation > 0 && walk.X > 0,
+            "Turning right did not rotate and move the avatar.");
+        for (int index = 0; index < 1000; index++) walk.Advance(.1f, true, false, false, false);
+        Assert(walk.X <= 30 && walk.Z <= 40 && walk.Stop() && !walk.Stop(),
+            "Station walking escaped its room bounds or failed to publish an idle transition.");
+        byte[] pose = Wire.StationAvatarPose(0x12345678, walk.Room, walk.Orientation,
+            walk.X, walk.Z, 1);
+        Assert(pose.Length == 28 && Wire.U32(pose, 0) == 0x12345678 && Wire.U32(pose, 4) == 2 &&
+            Wire.Float(pose, 8) == walk.Orientation && Wire.Float(pose, 12) == walk.X &&
+            Wire.Float(pose, 16) == 0 && Wire.Float(pose, 20) == walk.Z && Wire.U32(pose, 24) == 1,
+            "Native station pose field order or length changed.");
+        walk.EnterRoom(0);
+        Assert(walk.Room == 0 && walk.Orientation == 0 && walk.X == 0 &&
+            walk.Z == LocalSession.StationEntryZ && !walk.Moving,
+            "Changing rooms retained the prior avatar movement.");
     }
 
     /// <summary>Require a published roster to contain only the nine known demo classes.</summary>

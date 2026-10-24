@@ -385,6 +385,7 @@ namespace FortyTwoAndBeyond.Client
                     "CONCOURSE  /  ROOM " + (snapshot.Station.CurrentRoom + 1)) +
                 "   /   42 AND BEYOND", small);
             GUI.Label(new Rect(510, 29, 190, 22), $"{client.Fps} FPS   ·   {client.FrameMs:0} ms max", small);
+            GUI.Label(new Rect(510, 57, 250, 22), "W / S WALK   ·   A / D TURN", small);
             Panel(new Rect(24, 110, 300, 265));
             GUI.Label(new Rect(40, 124, 270, 28), "STATION SERVICES", body);
             GUI.Label(new Rect(40, 158, 270, 54),

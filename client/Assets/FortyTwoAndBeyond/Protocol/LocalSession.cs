@@ -13,6 +13,7 @@ namespace FortyTwoAndBeyond.Protocol
     /// <summary>Single-worker local-server session; never calls an engine API.</summary>
     public sealed class LocalSession : IDisposable
     {
+        public const float StationEntryZ = -16f;
         private readonly CancellationToken cancel;
         private readonly Stopwatch clock = Stopwatch.StartNew();
         private UdpClient comms, sector;
@@ -265,13 +266,20 @@ namespace FortyTwoAndBeyond.Protocol
                 !station.RoomList.Any(entry => entry.Index == room)) return;
             uint previous = station.CurrentRoom;
             Send(0x9f, Wire.Body(w => { w.Write(Player); w.Write(room); w.Write(previous); }));
-            Send(0x9d, Wire.Body(w =>
-            {
-                w.Write(Player); w.Write(room); w.Write(0f);
-                w.Write(0f); w.Write(0f); w.Write(0f); w.Write(0x41u);
-            }));
+            Send(0x9d, Wire.StationAvatarPose(Player, room, 0, 0, StationEntryZ, 0x41));
             World.SetStationRoom(room);
             Status = "Entered station room " + (room + 1);
+        }
+
+        /// <summary>Publish a bounded local station avatar pose to same-room peers.</summary>
+        public void StationPose(uint room, float orientation, float x, float z, uint action)
+        {
+            if (!Ready || World.Station?.CurrentRoom != room) return;
+            if (float.IsNaN(orientation) || float.IsInfinity(orientation) ||
+                float.IsNaN(x) || float.IsInfinity(x) || float.IsNaN(z) || float.IsInfinity(z) ||
+                Math.Abs(x) > 30 || Math.Abs(z) > 40 || (action != 0 && action != 1))
+                throw new ArgumentOutOfRangeException(nameof(x), "Invalid station avatar pose.");
+            Send(0x9d, Wire.StationAvatarPose(Player, room, orientation, x, z, action));
         }
 
         /// <summary>Open one NPC present in the authoritative station layout.</summary>

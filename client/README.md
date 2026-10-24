@@ -129,7 +129,10 @@ follows the server-offered dialogue choices. A vendor branch opens its native
 stock and buy/sell panels with server quotes and credit balance. Room movement
 uses the station's advertised room buttons. The avatar enters each selected room
 through native room and pose packets, and the contact list shows NPCs placed in
-that room. The **Station Vault** panel stores full cargo stacks and retrieves
+that room. W/S walk and A/D turn the local avatar inside the room; the client
+publishes bounded native poses for other pilots in the same room. The local
+station camera follows the avatar, while room selection and NPC access remain
+server-owned. The **Station Vault** panel stores full cargo stacks and retrieves
 them while docked; the server publishes both container revisions after a move.
 
 ## Players, groups and mobs

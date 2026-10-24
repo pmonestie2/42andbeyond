@@ -30,10 +30,11 @@ namespace FortyTwoAndBeyond.Client
         private MissionHud missionHud;
         private TurboHud turboHud;
         private readonly FlightThrottle flightThrottle = new FlightThrottle();
+        private readonly StationWalkState stationWalk = new StationWalkState();
         public bool AbilitiesOpen => abilityHud != null && abilityHud.IsOpen;
         public bool Incapacitated => snapshot != null && snapshot.Station == null &&
             snapshot.MaxHull > 0 && snapshot.Hull <= 0;
-        private Transform ship, worldRoot, environment, hangar, concourse;
+        private Transform ship, worldRoot, environment, hangar, concourse, ownStationAvatar;
         private readonly Dictionary<uint, Transform> bodies = new Dictionary<uint, Transform>();
         private readonly Dictionary<uint, Transform> stationBodies = new Dictionary<uint, Transform>();
         private string host = "192.168.47.1", username = "", password = "", status = "Ready to connect", sector = "";
@@ -47,6 +48,7 @@ namespace FortyTwoAndBeyond.Client
         private float previousYaw, previousPitch, orbitYaw = 22, orbitPitch = 8, zoom = 2.8f, mapZoom = 1400;
         private Vector3 renderedPosition;
         private float authoritativePoseAt;
+        private float nextStationPoseAt;
         public Snapshot CurrentSnapshot => snapshot;
         public string ConnectionError => worker?.Error;
         public string Status => status;
@@ -92,6 +94,9 @@ namespace FortyTwoAndBeyond.Client
             environment = art.Environment(transform);
             hangar = art.Hangar(transform); hangar.gameObject.SetActive(false);
             concourse = art.StationConcourse(transform); concourse.gameObject.SetActive(false);
+            ownStationAvatar = art.StationAvatar(transform);
+            ownStationAvatar.name = "Your station avatar";
+            ownStationAvatar.gameObject.SetActive(false);
             RenderSettings.skybox = art.Sky; RenderSettings.ambientLight = new Color(.18f, .23f, .32f);
             RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Flat;
             var sun = new GameObject("Sunlight", typeof(Light)); sun.transform.SetParent(transform, false);
@@ -209,7 +214,8 @@ namespace FortyTwoAndBeyond.Client
                 if (poseChanged) authoritativePoseAt = Time.unscaledTime;
                 if (!positioned && next.HasPosition) { renderedPosition = Convert(next.Position); positioned = true; }
             }
-            if (!Ready || !Application.isFocused) { flightThrottle.Reset(); return; }
+            if (!Ready || !Application.isFocused)
+            { flightThrottle.Reset(); StopStationWalk(); return; }
             if (bindings.Pressed(ControlAction.OpenChat) && !chatOpen && !hud.InputFocused && !hud.SettingsOpen)
             {
                 chatOpen = true;
@@ -222,6 +228,7 @@ namespace FortyTwoAndBeyond.Client
             if (chatOpen || hud.InputFocused || hud.SettingsOpen)
             {
                 flightThrottle.Reset();
+                StopStationWalk();
                 if (previousYaw != 0 || previousPitch != 0) worker.Submit(new ClientCommand(CommandKind.Steer));
                 previousYaw = previousPitch = 0;
                 return;
@@ -231,6 +238,8 @@ namespace FortyTwoAndBeyond.Client
                 flightThrottle.Reset();
                 if (bindings.Pressed(ControlAction.Equipment)) hud.ToggleEquipment();
                 if (bindings.Pressed(ControlAction.Launch)) Launch();
+                if (snapshot.Dialogue != null || hud.EquipmentOpen) StopStationWalk();
+                else UpdateStationWalk(snapshot.Station.CurrentRoom);
                 return;
             }
             if (Incapacitated)
@@ -356,6 +365,37 @@ namespace FortyTwoAndBeyond.Client
             { Destroy(stationBodies[id].gameObject); stationBodies.Remove(id); }
         }
 
+        /// <summary>Walk the local station avatar and publish bounded poses at five hertz.</summary>
+        private void UpdateStationWalk(uint room)
+        {
+            if (room == uint.MaxValue) return;
+            if (stationWalk.Room != room)
+            { stationWalk.EnterRoom(room); nextStationPoseAt = Time.unscaledTime + .2f; }
+            bool wasMoving = stationWalk.Moving;
+            stationWalk.Advance(Time.unscaledDeltaTime,
+                bindings.Held(ControlAction.Forward), bindings.Held(ControlAction.Reverse),
+                bindings.Held(ControlAction.TurnLeft), bindings.Held(ControlAction.TurnRight));
+            if (stationWalk.Moving && Time.unscaledTime >= nextStationPoseAt)
+            {
+                PublishStationPose(1);
+                nextStationPoseAt = Time.unscaledTime + .2f;
+            }
+            else if (wasMoving && !stationWalk.Moving) PublishStationPose(0);
+        }
+
+        /// <summary>Publish the avatar's latest room pose without moving the ship.</summary>
+        private void PublishStationPose(uint action)
+        {
+            if (stationWalk.Room == uint.MaxValue || worker == null) return;
+            worker.Submit(new ClientCommand(CommandKind.StationPose, stationRoom: stationWalk.Room,
+                stationAction: action, stationOrientation: stationWalk.Orientation,
+                stationX: stationWalk.X, stationZ: stationWalk.Z));
+        }
+
+        /// <summary>Tell room peers when station walking ends or input is suspended.</summary>
+        private void StopStationWalk()
+        { if (stationWalk.Stop()) PublishStationPose(0); }
+
         /// <summary>Smooth authoritative poses and position the camera without changing gameplay state.</summary>
         private void LateUpdate()
         {
@@ -387,6 +427,14 @@ namespace FortyTwoAndBeyond.Client
                 snapshot.Station.CurrentRoom == uint.MaxValue);
             hangar.gameObject.SetActive(dockingBay);
             concourse.gameObject.SetActive(docked && !dockingBay);
+            bool avatarVisible = docked && snapshot.Station.CurrentRoom != uint.MaxValue;
+            ownStationAvatar.gameObject.SetActive(avatarVisible);
+            Vector3 avatarPosition = new Vector3(stationWalk.X * .25f, 0, stationWalk.Z * .25f);
+            if (avatarVisible)
+            {
+                ownStationAvatar.position = avatarPosition;
+                ownStationAvatar.rotation = Quaternion.Euler(0, stationWalk.Orientation * Mathf.Rad2Deg, 0);
+            }
             ship.gameObject.SetActive(!docked || dockingBay);
             environment.gameObject.SetActive(!chart && !docked);
             if (docked)
@@ -397,13 +445,17 @@ namespace FortyTwoAndBeyond.Client
                 {
                     ship.position = new Vector3(0, 1.4f, 0); ship.rotation = Quaternion.identity;
                     ship.localScale = Vector3.one * 1.3f;
-                    view.transform.position = new Vector3(4, 3.5f, -8);
-                    view.transform.LookAt(new Vector3(0, 1.2f, 0));
+                    view.transform.position = new Vector3(
+                        Mathf.Clamp(avatarPosition.x + 4, -4, 6), 3.5f,
+                        Mathf.Clamp(avatarPosition.z - 7, -9, 3));
+                    view.transform.LookAt(avatarPosition + new Vector3(0, 1.2f, 1));
                 }
                 else
                 {
-                    view.transform.position = new Vector3(0, 3.8f, -9);
-                    view.transform.LookAt(new Vector3(0, 1.5f, 2));
+                    view.transform.position = new Vector3(
+                        Mathf.Clamp(avatarPosition.x * .35f, -3, 3), 3.8f,
+                        Mathf.Clamp(avatarPosition.z - 7, -9, 3));
+                    view.transform.LookAt(avatarPosition + new Vector3(0, 1.5f, 2));
                 }
                 return;
             }
@@ -774,6 +826,7 @@ namespace FortyTwoAndBeyond.Client
         /// <summary>Release scene instances belonging to the departed sector.</summary>
         private void ClearWorld()
         {
+            stationWalk.EnterRoom(uint.MaxValue); nextStationPoseAt = 0;
             combatEffects?.Clear(); remoteShips?.Clear(); miningHud?.Clear();
             foreach (Transform body in bodies.Values) Destroy(body.gameObject);
             foreach (Transform body in stationBodies.Values) Destroy(body.gameObject);
@@ -785,6 +838,7 @@ namespace FortyTwoAndBeyond.Client
         {
             Application.targetFrameRate = focused ? 120 : 60;
             if (!focused) flightThrottle.Reset();
+            if (!focused) StopStationWalk();
             if (focused || worker == null || snapshot?.Station != null) return;
             worker.Submit(new ClientCommand(CommandKind.Thrust, 4)); worker.Submit(new ClientCommand(CommandKind.Steer));
             previousYaw = previousPitch = 0;
