@@ -220,7 +220,7 @@ namespace FortyTwoAndBeyond.Protocol
                     case 5: item.Quality = Float(); break;
                     case 6: item.Info = Text(); break;
                     case 9: Text(); break;
-                    case 10: UInt(); break;
+                    case 10: item.ReadyTick = UInt(); break;
                     case 11: item.Range = Float(); break;
                     case 12: item.WeaponState = UInt(); break;
                     default: return item;

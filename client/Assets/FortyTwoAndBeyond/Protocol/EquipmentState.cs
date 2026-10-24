@@ -75,7 +75,7 @@ namespace FortyTwoAndBeyond.Protocol
     /// <summary>A single mutable network-worker item record.</summary>
     public sealed class ItemState
     {
-        public uint Template = uint.MaxValue, Quantity, WeaponState;
+        public uint Template = uint.MaxValue, Quantity, WeaponState, ReadyTick;
         public ulong Price;
         public float Quality, Structure, Range;
         public string Info = "";
@@ -97,19 +97,29 @@ namespace FortyTwoAndBeyond.Protocol
     public sealed class ItemView
     {
         public readonly int Slot;
-        public readonly uint Template, Quantity, Type, WeaponState;
+        public readonly uint Template, Quantity, Type, WeaponState, ReadyTick;
         public readonly ulong Price;
         public readonly float Quality, Structure, Range;
+        public readonly float CooldownSeconds;
         public readonly string Name, Info, ActivationLabel;
+        public bool Cooling => Type >= 14 && Type <= 16 && (WeaponState & 0x80) != 0;
+        public bool OutOfAmmo => (Type == 15 || Type == 16) && (WeaponState & 8) != 0;
         /// <summary>Resolve a worker item against the known server catalog.</summary>
-        public ItemView(int slot, ItemState item, IReadOnlyDictionary<uint, ItemTemplateInfo> catalog)
+        public ItemView(int slot, ItemState item, IReadOnlyDictionary<uint, ItemTemplateInfo> catalog,
+            uint? estimatedServerTick = null)
         {
             Slot = slot; Template = item.Template; Quantity = item.Quantity;
             Quality = item.Quality; Structure = item.Structure; Range = item.Range;
-            WeaponState = item.WeaponState; Price = item.Price; Info = item.Info;
+            WeaponState = item.WeaponState; ReadyTick = item.ReadyTick;
+            Price = item.Price; Info = item.Info;
             if (catalog.TryGetValue(item.Template, out ItemTemplateInfo template))
             { Name = template.Name; Type = template.Type; ActivationLabel = template.ActivationLabel; }
             else { Name = "Item #" + item.Template; Type = 0; ActivationLabel = ""; }
+            if (Cooling && ReadyTick != 0 && estimatedServerTick.HasValue)
+            {
+                int remainingMs = unchecked((int)(ReadyTick - estimatedServerTick.Value));
+                CooldownSeconds = Math.Max(0, Math.Min(remainingMs / 1000f, 600));
+            }
         }
     }
 }

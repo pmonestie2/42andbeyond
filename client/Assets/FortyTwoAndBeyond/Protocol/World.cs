@@ -435,6 +435,20 @@ namespace FortyTwoAndBeyond.Protocol
         public float Acceleration { get; private set; }
         public float AngularY { get; private set; }
         public float AngularZ { get; private set; }
+        private uint lastServerTick;
+        private long lastServerTickAt;
+
+        /// <summary>
+        /// Returns:
+        ///     uint?: The server tick extrapolated for display, or null before own movement arrives.
+        /// </summary>
+        public uint? EstimatedServerTick(long now)
+        {
+            if (lastServerTickAt == 0) return null;
+            long elapsedMs = (long)Math.Max(0,
+                (now - lastServerTickAt) * 1000d / System.Diagnostics.Stopwatch.Frequency);
+            return unchecked(lastServerTick + (uint)Math.Min(elapsedMs, uint.MaxValue));
+        }
 
         /// <summary>Update server-authoritative display state.</summary>
         public void Apply(Frame frame, uint player)
@@ -450,7 +464,7 @@ namespace FortyTwoAndBeyond.Protocol
                     if (firstEnd < 0 || firstEnd + 1 >= b.Length) throw new InvalidDataException("Missing sector name.");
                     string name = Wire.Text(b, firstEnd + 1, b.Length - firstEnd - 1);
                     if (name.Length == 0) throw new InvalidDataException("Empty sector name.");
-                    if (Sector != name) { Objects.Clear(); Players.Clear(); Mobs.Clear(); StationAvatars.Clear(); Loot.Clear(); Resources.Clear(); ResourceTargetId = 0; ResourceWindowOpen = false; MiningActivity = null; Warp = WarpState.Decode(0, 0); OpenLootId = 0; Shots.Clear(); Damages.Clear(); ClearConfirmation(); nextShot = nextDamage = 0; }
+                    if (Sector != name) { Objects.Clear(); Players.Clear(); Mobs.Clear(); StationAvatars.Clear(); Loot.Clear(); Resources.Clear(); ResourceTargetId = 0; ResourceWindowOpen = false; MiningActivity = null; Warp = WarpState.Decode(0, 0); lastServerTickAt = 0; OpenLootId = 0; Shots.Clear(); Damages.Clear(); ClearConfirmation(); nextShot = nextDamage = 0; }
                     Sector = name;
                     break;
                 case 0x4f:
@@ -689,6 +703,8 @@ namespace FortyTwoAndBeyond.Protocol
                     Position = new Position(Wire.Float(b, 10), Wire.Float(b, 14), Wire.Float(b, 18));
                     Orientation = new[] { Wire.Float(b, 22), Wire.Float(b, 26), Wire.Float(b, 30), Wire.Float(b, 34) };
                     HasPosition = true;
+                    lastServerTick = Wire.U32(b, 6);
+                    lastServerTickAt = System.Diagnostics.Stopwatch.GetTimestamp();
                     if (b.Length >= 70)
                     {
                         Speed = Wire.Float(b, 42) * 1000;
@@ -819,8 +835,10 @@ namespace FortyTwoAndBeyond.Protocol
                 if (equipment.Cargo[i]?.Present == true) Cargo[i] = new ItemView(i, equipment.Cargo[i], world.ItemCatalog);
             for (int i = 0; i < Vault.Length; i++)
                 if (equipment.Vault[i]?.Present == true) Vault[i] = new ItemView(i, equipment.Vault[i], world.ItemCatalog);
+            uint? serverTick = world.EstimatedServerTick(now);
             for (int i = 0; i < Mounted.Length; i++)
-                if (equipment.Mounted[i]?.Present == true) Mounted[i] = new ItemView(i, equipment.Mounted[i], world.ItemCatalog);
+                if (equipment.Mounted[i]?.Present == true) Mounted[i] = new ItemView(i,
+                    equipment.Mounted[i], world.ItemCatalog, serverTick);
             for (int i = 0; i < Ammo.Length; i++)
                 if (equipment.Ammo[i]?.Present == true) Ammo[i] = new ItemView(i, equipment.Ammo[i], world.ItemCatalog);
         }

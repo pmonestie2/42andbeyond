@@ -12,7 +12,7 @@ internal static class Program
     private static void Main(string[] args)
     {
         CheckReassembly(); CheckWorld(); CheckMissionJournal(); CheckMissionDialogue();
-        CheckExperience(); CheckMiningPhases(); CheckWarpPhases(); CheckFlightThrottle();
+        CheckExperience(); CheckMiningPhases(); CheckWarpPhases(); CheckWeaponReady(); CheckFlightThrottle();
         CheckStationLayout(); CheckStationWalk(); CheckDemoRoster(); CheckAddress(); PeerChecks.Decode();
         Console.WriteLine("PASS: framing, ordering, fragmentation, duplicates, bounds, world decoding, private addresses");
         if (args.Length == 2 && args[0] == "--server") { PeerChecks.Live(args[1]); CheckServer(args[1]); }
@@ -280,6 +280,41 @@ internal static class Program
         byte[] targeted = WarpState.RouteRequest(0x12345678, 77);
         Assert(targeted.Length == 10 && Wire.U16(targeted, 4) == 1 && Wire.U32(targeted, 6) == 77,
             "Targeted warp lost its native waypoint identity.");
+    }
+
+    /// <summary>Decode the server's nested weapon state and display-only ready clock.</summary>
+    private static void CheckWeaponReady()
+    {
+        const string fixture =
+            "27001b00010000001d00010200000000010000020882000002c0018813000000409a4489200000";
+        byte[] packet = Enumerable.Range(0, fixture.Length / 2)
+            .Select(index => Convert.ToByte(fixture.Substring(index * 2, 2), 16)).ToArray();
+        Assert(packet.Length == 39 && Wire.U16(packet, 0) == 39 && Wire.U16(packet, 2) == 0x1b,
+            "Native weapon-state fixture frame is malformed.");
+        var world = new World();
+        world.ItemCatalog[123] = new ItemTemplateInfo(123, 15, "Test projectile", "");
+        world.Equipment.Mounted[3] = new ItemState { Template = 123, Quantity = 1 };
+        byte[] movement = new byte[46];
+        Array.Copy(BitConverter.GetBytes(1u), 0, movement, 2, 4);
+        Array.Copy(BitConverter.GetBytes(4500u), 0, movement, 6, 4);
+        world.Apply(new Frame(0x3e, movement), 1);
+        world.Apply(new Frame(0x1b, packet.Skip(4).ToArray()), 1);
+        Snapshot first = new Snapshot(world, "ready", true);
+        ItemView weapon = first.Mounted[3];
+        Assert(weapon.ReadyTick == 5000 && weapon.Cooling && weapon.OutOfAmmo &&
+            (weapon.WeaponState & 1) != 0 && weapon.Range == 1234f &&
+            weapon.CooldownSeconds > .25f && weapon.CooldownSeconds <= .5f,
+            "Native weapon ready, cooling, ammo, or firing state did not reach the loadout.");
+        var wrapped = new ItemState { Template = 123, WeaponState = 0x2080,
+            ReadyTick = 244 };
+        ItemView wrapView = new ItemView(3, wrapped, world.ItemCatalog, 0xffffff00);
+        Assert(wrapView.CooldownSeconds == .5f,
+            "Server tick wrap made the display countdown negative.");
+        ItemView beam = new ItemView(3, new ItemState { Template = 124,
+            WeaponState = 0x2008 }, new System.Collections.Generic.Dictionary<uint, ItemTemplateInfo>
+            { [124] = new ItemTemplateInfo(124, 14, "Test beam", "") });
+        Assert(!beam.OutOfAmmo && first.Mounted[3].OutOfAmmo,
+            "A beam inherited the projectile empty-ammo marker.");
     }
 
     /// <summary>Keep held flight controls reachable after focus and text entry.</summary>
