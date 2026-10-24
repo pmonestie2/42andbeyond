@@ -175,6 +175,7 @@ pub struct PlayerSession {
     player_firing: bool,
     weapon_cooldowns: [f32; 20],
     weapon_firing: [bool; 20],
+    active_device: Option<session_equipment::ActiveDevice>,
     shield: f32,
     hull: f32,
     energy: f32,
@@ -352,6 +353,7 @@ impl PlayerSession {
             player_firing: false,
             weapon_cooldowns: [0.; 20],
             weapon_firing: [false; 20],
+            active_device: None,
             shield: stats.shield_capacity,
             hull: stats.hull_capacity,
             energy: stats.energy_capacity,
@@ -1132,7 +1134,20 @@ impl PlayerSession {
     /// candidate includes both cargo and credits, so they cannot commit apart.
     fn commit_inventory(&mut self, candidate: Inventory) -> io::Result<()> {
         candidate.validate(&self.items)?;
-        let equipment = EquipmentStats::derive(&candidate, &self.items, &self.skill_catalog)?;
+        let active_device = self
+            .active_device
+            .as_ref()
+            .filter(|active| active.valid_for(&candidate, crate::resources::unix_ms()))
+            .cloned();
+        let active_modifiers = active_device
+            .as_ref()
+            .map_or_else(Vec::new, session_equipment::ActiveDevice::modifiers);
+        let equipment = EquipmentStats::derive_with_activated(
+            &candidate,
+            &self.items,
+            &self.skill_catalog,
+            &active_modifiers,
+        )?;
         let prices = self.vendor_prices(&candidate)?;
         let reputation = if candidate.faction_standings == self.inventory.faction_standings
             && self.reputation.class_faction == self.account.character.class().faction()
@@ -1170,6 +1185,7 @@ impl PlayerSession {
             &candidate,
         )?;
         self.inventory = candidate;
+        self.active_device = active_device;
         self.reputation = reputation;
         self.equipment = equipment;
         self.apply_equipment_parameters();
@@ -1442,6 +1458,8 @@ impl PlayerSession {
         self.last_motion_report = None;
         self.pending.clear();
         self.stop_weapons();
+        self.active_device = None;
+        self.refresh_equipment()?;
         self.forget_session()?;
         self.skills = SkillState::default();
         crate::server_log!("Local character logged out");
@@ -3102,6 +3120,52 @@ mod tests {
         ship.activate_equipped_item(&activation).unwrap();
         assert!(ship.weapon_firing[3]);
         assert!(!ship.weapon_firing[4]);
+    }
+
+    /// Turbo Weapons shortens actual reloads, costs energy and survives restart.
+    #[test]
+    fn activated_turbo_weapons_shortens_reload_then_expires_after_recovery() {
+        let mut ship = session();
+        ship.logged_in = true;
+        ship.selected_peer = Some("127.0.0.1".parse().unwrap());
+        ship.endpoint = Some("127.0.0.1:22491".parse().unwrap());
+        let mut inventory = ship.inventory.clone();
+        inventory.equipped[1] = Some(crate::inventory::ItemInstance::stock(3343, 1));
+        inventory.equipped[9] = Some(crate::inventory::ItemInstance::stock(2265, 1));
+        ship.commit_inventory(inventory).unwrap();
+        let ordinary_speed = ship.motion.max_speed;
+        let ordinary_reload = ship.equipment.weapons[0].reload;
+        ship.energy = ship.equipment.ship.energy_capacity;
+        let ordinary_energy = ship.energy;
+        let activation = [ship.player_id().to_le_bytes().as_slice(), &[2, 9]].concat();
+        ship.energy = 757.;
+        ship.activate_equipped_item(&activation).unwrap();
+        assert!(ship.active_device.is_none());
+        assert_eq!(ship.equipment.weapons[0].reload, ordinary_reload);
+        ship.energy = ordinary_energy;
+        ship.activate_equipped_item(&activation).unwrap();
+        assert_eq!(ship.energy, ordinary_energy - 758.);
+        assert_eq!(ship.motion.max_speed, ordinary_speed);
+        let boosted_reload = ship.equipment.weapons[0].reload;
+        assert!(boosted_reload < ordinary_reload);
+        ship.target = MOB_ID;
+        lock_combat(&ship.combat).unwrap().actors[0].position = [100., 0., 0.];
+        ship.toggle_all_weapons();
+        ship.fire_weapons_with_roll(|| 5000).unwrap();
+        assert_eq!(ship.weapon_cooldowns[3], boosted_reload);
+        ship.activate_equipped_item(&activation).unwrap();
+        assert!(ship.energy > 0.);
+
+        let mut restored =
+            PlayerSession::new(ship.sector.clone(), ship.bind, ship.state_dir.clone()).unwrap();
+        assert!(restored.logged_in);
+        assert_eq!(restored.equipment.weapons[0].reload, boosted_reload);
+        restored.active_device.as_mut().unwrap().expires_at_ms = crate::resources::unix_ms() - 1;
+        restored.advance_active_device().unwrap();
+        assert!(restored.active_device.is_none());
+        assert_eq!(restored.motion.max_speed, ordinary_speed);
+        assert_eq!(restored.equipment.weapons[0].reload, ordinary_reload);
+        assert!(restored.pending.iter().any(|frame| frame.opcode == 0x1b));
     }
 
     #[test]

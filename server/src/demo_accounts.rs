@@ -16,6 +16,9 @@ use std::path::{Path, PathBuf};
 
 pub const CODES: [&str; 9] = ["te", "tt", "ts", "jd", "js", "je", "pw", "pp", "ps"];
 const ROSTER: &str = "demo_roster.local.json";
+const TURBO_WARRIOR: u32 = 2363;
+const TURBO_JENQUAI_EXPLORER: u32 = 2412;
+const TURBO_GENERAL: u32 = 2265;
 
 #[derive(Serialize, Deserialize)]
 struct DemoRoster {
@@ -31,7 +34,7 @@ fn roster_path(root: &Path) -> PathBuf {
 
 /// Returns:
 ///     Inventory: Class legal max sandbox gear and ammunition for a new pilot.
-fn expected_inventory(profile: &CharacterProfile, items: &ItemCatalog) -> io::Result<Inventory> {
+fn legacy_inventory(profile: &CharacterProfile, items: &ItemCatalog) -> io::Result<Inventory> {
     let skills = SkillCatalog::for_profile(profile)?;
     let grant: SandboxLoadout = serde_json::from_str(include_str!("../data/sandbox_loadout.json"))?;
     let starter = Inventory::starter_for(profile, items)?;
@@ -90,6 +93,96 @@ fn expected_inventory(profile: &CharacterProfile, items: &ItemCatalog) -> io::Re
         return Err(invalid("Incomplete nine-class demo equipment."));
     }
     Ok(inventory)
+}
+
+/// Returns:
+///     u32: Class-legal public Turbo Weapons device template.
+fn turbo_template(profile: &CharacterProfile, items: &ItemCatalog) -> io::Result<u32> {
+    let skills = SkillCatalog::for_profile(profile)?;
+    let id = match profile.class().0 {
+        0 | 3 | 6 => TURBO_WARRIOR,
+        5 => TURBO_JENQUAI_EXPLORER,
+        _ => TURBO_GENERAL,
+    };
+    let template = items.get(id)?;
+    if template.item_type != 11
+        || template
+            .activated
+            .iter()
+            .all(|effect| effect.description != "Turbo Weapons (Activated)")
+    {
+        return Err(invalid("Missing public turbo device effect."));
+    }
+    template.check_requirements(profile, &skills, [50, 50, 50])?;
+    Ok(id)
+}
+
+/// Equip a turbo and keep the replaced stock device in the vault.
+///
+/// Returns:
+///     Inventory: A class-legal revised demo loadout.
+fn expected_inventory(profile: &CharacterProfile, items: &ItemCatalog) -> io::Result<Inventory> {
+    let mut inventory = legacy_inventory(profile, items)?;
+    let slot = 9 + profile.class().devices() - 1;
+    let old =
+        inventory.equipped[slot].replace(ItemInstance::stock(turbo_template(profile, items)?, 1));
+    if let Some(old) = old {
+        let vault_slot = inventory
+            .vault
+            .iter_mut()
+            .find(|value| value.is_none())
+            .ok_or_else(|| invalid("No demo vault space for replaced device."))?;
+        *vault_slot = Some(old);
+    }
+    let skills = SkillCatalog::for_profile(profile)?;
+    inventory.validate_for_profile(profile, items, &skills)?;
+    Ok(inventory)
+}
+
+/// Preserve owned state while upgrading a published pilot's unchanged stock mount.
+///
+/// Returns:
+///     Option<Inventory>: Updated inventory, or none when already equipped.
+///
+/// Raises:
+///     io::Error: Every device mount has earned gear or no vault space remains.
+fn turbo_upgrade(
+    current: &Inventory,
+    profile: &CharacterProfile,
+    items: &ItemCatalog,
+) -> io::Result<Option<Inventory>> {
+    let class = profile.class();
+    let turbo_id = turbo_template(profile, items)?;
+    let mut mounts = 9..9 + class.devices();
+    if mounts.clone().any(|slot| {
+        current.equipped[slot]
+            .as_ref()
+            .is_some_and(|item| item.template == turbo_id && item.structure > 0.)
+    }) {
+        return Ok(None);
+    }
+    let baseline = legacy_inventory(profile, items)?;
+    let preferred = 9 + class.devices() - 1;
+    let slot = if current.equipped[preferred] == baseline.equipped[preferred] {
+        preferred
+    } else {
+        mounts
+            .find(|&slot| current.equipped[slot].is_none())
+            .ok_or_else(|| invalid("No unchanged or empty demo device mount for turbo."))?
+    };
+    let mut candidate = current.clone();
+    let old = candidate.equipped[slot].replace(ItemInstance::stock(turbo_id, 1));
+    if let Some(old) = old {
+        let vault_slot = candidate
+            .vault
+            .iter_mut()
+            .find(|value| value.is_none())
+            .ok_or_else(|| invalid("No demo vault space for replaced device."))?;
+        *vault_slot = Some(old);
+    }
+    let skills = SkillCatalog::for_profile(profile)?;
+    candidate.validate_for_profile(profile, items, &skills)?;
+    Ok(Some(candidate))
 }
 
 /// Persist a new state file or resume a matching interrupted temp write.
@@ -174,8 +267,12 @@ pub fn seed(root: &Path) -> io::Result<Vec<String>> {
         };
         let path = directory.join("inventory.json");
         if path.exists() {
-            if !published {
-                let existing: Inventory = serde_json::from_slice(&fs::read(&path)?)?;
+            let existing: Inventory = serde_json::from_slice(&fs::read(&path)?)?;
+            if published {
+                if let Some(candidate) = turbo_upgrade(&existing, &profile, &items)? {
+                    crate::durable_json::replace(&path, &candidate)?;
+                }
+            } else {
                 if existing != inventory {
                     return Err(invalid(
                         "Unpublished demo account has preexisting player state.",
@@ -285,6 +382,11 @@ mod tests {
                 inventory.equipped[9..].iter().flatten().count(),
                 stored.account.character.class().devices()
             );
+            let turbo = turbo_template(&stored.account.character, &items).unwrap();
+            assert!(inventory.equipped[9..]
+                .iter()
+                .flatten()
+                .any(|item| item.template == turbo));
             if stored.account.character.race != 1 {
                 assert!(stats.weapons.iter().all(|weapon| weapon.rounds > 0));
                 assert!(inventory.ammunition[3..3 + stats.weapons.len()]
@@ -302,13 +404,56 @@ mod tests {
             }
         }
         let te_inventory = root.join("accounts/pte/inventory.json");
-        let mut spent: Inventory =
-            serde_json::from_slice(&fs::read(&te_inventory).unwrap()).unwrap();
+        let te_profile = accounts
+            .load()
+            .unwrap()
+            .into_iter()
+            .find(|entry| entry.account.username == "pte")
+            .unwrap()
+            .account
+            .character;
+        let mut spent = legacy_inventory(&te_profile, &items).unwrap();
         spent.credits = 123;
+        spent.explore_xp = 789;
+        spent.cargo[5] = Some(ItemInstance::stock(2837, 3));
         fs::write(&te_inventory, serde_json::to_vec(&spent).unwrap()).unwrap();
         assert_eq!(seed(&root).unwrap(), CODES.map(str::to_owned));
         let after: Inventory = serde_json::from_slice(&fs::read(&te_inventory).unwrap()).unwrap();
-        assert_eq!(after, spent);
+        let turbo = turbo_template(&te_profile, &items).unwrap();
+        let slot = 9 + te_profile.class().devices() - 1;
+        assert_eq!(after.equipped[slot].as_ref().unwrap().template, turbo);
+        assert!(after
+            .vault
+            .iter()
+            .flatten()
+            .any(|item| Some(item) == spent.equipped[slot].as_ref()));
+        assert_eq!(after.credits, spent.credits);
+        assert_eq!(after.explore_xp, spent.explore_xp);
+        assert_eq!(after.cargo, spent.cargo);
+        for mounted in 0..20 {
+            if mounted != slot {
+                assert_eq!(after.equipped[mounted], spent.equipped[mounted]);
+            }
+        }
+        assert_eq!(seed(&root).unwrap(), CODES.map(str::to_owned));
+        let repeated: Inventory =
+            serde_json::from_slice(&fs::read(&te_inventory).unwrap()).unwrap();
+        assert_eq!(repeated, after);
+        let tt_inventory = root.join("accounts/ptt/inventory.json");
+        let tt_profile = accounts
+            .load()
+            .unwrap()
+            .into_iter()
+            .find(|entry| entry.account.username == "ptt")
+            .unwrap()
+            .account
+            .character;
+        let mut edited = legacy_inventory(&tt_profile, &items).unwrap();
+        edited.equipped.swap(9, 13);
+        let edited_bytes = serde_json::to_vec(&edited).unwrap();
+        fs::write(&tt_inventory, &edited_bytes).unwrap();
+        assert!(seed(&root).is_err());
+        assert_eq!(fs::read(&tt_inventory).unwrap(), edited_bytes);
         assert_eq!(fs::read(root.join("account.local.json")).unwrap(), private);
         assert_eq!(accounts.load().unwrap().len(), 10);
         fs::remove_dir_all(root).unwrap();

@@ -95,6 +95,19 @@ impl EquipmentStats {
         catalog: &ItemCatalog,
         skills: &SkillCatalog,
     ) -> io::Result<Self> {
+        Self::derive_with_activated(inventory, catalog, skills, &[])
+    }
+
+    /// Apply one authoritative activated device's frozen modifiers to owned gear.
+    ///
+    /// Returns:
+    ///     Self: Ship and weapon stats with the strongest operation per stat.
+    pub fn derive_with_activated(
+        inventory: &Inventory,
+        catalog: &ItemCatalog,
+        skills: &SkillCatalog,
+        activated: &[Modifier],
+    ) -> io::Result<Self> {
         inventory.validate(catalog)?;
         let mut modifiers = EquippedModifiers::default();
         for item in inventory
@@ -108,6 +121,9 @@ impl EquipmentStats {
                     modifiers.add(modifier);
                 }
             }
+        }
+        for modifier in activated {
+            modifiers.add(modifier);
         }
         let field = |slot: usize, index: u32| -> io::Result<f32> {
             match inventory.equipped[slot]

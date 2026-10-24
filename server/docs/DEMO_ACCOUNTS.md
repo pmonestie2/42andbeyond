@@ -7,8 +7,11 @@ directory:
 server/target/debug/beyond-server --seed-demo-accounts --state-dir server/state
 ```
 
-The command creates only missing demo accounts. Reruns preserve existing
-inventory, credits and character state. A conflicting preexisting class-code
+The command creates missing demo accounts and upgrades previously published
+pilots with a class-legal Turbo Weapons device. The stock device it replaces
+is moved to the vault. An edited mount is never overwritten; if no device
+mount is unchanged or empty, provisioning stops for review. Reruns preserve
+existing inventory, credits and character state. A conflicting preexisting class-code
 account stops provisioning without overwriting it. The roster is published
 only after all nine accounts are ready; ordinary local accounts are never
 advertised.
@@ -28,7 +31,12 @@ advertised.
 Each pilot has the current sandbox maximum of level 50 in combat, trade and
 exploration, hull upgrade 6, maximum class skill ranks, 100 million credits,
 all class weapon and device mounts occupied, and high-end reactor, shield and
-engine gear. Terran and Progen mounts use level-nine missile/projectile
+engine gear. Warriors TE/JD/PW use Plague's Bite L8 (+20% weapon firing rate),
+JE uses aa Gahte Y L9 (+20%), and TT/TS/JS/PP/PS use Focus Of The Celestial
+L7 (+7%). Public race/profession limits prevent one level-nine Turbo Weapons
+device from fitting every class. Activating one consumes reactor energy and
+reduces authoritative weapon reload time for its listed duration. Terran and
+Progen mounts use level-nine missile/projectile
 launchers with compatible full ammo stacks plus two reserve cargo stacks.
 Jenquai mounts use high-end beams, which consume no ammunition. Gear is
 durable owned inventory; the demo provisioner does not refill spent resources.

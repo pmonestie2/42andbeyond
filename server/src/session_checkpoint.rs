@@ -52,6 +52,8 @@ pub(super) struct Checkpoint {
     #[serde(default)]
     weapon_firing: [bool; 20],
     #[serde(default)]
+    active_device: Option<session_equipment::ActiveDevice>,
+    #[serde(default)]
     player_firing: bool,
     #[serde(default)]
     following: bool,
@@ -233,6 +235,9 @@ impl PlayerSession {
             (saved.hull / saved.hull_capacity).clamp(0., 1.) * capacity
         };
         self.energy = saved.energy;
+        self.active_device = saved
+            .active_device
+            .filter(|active| active.valid_for(&self.inventory, unix_ms()));
         self.weapon_cooldowns = saved.weapon_cooldowns;
         self.weapon_firing = saved.weapon_firing;
         self.player_firing = saved.player_firing;
@@ -279,6 +284,11 @@ impl PlayerSession {
         self.started = Instant::now();
         self.logged_in = self.handoff.is_none();
         self.last_seen = Instant::now();
+        if self.logged_in {
+            self.refresh_equipment()?;
+        } else {
+            self.active_device = None;
+        }
         if let Some(join) = &self.handoff {
             self.pending.push(Frame::new(0x3a, join.clone()));
             crate::server_log!("Resumed sector handoff: {}", self.account.character.name);
@@ -431,6 +441,7 @@ impl PlayerSession {
             energy: self.energy,
             weapon_cooldowns: self.weapon_cooldowns,
             weapon_firing: self.weapon_firing,
+            active_device: self.active_device.clone(),
             player_firing: self.player_firing,
             following: self.following,
             last_launch: self.last_launch,

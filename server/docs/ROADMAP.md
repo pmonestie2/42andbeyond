@@ -112,6 +112,15 @@ mean the corresponding gameplay system is complete.
   and ordinary level-one character creation remain open.
 - Vault transfers require an authoritative station sector. Rejected space
   transfers preserve the inventory and send the current cargo/vault state.
+- Public Turbo Weapons devices now supply a timed self-buff through the same
+  weapon reload modifiers as passive gear. Activation checks the equipped
+  slot, reactor cost and ship state; firing rate is authoritative and the buff
+  expires across replacement. Demo provisioning upgrades each class to its
+  legal device while preserving the displaced stock device in vault. Broader
+  activated device families and buff stacking remain pending.
+- UDP send failures are logged per destination immediately, then summarized
+  at most every 30 seconds until recovery, avoiding floods from unreachable
+  resumed clients while retaining error counts.
 
 ## Next implementation work
 

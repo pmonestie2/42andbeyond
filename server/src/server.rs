@@ -28,6 +28,81 @@ struct ConnectionState {
     player: Option<u32>,
 }
 
+struct SendFailure {
+    last_report: Instant,
+    last_seen: Instant,
+    suppressed: u64,
+    error: String,
+}
+
+#[derive(Default)]
+struct UdpSendLog {
+    failures: HashMap<(u16, SocketAddr), SendFailure>,
+}
+
+impl UdpSendLog {
+    /// Returns:
+    ///     Option<String>: First failure or a thirty-second summary to log.
+    fn failure(
+        &mut self,
+        port: u16,
+        peer: SocketAddr,
+        error: &io::Error,
+        now: Instant,
+    ) -> Option<String> {
+        let key = (port, peer);
+        let description = error.to_string();
+        match self.failures.get_mut(&key) {
+            Some(record)
+                if record.error == description
+                    && now.duration_since(record.last_report) < Duration::from_secs(30) =>
+            {
+                record.suppressed = record.suppressed.saturating_add(1);
+                record.last_seen = now;
+                None
+            }
+            Some(record) => {
+                let suppressed = record.suppressed;
+                record.last_report = now;
+                record.last_seen = now;
+                record.suppressed = 0;
+                record.error = description.clone();
+                Some(format!("UDP send error: port={port}, peer={peer}: {description}; {suppressed} repeated failures since prior report"))
+            }
+            None => {
+                self.failures.insert(
+                    key,
+                    SendFailure {
+                        last_report: now,
+                        last_seen: now,
+                        suppressed: 0,
+                        error: description.clone(),
+                    },
+                );
+                Some(format!(
+                    "UDP send error: port={port}, peer={peer}: {description}"
+                ))
+            }
+        }
+    }
+
+    /// Returns:
+    ///     Option<String>: Recovery with the number of throttled failures.
+    fn success(&mut self, port: u16, peer: SocketAddr) -> Option<String> {
+        let record = self.failures.remove(&(port, peer))?;
+        Some(format!(
+            "UDP send recovered: port={port}, peer={peer}; {} repeated failures suppressed",
+            record.suppressed
+        ))
+    }
+
+    /// Discard inactive destinations so transient clients cannot grow the map.
+    fn prune(&mut self, now: Instant) {
+        self.failures
+            .retain(|_, record| now.duration_since(record.last_seen) < Duration::from_secs(60));
+    }
+}
+
 fn lock_game(game: &Mutex<GameState>) -> io::Result<std::sync::MutexGuard<'_, GameState>> {
     game.lock()
         .map_err(|_| io::Error::other("game state lock poisoned"))
@@ -327,6 +402,7 @@ pub fn run(config: Config, stop: Arc<AtomicBool>) -> io::Result<()> {
     crate::server_log!("TCP 3805 global, 3807/3809/3810 proxy bridge; UDP 3806 registration, 3808 master, {SECTOR_PORT} sector");
     let mut buffer = [0u8; 65535];
     let mut last_tick = Instant::now();
+    let mut send_log = UdpSendLog::default();
     let mut failure = None;
     while !stop.load(Ordering::Relaxed) {
         if stop_request.exists() {
@@ -377,11 +453,23 @@ pub fn run(config: Config, stop: Arc<AtomicBool>) -> io::Result<()> {
         };
         for packet in output {
             if let Some(socket) = udp.get(&packet.port) {
-                if let Err(error) = socket.send_to(&packet.data, packet.peer) {
-                    crate::server_error!("UDP send error: {error}");
+                match socket.send_to(&packet.data, packet.peer) {
+                    Ok(_) => {
+                        if let Some(message) = send_log.success(packet.port, packet.peer) {
+                            crate::server_log!("{message}");
+                        }
+                    }
+                    Err(error) => {
+                        if let Some(message) =
+                            send_log.failure(packet.port, packet.peer, &error, now)
+                        {
+                            crate::server_error!("{message}");
+                        }
+                    }
                 }
             }
         }
+        send_log.prune(now);
         thread::sleep(Duration::from_millis(50));
     }
     stop.store(true, Ordering::Relaxed);
@@ -398,5 +486,34 @@ pub fn run(config: Config, stop: Arc<AtomicBool>) -> io::Result<()> {
     match failure {
         Some(error) => Err(error),
         None => Ok(()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Repeated unreachable sends are counted while new errors still surface.
+    #[test]
+    fn udp_send_errors_are_throttled_per_destination_and_recover() {
+        let mut log = UdpSendLog::default();
+        let now = Instant::now();
+        let peer: SocketAddr = "192.0.2.1:3501".parse().unwrap();
+        let other: SocketAddr = "192.0.2.2:3501".parse().unwrap();
+        let unreachable = io::Error::new(io::ErrorKind::NetworkUnreachable, "No route to host");
+        let refused = io::Error::new(io::ErrorKind::ConnectionRefused, "Connection refused");
+        assert!(log.failure(3501, peer, &unreachable, now).is_some());
+        assert!(log.failure(3501, peer, &unreachable, now).is_none());
+        assert!(log.failure(3501, other, &unreachable, now).is_some());
+        assert!(log.failure(3501, peer, &refused, now).is_some());
+        assert!(log.failure(3501, peer, &refused, now).is_none());
+        let summary = log
+            .failure(3501, peer, &refused, now + Duration::from_secs(30))
+            .unwrap();
+        assert!(summary.contains("1 repeated failures"));
+        assert!(log.success(3501, peer).unwrap().contains("recovered"));
+        assert!(log.success(3501, peer).is_none());
+        log.prune(now + Duration::from_secs(91));
+        assert!(log.failures.is_empty());
     }
 }
