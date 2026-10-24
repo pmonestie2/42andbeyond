@@ -693,7 +693,8 @@ namespace FortyTwoAndBeyond.Client
                 (target?.Kind == 11 || station) && targetAction == true;
             string actionLabel = target == null || target.Kind != 11 && !station ? "SELECT GATE OR STATION" :
                 targetAction == true ? station ? "DOCK AT STATION" : "ACTIVATE GATE" :
-                targetAction == false ? "SERVER: ACTION UNAVAILABLE" : "WAITING FOR TARGET VERBS";
+                targetAction == false || snapshot.Verbs.TargetId == target.Id ?
+                "SERVER: ACTION UNAVAILABLE" : "WAITING FOR TARGET VERBS";
             if (GUI.Button(new Rect(x + 12, top + 102, 272, 30),
                 (station ? client.Bindings.Display(ControlAction.Dock) : client.Bindings.Display(ControlAction.Gate)) +
                 "    " + actionLabel, button))
@@ -843,7 +844,7 @@ namespace FortyTwoAndBeyond.Client
             bool? lootVerb = snapshot.Verbs.Available(wreckId, 3);
             GUI.enabled = client.Ready && lootVerb == true && !open;
             if (GUI.Button(new Rect(x + 12, y + 57, 336, 30), open ? "WRECK OPEN" :
-                lootVerb == false ? "SERVER: LOOT UNAVAILABLE" :
+                lootVerb == false || snapshot.Verbs.TargetId == wreckId ? "SERVER: LOOT UNAVAILABLE" :
                 lootVerb == null ? "WAITING FOR LOOT VERB" : "OPEN WRECK", button))
                 client.OpenLoot(wreckId);
             GUI.enabled = true;

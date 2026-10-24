@@ -102,7 +102,8 @@ namespace FortyTwoAndBeyond.Client
                     (!stopped || prospectVerb == true);
                 if (GUI.Button(new Rect(panel.x + 12, panel.y + 79, panel.width - 24, 32),
                     !stopped ? "BRAKE SHIP TO PROSPECT" : prospectVerb == true ?
-                    "OPEN PROSPECTING WINDOW" : prospectVerb == false ?
+                    "OPEN PROSPECTING WINDOW" : prospectVerb == false ||
+                    snapshot.Verbs.TargetId == selectedId ?
                     "SERVER: PROSPECT UNAVAILABLE" : "WAITING FOR PROSPECT VERB", flightHud.ButtonStyle))
                 { if (stopped) client.OpenResource(selectedId); else client.Thrust(4); }
                 GUI.enabled = true;
