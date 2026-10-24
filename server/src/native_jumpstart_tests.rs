@@ -13,6 +13,10 @@ fn action(target: u32, ship: &mut PlayerSession) {
         .map(u32::to_le_bytes)
         .concat();
     ship.handle_input(0x2c, &body).unwrap();
+    if target != ship.player_id() {
+        // Standalone sessions simulate consent; GameState covers the reply.
+        ship.begin_jumpstart(target).unwrap();
+    }
 }
 
 fn peer(ship: &mut PlayerSession, x: f32) -> crate::peers::PeerSnapshot {

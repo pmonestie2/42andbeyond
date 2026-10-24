@@ -920,7 +920,11 @@ impl PlayerSession {
                 {
                     return Err(invalid("invalid ability owner or packet length"));
                 }
-                if let Err(error) = self.begin_ability(ability) {
+                if ability == 65 && self.target != self.player_id() && self.target != u32::MAX {
+                    self.client_events.push(ClientEvent::JumpstartOffer {
+                        target: self.target,
+                    });
+                } else if let Err(error) = self.begin_ability(ability) {
                     self.pending.push(packets::message(&error.to_string()));
                 }
             }
@@ -971,11 +975,14 @@ impl PlayerSession {
                     17 => self.open_resource_window(target)?,
                     18 => self.begin_gating(target)?,
                     19 => self.complete_gating(target)?,
-                    26 => {
+                    26 if target == self.player_id() => {
                         if let Err(error) = self.begin_jumpstart(target) {
                             self.pending.push(packets::message(&error.to_string()));
                         }
                     }
+                    26 => self
+                        .client_events
+                        .push(ClientEvent::JumpstartOffer { target }),
                     9 => {
                         if self.skills.cloak_rank > 0 {
                             self.stop_cloak();

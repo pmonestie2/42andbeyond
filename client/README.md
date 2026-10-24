@@ -103,6 +103,9 @@ choose one before entering space. The current Windows VM has narrow inbound
 firewall rules for TCP 3807 and UDP 3501, 3806, and 3808 from the Mac's VMware
 host interface. If VMware assigns it a different address, edit the host in the
 shortcut or type the new address in the login panel.
+For the Mac-hosted server, enter its private address in the login panel; the
+current VMware host bridge uses `192.168.47.1`. The VM launcher still selects
+the Windows server explicitly.
 
 Enter in flight opens the server chat command line. Type `/d_jump BBW` or
 `/d_spawn 46 3` and press Enter to use the server's developer commands.
@@ -169,6 +172,9 @@ changed in Controls. Assignments are saved per character on this Mac.
 When hull reaches zero, a rescue panel requests the native tow, distress, or
 wait choices. Characters with Jumpstart can select their own ship and cast it
 from the same panel; the server remains authoritative over recovery.
+An incapacitated player offered Jumpstart by another pilot sees a separate
+yes/no prompt in that panel. Accept and Decline send the native confirmation
+actions; they do not answer a group invitation or choose a rescue NPC option.
 Models are placeholders rather than the original NPC assets. Station interiors
 and the full original combat and equipment UI remain unfinished.
 

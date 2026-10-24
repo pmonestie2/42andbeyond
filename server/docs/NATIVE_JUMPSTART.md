@@ -43,8 +43,12 @@ remaining time, legacy 49% hull repair and catalog cooldown until completion.
 Every newly activated Jumpstart has a native plan. Corrupt plans or plans bound
 to another ability are rejected during checkpoint restoration.
 
-Recipient confirmation remains unimplemented. Target eligibility and the final
-coordinator check still reject a missing, revived or out-of-range recipient.
+Peer recovery now sends the native opcode `0x1e` yes/no prompt to the recipient.
+Action `11` accepts and starts the cast; action `12` declines without charging
+energy. The 30-second offer is tied to both authenticated session epochs and
+is revalidated for range, incapacity, caster state and energy on acceptance.
+Self recovery starts immediately. Offers are transient across process
+replacement, so a recipient must request a new offer after a restart.
 
 Behavioral tests construct packets and sessions locally. They cover native self
 recovery, an ungrouped target, frozen targeting, range boundaries, class/training
@@ -53,10 +57,9 @@ group restriction on targeted Fold. Pure rules cover hull upgrades 0 through 6;
 checkpoint tests cover native and legacy process replacement. They do not start
 a live game client.
 
-An earlier `tools/smoke_jumpstart.py` passed against an owned disposable server: real
+`tools/smoke_jumpstart.py` passes against an owned disposable Mac server: real
 NPC beams incapacitate a JE and a PW, native verb12 advertises self recovery,
 action26 revives the JE, then a real warp brings the explorer within range to
-recover the ungrouped PW. That run verified native controls with the previous
-catalog timing and recovery. It is not verification of this later rules update
-until rerun. Packet checks are separate from graphical button clicks and
-confirmation dialogs.
+offer recovery to the ungrouped PW. The probe checks the `0x1e` prompt and
+requires the PW's action11 acceptance before recovery. Packet checks are
+separate from graphical button clicks.

@@ -106,7 +106,7 @@ namespace FortyTwoAndBeyond.Client
             if (snapshot != null)
             {
                 if (snapshot.Group.Joined) content += 100 + snapshot.Group.Members.Length * 26;
-                if (!string.IsNullOrEmpty(snapshot.Invitation)) content += 65;
+                if (snapshot.Confirmation != null && snapshot.Confirmation.Kind != ConfirmationKind.Jumpstart) content += 65;
                 if (contactId != 0) content += 95;
                 if (nearbyWrecks.Length > 0) content += 52;
             }
@@ -771,12 +771,12 @@ namespace FortyTwoAndBeyond.Client
             if (Event.current.type == EventType.KeyDown && Event.current.keyCode == KeyCode.Return &&
                 GUI.GetNameOfFocusedControl() == "Group invite")
             { InviteByName(); Event.current.Use(); }
-            if (!string.IsNullOrEmpty(snapshot.Invitation))
+            if (snapshot.Confirmation != null && snapshot.Confirmation.Kind != ConfirmationKind.Jumpstart)
             {
-                GUILayout.Label(snapshot.Invitation, body);
+                GUILayout.Label(snapshot.Confirmation.Text, body);
                 GUILayout.BeginHorizontal();
-                if (GUILayout.Button("Accept", button)) client.SendChat("/accept");
-                if (GUILayout.Button("Decline", button)) client.SendChat("/decline");
+                if (GUILayout.Button("Accept", button)) client.AnswerConfirmation(true);
+                if (GUILayout.Button("Decline", button)) client.AnswerConfirmation(false);
                 GUILayout.EndHorizontal();
             }
             foreach (GroupMember member in snapshot.Group.Members)

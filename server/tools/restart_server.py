@@ -37,7 +37,8 @@ def launch(command: list[str], logs: Path) -> subprocess.Popen[bytes]:
     logs.mkdir(exist_ok=True)
     with (logs / 'server.log').open('ab') as output:
         return subprocess.Popen(command, cwd=ROOT, stdout=output, stderr=output,
-            creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0,
+            start_new_session=os.name != 'nt')
 
 
 def wait_ready(process: subprocess.Popen[bytes], bind: str, timeout: float = 30.) -> None:

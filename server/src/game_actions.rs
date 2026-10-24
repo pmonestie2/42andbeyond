@@ -30,6 +30,7 @@ impl GameState {
                     .request_loot_begin(target, slot)
             }
             ClientEvent::Group { action, target } => self.group_action(source, action, target),
+            ClientEvent::JumpstartOffer { target } => self.jumpstart_offer(source, target),
             ClientEvent::Chat { channel, text } => self.chat(source, channel, &text),
             ClientEvent::Formation { action, target } => {
                 match action {
@@ -92,6 +93,9 @@ impl GameState {
     }
 
     fn group_action(&mut self, source: u32, action: u32, target: u32) -> io::Result<()> {
+        if (action == 11 || action == 12) && self.jumpstart_offers.contains_key(&source) {
+            return self.answer_jumpstart(source, action == 11);
+        }
         match action {
             10 => {
                 if !self
@@ -121,6 +125,93 @@ impl GameState {
         }
         self.groups_dirty = true;
         Ok(())
+    }
+
+    /// Request consent before a peer Jumpstart charges the caster's reactor.
+    fn jumpstart_offer(&mut self, source: u32, target: u32) -> io::Result<()> {
+        if source == target {
+            return self
+                .sessions
+                .get_mut(&source)
+                .unwrap()
+                .begin_jumpstart(target);
+        }
+        let caster = &self.sessions[&source];
+        let (source_epoch, level, range) = caster.jumpstart_offer_info(target)?;
+        let recipient = self
+            .sessions
+            .get(&target)
+            .ok_or_else(|| invalid("Jumpstart target is offline."))?;
+        let peer = recipient
+            .peer_snapshot()
+            .ok_or_else(|| invalid("Jumpstart target is offline."))?;
+        if !caster.can_deliver_jumpstart(&peer, range) {
+            return Err(invalid(
+                "Jumpstart target is no longer in range or incapacitated.",
+            ));
+        }
+        if self.jumpstart_offers.contains_key(&target) {
+            return Err(invalid(
+                "That player already has a pending Jumpstart offer.",
+            ));
+        }
+        let message = format!(
+            "Do you want to accept a jumpstart level {} from {}",
+            level, caster.account.character.name
+        );
+        let offer = JumpstartOffer {
+            source,
+            source_epoch,
+            target_epoch: recipient.threat().session_epoch,
+            expires: Instant::now() + Duration::from_secs(30),
+        };
+        self.jumpstart_offers.insert(target, offer);
+        self.sessions
+            .get_mut(&target)
+            .unwrap()
+            .queue([packets::confirmation(&message)]);
+        self.sessions
+            .get_mut(&source)
+            .unwrap()
+            .message("Jumpstart offer sent.");
+        Ok(())
+    }
+
+    /// Consume a recipient response and revalidate the original caster and target.
+    fn answer_jumpstart(&mut self, target: u32, accepted: bool) -> io::Result<()> {
+        let offer = self
+            .jumpstart_offers
+            .remove(&target)
+            .ok_or_else(|| invalid("No pending Jumpstart offer."))?;
+        let active = offer.expires > Instant::now()
+            && self.sessions.get(&target).is_some_and(|session| {
+                session.logged_in && session.threat().session_epoch == offer.target_epoch
+            })
+            && self.sessions.get(&offer.source).is_some_and(|session| {
+                session.logged_in && session.threat().session_epoch == offer.source_epoch
+            });
+        if !active {
+            return Err(invalid("Jumpstart offer expired or a player reconnected."));
+        }
+        if !accepted {
+            self.sessions
+                .get_mut(&offer.source)
+                .unwrap()
+                .message("Jumpstart was declined.");
+            return Ok(());
+        }
+        let peer = self.sessions[&target]
+            .peer_snapshot()
+            .ok_or_else(|| invalid("Jumpstart target is no longer in space."))?;
+        let caster = &self.sessions[&offer.source];
+        let range = caster.jumpstart_offer_info(target)?.2;
+        if !caster.can_deliver_jumpstart(&peer, range) {
+            return Err(invalid("Jumpstart target is no longer eligible."));
+        }
+        self.sessions
+            .get_mut(&offer.source)
+            .unwrap()
+            .begin_jumpstart(target)
     }
 
     fn find_online(&self, name: &str) -> io::Result<u32> {

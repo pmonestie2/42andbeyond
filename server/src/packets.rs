@@ -409,6 +409,11 @@ pub fn relationship(id: u32, reaction: u32) -> Frame {
 
 pub fn group_invite(leader: &str) -> Frame {
     let message = format!("{leader} is requesting you to join their group");
+    confirmation(&message)
+}
+
+/// Build the native yes/no prompt shared by group invites and abilities.
+pub fn confirmation(message: &str) -> Frame {
     let mut body = Vec::from(((message.len() + 1) as u16).to_le_bytes());
     body.push(1);
     body.extend_from_slice(message.as_bytes());

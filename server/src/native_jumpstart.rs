@@ -20,7 +20,7 @@ impl PlayerSession {
         Ok(ability)
     }
 
-    pub(super) fn begin_jumpstart(&mut self, target: u32) -> io::Result<()> {
+    pub(crate) fn begin_jumpstart(&mut self, target: u32) -> io::Result<()> {
         // Action26 requires an actual player object. The untargeted ability
         // hotkey can still request self recovery through begin_ability.
         if target == u32::MAX || target == 0 {
@@ -30,6 +30,29 @@ impl PlayerSession {
         }
         let ability = self.jumpstart_definition()?;
         self.begin_ability_for(ability.id, target)
+    }
+
+    /// Validate a peer offer without consuming reactor energy.
+    ///
+    /// Returns:
+    ///     (u64, u32, f32): Session epoch, trained level, and cast range.
+    pub(crate) fn jumpstart_offer_info(&self, target: u32) -> io::Result<(u64, u32, f32)> {
+        let plan = self.prepare_jumpstart_plan(target)?;
+        if !self.logged_in
+            || self.hull <= 0.
+            || self.sector.station.is_some()
+            || self.warp.active()
+            || self.gate_transit.is_some()
+            || self.skills.cast.is_some()
+        {
+            return Err(invalid(
+                "Cannot offer Jumpstart while busy or incapacitated.",
+            ));
+        }
+        if self.energy < plan.energy {
+            return Err(invalid("Insufficient reactor energy."));
+        }
+        Ok((self.session_epoch, self.skill_catalog.level(31), plan.range))
     }
 
     pub(super) fn jumpstart_target(

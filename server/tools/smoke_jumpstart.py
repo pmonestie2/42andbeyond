@@ -84,6 +84,19 @@ def exercise(binary: Path, host: str) -> None:
         def jumpstart(session: SpaceSession, target: int) -> None:
             session.send(0x2c, struct.pack('<4I', session.ticket.player_id, 26, target, 0))
 
+        def confirmation(frame: Frame) -> str | None:
+            """Return the native prompt text when the packet is well formed.
+
+            Returns:
+                str | None: Confirmation text, or None for another frame.
+            """
+            if frame.opcode != 0x1e or len(frame.body) < 4:
+                return None
+            length = int.from_bytes(frame.body[:2], 'little')
+            if frame.body[2] != 1 or len(frame.body) != length + 3 or frame.body[-1] != 0:
+                raise AssertionError('Invalid native confirmation frame')
+            return frame.body[3:-1].decode('ascii')
+
         def verb(target: int) -> bool:
             return any(index == 0 and target_verb_enabled(frame, target, 12)
                        for index, frame in observed)
@@ -112,6 +125,11 @@ def exercise(binary: Path, host: str) -> None:
             # cooldown rather than assuming arrival permits immediate reuse.
             wait(lambda: snapshot('rescuer')['skills']['cooldowns'].get('31', 0.) <= 0.)
             jumpstart(rescuer, victim)
+            wait(lambda: any(index == 1 and (text := confirmation(frame)) is not None
+                             and text.startswith('Do you want to accept a jumpstart level ')
+                             for index, frame in observed))
+            assert snapshot('victim')['hull'] == 0., 'Recipient was revived before accepting'
+            sessions[1].send(0x2c, struct.pack('<4I', victim, 11, 0, 0))
             wait(lambda: snapshot('victim')['hull'] > 0.)
             groups = state / 'groups.local.json'
             if groups.exists():

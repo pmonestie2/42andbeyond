@@ -65,10 +65,39 @@ internal static class PeerChecks
             world.Dialogue.Choices[2].Node == 2, "Native rescue choices were not decoded.");
         world.Apply(new Frame(0x56, BitConverter.GetBytes(-32)), self);
         Require(world.Dialogue == null, "Native rescue close did not dismiss the panel.");
+        byte[] groupPrompt = Confirmation("SandboxPilot is requesting you to join their group");
+        world.Apply(new Frame(0x1e, groupPrompt), self);
+        Require(world.Invitation.Contains("SandboxPilot") && world.Confirmation?.Kind == ConfirmationKind.Group,
+            "Group invitation was not classified as a group prompt.");
+        byte[] jumpstartPrompt = Confirmation("Do you want to accept a jumpstart level 7 from Explorer");
+        world.Apply(new Frame(0x1e, jumpstartPrompt), self);
+        Snapshot recoverySnapshot = new Snapshot(world, "ready", true);
+        Require(world.Invitation == "" && recoverySnapshot.Confirmation?.Kind == ConfirmationKind.Jumpstart,
+            "Jumpstart confirmation was confused with a group invitation.");
+        world.ClearInvitation();
+        Require(world.Confirmation?.Kind == ConfirmationKind.Jumpstart,
+            "A group update cleared the pending Jumpstart confirmation.");
+        world.ClearConfirmation();
+        Require(world.Confirmation == null && recoverySnapshot.Confirmation?.Kind == ConfirmationKind.Jumpstart,
+            "Answering a confirmation changed an existing display snapshot.");
+        byte[] invalidPrompt = (byte[])jumpstartPrompt.Clone(); invalidPrompt[0]--;
+        bool malformedPromptRejected = false;
+        try { world.Apply(new Frame(0x1e, invalidPrompt), self); }
+        catch (InvalidDataException) { malformedPromptRejected = true; }
+        Require(malformedPromptRejected, "A confirmation with a false native length was accepted.");
         bool rejected = false;
         try { world.Apply(new Frame(4, new byte[10]), self); } catch (InvalidDataException) { rejected = true; }
         Require(rejected, "Truncated creation was accepted.");
         Console.WriteLine("PASS: peer creation, identity, movement, immutable snapshots, despawn, reentry, sector cleanup");
+    }
+
+    /// <returns>
+    /// byte[]: Frame body for a native group or ability yes/no prompt.
+    /// </returns>
+    private static byte[] Confirmation(string message)
+    {
+        byte[] encoded = Encoding.ASCII.GetBytes(message);
+        return Wire.Body(w => { w.Write((ushort)(encoded.Length + 1)); w.Write((byte)1); w.Write(encoded); w.Write((byte)0); });
     }
 
     /// <returns>A native player or MOB creation packet.</returns>
@@ -161,14 +190,14 @@ internal static class PeerChecks
                 Console.WriteLine("PASS: correlated native follow and manual-flight cancellation");
                 observer.InvitePlayer(peerId);
                 Wait(observer, visitor, () => visitor.World.Invitation.Contains("SandboxPilot"), "Group invitation did not arrive.");
-                visitor.Chat("/decline");
+                visitor.AnswerConfirmation(false);
                 Wait(observer, visitor, () => visitor.World.Invitation == "", "Declined invitation remained visible.");
                 // Ensure the server consumes the decline before inviting again.
                 visitor.Chat("/where");
                 Wait(observer, visitor, () => visitor.World.Messages.Any(m => m.Contains("Rust Sandbox")), "Decline barrier did not arrive.");
                 observer.Chat("/invite Visitor");
                 Wait(observer, visitor, () => visitor.World.Invitation.Length > 0, "Second invitation did not arrive.");
-                visitor.Chat("/accept");
+                visitor.AnswerConfirmation(true);
                 Wait(observer, visitor, () => observer.World.Group.IsLeader && observer.World.Group.Members.Any(m => m.Id == peerId) &&
                     visitor.World.Group.Members.Any(m => m.Id == observer.Player), "Group roster did not converge.");
                 observer.Formation(4);

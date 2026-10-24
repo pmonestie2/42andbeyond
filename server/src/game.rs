@@ -34,6 +34,7 @@ pub struct GameState {
     resource_fields: HashMap<u32, Arc<Mutex<ResourceField>>>,
     loot_worlds: HashMap<u32, Arc<Mutex<LootWorld>>>,
     groups: GroupManager,
+    jumpstart_offers: HashMap<u32, JumpstartOffer>,
     registrations: HashMap<IpAddr, Instant>,
     outgoing: Vec<Outbound>,
     root: PathBuf,
@@ -45,6 +46,13 @@ pub struct GameState {
     player_sectors: HashMap<u32, u32>,
 }
 
+struct JumpstartOffer {
+    source: u32,
+    source_epoch: u64,
+    target_epoch: u64,
+    expires: Instant,
+}
+
 impl GameState {
     pub fn new(sector: Sector, bind: Ipv4Addr, root: PathBuf) -> io::Result<Self> {
         let mut state = Self {
@@ -53,6 +61,7 @@ impl GameState {
             resource_fields: HashMap::new(),
             loot_worlds: HashMap::new(),
             groups: GroupManager::default(),
+            jumpstart_offers: HashMap::new(),
             registrations: HashMap::new(),
             outgoing: Vec::new(),
             root,

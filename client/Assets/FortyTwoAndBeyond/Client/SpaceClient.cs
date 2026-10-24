@@ -489,6 +489,13 @@ namespace FortyTwoAndBeyond.Client
                 worker.Submit(new ClientCommand(CommandKind.SelfJumpstart));
         }
 
+        /// <summary>Answer the server's pending native group or Jumpstart confirmation.</summary>
+        public void AnswerConfirmation(bool accept)
+        {
+            if (Ready && snapshot.Confirmation != null)
+                worker.Submit(new ClientCommand(CommandKind.AnswerConfirmation, accept ? 1u : 0u));
+        }
+
         /// <summary>Set the authoritative target of a visible contact.</summary>
         public void SelectContact(uint id)
         {

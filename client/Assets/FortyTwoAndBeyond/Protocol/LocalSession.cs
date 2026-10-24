@@ -201,7 +201,7 @@ namespace FortyTwoAndBeyond.Protocol
             if (string.IsNullOrWhiteSpace(text) || text.Length > 180 || text.IndexOf('\0') >= 0)
                 throw new ArgumentException("Enter a chat line up to 180 characters.", nameof(text));
             if (channel != 1 && channel != 4) throw new ArgumentOutOfRangeException(nameof(channel));
-            if (text.Trim().Equals("/accept", StringComparison.OrdinalIgnoreCase) || text.Trim().Equals("/decline", StringComparison.OrdinalIgnoreCase)) World.ClearInvitation();
+            if (text.Trim().Equals("/accept", StringComparison.OrdinalIgnoreCase) || text.Trim().Equals("/decline", StringComparison.OrdinalIgnoreCase)) World.ClearConfirmation();
             byte[] encoded = Encoding.UTF8.GetBytes(text);
             Send(0x33, Wire.Body(w => { w.Write(Player); w.Write(channel); w.Write((ushort)encoded.Length); w.Write(encoded); }));
         }
@@ -376,6 +376,16 @@ namespace FortyTwoAndBeyond.Protocol
             Send(0x2c, Wire.Body(w =>
             { w.Write(Player); w.Write(10u); w.Write(target); w.Write(0u); }));
             Status = "Requesting group invitation";
+        }
+
+        /// <summary>Answer the native group or ability confirmation currently offered by the server.</summary>
+        public void AnswerConfirmation(bool accept)
+        {
+            if (!Ready || gate != 0 || World.Confirmation == null) return;
+            Send(0x2c, Wire.Body(w =>
+            { w.Write(Player); w.Write(accept ? 11u : 12u); w.Write(0u); w.Write(0u); }));
+            World.ClearConfirmation();
+            Status = accept ? "Confirmation accepted" : "Confirmation declined";
         }
 
         /// <summary>Stop active weapons even after the target leaves visibility.</summary>

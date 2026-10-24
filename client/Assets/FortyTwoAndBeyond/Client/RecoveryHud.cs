@@ -24,6 +24,16 @@ namespace FortyTwoAndBeyond.Client
             flightHud.Panel(panel);
             GUI.Label(new Rect(panel.x + 20, panel.y + 15, 450, 27),
                 "SHIP INCAPACITATED", flightHud.BodyStyle);
+            if (snapshot.Confirmation?.Kind == ConfirmationKind.Jumpstart)
+            {
+                GUI.Label(new Rect(panel.x + 20, panel.y + 56, 460, 85),
+                    snapshot.Confirmation.Text, flightHud.BodyStyle);
+                if (GUI.Button(new Rect(panel.x + 20, panel.y + 165, 220, 42),
+                    "ACCEPT JUMPSTART", flightHud.ButtonStyle)) client.AnswerConfirmation(true);
+                if (GUI.Button(new Rect(panel.x + 260, panel.y + 165, 220, 42),
+                    "DECLINE", flightHud.ButtonStyle)) client.AnswerConfirmation(false);
+                return;
+            }
             DialogueState dialogue = snapshot.Dialogue;
             GUI.Label(new Rect(panel.x + 20, panel.y + 47, 455, 39),
                 dialogue?.Text ?? "Your ship cannot fly. Contact rescue control or wait for another pilot.",

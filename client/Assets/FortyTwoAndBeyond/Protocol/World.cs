@@ -219,6 +219,38 @@ namespace FortyTwoAndBeyond.Protocol
         { Sequence = sequence; Source = source; Target = target; Amount = amount; }
     }
 
+    public enum ConfirmationKind { Group, Jumpstart, Other }
+
+    /// <summary>A native yes/no prompt retained independently of group state.</summary>
+    public sealed class ConfirmationPrompt
+    {
+        public readonly ConfirmationKind Kind;
+        public readonly string Text;
+
+        /// <summary>Store the immutable prompt shown to the player.</summary>
+        public ConfirmationPrompt(ConfirmationKind kind, string text)
+        { Kind = kind; Text = text; }
+
+        /// <summary>Decode a native yes/no packet, preserving its prompt type.</summary>
+        /// <returns>
+        /// ConfirmationPrompt: Validated group or ability confirmation.
+        /// </returns>
+        public static ConfirmationPrompt Decode(byte[] body)
+        {
+            Wire.Require(body, 0, 4);
+            int length = Wire.U16(body, 0);
+            if (body[2] != 1 || length < 2 || length != body.Length - 3 || body[body.Length - 1] != 0)
+                throw new InvalidDataException("Invalid native confirmation.");
+            string message = Wire.Text(body, 3, length - 1);
+            if (message.Length == 0) throw new InvalidDataException("Empty native confirmation.");
+            ConfirmationKind kind = message.StartsWith("Do you want to accept a jumpstart level ", StringComparison.OrdinalIgnoreCase)
+                ? ConfirmationKind.Jumpstart
+                : message.IndexOf("join their group", StringComparison.OrdinalIgnoreCase) >= 0
+                    ? ConfirmationKind.Group : ConfirmationKind.Other;
+            return new ConfirmationPrompt(kind, message);
+        }
+    }
+
     public sealed class World
     {
         public uint PlayerId { get; private set; }
@@ -230,11 +262,16 @@ namespace FortyTwoAndBeyond.Protocol
         public void SetOpenLoot(uint id) { OpenLootId = id; }
         public readonly Queue<ShotEvent> Shots = new Queue<ShotEvent>();
         public GroupState Group { get; private set; } = new GroupState(false, Array.Empty<GroupMember>());
-        private string invitation = "";
-        private long invitationAt;
-        public string Invitation => (System.Diagnostics.Stopwatch.GetTimestamp() - invitationAt) / (double)System.Diagnostics.Stopwatch.Frequency < 30 ? invitation : "";
-        /// <summary>Dismiss an invitation after a local answer.</summary>
-        public void ClearInvitation() { invitation = ""; }
+        private ConfirmationPrompt confirmation;
+        private long confirmationAt;
+        public ConfirmationPrompt Confirmation =>
+            (System.Diagnostics.Stopwatch.GetTimestamp() - confirmationAt) / (double)System.Diagnostics.Stopwatch.Frequency < 30
+                ? confirmation : null;
+        public string Invitation => Confirmation?.Kind == ConfirmationKind.Group ? Confirmation.Text : "";
+        /// <summary>Dismiss a server prompt after a local answer.</summary>
+        public void ClearConfirmation() { confirmation = null; }
+        /// <summary>Dismiss a group invite when joining a group.</summary>
+        public void ClearInvitation() { if (Confirmation?.Kind == ConfirmationKind.Group) ClearConfirmation(); }
         public readonly Queue<string> Messages = new Queue<string>();
         public EquipmentState Equipment { get; } = new EquipmentState();
         public Dictionary<uint, ItemTemplateInfo> ItemCatalog { get; } = new Dictionary<uint, ItemTemplateInfo>();
@@ -282,7 +319,7 @@ namespace FortyTwoAndBeyond.Protocol
                     if (firstEnd < 0 || firstEnd + 1 >= b.Length) throw new InvalidDataException("Missing sector name.");
                     string name = Wire.Text(b, firstEnd + 1, b.Length - firstEnd - 1);
                     if (name.Length == 0) throw new InvalidDataException("Empty sector name.");
-                    if (Sector != name) { Objects.Clear(); Players.Clear(); Mobs.Clear(); Loot.Clear(); Resources.Clear(); ResourceTargetId = 0; ResourceWindowOpen = false; OpenLootId = 0; Shots.Clear(); Damages.Clear(); nextShot = nextDamage = 0; }
+                    if (Sector != name) { Objects.Clear(); Players.Clear(); Mobs.Clear(); Loot.Clear(); Resources.Clear(); ResourceTargetId = 0; ResourceWindowOpen = false; OpenLootId = 0; Shots.Clear(); Damages.Clear(); ClearConfirmation(); nextShot = nextDamage = 0; }
                     Sector = name;
                     break;
                 case 0x4f:
@@ -343,8 +380,8 @@ namespace FortyTwoAndBeyond.Protocol
                         default, new[] { 0f, 0f, 0f, 1f }, false, b[10] == 1);
                     break;
                 case 0x1e:
-                    Wire.Require(b, 0, 3);
-                    invitation = Wire.Text(b, 3, b.Length - 3); invitationAt = System.Diagnostics.Stopwatch.GetTimestamp();
+                    confirmation = ConfirmationPrompt.Decode(b);
+                    confirmationAt = System.Diagnostics.Stopwatch.GetTimestamp();
                     break;
                 case 0x1d:
                     Wire.Require(b, 0, 3);
@@ -503,6 +540,7 @@ namespace FortyTwoAndBeyond.Protocol
         public readonly uint ResourceTargetId;
         public readonly bool ResourceWindowOpen;
         public readonly string Invitation;
+        public readonly ConfirmationPrompt Confirmation;
         public readonly string[] Messages;
         public readonly bool Ready, HasPosition;
         public readonly float Speed, Energy, Shield, Hull, MaxEnergy, MaxShield, MaxHull;
@@ -538,7 +576,7 @@ namespace FortyTwoAndBeyond.Protocol
                 if (world.Vendor[i]?.Present == true) Vendor[i] = new ItemView(i, world.Vendor[i], world.ItemCatalog);
             Resources = world.Resources.Values.Select(state => new ResourceView(state, world.ItemCatalog)).ToArray();
             ResourceTargetId = world.ResourceTargetId; ResourceWindowOpen = world.ResourceWindowOpen;
-            Invitation = world.Invitation; Messages = world.Messages.ToArray();
+            Invitation = world.Invitation; Confirmation = world.Confirmation; Messages = world.Messages.ToArray();
             OpenLootId = world.OpenLootId;
             Loot = world.Loot.Select(entry => new CorpseLoot(entry.Key, entry.Value, world.ItemCatalog)).ToArray();
             EquipmentState equipment = world.Equipment;

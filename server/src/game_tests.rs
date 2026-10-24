@@ -154,8 +154,66 @@ fn native_jumpstart_action_recovers_an_incapacitated_player_without_a_group() {
         &[source, 26, target, 0].map(u32::to_le_bytes).concat(),
     )
     .unwrap();
+    game.advance(0.1).unwrap();
+    assert!(game.jumpstart_offers.contains_key(&target));
+    assert!(game.sessions[&source].jumpstart_offer_info(target).is_ok());
+    game.handle_input(
+        target,
+        0x2c,
+        &[target, 11, 0, 0].map(u32::to_le_bytes).concat(),
+    )
+    .unwrap();
+    game.advance(0.1).unwrap();
+    assert!(!game.jumpstart_offers.contains_key(&target));
+    assert!(game.sessions[&source].jumpstart_offer_info(target).is_err());
     advance(&mut game, 8.);
     assert!(game.sessions[&target].peer_snapshot().unwrap().hull > 0.);
+    assert!(!game.groups.together(source, target));
+}
+
+#[test]
+fn declined_jumpstart_allows_another_offer_without_joining_a_group() {
+    let mut game = game();
+    let source = FIRST_PLAYER_ID;
+    let target = source + 1;
+    login(&mut game, source, 22711, "alice");
+    login(&mut game, target, 22712, "bob");
+    {
+        let victim = game.sessions.get_mut(&target).unwrap();
+        victim.position = [1000., 0., 0.];
+        victim
+            .receive_mob_hit(&crate::npc_projectiles::MobHit {
+                sector: 1076,
+                sequence: 1,
+                target,
+                target_epoch: victim.threat().session_epoch,
+                attacker_index: 0,
+                attacker_source: 46,
+                attacker_template: 0,
+                attacker_generation: 0,
+                damage: 1_000_000.,
+                damage_type: 3,
+            })
+            .unwrap();
+    }
+    game.advance(0.1).unwrap();
+    game.handle_input(
+        source,
+        0x2c,
+        &[source, 26, target, 0].map(u32::to_le_bytes).concat(),
+    )
+    .unwrap();
+    game.advance(0.1).unwrap();
+    assert!(game.jumpstart_offers.contains_key(&target));
+    game.handle_input(
+        target,
+        0x2c,
+        &[target, 12, 0, 0].map(u32::to_le_bytes).concat(),
+    )
+    .unwrap();
+    game.advance(0.1).unwrap();
+    assert!(!game.jumpstart_offers.contains_key(&target));
+    assert!(game.sessions[&source].jumpstart_offer_info(target).is_ok());
     assert!(!game.groups.together(source, target));
 }
 
@@ -360,6 +418,16 @@ fn combat_is_shared_and_group_jumpstart_and_cloak_apply_to_other_player() {
     assert_eq!(game.sessions[&b].peer_snapshot().unwrap().hull, 0.);
     game.advance(0.1).unwrap();
     activate(&mut game, a, b, 65);
+    game.advance(0.1).unwrap();
+    assert!(game.jumpstart_offers.contains_key(&b));
+    game.handle_event(
+        b,
+        ClientEvent::Group {
+            action: 11,
+            target: 0,
+        },
+    )
+    .unwrap();
     advance(&mut game, 7.2);
     assert_eq!(
         game.sessions[&b].peer_snapshot().unwrap().hull,
