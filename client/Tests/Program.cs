@@ -12,7 +12,8 @@ internal static class Program
     private static void Main(string[] args)
     {
         CheckReassembly(); CheckWorld(); CheckMissionJournal(); CheckMissionDialogue();
-        CheckExperience(); CheckMiningPhases(); CheckWarpPhases(); CheckWeaponReady(); CheckFlightThrottle();
+        CheckExperience(); CheckMiningPhases(); CheckWarpPhases(); CheckWeaponReady();
+        CheckDamageResults(); CheckFlightThrottle();
         CheckStationLayout(); CheckStationWalk(); CheckDemoRoster(); CheckAddress(); PeerChecks.Decode();
         Console.WriteLine("PASS: framing, ordering, fragmentation, duplicates, bounds, world decoding, private addresses");
         if (args.Length == 2 && args[0] == "--server") { PeerChecks.Live(args[1]); CheckServer(args[1]); }
@@ -315,6 +316,41 @@ internal static class Program
             { [124] = new ItemTemplateInfo(124, 14, "Test beam", "") });
         Assert(!beam.OutOfAmmo && first.Mounted[3].OutOfAmmo,
             "A beam inherited the projectile empty-ammo marker.");
+    }
+
+    /// <summary>Keep the server's damage category, critical flag and misses intact.</summary>
+    private static void CheckDamageResults()
+    {
+        const string fixture = "1c00640000002a420000803e05000000030000000200004001000010";
+        byte[] packet = Enumerable.Range(0, fixture.Length / 2)
+            .Select(index => Convert.ToByte(fixture.Substring(index * 2, 2), 16)).ToArray();
+        Assert(packet.Length == 28 && Wire.U16(packet, 0) == 28 && Wire.U16(packet, 2) == 0x64,
+            "Native damage fixture frame is malformed.");
+        var world = new World();
+        world.Apply(new Frame(0x64, packet.Skip(4).ToArray()), 1);
+        Snapshot critical = new Snapshot(world, "ready", true);
+        DamageEvent hit = critical.Damages.Single();
+        Assert(hit.Source == 0x40000002 && hit.Target == 0x10000001 &&
+            hit.Amount == 42.5f && hit.Modifier == .25f &&
+            hit.Kind == DamageKind.Chemical && hit.Outcome == DamageOutcome.Critical,
+            "Native damage type, modifier or critical result was dropped.");
+        byte[] missed = Wire.Body(writer =>
+        {
+            writer.Write(0f); writer.Write(0f); writer.Write(3u); writer.Write(0u);
+            writer.Write(1u); writer.Write(2u);
+        });
+        world.Apply(new Frame(0x64, missed), 1);
+        Assert(world.Damages.Last().Outcome == DamageOutcome.Miss &&
+            critical.Damages.Length == 1 && critical.Damages[0].Outcome == DamageOutcome.Critical,
+            "Zero-damage miss was lost or changed an older immutable snapshot.");
+        byte[] incoming = (byte[])missed.Clone();
+        Array.Copy(BitConverter.GetBytes(1u), 0, incoming, 12, 4);
+        world.Apply(new Frame(0x64, incoming), 1);
+        Assert(world.Damages.Last().Outcome == DamageOutcome.Hit,
+            "Legacy incoming damage result was mistaken for a miss.");
+        byte[] invalid = (byte[])missed.Clone();
+        Array.Copy(BitConverter.GetBytes(9u), 0, invalid, 8, 4);
+        Reject(() => world.Apply(new Frame(0x64, invalid), 1));
     }
 
     /// <summary>Keep held flight controls reachable after focus and text entry.</summary>

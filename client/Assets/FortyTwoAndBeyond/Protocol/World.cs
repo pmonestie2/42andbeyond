@@ -327,15 +327,28 @@ namespace FortyTwoAndBeyond.Protocol
         { Sequence = sequence; Source = source; Target = target; Asset = asset; Duration = duration; }
     }
 
-    /// <summary>A server-reported impact for transient damage feedback.</summary>
+    /// <summary>Native damage category reported by the combat server.</summary>
+    public enum DamageKind { Impact, Explosive, Plasma, Energy, Emp, Chemical, Absolute, System, Psionic }
+
+    /// <summary>Authoritative hit result; normal and missed shots both use inflicted zero.</summary>
+    public enum DamageOutcome { Miss, Hit, Critical }
+
+    /// <summary>A server-reported combat result for transient damage feedback.</summary>
     public sealed class DamageEvent
     {
         public readonly long Sequence;
         public readonly uint Source, Target;
-        public readonly float Amount;
-        /// <summary>Store one bounded combat result.</summary>
-        public DamageEvent(long sequence, uint source, uint target, float amount)
-        { Sequence = sequence; Source = source; Target = target; Amount = amount; }
+        public readonly float Amount, Modifier;
+        public readonly DamageKind Kind;
+        public readonly DamageOutcome Outcome;
+
+        /// <summary>Store one bounded native damage report, including misses and critical hits.</summary>
+        public DamageEvent(long sequence, uint source, uint target, float amount,
+            float modifier, DamageKind kind, DamageOutcome outcome)
+        {
+            Sequence = sequence; Source = source; Target = target;
+            Amount = amount; Modifier = modifier; Kind = kind; Outcome = outcome;
+        }
     }
 
     public enum ConfirmationKind { Group, Jumpstart, Other }
@@ -509,13 +522,18 @@ namespace FortyTwoAndBeyond.Protocol
                     }
                     break;
                 case 0x64:
-                    Wire.Require(b, 0, 24);
+                    if (b.Length != 24) throw new InvalidDataException("Invalid native damage report.");
                     float amount = Wire.Float(b, 0);
-                    if (amount > 0 && amount < 1e9f)
-                    {
-                        Damages.Enqueue(new DamageEvent(++nextDamage, Wire.U32(b, 16), Wire.U32(b, 20), amount));
-                        while (Damages.Count > 32) Damages.Dequeue();
-                    }
+                    float modifier = Wire.Float(b, 4);
+                    uint kind = Wire.U32(b, 8), inflicted = Wire.U32(b, 12);
+                    if (amount < 0 || amount >= 1e9f || Math.Abs(modifier) >= 1e9f ||
+                        kind > 8 || (inflicted != 0 && inflicted != 1 && inflicted != 3))
+                        throw new InvalidDataException("Invalid native damage values.");
+                    DamageOutcome outcome = inflicted == 3 ? DamageOutcome.Critical :
+                        amount == 0 && inflicted == 0 ? DamageOutcome.Miss : DamageOutcome.Hit;
+                    Damages.Enqueue(new DamageEvent(++nextDamage, Wire.U32(b, 16), Wire.U32(b, 20),
+                        amount, modifier, (DamageKind)kind, outcome));
+                    while (Damages.Count > 32) Damages.Dequeue();
                     break;
                 case 0x2018:
                     var item = new MapObject(b);
