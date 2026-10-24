@@ -18,14 +18,17 @@ namespace FortyTwoAndBeyond.Editor
         private static bool connected;
         private static int stage;
         private static bool uiSmoke;
+        private static bool productionSmoke;
         private static ClientWorker peer;
 
         /// <summary>Resume the smoke driver after the Play-mode domain reload.</summary>
         static VisualSmoke()
         {
-            if (Array.IndexOf(Environment.GetCommandLineArgs(), "--42andbeyond-visual-smoke") < 0) return;
+            if (Array.IndexOf(Environment.GetCommandLineArgs(), "--42andbeyond-visual-smoke") < 0 &&
+                Array.IndexOf(Environment.GetCommandLineArgs(), "--42andbeyond-production-smoke") < 0) return;
             uiSmoke = Array.IndexOf(Environment.GetCommandLineArgs(), "--42andbeyond-ui-smoke") >= 0;
-            deadline = EditorApplication.timeSinceStartup + (uiSmoke ? 90 : 300);
+            productionSmoke = Array.IndexOf(Environment.GetCommandLineArgs(), "--42andbeyond-production-smoke") >= 0;
+            deadline = EditorApplication.timeSinceStartup + (uiSmoke || productionSmoke ? 90 : 300);
             EditorApplication.update += Tick;
         }
 
@@ -51,6 +54,7 @@ namespace FortyTwoAndBeyond.Editor
             if (!connected) { connected = true; client.StartLocalSession("127.0.0.1", "local", "local"); }
             if (client.ChoosingCharacter) client.ChooseCharacter(client.Characters[0].Slot);
             if (client.ConnectionError != null) { Fail(client.ConnectionError); return; }
+            if (productionSmoke) { TickProduction(client); return; }
             if (client.CurrentSnapshot == null || !client.CurrentSnapshot.Ready || !client.CurrentSnapshot.HasPosition || client.CurrentSnapshot.Objects.Length == 0) return;
             if (uiSmoke) { TickUi(client); return; }
             if (stage == 0)
@@ -132,6 +136,54 @@ namespace FortyTwoAndBeyond.Editor
                 if (!File.Exists("Builds/verification/" + name + ".png")) { Fail("Missing capture: " + name); return; }
             Debug.Log("PASS: 3D scenery, flight/chart rendering, asteroid/station/gate approaches and actual sector travel to " + client.CurrentSnapshot.Sector);
             ClosePeer();
+            EditorApplication.update -= Tick;
+            EditorApplication.Exit(0);
+        }
+
+        /// <summary>Capture the native refinery overlay after a disposable station login.</summary>
+        private static void TickProduction(SpaceClient client)
+        {
+            Snapshot snapshot = client.CurrentSnapshot;
+            if (snapshot?.Ready != true || snapshot.Station == null || snapshot.Production.LabId == 0) return;
+            if (stage == 0)
+            {
+                client.OpenProduction(4);
+                stage = 1;
+                return;
+            }
+            if (stage == 1)
+            {
+                if (snapshot.Production.Mode != 4 ||
+                    !snapshot.Production.Formulas.Any(formula => formula.Template == 3381)) return;
+                client.SelectProductionRecipe(3381);
+                stage = 2;
+                return;
+            }
+            if (stage == 2)
+            {
+                if (snapshot.Production.Target?.Template != 3381) return;
+                FieldInfo field = typeof(SpaceClient).GetField("productionHud",
+                    BindingFlags.Instance | BindingFlags.NonPublic);
+                ProductionHud hud = field?.GetValue(client) as ProductionHud;
+                if (hud == null) { Fail("Production smoke could not find workbench HUD."); return; }
+                typeof(ProductionHud).GetField("open", BindingFlags.Instance | BindingFlags.NonPublic)
+                    ?.SetValue(hud, true);
+                Directory.CreateDirectory("Builds/verification");
+                captureAt = EditorApplication.timeSinceStartup + 2;
+                stage = 3;
+                return;
+            }
+            if (stage == 3 && EditorApplication.timeSinceStartup >= captureAt)
+            {
+                ScreenCapture.CaptureScreenshot("Builds/verification/production.png");
+                captureAt = EditorApplication.timeSinceStartup + 1;
+                stage = 4;
+                return;
+            }
+            if (stage != 4 || EditorApplication.timeSinceStartup < captureAt) return;
+            if (!File.Exists("Builds/verification/production.png"))
+            { Fail("Missing workbench capture."); return; }
+            Debug.Log("PASS: disposable station workbench formula and graphical refinery overlay");
             EditorApplication.update -= Tick;
             EditorApplication.Exit(0);
         }

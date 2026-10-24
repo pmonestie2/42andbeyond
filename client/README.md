@@ -187,6 +187,12 @@ from the same panel; the server remains authoritative over recovery.
 An incapacitated player offered Jumpstart by another pilot sees a separate
 yes/no prompt in that panel. Accept and Decline send the native confirmation
 actions; they do not answer a group invitation or choose a rescue NPC option.
+While docked, Workbench opens manufacturing, analysis, dismantling, and refining.
+Select a server-listed formula or place one cargo item in the analyzer, then use
+the quoted action when the server marks it ready. Level buttons filter formulas;
+Refine Stack uses the server's available run count. Closing the workbench cancels
+an unfinished job without spending its materials or credits. The server sends
+the completed item, cargo and credit updates.
 Models are placeholders rather than the original NPC assets. Station interiors
 and the full original combat and equipment UI remain unfinished.
 

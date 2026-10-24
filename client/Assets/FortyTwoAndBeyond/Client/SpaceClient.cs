@@ -26,6 +26,7 @@ namespace FortyTwoAndBeyond.Client
         private AbilityHud abilityHud;
         private RecoveryHud recoveryHud;
         private VaultHud vaultHud;
+        private ProductionHud productionHud;
         private TurboHud turboHud;
         public bool AbilitiesOpen => abilityHud != null && abilityHud.IsOpen;
         public bool Incapacitated => snapshot != null && snapshot.Station == null &&
@@ -80,6 +81,7 @@ namespace FortyTwoAndBeyond.Client
             abilityHud = new AbilityHud(this, hud);
             recoveryHud = new RecoveryHud(this, hud);
             vaultHud = new VaultHud(this, hud);
+            productionHud = new ProductionHud(this, hud);
             turboHud = new TurboHud(this, hud);
             worldRoot = new GameObject("Server world").transform; worldRoot.SetParent(transform, false);
             remoteShips = new RemoteShips(art, worldRoot);
@@ -512,6 +514,47 @@ namespace FortyTwoAndBeyond.Client
                 worker.Submit(new ClientCommand(CommandKind.RetrieveVault, (uint)slot));
         }
 
+        /// <summary>Open one of the server's four station production modes.</summary>
+        public void OpenProduction(uint mode)
+        {
+            if (Ready && snapshot.Station != null && mode >= 1 && mode <= 4)
+                worker.Submit(new ClientCommand(CommandKind.OpenProduction, mode));
+        }
+
+        /// <summary>Close the production terminal and cancel its pending job.</summary>
+        public void CloseProduction()
+        { if (Ready && snapshot.Station != null) worker.Submit(new ClientCommand(CommandKind.CloseProduction)); }
+
+        /// <summary>Select a formula from the server's current workbench list.</summary>
+        public void SelectProductionRecipe(uint template)
+        { if (Ready && snapshot.Station != null)
+                worker.Submit(new ClientCommand(CommandKind.SelectProductionRecipe, template)); }
+
+        /// <summary>Filter server-owned production formulas by one native category.</summary>
+        public void SelectProductionCategory(uint category)
+        { if (Ready && snapshot.Station != null)
+                worker.Submit(new ClientCommand(CommandKind.SelectProductionCategory, category)); }
+
+        /// <summary>Enable or disable one server-side recipe level mask.</summary>
+        public void SetProductionLevels(uint mask, bool enabled)
+        { if (Ready && snapshot.Station != null)
+                worker.Submit(new ClientCommand(CommandKind.SetProductionLevels, mask, slot: enabled ? 1 : 0)); }
+
+        /// <summary>Start one production job or the refinery's available stack.</summary>
+        public void StartProduction(bool stack)
+        { if (Ready && snapshot.Station != null)
+                worker.Submit(new ClientCommand(CommandKind.StartProduction, stack ? 1u : 0u)); }
+
+        /// <summary>Move one owned cargo item into the station analyzer.</summary>
+        public void InsertAnalysisSample(int cargoSlot)
+        { if (Ready && snapshot.Station != null && cargoSlot >= 0 && cargoSlot < snapshot.Cargo.Length)
+                worker.Submit(new ClientCommand(CommandKind.InsertAnalysisSample, (uint)cargoSlot)); }
+
+        /// <summary>Return the analyzer's sample to an empty cargo slot.</summary>
+        public void ReturnAnalysisSample()
+        { if (Ready && snapshot.Station != null)
+                worker.Submit(new ClientCommand(CommandKind.ReturnAnalysisSample)); }
+
         /// <summary>Toggle one mounted weapon in space while preserving the other hardpoints.</summary>
         public void ActivateWeapon(int slot)
         {
@@ -668,7 +711,14 @@ namespace FortyTwoAndBeyond.Client
             try
             {
                 hud.Draw(ref host, ref username, ref password);
-                if (!hud.SettingsOpen && !hud.EquipmentOpen) vaultHud.Draw(snapshot);
+                if (!hud.SettingsOpen && !hud.EquipmentOpen)
+                {
+                    if (productionHud.IsOpen) vaultHud.Close();
+                    vaultHud.Draw(snapshot);
+                    if (vaultHud.IsOpen && productionHud.IsOpen)
+                    { productionHud.Close(); CloseProduction(); }
+                    productionHud.Draw(snapshot);
+                }
                 if (!hud.SettingsOpen && !hud.EquipmentOpen && !AbilitiesOpen && !Incapacitated) miningHud.Draw(snapshot);
                 if (!hud.SettingsOpen && !hud.EquipmentOpen && !Incapacitated) abilityHud.Draw(snapshot);
                 if (!hud.SettingsOpen && !hud.EquipmentOpen && !AbilitiesOpen) turboHud.Draw(snapshot);

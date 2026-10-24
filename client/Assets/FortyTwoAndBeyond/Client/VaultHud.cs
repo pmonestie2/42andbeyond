@@ -11,6 +11,7 @@ namespace FortyTwoAndBeyond.Client
         private readonly FlightHud flightHud;
         private Vector2 cargoScroll, vaultScroll;
         private bool open;
+        public bool IsOpen => open;
         private float CanvasWidth => Screen.width / flightHud.Scale;
         private float CanvasHeight => Screen.height / flightHud.Scale;
 
@@ -18,12 +19,15 @@ namespace FortyTwoAndBeyond.Client
         public VaultHud(SpaceClient client, FlightHud flightHud)
         { this.client = client; this.flightHud = flightHud; }
 
+        /// <summary>Close the storage overlay when another station service takes focus.</summary>
+        public void Close() { open = false; }
+
         /// <summary>Offer storage only while docked and outside NPC dialogue.</summary>
         public void Draw(Snapshot snapshot)
         {
             if (snapshot?.Station == null) { open = false; return; }
             if (snapshot.Dialogue != null) { open = false; return; }
-            Rect toggle = new Rect((CanvasWidth - 180) * .5f, 27, 180, 30);
+            Rect toggle = new Rect((CanvasWidth - 180) * .5f - 100, 27, 180, 30);
             if (GUI.Button(toggle, open ? "CLOSE VAULT" : "STATION VAULT", flightHud.ButtonStyle))
                 open = !open;
             if (!open) return;
