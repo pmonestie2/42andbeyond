@@ -74,6 +74,12 @@ namespace FortyTwoAndBeyond.Protocol
         public float Quality, Structure, Range;
         public string Info = "";
         public bool Present => Template != uint.MaxValue && Template != uint.MaxValue - 1;
+        /// <summary>
+        /// Returns:
+        ///     uint: The whole stack for launcher ammo, or one installed equipment item.
+        /// </summary>
+        public uint EquipQuantity(ItemTemplateInfo template)
+        { return template?.Type == 10 ? Quantity : 1; }
         /// <returns>A copy for a new server update.</returns>
         public ItemState Copy() => (ItemState)MemberwiseClone();
     }

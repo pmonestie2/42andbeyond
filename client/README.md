@@ -166,7 +166,8 @@ weapon streaks and hit numbers. The ship loadout panel lists cargo, equipment,
 weapon and device mounts; select cargo and a mount to equip, or select installed
 gear to remove. The panel checks mount compatibility and cargo space before sending
 native inventory transfers, and shows item condition, range and any server quote.
-Ammo can be loaded through the same server move command. Defeated
+Ammo can be loaded through the same server move command; the whole selected cargo
+stack is sent for loading, and the server checks its launcher family. Defeated
 mobs leave server-owned wrecks. Click a wreck to open its fixed loot panel;
 within 2 km, open it and tractor listed items into cargo. The client tracks
 the server's timed tractor packet and blocks repeat collection until completion

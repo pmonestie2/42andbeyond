@@ -13,7 +13,7 @@ internal static class Program
     {
         CheckReassembly(); CheckWorld(); CheckMissionJournal(); CheckMissionDialogue();
         CheckExperience(); CheckMiningPhases(); CheckLootTractor(); CheckWarpPhases(); CheckWeaponReady();
-        CheckDamageResults(); CheckDeviceEffects(); CheckFlightThrottle();
+        CheckDamageResults(); CheckDeviceEffects(); CheckAmmunitionTransfer(); CheckFlightThrottle();
         CheckStationLayout(); CheckStationWalk(); CheckDemoRoster(); CheckAddress(); PeerChecks.Decode();
         Console.WriteLine("PASS: framing, ordering, fragmentation, duplicates, bounds, world decoding, private addresses");
         if (args.Length == 2 && args[0] == "--server") { PeerChecks.Live(args[1]); CheckServer(args[1]); }
@@ -449,6 +449,16 @@ internal static class Program
         notice("Recharge Reactor active for seconds.");
         Assert(world.ActiveDeviceLabel == "",
             "Malformed active-device duration created a false effect state.");
+    }
+
+    /// <summary>Move a full ammunition stack while installing single equipment items.</summary>
+    private static void CheckAmmunitionTransfer()
+    {
+        var cargo = new ItemState { Template = 100, Quantity = 120 };
+        var ammunition = new ItemTemplateInfo(100, 10, "Test rounds", "");
+        var device = new ItemTemplateInfo(101, 11, "Test device", "");
+        Assert(cargo.EquipQuantity(ammunition) == 120 && cargo.EquipQuantity(device) == 1,
+            "Cargo-to-mount transfer would load only one round or install an entire equipment stack.");
     }
 
     /// <summary>Keep held flight controls reachable after focus and text entry.</summary>

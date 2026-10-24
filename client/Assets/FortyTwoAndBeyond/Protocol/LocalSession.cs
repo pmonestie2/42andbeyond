@@ -334,14 +334,18 @@ namespace FortyTwoAndBeyond.Protocol
             Status = "Selling cargo to station vendor";
         }
 
-        /// <summary>Install owned cargo with the native inventory transfer packet.</summary>
+        /// <summary>Install equipment or load the owned ammunition stack into a launcher.</summary>
         public void EquipCargo(int cargoSlot, int mountSlot)
         {
             if (!Ready || gate != 0 || cargoSlot < 0 || cargoSlot >= World.Equipment.Cargo.Length ||
                 mountSlot < 0 || mountSlot >= World.Equipment.Mounted.Length ||
                 World.Equipment.Cargo[cargoSlot]?.Present != true) return;
-            SendInventoryTransfer(1, (uint)cargoSlot, 2, (uint)mountSlot, 1);
-            Status = "Installing ship equipment";
+            ItemState cargo = World.Equipment.Cargo[cargoSlot];
+            bool ammunition = World.ItemCatalog.TryGetValue(cargo.Template, out ItemTemplateInfo template) &&
+                template.Type == 10;
+            SendInventoryTransfer(1, (uint)cargoSlot, 2, (uint)mountSlot,
+                cargo.EquipQuantity(template));
+            Status = ammunition ? "Loading launcher ammunition" : "Installing ship equipment";
         }
 
         /// <summary>Move an installed item into the first empty cargo slot.</summary>
