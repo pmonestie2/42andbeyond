@@ -56,8 +56,10 @@ Closing an instance stops only its owned process tree and relays and removes onl
 its unchanged hosts entry. Existing profiles convert on their next launch, after
 their game and proxy have exited. Conversion verifies old asset copies before
 removing their profile links; installed files, private settings and logs are
-preserved. If an old asset copy contains local edits, conversion stops and names
-the file rather than discarding it. Running clients are never converted.
+preserved. Differing or extra old asset files are saved under the profile's
+`migration-backups/<id>/` directory before switching to the installed assets.
+Concurrent changes or unsafe links still stop conversion. Running clients are
+never converted.
 
 Named instances require the known client and Net7Proxy 2.46 builds. Their hashes
 are validated before setup. Only the private client's singleton-name string is

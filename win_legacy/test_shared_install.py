@@ -75,15 +75,20 @@ class SharedInstallTests(unittest.TestCase):
         prepare_shared_install(self.source, self.view)
         self.assertEqual((self.view / 'release/client.exe').read_bytes(), b'private singleton')
 
-    def test_preserves_unknown_asset_edits_before_unlinking_any_file_in_folder(self) -> None:
-        """Refuse a destructive conversion of locally changed or added assets."""
+    def test_backs_up_old_asset_changes_and_uses_installed_assets(self) -> None:
+        """Preserve differing files while allowing the shared-install migration."""
         shutil.copytree(self.source, self.view)
         edited = self.view / 'Data/client/art/ship/model.w3d'
         edited.write_bytes(b'custom model')
-        with self.assertRaisesRegex(RuntimeError, 'local changes'):
-            prepare_shared_install(self.source, self.view)
-        self.assertEqual(edited.read_bytes(), b'custom model')
+        extra = edited.parent / 'global.th6'
+        extra.write_bytes(b'old thumbnail data')
+        prepare_shared_install(self.source, self.view)
+        self.assertEqual(edited.read_bytes(), b'model')
         self.assertEqual((self.source / 'Data/client/art/ship/model.w3d').read_bytes(), b'model')
+        backups = list((self.view.parent / 'migration-backups').glob('*'))
+        self.assertEqual(len(backups), 1)
+        self.assertEqual((backups[0] / 'Data/client/art/ship/model.w3d').read_bytes(), b'custom model')
+        self.assertEqual((backups[0] / 'Data/client/art/ship/global.th6').read_bytes(), b'old thumbnail data')
 
     def test_rejects_private_directory_alias_to_installed_config(self) -> None:
         """Never write a profile's private settings through an installed-data alias."""

@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import shutil
 import stat
+import uuid
 
 
 PRIVATE_FILES = {
@@ -28,11 +29,29 @@ def is_directory_link(path: Path) -> bool:
     return path.is_dir() and bool(getattr(path.lstat(), 'st_file_attributes', 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT)
 
 
-def share_directory(source: Path, target: Path, view: Path) -> None:
-    """Link an installed folder, converting an unchanged former profile copy.
+def backup_profile_file(path: Path, view: Path, backup: Path) -> None:
+    """Preserve a differing former profile file outside the shared asset view.
 
     Raises:
-        RuntimeError: The old folder has local edits or an unsafe link boundary.
+        RuntimeError: The backup escapes the profile or the file changes during copying.
+        OSError: The old file cannot be backed up.
+    """
+    destination = backup / path.relative_to(view)
+    if not destination.resolve().is_relative_to(view.parent.resolve()) or path.is_symlink():
+        raise RuntimeError(f'Unsafe migration backup; preserving {path}')
+    before = path.stat()
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(path, destination)
+    current = path.stat()
+    if (current.st_ino, current.st_size, current.st_mtime_ns) != (before.st_ino, before.st_size, before.st_mtime_ns):
+        raise RuntimeError(f'Profile file changed during backup; preserving {path}')
+
+
+def share_directory(source: Path, target: Path, view: Path, backup: Path) -> None:
+    """Link an installed folder, backing up differing former profile files.
+
+    Raises:
+        RuntimeError: The old folder changes concurrently or has an unsafe link boundary.
         OSError: Windows cannot remove old profile links or create the alias.
     """
     if is_directory_link(target):
@@ -56,13 +75,17 @@ def share_directory(source: Path, target: Path, view: Path) -> None:
                     raise RuntimeError(f'Old profile has an unexpected folder link; preserving {child}')
             for name in names:
                 copied = current / name
+                before = copied.stat()
                 original = source / copied.relative_to(target)
-                if (copied.is_symlink() or not original.is_file()
-                        or (not os.path.samefile(copied, original) and copied.read_bytes() != original.read_bytes())):
-                    raise RuntimeError(f'Old profile has local changes; preserving {copied}')
-                files.append((copied, copied.stat()))
-        # All files are verified installation copies/hard links. Unlinking these
-        # names leaves the installed originals intact; never recurse into aliases.
+                if copied.is_symlink():
+                    raise RuntimeError(f'Old profile has an unexpected file link; preserving {copied}')
+                if (not original.is_file() or (
+                        not os.path.samefile(copied, original) and copied.read_bytes() != original.read_bytes())):
+                    backup_profile_file(copied, view, backup)
+                files.append((copied, before))
+        # All names are verified installation copies/hard links or backed up.
+        # Unlinking these names leaves installed originals intact; never recurse
+        # into aliases.
         for copied, before in files:
             if not copied.resolve().is_relative_to(boundary):
                 raise RuntimeError(f'Old profile removal boundary changed; preserving {copied}')
@@ -89,10 +112,11 @@ def prepare_shared_install(source: Path, destination: Path) -> None:
     if (is_directory_link(destination) or destination.resolve().is_relative_to(source)
             or source.is_relative_to(destination.resolve())):
         raise RuntimeError('Launch view must be independent of the installed directory')
-    prepare_view_directory(source, destination, destination)
+    backup = destination.parent / 'migration-backups' / uuid.uuid4().hex
+    prepare_view_directory(source, destination, destination, backup)
 
 
-def prepare_view_directory(source: Path, target: Path, view: Path) -> None:
+def prepare_view_directory(source: Path, target: Path, view: Path, backup: Path) -> None:
     """Build only the directory skeleton needed around private configuration.
 
     Raises:
@@ -114,9 +138,9 @@ def prepare_view_directory(source: Path, target: Path, view: Path) -> None:
                 copied.mkdir(exist_ok=True)
             elif (relative.startswith('data/client/ini/') or any(
                     path == relative or path.startswith(relative + '/') for path in PRIVATE_FILES | PRIVATE_DIRECTORIES)):
-                prepare_view_directory(original, copied, view)
+                prepare_view_directory(original, copied, view, backup)
             else:
-                share_directory(original, copied, view)
+                share_directory(original, copied, view, backup)
             continue
         private = relative in PRIVATE_FILES or relative.startswith('data/client/ini/')
         if copied.is_symlink():
@@ -130,7 +154,13 @@ def prepare_view_directory(source: Path, target: Path, view: Path) -> None:
                 shutil.copy2(original, copied)
         else:
             if copied.exists():
+                before = copied.stat()
                 if not os.path.samefile(copied, original) and copied.read_bytes() != original.read_bytes():
-                    raise RuntimeError(f'Old profile has local changes; preserving {copied}')
+                    backup_profile_file(copied, view, backup)
+                if not copied.resolve().is_relative_to(view.resolve()):
+                    raise RuntimeError(f'Profile removal boundary changed; preserving {copied}')
+                current = copied.stat()
+                if (current.st_ino, current.st_size, current.st_mtime_ns) != (before.st_ino, before.st_size, before.st_mtime_ns):
+                    raise RuntimeError(f'Profile file changed during conversion; preserving {copied}')
                 copied.unlink()
             os.symlink(original.resolve(), copied)
