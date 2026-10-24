@@ -541,7 +541,7 @@ namespace FortyTwoAndBeyond.Client
                 if (!string.IsNullOrWhiteSpace(chatText)) client.SendChat(chatText, groupChat); chatText = ""; client.CloseChatEntry(); Event.current.Use();
             }
             if (GUI.Button(new Rect(x + 432, y + 10, 78, 32), "Send", button))
-            { if (!string.IsNullOrWhiteSpace(chatText)) client.SendChat(chatText, groupChat); chatText = ""; }
+            { if (!string.IsNullOrWhiteSpace(chatText)) client.SendChat(chatText, groupChat); chatText = ""; client.CloseChatEntry(); }
         }
 
         /// <summary>Draw the account form without saving credentials.</summary>
