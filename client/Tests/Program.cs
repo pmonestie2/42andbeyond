@@ -12,7 +12,7 @@ internal static class Program
     private static void Main(string[] args)
     {
         CheckReassembly(); CheckWorld(); CheckMissionJournal(); CheckMissionDialogue();
-        CheckExperience(); CheckMiningPhases(); CheckWarpPhases(); CheckWeaponReady();
+        CheckExperience(); CheckMiningPhases(); CheckLootTractor(); CheckWarpPhases(); CheckWeaponReady();
         CheckDamageResults(); CheckFlightThrottle();
         CheckStationLayout(); CheckStationWalk(); CheckDemoRoster(); CheckAddress(); PeerChecks.Decode();
         Console.WriteLine("PASS: framing, ordering, fragmentation, duplicates, bounds, world decoding, private addresses");
@@ -238,6 +238,54 @@ internal static class Program
         byte[] invalid = (byte[])prospect.Clone();
         Array.Copy(BitConverter.GetBytes(100001u), 0, invalid, 16, 4);
         Reject(() => world.Apply(new Frame(0x2012, invalid), 1));
+    }
+
+    /// <summary>Separate shared wreck-window control from native ore collection.</summary>
+    private static void CheckLootTractor()
+    {
+        var world = new World(); world.SetOpenLoot(77);
+        byte[] open = Wire.Body(writer => { writer.Write(0u); writer.Write(0u); });
+        byte[] close = Wire.Body(writer => { writer.Write(1u); writer.Write(0u); });
+        world.Apply(new Frame(0x66, open), 1);
+        Assert(world.OpenLootId == 77 && !world.ResourceWindowOpen,
+            "Wreck interface was mistaken for an open prospecting window.");
+        byte[] tractor = Wire.Body(writer =>
+        {
+            writer.Write(1u); writer.Write(10u); writer.Write(11u);
+            writer.Write((ushort)233); writer.Write(600u); writer.Write((ushort)3);
+            writer.Write(System.Text.Encoding.ASCII.GetBytes("Ore"));
+            writer.Write(2000u); writer.Write(200f);
+            writer.Write(10f); writer.Write(20f); writer.Write(30f);
+        });
+        world.Apply(new Frame(0x2014, tractor), 1);
+        Snapshot first = new Snapshot(world, "ready", true);
+        Assert(first.LootActivity?.CorpseId == 77 && first.LootActivity.ArticleId == 10 &&
+            first.LootActivity.EffectId == 11 && first.LootActivity.ItemName == "Ore" &&
+            first.LootActivity.Position.X == 10 && first.LootActivity.Position.Y == 20 &&
+            first.LootActivity.Position.Z == 30 && first.LootActivity.DurationSeconds == 2 &&
+            first.LootProgress >= 0 && first.LootProgress < 1 && first.MiningActivity == null,
+            "Native wreck tractor did not retain its corpse, position and duration separately from ore mining.");
+        byte[] other = (byte[])tractor.Clone();
+        Array.Copy(BitConverter.GetBytes(2u), 0, other, 0, 4);
+        world.Apply(new Frame(0x2014, other), 1);
+        Assert(world.LootActivity?.ArticleId == 10,
+            "Another pilot's wreck tractor replaced the local one.");
+        world.Apply(new Frame(7, BitConverter.GetBytes(10u)), 1);
+        Assert(world.LootActivity == null && first.LootActivity != null,
+            "Loot completion changed an earlier immutable activity snapshot.");
+        world.Apply(new Frame(0x2014, tractor), 1);
+        world.Apply(new Frame(0x0f, BitConverter.GetBytes(11u)), 1);
+        Assert(world.LootActivity == null, "Loot cancellation left tractor progress active.");
+        world.Apply(new Frame(0x2014, tractor), 1);
+        world.Apply(new Frame(0x66, close), 1);
+        Assert(world.LootActivity == null && world.OpenLootId == 0 && !world.ResourceWindowOpen,
+            "Closing a wreck did not clear its native interface and tractor state.");
+        world.SetResourceTarget(88); world.Apply(new Frame(0x66, open), 1);
+        Assert(world.ResourceWindowOpen && world.ResourceTargetId == 88 && world.OpenLootId == 0,
+            "Prospecting interface failed after a wreck window closed.");
+        byte[] invalid = (byte[])tractor.Clone();
+        Array.Copy(BitConverter.GetBytes(600001u), 0, invalid, 23, 4);
+        Reject(() => world.Apply(new Frame(0x2014, invalid), 1));
     }
 
     /// <summary>Keep warp visuals tied to the server's own-ship AUX phase revisions.</summary>

@@ -168,7 +168,10 @@ gear to remove. The panel checks mount compatibility and cargo space before send
 native inventory transfers, and shows item condition, range and any server quote.
 Ammo can be loaded through the same server move command. Defeated
 mobs leave server-owned wrecks. Click a wreck to open its fixed loot panel;
-within 2 km, open it and tractor listed items into cargo. The radar shows nearby
+within 2 km, open it and tractor listed items into cargo. The client tracks
+the server's timed tractor packet and blocks repeat collection until completion
+or cancellation. Wreck and prospecting windows share a native interface packet;
+the client keeps their state separate. The radar shows nearby
 contacts and navigation targets.
 The loadout shows each weapon's server firing state and loaded ammunition.
 Select an installed weapon to toggle that hardpoint alone during space combat.

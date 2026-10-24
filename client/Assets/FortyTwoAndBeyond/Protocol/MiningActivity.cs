@@ -50,20 +50,11 @@ namespace FortyTwoAndBeyond.Protocol
         public static MiningActivity FromTractor(byte[] body, uint player, MiningActivity previous,
             uint selectedResource)
         {
-            Wire.Require(body, 0, 40);
-            if (Wire.U32(body, 0) != player) return null;
-            int length = Wire.U16(body, 18);
-            if (length > 256 || body.Length != 40 + length)
-                throw new InvalidDataException("Invalid ore tractor name length.");
-            uint article = Wire.U32(body, 4), effect = Wire.U32(body, 8);
-            uint duration = Wire.U32(body, 20 + length);
-            float speed = Wire.Float(body, 24 + length);
-            for (int offset = 28 + length; offset < body.Length; offset += 4) Wire.Float(body, offset);
-            if (article == 0 || effect == 0 || duration == 0 || duration > 600000 || speed <= 0)
-                throw new InvalidDataException("Invalid ore tractor phase details.");
-            string itemName = Wire.Text(body, 20, length);
-            return new MiningActivity(MiningPhase.Tractor, previous?.TargetId ?? selectedResource, effect,
-                article, itemName, duration / 1000f, Stopwatch.GetTimestamp());
+            TractorPacket tractor = TractorPacket.Decode(body, player);
+            return tractor == null ? null : new MiningActivity(MiningPhase.Tractor,
+                previous?.TargetId ?? selectedResource, tractor.EffectId,
+                tractor.ArticleId, tractor.ItemName, tractor.DurationSeconds,
+                Stopwatch.GetTimestamp());
         }
 
         /// <summary>

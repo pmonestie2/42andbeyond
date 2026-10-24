@@ -565,7 +565,8 @@ namespace FortyTwoAndBeyond.Protocol
         /// <summary>Begin the server's timed tractor collection for one visible wreck slot.</summary>
         public void TakeLoot(uint corpse, int slot)
         {
-            if (!Ready || gate != 0 || World.OpenLootId != corpse || slot < 0 || slot >= 40 ||
+            if (!Ready || gate != 0 || World.OpenLootId != corpse || World.LootActivity != null ||
+                slot < 0 || slot >= 40 ||
                 !World.Loot.TryGetValue(corpse, out ItemState[] contents) || contents[slot]?.Present != true)
                 return;
             Send(0x27, Wire.Body(w =>
@@ -669,6 +670,7 @@ namespace FortyTwoAndBeyond.Protocol
         /// <summary>Apply a world frame and answer required session control messages.</summary>
         private void Apply(Frame frame)
         {
+            bool wasLootWindow = World.OpenLootId != 0;
             World.Apply(frame, Player); byte[] b = frame.Body;
             switch (frame.Opcode)
             {
@@ -745,7 +747,9 @@ namespace FortyTwoAndBeyond.Protocol
                     }
                     break;
                 case 0x66:
-                    Status = World.ResourceWindowOpen ? "Prospecting window open" : "Prospecting window closed";
+                    Status = World.OpenLootId != 0 ? "Wreck open" :
+                        World.ResourceWindowOpen ? "Prospecting window open" :
+                        wasLootWindow ? "Wreck closed" : "Prospecting window closed";
                     break;
                 case 0x3a: handoff = Wire.Slice(b, 0, 64); Ready = false; break;
                 case 0xba: throw new IOException("Server ended the character session.");

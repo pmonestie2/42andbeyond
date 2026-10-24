@@ -64,6 +64,8 @@ namespace FortyTwoAndBeyond.Client
         public void Draw(Snapshot snapshot)
         {
             if (snapshot == null || snapshot.Station != null) return;
+            if (snapshot.WarpPhase == WarpPhase.Charging || snapshot.WarpPhase == WarpPhase.Traveling)
+            { selectedId = 0; return; }
             if (sector != snapshot.Sector || Time.unscaledTime >= refreshedAt)
             {
                 nearby = snapshot.Objects.Where(item => item.Kind == 38)
@@ -140,6 +142,12 @@ namespace FortyTwoAndBeyond.Client
         /// <summary>Mark a bounded set of nearby mineable objects without covering ship contacts.</summary>
         private void DrawLabels(Snapshot snapshot)
         {
+            Vector2[] contactPoints = snapshot.Players.Concat(snapshot.Mobs)
+                .Where(actor => actor.HasPosition)
+                .Select(actor => client.Project(actor.Position))
+                .Where(point => point.z > 0)
+                .Select(point => new Vector2(point.x / flightHud.Scale, point.y / flightHud.Scale))
+                .ToArray();
             foreach (MapObject resource in nearby)
             {
                 Vector3 point = client.Project(resource.Position);
@@ -150,6 +158,8 @@ namespace FortyTwoAndBeyond.Client
                     new Color(.38f, .87f, .82f);
                 Fill(new Rect(point.x - 5, point.y - 5, 10, 2), signal);
                 Fill(new Rect(point.x - 5, point.y - 5, 2, 10), signal);
+                if (contactPoints.Any(contact => Mathf.Abs(contact.x - point.x) < 190 &&
+                    Mathf.Abs(contact.y - point.y) < 60)) continue;
                 if (client.Chart && selectedId != resource.Id) continue;
                 Fill(new Rect(point.x + 9, point.y - 12, 172, 42), new Color(.005f, .018f, .032f, .86f));
                 Fill(new Rect(point.x + 9, point.y - 12, 3, 42), signal);
