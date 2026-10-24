@@ -52,6 +52,10 @@ namespace FortyTwoAndBeyond.Client
         private LootActivity lootActivity;
         private Vector3 lootPoint;
         private readonly LineRenderer[] warpStreaks = new LineRenderer[28];
+        private LineRenderer deviceHalo, deviceTrace;
+        private uint deviceEffectId;
+        private ushort deviceDescriptor;
+        private Color deviceTint;
         private WarpPhase warpPhase;
         private bool warpArrived;
         private float warpChangedAt;
@@ -85,6 +89,7 @@ namespace FortyTwoAndBeyond.Client
         public void Apply(Snapshot snapshot)
         {
             playerId = snapshot.PlayerId;
+            SetDeviceBuff(snapshot.DeviceBuff, snapshot.Station != null);
             foreach (ShotEvent shot in snapshot.Shots)
             {
                 if (shot.Sequence <= lastShotSequence) continue;
@@ -311,6 +316,77 @@ namespace FortyTwoAndBeyond.Client
             }
             TickLoot();
             TickWarp();
+            TickDeviceBuff();
+        }
+
+        /// <summary>Display a ship-local field only while the native device visual is active.</summary>
+        private void SetDeviceBuff(DeviceBuffView buff, bool docked)
+        {
+            if (docked || buff == null || !buff.VisualActive)
+            { ClearDeviceBuff(); return; }
+            if (deviceHalo != null && deviceEffectId == buff.VisualEffectId &&
+                deviceDescriptor == buff.VisualDescriptor) return;
+            ClearDeviceBuff();
+            deviceEffectId = buff.VisualEffectId;
+            deviceDescriptor = buff.VisualDescriptor;
+            deviceTint = DeviceColor(buff.Name);
+            deviceHalo = Line("Active device field", .035f, deviceTint, 49);
+            deviceTrace = Line("Active device trace", .055f, deviceTint, 17);
+            foreach (LineRenderer line in new[] { deviceHalo, deviceTrace })
+                if (line != null)
+                {
+                    line.useWorldSpace = false;
+                    line.enabled = false;
+                }
+        }
+
+        /// <returns>Color: A readable field tint for the server-named active device.</returns>
+        private static Color DeviceColor(string name)
+        {
+            if (name.Contains("Turbo")) return new Color(1f, .61f, .25f);
+            if (name.Contains("Shield")) return new Color(.42f, .86f, 1f);
+            if (name.Contains("Reactor")) return new Color(.48f, 1f, .74f);
+            if (name.Contains("Deflect")) return new Color(.72f, .62f, 1f);
+            return new Color(.55f, .86f, 1f);
+        }
+
+        /// <summary>Pulse a restrained orbital trace around the own ship without altering its pose.</summary>
+        private void TickDeviceBuff()
+        {
+            if (deviceHalo == null || deviceTrace == null) return;
+            float time = Time.unscaledTime;
+            float pulse = .7f + .3f * Mathf.Sin(time * 4.5f);
+            deviceHalo.transform.position = player.position;
+            deviceTrace.transform.position = player.position;
+            deviceHalo.transform.rotation = player.rotation * Quaternion.Euler(22, time * 12f, 0);
+            deviceTrace.transform.rotation = player.rotation * Quaternion.Euler(-22, -time * 18f, 0);
+            for (int index = 0; index < 49; index++)
+            {
+                float angle = index * Mathf.PI * 2 / 48;
+                deviceHalo.SetPosition(index, new Vector3(Mathf.Cos(angle) * .9f,
+                    Mathf.Sin(angle) * .55f, 0));
+            }
+            for (int index = 0; index < 17; index++)
+            {
+                float angle = (time * 1.7f + index / 16f * .68f) * Mathf.PI * 2;
+                deviceTrace.SetPosition(index, new Vector3(Mathf.Cos(angle) * .94f,
+                    Mathf.Sin(angle) * .58f, 0));
+            }
+            Color halo = deviceTint; halo.a = .22f * pulse;
+            Color trace = deviceTint; trace.a = .6f * pulse;
+            deviceHalo.startColor = deviceHalo.endColor = halo;
+            deviceTrace.startColor = deviceTrace.endColor = trace;
+            deviceHalo.enabled = deviceTrace.enabled = true;
+        }
+
+        /// <summary>Remove a native device field when its buff or visual ends.</summary>
+        private void ClearDeviceBuff()
+        {
+            if (deviceHalo != null) Object.Destroy(deviceHalo.gameObject);
+            if (deviceTrace != null) Object.Destroy(deviceTrace.gameObject);
+            deviceHalo = deviceTrace = null;
+            deviceEffectId = 0;
+            deviceDescriptor = 0;
         }
 
         /// <summary>Animate only a server-started wreck transfer, fading when its timer completes.</summary>
@@ -470,6 +546,7 @@ namespace FortyTwoAndBeyond.Client
             for (int index = impacts.Count - 1; index >= 0; index--) RemoveImpact(index);
             ClearMining();
             ClearLoot();
+            ClearDeviceBuff();
             ClearWarp(); warpPhase = WarpPhase.Idle; warpArrived = false;
             lastShotSequence = lastDamageSequence = 0; playerId = 0;
         }

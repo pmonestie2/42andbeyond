@@ -14,7 +14,7 @@ namespace FortyTwoAndBeyond.Client
         private readonly Mesh[] rocks = new Mesh[8];
         private readonly Mesh ring, shipHull;
         private readonly GameObject corvetteAsset, frigateAsset;
-        private readonly Material corvetteSurface, frigateSurface;
+        private readonly Material corvetteSurface, frigateSurface, hostileFrigateSurface;
         private readonly Material hull, trim, dark, glass, glow, amber, hostile, crewSignal, mineral, rock, oreRock, field;
         public Material Sky { get; }
         public Material EffectLine { get; }
@@ -48,6 +48,12 @@ namespace FortyTwoAndBeyond.Client
             frigateAsset = Resources.Load<GameObject>("ViktorShips/frigate03");
             corvetteSurface = ShipSurface("corvette03");
             frigateSurface = ShipSurface("frigate03");
+            if (frigateSurface != null)
+            {
+                hostileFrigateSurface = new Material(frigateSurface);
+                hostileFrigateSurface.SetColor("_Color", new Color(.94f, .65f, .6f));
+                materials.Add(hostileFrigateSurface);
+            }
             ring = Torus(1, .12f, 48, 8); meshes.Add(ring);
             shipHull = Hull(); meshes.Add(shipHull);
             for (int i = 0; i < rocks.Length; i++) { rocks[i] = Asteroid(i + 17); meshes.Add(rocks[i]); }
@@ -250,15 +256,17 @@ namespace FortyTwoAndBeyond.Client
         }
 
         /// <returns>A distinct procedural NPC craft using shared rendering assets.</returns>
-        public Transform Mob(Transform parent)
+        public Transform Mob(Transform parent, bool isHostile)
         {
             Transform root = Root(parent, "Server mob");
-            if (Imported(root, frigateAsset, "Viktor Hahn frigate", Vector3.one * 1.5f, frigateSurface) != null)
+            Material surface = isHostile ? hostileFrigateSurface ?? frigateSurface : frigateSurface;
+            if (Imported(root, frigateAsset, "Viktor Hahn frigate", Vector3.one * 1.5f, surface) != null)
             {
                 return root;
             }
-            Model(root, shipHull, dark, Vector3.zero, new Vector3(.8f, .5f, 1.2f));
-            Part(root, PrimitiveType.Sphere, new Vector3(0, .2f, .4f), new Vector3(.65f, .4f, .65f), amber);
+            Model(root, shipHull, isHostile ? hostile : dark, Vector3.zero, new Vector3(.8f, .5f, 1.2f));
+            Part(root, PrimitiveType.Sphere, new Vector3(0, .2f, .4f), new Vector3(.65f, .4f, .65f),
+                isHostile ? hostile : amber);
             for (int side = -1; side <= 1; side += 2)
             {
                 Transform wing = Model(root, shipHull, rock, new Vector3(side * .75f, 0, 0), new Vector3(.4f, .5f, .9f));

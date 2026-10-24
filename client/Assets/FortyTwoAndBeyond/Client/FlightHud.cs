@@ -20,7 +20,7 @@ namespace FortyTwoAndBeyond.Client
         private float CanvasWidth => Screen.width / Scale;
         private float CanvasHeight => Screen.height / Scale;
         private readonly Color cyan = new Color(.3f, .85f, 1), white = new Color(.86f, .93f, 1), muted = new Color(.46f, .62f, .72f), gold = new Color(1, .72f, .3f), crewColor = new Color(.39f, 1f, .68f);
-        private GUIStyle heading, body, wrappedBody, small, section, button, selected, playerButton, hostileButton, damageStyle, input, primaryButton, equipmentRow, equipmentText;
+        private GUIStyle heading, body, wrappedBody, small, section, button, selected, playerButton, hostileButton, damageStyle, input, primaryButton, equipmentRow, equipmentText, equipmentMeta;
         private Texture2D buttonTexture, selectedTexture, panelTexture, radarTexture, weaveTexture, frameTexture, legacyCornerTexture;
         internal GUIStyle BodyStyle => body;
         internal GUIStyle SmallStyle => small;
@@ -208,6 +208,9 @@ namespace FortyTwoAndBeyond.Client
             equipmentText = new GUIStyle(GUI.skin.label) { fontSize = 13, fontStyle = FontStyle.Bold,
                 wordWrap = true, alignment = TextAnchor.MiddleLeft };
             equipmentText.normal.textColor = white;
+            equipmentMeta = new GUIStyle(GUI.skin.label) { fontSize = 12, fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleLeft };
+            equipmentMeta.normal.textColor = muted;
         }
 
         /// <returns>A shared transparent scanner dial with concentric range rings.</returns>
@@ -1329,11 +1332,11 @@ namespace FortyTwoAndBeyond.Client
             if (GUI.Button(new Rect(rect.xMax - 48, top, 28, 28), "×", button)) equipmentOpen = false;
             GUI.Label(new Rect(left, top + 37, 800, 20),
                 $"{snapshot.WeaponMounts} WEAPON HARDPOINTS   ·   {snapshot.DeviceMounts} DEVICE SLOTS   ·   SERVER EQUIPMENT", small);
-            float listTop = top + 70, listHeight = rect.height - 278;
-            float mountX = left, cargoX = left + 319, detailX = left + 638;
-            DrawMountedList(snapshot, new Rect(mountX, listTop, 300, listHeight));
-            DrawCargoList(snapshot, new Rect(cargoX, listTop, 300, listHeight));
-            DrawItemDetail(snapshot, new Rect(detailX, listTop, 282, listHeight));
+            float listTop = top + 70, listHeight = rect.height - 210;
+            float mountX = left, cargoX = left + 405, detailX = left + 655;
+            DrawMountedList(snapshot, new Rect(mountX, listTop, 390, listHeight));
+            DrawCargoList(snapshot, new Rect(cargoX, listTop, 235, listHeight));
+            DrawItemDetail(snapshot, new Rect(detailX, listTop, 265, listHeight));
             ItemView cargo = selectedCargo >= 0 && selectedCargo < snapshot.Cargo.Length ? snapshot.Cargo[selectedCargo] : null;
             ItemView mounted = selectedMount >= 0 && selectedMount < snapshot.Mounted.Length ? snapshot.Mounted[selectedMount] : null;
             int usedCargo = snapshot.Cargo.Count(item => item != null);
@@ -1343,11 +1346,11 @@ namespace FortyTwoAndBeyond.Client
             GUI.Label(new Rect(left, actionY - 1, 920, 19),
                 "SELECT CARGO + A COMPATIBLE SLOT TO INSTALL   /   SELECT A FILLED SLOT TO REMOVE", small);
             GUI.enabled = client.Ready && fits;
-            if (GUI.Button(new Rect(left, actionY + 27, 300, 37),
+            if (GUI.Button(new Rect(left, actionY + 23, 390, 43),
                 cargo?.Type == 10 ? "LOAD AMMO  →" : "INSTALL  →", primaryButton))
                 client.EquipCargo(selectedCargo, selectedMount);
             GUI.enabled = client.Ready && mounted != null && usedCargo < snapshot.Cargo.Length;
-            if (GUI.Button(new Rect(cargoX, actionY + 27, 300, 37),
+            if (GUI.Button(new Rect(cargoX, actionY + 23, 235, 43),
                 usedCargo < snapshot.Cargo.Length ? "←  REMOVE TO CARGO" : "CARGO HOLD FULL", button))
                 client.UnequipMount(selectedMount);
             bool weapon = mounted != null && mounted.Type >= 14 && mounted.Type <= 16 &&
@@ -1357,7 +1360,7 @@ namespace FortyTwoAndBeyond.Client
                 selectedMount < 9 + snapshot.DeviceMounts;
             GUI.enabled = client.Ready && !client.Incapacitated && snapshot.Station == null &&
                 (weapon || device && snapshot.ActiveDeviceLabel.Length == 0);
-            if (GUI.Button(new Rect(detailX, actionY + 27, 282, 37),
+            if (GUI.Button(new Rect(detailX, actionY + 23, 265, 43),
                 weapon ? (mounted.WeaponState & 1) != 0 ? "STOP SELECTED WEAPON" : "FIRE SELECTED WEAPON" :
                 device ? snapshot.ActiveDeviceLabel.Length > 0 ? snapshot.ActiveDeviceLabel.ToUpperInvariant() + " ACTIVE" :
                     "ACTIVATE " + mounted.ActivationLabel.ToUpperInvariant() : "SELECT WEAPON OR DEVICE",
@@ -1386,21 +1389,21 @@ namespace FortyTwoAndBeyond.Client
                 ItemView item = snapshot.Mounted[slot];
                 string slotName = slot < 3 ? new[] { "SHIELD", "REACTOR", "ENGINE" }[slot] : slot < 9 ?
                     "WEAPON " + (slot - 2) : "DEVICE " + (slot - 8);
-                string title = slotName + "  /  " + (item?.Name ?? "EMPTY");
+                string status = item == null ? "OPEN HARDPOINT" : "CONDITION " +
+                    (Mathf.Clamp01(item.Structure) * 100).ToString("0") + "%";
                 bool weapon = item != null && item.Type >= 14 && item.Type <= 16;
                 if (weapon)
                 {
                     ItemView ammo = slot < snapshot.Ammo.Length ? snapshot.Ammo[slot] : null;
-                    string state = item.OutOfAmmo ? "◌ NO AMMO" : item.Cooling ?
+                    status = item.OutOfAmmo ? "◌ NO AMMO" : item.Cooling ?
                         $"◔ RELOADING  {item.CooldownSeconds:0.0}s" :
                         (item.WeaponState & 1) != 0 ? "● FIRING" : "○ SAFE";
-                    title += "\n" + state +
-                        (item.Type == 14 ? "   ·   BEAM" : ammo == null ? "" :
-                            "   ·   " + ammo.Quantity + " ROUNDS");
+                    status += item.Type == 14 ? "   ·   BEAM" : ammo == null ? "" :
+                            "   ·   " + ammo.Quantity + " ROUNDS";
                 }
-                else if (item != null) title += "\nCONDITION " + (Mathf.Clamp01(item.Structure) * 100).ToString("0") + "%";
                 uint iconType = item?.Type ?? (slot == 0 ? 2u : slot == 1 ? 7u : slot == 2 ? 6u : slot < 9 ? 14u : 11u);
-                if (DrawEquipmentRow(title, iconType, selectedMount == slot, item == null ? 41 : 61))
+                if (DrawEquipmentRow(slotName, item?.Name ?? "EMPTY", status, iconType,
+                    selectedMount == slot, rect.width, item != null && item.OutOfAmmo))
                     { selectedMount = selectedMount == slot ? -1 : slot; inspectMount = true; }
             }
             GUILayout.EndScrollView(); GUILayout.EndArea();
@@ -1417,23 +1420,31 @@ namespace FortyTwoAndBeyond.Client
             {
                 if (item == null) continue;
                 string category = ItemCategory(item.Type);
-                string title = item.Name + (item.Quantity > 1 ? "  ×" + item.Quantity : "") +
-                    "\n" + category + "   ·   " + (Mathf.Clamp01(item.Structure) * 100).ToString("0") + "% CONDITION";
-                if (DrawEquipmentRow(title, item.Type, selectedCargo == item.Slot, 59))
+                string status = (item.Quantity > 1 ? "×" + item.Quantity + "   ·   " : "") +
+                    (Mathf.Clamp01(item.Structure) * 100).ToString("0") + "% CONDITION";
+                if (DrawEquipmentRow(category, item.Name, status, item.Type,
+                    selectedCargo == item.Slot, rect.width, false))
                     { selectedCargo = selectedCargo == item.Slot ? -1 : item.Slot; inspectMount = false; }
             }
             if (used == 0) GUILayout.Label("Cargo hold empty", small);
             GUILayout.EndScrollView(); GUILayout.EndArea();
         }
 
-        /// <returns>bool: Whether the user selected a textured equipment row.</returns>
-        private bool DrawEquipmentRow(string title, uint type, bool active, float height)
+        /// <returns>bool: Whether the user selected a structured equipment row.</returns>
+        private bool DrawEquipmentRow(string slot, string name, string status, uint type,
+            bool active, float areaWidth, bool warning)
         {
-            height = Mathf.Max(height, equipmentText.CalcHeight(new GUIContent(title), 245) + 12);
+            float nameWidth = Mathf.Max(65, areaWidth - 152);
+            float height = Mathf.Max(61, equipmentText.CalcHeight(new GUIContent(name), nameWidth) + 30);
             Rect row = GUILayoutUtility.GetRect(0, height, GUILayout.ExpandWidth(true));
             bool clicked = GUI.Button(row, "", active ? selected : equipmentRow);
-            GUI.DrawTexture(new Rect(row.x + 7, row.y + (height - 27) * .5f, 27, 27), icons.ForType(type));
-            GUI.Label(new Rect(row.x + 39, row.y + 3, row.width - 46, height - 6), title, equipmentText);
+            GUI.DrawTexture(new Rect(row.x + 7, row.y + 9, 30, 30), icons.ForType(type));
+            GUI.Label(new Rect(row.x + 43, row.y + 5, 79, 22), slot, equipmentMeta);
+            GUI.Label(new Rect(row.x + 125, row.y + 4, row.width - 133, height - 29), name, equipmentText);
+            Color old = GUI.color;
+            if (warning) GUI.color = new Color(1f, .55f, .43f);
+            GUI.Label(new Rect(row.x + 43, row.yMax - 23, row.width - 49, 20), status, equipmentMeta);
+            GUI.color = old;
             return clicked;
         }
 
@@ -1463,27 +1474,30 @@ namespace FortyTwoAndBeyond.Client
             GUI.Label(new Rect(x, y, width, 22), "ITEM INSPECTOR", section);
             if (item == null)
             {
-                GUI.Label(new Rect(x, y + 44, width, 65),
-                    "Select cargo or an installed system to inspect its stats.", body);
-                GUI.Label(new Rect(x, y + 110, width, 65),
-                    "Install controls below require one cargo item and a compatible hardpoint.", small);
+                GUI.Label(new Rect(x, y + 43, width, 75),
+                    "SELECT A SYSTEM", body);
+                GUI.Label(new Rect(x, y + 104, width, 76),
+                    "Choose an installed hardpoint or cargo item to inspect its condition and use its controls.", wrappedBody);
+                GUI.Label(new Rect(x, y + 199, width, 82),
+                    "To install: select a cargo item, then a compatible hardpoint. The server confirms every change.", small);
                 return;
             }
-            GUI.Label(new Rect(x, y + 40, width, 26), item.Name.ToUpperInvariant(), body);
-            GUI.Label(new Rect(x, y + 69, width, 20), ItemCategory(item.Type) + "   ·   TEMPLATE " + item.Template, small);
-            GUI.Label(new Rect(x, y + 98, width, 18),
+            GUI.DrawTexture(new Rect(x, y + 41, 40, 40), icons.ForType(item.Type));
+            GUI.Label(new Rect(x + 49, y + 36, width - 49, 48), item.Name.ToUpperInvariant(), wrappedBody);
+            GUI.Label(new Rect(x, y + 88, width, 20), ItemCategory(item.Type) + "   ·   TEMPLATE " + item.Template, small);
+            GUI.Label(new Rect(x, y + 118, width, 18),
                 "QUALITY  " + (Mathf.Clamp01(item.Quality) * 100).ToString("0") + "%", small);
-            Meter(new Rect(x, y + 121, width, 8), "", item.Quality, cyan);
-            GUI.Label(new Rect(x, y + 141, width, 18),
+            Meter(new Rect(x, y + 141, width, 8), "", item.Quality, cyan);
+            GUI.Label(new Rect(x, y + 162, width, 18),
                 "STRUCTURE  " + (Mathf.Clamp01(item.Structure) * 100).ToString("0") + "%", small);
-            Meter(new Rect(x, y + 164, width, 8), "", item.Structure, gold);
-            if (item.Range > 0) GUI.Label(new Rect(x, y + 186, width, 24),
+            Meter(new Rect(x, y + 185, width, 8), "", item.Structure, gold);
+            if (item.Range > 0) GUI.Label(new Rect(x, y + 211, width, 24),
                 "RANGE  " + item.Range.ToString("N0") + " m", body);
-            if (item.Price > 0) GUI.Label(new Rect(x, y + 216, width, 20),
+            if (item.Price > 0) GUI.Label(new Rect(x, y + 244, width, 20),
                 "VALUE  " + item.Price.ToString("N0") + " CREDITS", small);
-            GUI.Label(new Rect(x, y + 242, width, 20), "STACK  ×" + item.Quantity, small);
+            GUI.Label(new Rect(x, y + 270, width, 20), "STACK  ×" + item.Quantity, small);
             if (!string.IsNullOrWhiteSpace(item.Info) && item.Info.Count(char.IsLetter) >= 3 && !item.Info.Contains("^"))
-                GUI.Label(new Rect(x, y + 268, width, 48), item.Info, small);
+                GUI.Label(new Rect(x, y + 298, width, rect.height - 312), item.Info, small);
         }
 
         /// <summary>Check the item category against the unlocked ship hardpoint.</summary>

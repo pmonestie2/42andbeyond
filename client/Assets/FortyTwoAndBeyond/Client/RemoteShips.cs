@@ -55,6 +55,7 @@ namespace FortyTwoAndBeyond.Client
         private readonly List<uint> removed = new List<uint>();
         private readonly SpaceArt art;
         private readonly Transform parent;
+        private Camera markerCamera;
         public int Count => ships.Count;
 
         /// <summary>Share the scene's mesh and material owner.</summary>
@@ -76,7 +77,7 @@ namespace FortyTwoAndBeyond.Client
                 visible.Add(player.Id);
                 if (!ships.TryGetValue(player.Id, out View view))
                 {
-                    Transform model = player.IsPlayer ? art.Ship(parent) : art.Mob(parent);
+                    Transform model = player.IsPlayer ? art.Ship(parent) : art.Mob(parent, player.Hostile);
                     model.localScale = Vector3.one * .25f * Mathf.Clamp(player.Scale, .05f, 100);
                     view = new View(model, player);
                     view.Marker = art.ContactMarker(model, player.IsPlayer, player.Hostile, crew, selected);
@@ -166,6 +167,8 @@ namespace FortyTwoAndBeyond.Client
         public void Tick(float deltaTime)
         {
             float blend = 1 - Mathf.Exp(-12 * deltaTime);
+            if (markerCamera == null)
+                markerCamera = Camera.main != null ? Camera.main : Object.FindFirstObjectByType<Camera>();
             foreach (View view in ships.Values)
             {
                 Transform model = view.Model;
@@ -175,6 +178,14 @@ namespace FortyTwoAndBeyond.Client
                 model.localPosition = Vector3.Distance(model.localPosition, predicted) > 300
                     ? predicted : Vector3.Lerp(model.localPosition, predicted, blend);
                 model.localRotation = Quaternion.Slerp(model.localRotation, view.Orientation, blend);
+                if (view.Marker != null && markerCamera != null)
+                {
+                    float distance = Vector3.Distance(markerCamera.transform.position, model.position);
+                    float angularScale = Mathf.Clamp(1f + Mathf.Max(0, distance - 8f) * .035f, 1f, 2.1f);
+                    view.Marker.rotation = markerCamera.transform.rotation;
+                    view.Marker.localScale = Vector3.one * (angularScale /
+                        Mathf.Max(.01f, model.lossyScale.x));
+                }
                 UpdateTrail(view);
             }
         }
