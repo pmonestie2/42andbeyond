@@ -1,9 +1,13 @@
 Shader "42 and Beyond/BeamAdditive"
 {
-    Properties { _MainTex ("Beam", 2D) = "white" {} }
+    Properties {
+        _MainTex ("Beam", 2D) = "white" {}
+        _ZTest ("Depth test", Float) = 4
+    }
     SubShader {
         Tags { "Queue"="Transparent" "RenderType"="Transparent" "IgnoreProjector"="True" }
         Blend SrcAlpha One
+        ZTest [_ZTest]
         ZWrite Off
         Cull Off
         Pass {

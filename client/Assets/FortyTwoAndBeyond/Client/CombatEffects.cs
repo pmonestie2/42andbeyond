@@ -28,24 +28,31 @@ namespace FortyTwoAndBeyond.Client
         {
             public readonly uint Target;
             public readonly LineRenderer Ring;
+            public readonly LineRenderer ShieldArc;
             public readonly LineRenderer[] Sparks;
             public readonly Color Color;
             public readonly bool Critical;
+            public readonly bool? Shielded;
             public readonly float Started;
 
             /// <summary>Track a ring spawned only by a confirmed server damage event.</summary>
-            public Impact(uint target, LineRenderer ring, LineRenderer[] sparks, Color color, bool critical)
-            { Target = target; Ring = ring; Sparks = sparks; Color = color; Critical = critical; Started = Time.unscaledTime; }
+            public Impact(uint target, LineRenderer ring, LineRenderer shieldArc, LineRenderer[] sparks,
+                Color color, bool critical, bool? shielded)
+            {
+                Target = target; Ring = ring; ShieldArc = shieldArc; Sparks = sparks;
+                Color = color; Critical = critical; Shielded = shielded; Started = Time.unscaledTime;
+            }
         }
 
         private readonly List<Beam> beams = new List<Beam>();
         private readonly List<Impact> impacts = new List<Impact>();
+        private readonly Dictionary<uint, float> reportedShields = new Dictionary<uint, float>();
         private readonly Transform parent, player;
         private readonly RemoteShips ships;
-        private readonly Material material;
+        private readonly Material material, impactMaterial;
         private Camera effectCamera;
         private float normalFieldOfView = 60f;
-        private LineRenderer miningHalo, miningCore, miningRing, miningArc;
+        private LineRenderer miningHalo, miningCore, miningContact;
         private MiningActivity miningActivity;
         private Vector3 miningPoint;
         private LineRenderer lootHalo, lootCore, lootFilament, lootRing;
@@ -67,17 +74,22 @@ namespace FortyTwoAndBeyond.Client
         {
             this.parent = parent; this.player = player; this.ships = ships;
             Shader shader = Resources.Load<Shader>("BeamAdditive");
-            if (shader != null) material = new Material(shader);
+            if (shader != null)
+            {
+                material = new Material(shader);
+                impactMaterial = new Material(shader);
+                impactMaterial.SetInt("_ZTest", 8);
+            }
         }
 
         /// <returns>LineRenderer: A scene-owned luminous line, or null if the shader is unavailable.</returns>
-        private LineRenderer Line(string name, float width, Color color, int vertices)
+        private LineRenderer Line(string name, float width, Color color, int vertices, bool foreground = false)
         {
             if (material == null) return null;
             var model = new GameObject(name, typeof(LineRenderer));
             model.transform.SetParent(parent, false);
             LineRenderer line = model.GetComponent<LineRenderer>();
-            line.sharedMaterial = material; line.positionCount = vertices;
+            line.sharedMaterial = foreground ? impactMaterial : material; line.positionCount = vertices;
             line.useWorldSpace = true; line.alignment = LineAlignment.View;
             line.numCapVertices = 4; line.numCornerVertices = 4;
             line.widthMultiplier = width;
@@ -112,23 +124,37 @@ namespace FortyTwoAndBeyond.Client
                 if (snapshot.WarpPhase != WarpPhase.Idle || !TryPoint(damage.Target, out _) ||
                     damage.Amount <= 0) continue;
                 bool critical = damage.Outcome == DamageOutcome.Critical;
-                Color tint = DamageColor(damage);
-                LineRenderer ring = Line("Confirmed impact", .035f, tint, 25);
+                bool? shielded = ShieldAt(snapshot, damage.Target);
+                Color tint = shielded == true ? new Color(.32f, .86f, 1f) : DamageColor(damage);
+                LineRenderer ring = Line(shielded == true ? "Confirmed shield impact" :
+                    "Confirmed hull or system impact", .035f, tint, 25, true);
                 if (ring == null) continue;
                 ring.useWorldSpace = false;
-                LineRenderer[] sparks = critical ? new LineRenderer[4] : System.Array.Empty<LineRenderer>();
+                LineRenderer shieldArc = shielded == true ? Line("Shield envelope ripple", .045f, tint, 25, true) : null;
+                if (shieldArc != null)
+                {
+                    shieldArc.transform.SetParent(ring.transform, false);
+                    shieldArc.transform.localRotation = Quaternion.Euler(0, 58, 0);
+                    shieldArc.useWorldSpace = false;
+                }
+                LineRenderer[] sparks = shielded == false ?
+                    new LineRenderer[critical ? 6 : 3] : System.Array.Empty<LineRenderer>();
                 for (int index = 0; index < sparks.Length; index++)
                 {
                     sparks[index] = Line("Critical impact spark", .055f,
-                        new Color(1f, .87f, .44f), 2);
+                        new Color(1f, .87f, .44f), 2, true);
                     if (sparks[index] == null) continue;
                     sparks[index].transform.SetParent(ring.transform, false);
                     sparks[index].useWorldSpace = false;
                     sparks[index].enabled = false;
                 }
-                impacts.Add(new Impact(damage.Target, ring, sparks, tint, critical));
+                impacts.Add(new Impact(damage.Target, ring, shieldArc, sparks, tint, critical, shielded));
                 if (impacts.Count > 24) RemoveImpact(0);
             }
+            reportedShields.Clear();
+            reportedShields[snapshot.PlayerId] = snapshot.Shield;
+            foreach (ShipActor actor in snapshot.Players.Concat(snapshot.Mobs))
+                if (actor.Shield >= 0) reportedShields[actor.Id] = actor.Shield;
             SetWarpPhase(snapshot.WarpPhase, snapshot.WarpArrived);
             SetLootActivity(snapshot);
             MiningActivity activity = snapshot.MiningActivity;
@@ -145,18 +171,7 @@ namespace FortyTwoAndBeyond.Client
                     new Color(1f, .72f, .32f);
                 miningHalo = Line("Mining field", .12f, tint, 2);
                 miningCore = Line("Mining focus", .025f, Color.white, 2);
-                miningRing = Line("Ore lock", .035f, tint, 25);
-                if (miningRing != null)
-                {
-                    miningRing.useWorldSpace = false;
-                    miningArc = Line("Ore scan progress", .065f, tint, 33);
-                    if (miningArc != null)
-                    {
-                        miningArc.transform.SetParent(miningRing.transform, false);
-                        miningArc.useWorldSpace = false;
-                        miningArc.enabled = false;
-                    }
-                }
+                miningContact = Line("Ore contact", .035f, tint, 5);
             }
             miningActivity = activity;
             miningPoint = player.position + SpaceClient.Convert(resource.Position) -
@@ -221,6 +236,15 @@ namespace FortyTwoAndBeyond.Client
             }
         }
 
+        /// <returns>bool?: Whether the latest authoritative target state reports a live shield.</returns>
+        private bool? ShieldAt(Snapshot snapshot, uint targetId)
+        {
+            float current = targetId == snapshot.PlayerId ? snapshot.Shield :
+                snapshot.Players.Concat(snapshot.Mobs).FirstOrDefault(item => item.Id == targetId)?.Shield ?? -1;
+            if (current < 0) return null;
+            return current > .001f || reportedShields.TryGetValue(targetId, out float prior) && prior > .001f;
+        }
+
         /// <summary>Track moving endpoints and animate the server-confirmed effects.</summary>
         public void Tick()
         {
@@ -249,40 +273,62 @@ namespace FortyTwoAndBeyond.Client
                 float age = Time.unscaledTime - impact.Started;
                 if (age >= .48f || !TryPoint(impact.Target, out Vector3 position))
                 { RemoveImpact(index); continue; }
-                impact.Ring.transform.position = position;
                 Camera camera = ViewCamera();
+                Vector3 facing = camera != null ? (camera.transform.position - position).normalized :
+                    (player.position - position).normalized;
+                bool ownImpact = impact.Target == playerId;
+                impact.Ring.transform.position = ownImpact ? position : position + facing *
+                    (impact.Shielded == true ? 1.05f : impact.Shielded == false ? .85f : .7f);
                 if (camera != null) impact.Ring.transform.rotation = camera.transform.rotation;
-                float radius = .12f + age * (impact.Critical ? 2f : 1.4f);
+                float radius = ownImpact ? .1f + age * .3f :
+                    impact.Shielded == true ? .45f + age * 1.25f :
+                    .12f + age * (impact.Critical ? 2f : 1.4f);
                 for (int point = 0; point < 25; point++)
                 {
                     float angle = point * Mathf.PI * 2 / 24;
                     impact.Ring.SetPosition(point, new Vector3(Mathf.Cos(angle) * radius,
                         Mathf.Sin(angle) * radius, 0));
                 }
-                Color color = impact.Color; color.a = (impact.Critical ? 1f : .85f) * (1 - age / .48f);
+                Color color = impact.Color; color.a = (impact.Shielded == true ? .95f :
+                    impact.Critical ? 1f : .85f) * (1 - age / .48f);
                 impact.Ring.startColor = impact.Ring.endColor = color;
-                impact.Ring.widthMultiplier = (impact.Critical ? .07f : .04f) * (1 - age / .48f);
+                impact.Ring.widthMultiplier = (impact.Shielded == true ? .055f :
+                    impact.Critical ? .07f : .04f) * (1 - age / .48f);
+                if (impact.ShieldArc != null)
+                {
+                    for (int point = 0; point < 25; point++)
+                    {
+                        float angle = point * Mathf.PI * 2 / 24;
+                        impact.ShieldArc.SetPosition(point, new Vector3(Mathf.Cos(angle) * radius * 1.13f,
+                            Mathf.Sin(angle) * radius * 1.13f, 0));
+                    }
+                    Color arc = impact.Color; arc.a = .58f * (1 - age / .48f);
+                    impact.ShieldArc.startColor = impact.ShieldArc.endColor = arc;
+                    impact.ShieldArc.widthMultiplier = .045f * (1 - age / .48f);
+                }
                 for (int spark = 0; spark < impact.Sparks.Length; spark++)
                 {
                     LineRenderer ray = impact.Sparks[spark];
                     if (ray == null) continue;
-                    float angle = (spark + .5f) * Mathf.PI * .5f;
+                    float angle = (spark + .5f) * Mathf.PI * 2f / impact.Sparks.Length;
                     Vector3 direction = new Vector3(Mathf.Cos(angle), Mathf.Sin(angle), 0);
                     ray.SetPosition(0, direction * (radius + .08f));
                     ray.SetPosition(1, direction * (radius + .42f * (1 - age / .48f)));
-                    Color flash = new Color(1f, .87f, .44f, .9f * (1 - age / .48f));
+                    Color flash = impact.Critical ? new Color(1f, .87f, .44f,
+                        .9f * (1 - age / .48f)) : impact.Color;
+                    if (!impact.Critical) flash.a = .72f * (1 - age / .48f);
                     ray.startColor = ray.endColor = flash;
                     ray.widthMultiplier = .055f * (1 - age / .48f);
                     ray.enabled = true;
                 }
             }
-            if (miningActivity != null && miningHalo != null && miningCore != null && miningRing != null)
+            if (miningActivity != null && miningHalo != null && miningCore != null && miningContact != null)
             {
-                float progress = miningActivity.Progress(Stopwatch.GetTimestamp());
                 float pulse = .65f + .35f * Mathf.Sin(Time.unscaledTime * 18);
                 Vector3 origin = player.position + player.forward * .3f;
-                miningHalo.SetPosition(0, origin); miningHalo.SetPosition(1, miningPoint);
-                miningCore.SetPosition(0, origin); miningCore.SetPosition(1, miningPoint);
+                Vector3 oreSurface = miningPoint + (origin - miningPoint).normalized * .65f;
+                miningHalo.SetPosition(0, origin); miningHalo.SetPosition(1, oreSurface);
+                miningCore.SetPosition(0, origin); miningCore.SetPosition(1, oreSurface);
                 Color tint = miningActivity.Phase == MiningPhase.Prospect ?
                     new Color(.35f, .95f, .9f) : new Color(1f, .72f, .32f);
                 tint.a = .3f + .2f * pulse;
@@ -290,29 +336,17 @@ namespace FortyTwoAndBeyond.Client
                 miningHalo.widthMultiplier = .1f + .035f * pulse;
                 Color core = Color.white; core.a = .65f + .25f * pulse;
                 miningCore.startColor = miningCore.endColor = core;
-                miningRing.transform.position = miningPoint;
                 Camera camera = ViewCamera();
-                if (camera != null) miningRing.transform.rotation = camera.transform.rotation;
-                float radius = .45f + progress * .7f;
-                for (int point = 0; point < 25; point++)
-                {
-                    float angle = point * Mathf.PI * 2 / 24;
-                    miningRing.SetPosition(point, new Vector3(Mathf.Cos(angle) * radius,
-                        Mathf.Sin(angle) * radius, 0));
-                }
-                tint.a = .75f;
-                miningRing.startColor = miningRing.endColor = tint;
-                if (miningArc != null)
-                {
-                    for (int point = 0; point < 33; point++)
-                    {
-                        float angle = -Mathf.PI * .5f + progress * Mathf.PI * 2 * point / 32;
-                        miningArc.SetPosition(point, new Vector3(Mathf.Cos(angle) * (radius + .07f),
-                            Mathf.Sin(angle) * (radius + .07f), 0));
-                    }
-                    miningArc.startColor = miningArc.endColor = tint;
-                    miningArc.enabled = true;
-                }
+                Vector3 right = camera != null ? camera.transform.right : Vector3.right;
+                Vector3 up = camera != null ? camera.transform.up : Vector3.up;
+                float contactRadius = .12f;
+                miningContact.SetPosition(0, oreSurface + right * contactRadius);
+                miningContact.SetPosition(1, oreSurface + up * contactRadius);
+                miningContact.SetPosition(2, oreSurface - right * contactRadius);
+                miningContact.SetPosition(3, oreSurface - up * contactRadius);
+                miningContact.SetPosition(4, oreSurface + right * contactRadius);
+                tint.a = .8f * pulse;
+                miningContact.startColor = miningContact.endColor = tint;
             }
             TickLoot();
             TickWarp();
@@ -513,8 +547,8 @@ namespace FortyTwoAndBeyond.Client
         {
             if (miningHalo != null) Object.Destroy(miningHalo.gameObject);
             if (miningCore != null) Object.Destroy(miningCore.gameObject);
-            if (miningRing != null) Object.Destroy(miningRing.gameObject);
-            miningHalo = miningCore = miningRing = miningArc = null;
+            if (miningContact != null) Object.Destroy(miningContact.gameObject);
+            miningHalo = miningCore = miningContact = null;
             miningActivity = null;
         }
 
@@ -548,10 +582,16 @@ namespace FortyTwoAndBeyond.Client
             ClearLoot();
             ClearDeviceBuff();
             ClearWarp(); warpPhase = WarpPhase.Idle; warpArrived = false;
+            reportedShields.Clear();
             lastShotSequence = lastDamageSequence = 0; playerId = 0;
         }
 
         /// <summary>Release the packaged material after all effects are gone.</summary>
-        public void Dispose() { Clear(); if (material != null) Object.Destroy(material); }
+        public void Dispose()
+        {
+            Clear();
+            if (material != null) Object.Destroy(material);
+            if (impactMaterial != null) Object.Destroy(impactMaterial);
+        }
     }
 }

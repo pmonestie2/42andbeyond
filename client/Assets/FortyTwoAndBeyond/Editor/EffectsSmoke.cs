@@ -17,6 +17,7 @@ namespace FortyTwoAndBeyond.Editor
         private static uint mobId, resourceId;
         private static double deadline, nextAt;
         private static bool connected;
+        private static bool resourceRequested;
 
         /// <summary>Register only for a disposable visual server run.</summary>
         static EffectsSmoke()
@@ -81,11 +82,17 @@ namespace FortyTwoAndBeyond.Editor
             }
             if (stage == 2 && EditorApplication.timeSinceStartup >= nextAt)
             {
-                client.StopWeapons(); client.OpenResource(resourceId);
+                client.StopWeapons(); client.SelectWorldObject(resourceId);
                 stage = 3; return;
             }
             if (stage == 3)
             {
+                if (!resourceRequested)
+                {
+                    if (snapshot.Verbs.Available(resourceId, 9) != true) return;
+                    client.OpenResource(resourceId);
+                    resourceRequested = true;
+                }
                 ResourceView resource = snapshot.Resources.FirstOrDefault(item => item.Id == resourceId);
                 if (!snapshot.ResourceWindowOpen || resource == null) return;
                 ItemView item = resource.Items.FirstOrDefault(entry => entry != null);
