@@ -240,6 +240,36 @@ fn device_effect(
     })
 }
 
+/// Returns:
+///     Option<(f32, f32)>: Shield cost and reactor gain as catalog percentages.
+fn reroute_shield_energy(template: &ItemTemplate) -> Option<(f32, f32)> {
+    let effect = template.activated.first()?;
+    if !matches!(template.item_type, 7 | 11)
+        || template.activated.len() != 1
+        || effect.description != "Reroute Shield Energy (Instant)"
+        || effect.buff_name != "BUFF_NONE"
+        || effect.visual != 0
+        || template.activation.recharge != 0.
+        || effect.modifiers.len() != 2
+    {
+        return None;
+    }
+    let shield = &effect.modifiers[0];
+    let reactor = &effect.modifiers[1];
+    if shield.stat != "STAT_SHIELD"
+        || shield.operation != 4
+        || !shield.value.is_finite()
+        || !(0. ..=100.).contains(&shield.value)
+        || reactor.stat != "STAT_ENERGY"
+        || reactor.operation != 2
+        || !reactor.value.is_finite()
+        || !(0. ..=100.).contains(&reactor.value)
+    {
+        return None;
+    }
+    Some((shield.value, reactor.value))
+}
+
 impl PlayerSession {
     /// Publish the catalog buff name and visual for the current timed device.
     fn publish_active_device_presentation(&mut self, remaining_ms: u64) {
@@ -488,6 +518,47 @@ impl PlayerSession {
                 return Err(invalid("No equipped item in this mount."));
             };
             let template = self.items.get(item.template)?;
+            if item.structure <= 0. {
+                return Err(invalid("Damaged device cannot be activated."));
+            }
+            if let Some((shield_percent, reactor_percent)) = reroute_shield_energy(template) {
+                let activation_cost = template.activation.energy;
+                let shield_cost = self.equipment.ship.shield_capacity * shield_percent / 100.;
+                let reactor_gain = self.equipment.ship.energy_capacity * reactor_percent / 100.;
+                if self.energy < activation_cost {
+                    self.pending.push(packets::message(
+                        "Insufficient reactor energy for Reroute Shield Energy.",
+                    ));
+                    return Ok(());
+                }
+                if self.shield < shield_cost {
+                    self.pending.push(packets::message(
+                        "Insufficient shield energy for Reroute Shield Energy.",
+                    ));
+                    return Ok(());
+                }
+                let previous_energy = self.energy;
+                let previous_shield = self.shield;
+                self.shield -= shield_cost;
+                self.energy = (self.energy - activation_cost + reactor_gain)
+                    .min(self.equipment.ship.energy_capacity);
+                if let Err(error) = self.checkpoint_session(true) {
+                    self.energy = previous_energy;
+                    self.shield = previous_shield;
+                    return Err(error);
+                }
+                self.pending.push(packets::ship_resources(
+                    self.player_id(),
+                    &self.equipment.ship,
+                    Some(self.energy),
+                    Some(self.shield),
+                    None,
+                ));
+                self.pending.push(packets::message(
+                    "Reroute Shield Energy converted shields to reactor energy.",
+                ));
+                return Ok(());
+            }
             let Some((effect, bonus, operation, secondary, duration_ms)) = device_effect(template)
             else {
                 self.pending.push(packets::message(
@@ -495,9 +566,6 @@ impl PlayerSession {
                 ));
                 return Ok(());
             };
-            if item.structure <= 0. {
-                return Err(invalid("Damaged device cannot be activated."));
-            }
             let now_ms = crate::resources::unix_ms();
             if self
                 .active_device
@@ -586,6 +654,20 @@ impl PlayerSession {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Every public reactor or device variant retains the bounded instant rule.
+    #[test]
+    fn public_shield_reroute_items_have_consistent_catalog_rules() {
+        let items = ItemCatalog::load().unwrap();
+        for id in [
+            1933, 2015, 2107, 2197, 2288, 2391, 2482, 3285, 3309, 3323, 3337, 3346, 5884,
+        ] {
+            let (shield, reactor) = reroute_shield_energy(items.get(id).unwrap()).unwrap();
+            assert!((41. ..=47.).contains(&shield), "item {id}");
+            assert!((18. ..=24.).contains(&reactor), "item {id}");
+        }
+        assert!(reroute_shield_energy(items.get(1845).unwrap()).is_none());
+    }
 
     #[test]
     fn catalog_recharge_operations_are_frozen_and_ambiguous_devices_stay_gated() {

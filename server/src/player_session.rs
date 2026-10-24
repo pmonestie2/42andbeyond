@@ -3772,6 +3772,75 @@ mod tests {
         }));
     }
 
+    /// Instant shield rerouting spends owned resources once and survives replacement.
+    #[test]
+    fn instant_shield_reroute_validates_resources_and_persists() {
+        let mut ship = session();
+        ship.logged_in = true;
+        ship.selected_peer = Some("127.0.0.1".parse().unwrap());
+        ship.endpoint = Some("127.0.0.1:22494".parse().unwrap());
+        let mut inventory = ship.inventory.clone();
+        inventory.equipped[1] = Some(crate::inventory::ItemInstance::stock(3343, 1));
+        inventory.equipped[9] = Some(crate::inventory::ItemInstance::stock(1933, 1));
+        inventory
+            .validate_for_profile(&ship.account.character, &ship.items, &ship.skill_catalog)
+            .unwrap();
+        ship.commit_inventory(inventory).unwrap();
+        let capacity = ship.equipment.ship.energy_capacity;
+        let shield_capacity = ship.equipment.ship.shield_capacity;
+        let activation = [ship.player_id().to_le_bytes().as_slice(), &[2, 9]].concat();
+        ship.shield = shield_capacity;
+        ship.energy = 84.;
+        ship.activate_equipped_item(&activation).unwrap();
+        assert_eq!(ship.energy, 84.);
+        assert_eq!(ship.shield, shield_capacity);
+        ship.energy = capacity / 4.;
+        let before = ship.energy;
+        ship.activate_equipped_item(&activation).unwrap();
+        assert!((ship.shield - shield_capacity * 0.53).abs() < 0.01);
+        assert!((ship.energy - (before - 85. + capacity * 0.18).min(capacity)).abs() < 0.01);
+        assert!(ship.active_device.is_none());
+        assert!(ship.pending.iter().any(|frame| {
+            frame.opcode == 0x1d
+                && frame
+                    .body
+                    .windows(b"converted shields".len())
+                    .any(|window| window == b"converted shields")
+        }));
+        let energy = ship.energy;
+        let shield = ship.shield;
+        let restored =
+            PlayerSession::new(ship.sector.clone(), ship.bind, ship.state_dir.clone()).unwrap();
+        assert!((restored.energy - energy).abs() < 0.01);
+        assert!((restored.shield - shield).abs() < 0.01);
+        ship.shield = shield_capacity * 0.47 - 1.;
+        ship.activate_equipped_item(&activation).unwrap();
+        assert_eq!(ship.energy, energy);
+        assert_eq!(ship.shield, shield_capacity * 0.47 - 1.);
+    }
+
+    /// Reactor-mounted reroute uses the same native item action as a device mount.
+    #[test]
+    fn reactor_mounted_shield_reroute_activates_from_slot_one() {
+        let mut ship = session();
+        ship.logged_in = true;
+        let mut inventory = ship.inventory.clone();
+        inventory.equipped[1] = Some(crate::inventory::ItemInstance::stock(3337, 1));
+        inventory
+            .validate_for_profile(&ship.account.character, &ship.items, &ship.skill_catalog)
+            .unwrap();
+        ship.commit_inventory(inventory).unwrap();
+        let capacity = ship.equipment.ship.energy_capacity;
+        let shield_capacity = ship.equipment.ship.shield_capacity;
+        ship.energy = capacity / 2.;
+        ship.shield = shield_capacity;
+        let before = ship.energy;
+        let activation = [ship.player_id().to_le_bytes().as_slice(), &[2, 1]].concat();
+        ship.activate_equipped_item(&activation).unwrap();
+        assert!((ship.shield - shield_capacity * 0.58).abs() < 0.01);
+        assert!((ship.energy - (before + capacity * 0.24).min(capacity)).abs() < 0.01);
+    }
+
     #[test]
     fn catalog_scan_and_speed_devices_change_ship_stats_and_survive_recovery() {
         let mut ship = session();

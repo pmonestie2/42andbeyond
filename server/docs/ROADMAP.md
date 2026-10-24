@@ -164,6 +164,11 @@ mean the corresponding gameplay system is complete.
   and replay them after server replacement; a disposable pje Turbo Weapons
   trace verified visual 604, buff AUX, 0x0f removal and text over its ten-second
   duration. Legacy Windows graphical icon/visual verification is still pending.
+  The thirteen catalog Reroute Shield Energy instant effects now spend a
+  bounded percentage of maximum shield capacity and restore a percentage of
+  reactor capacity after the item energy cost. Both resources commit atomically
+  before AUX publication, including type-7 reactor mounts and type-11 device
+  mounts; insufficient shield or reactor activation energy leaves state intact.
   Other activated families, ally/hostile
   targeting and concurrent buff stacking remain pending.
 - UDP send failures are logged per destination immediately, then summarized
