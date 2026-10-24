@@ -395,4 +395,18 @@ impl PlayerSession {
         }
         Ok(())
     }
+
+    /// Reaffirm a durable self-buff after a transport session resumes.
+    pub(super) fn publish_active_device_resume(&mut self) {
+        if let Some(active) = &self.active_device {
+            let remaining = active
+                .expires_at_ms
+                .saturating_sub(crate::resources::unix_ms())
+                .div_ceil(1000);
+            self.pending.push(packets::message(&format!(
+                "{} active for {remaining} seconds.",
+                active.effect.label()
+            )));
+        }
+    }
 }

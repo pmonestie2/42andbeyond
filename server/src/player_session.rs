@@ -3162,6 +3162,13 @@ mod tests {
             PlayerSession::new(ship.sector.clone(), ship.bind, ship.state_dir.clone()).unwrap();
         assert!(restored.logged_in);
         assert_eq!(restored.equipment.weapons[0].reload, boosted_reload);
+        assert!(restored.pending.iter().any(|frame| {
+            frame.opcode == 0x1d
+                && frame
+                    .body
+                    .windows(b"Turbo Weapons active for".len())
+                    .any(|window| window == b"Turbo Weapons active for")
+        }));
         restored.active_device.as_mut().unwrap().expires_at_ms = crate::resources::unix_ms() - 1;
         restored.advance_active_device().unwrap();
         assert!(restored.active_device.is_none());

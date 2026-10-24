@@ -350,6 +350,7 @@ impl PlayerSession {
             Some(self.shield),
             Some(self.hull),
         ));
+        self.publish_active_device_resume();
         self.pending
             .push(packets::incapacitated(self.player_id(), self.hull <= 0.));
         for index in 0..previous_mob_count.max(combat.actors.len()) {
