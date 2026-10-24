@@ -96,30 +96,30 @@ namespace FortyTwoAndBeyond.Client
             return obj.transform;
         }
 
-        /// <returns>Material: A Unity standard material using the artist's UV texture maps.</returns>
+        /// <returns>Material: A textured material, or null when no compatible shader is available.</returns>
         private Material ShipSurface(string assetName)
         {
             Texture2D diffuse = Resources.Load<Texture2D>("ViktorShips/" + assetName + "_diffuse");
             if (diffuse == null) return null;
-            Shader shader = Shader.Find("Standard (Specular setup)");
-            if (shader == null) throw new InvalidOperationException("Missing Unity standard specular shader");
+            Shader shader = Resources.Load<Shader>("TexturedShip");
+            bool textured = shader != null;
+            if (shader == null) shader = Resources.Load<Shader>("Surface");
+            if (shader == null) return null;
             var surface = new Material(shader); materials.Add(surface);
-            surface.SetTexture("_MainTex", diffuse);
             surface.SetColor("_Color", new Color(.72f, .75f, .8f));
-            surface.SetColor("_SpecColor", new Color(.18f, .21f, .25f));
-            surface.SetFloat("_Glossiness", .28f);
-            surface.SetFloat("_GlossMapScale", .3f);
+            if (!textured)
+            {
+                surface.SetTexture("_DetailTex", diffuse);
+                surface.SetFloat("_TextureStrength", .8f);
+                return surface;
+            }
+            surface.SetTexture("_MainTex", diffuse);
             Texture2D normal = Resources.Load<Texture2D>("ViktorShips/" + assetName + "_normal");
             Texture2D specular = Resources.Load<Texture2D>("ViktorShips/" + assetName + "_specular");
             Texture2D emission = Resources.Load<Texture2D>("ViktorShips/" + assetName + "_emission");
-            if (normal != null) { surface.EnableKeyword("_NORMALMAP"); surface.SetTexture("_BumpMap", normal); }
-            if (specular != null) { surface.EnableKeyword("_SPECGLOSSMAP"); surface.SetTexture("_SpecGlossMap", specular); }
-            if (emission != null)
-            {
-                surface.EnableKeyword("_EMISSION");
-                surface.SetTexture("_EmissionMap", emission);
-                surface.SetColor("_EmissionColor", Color.white * .75f);
-            }
+            if (normal != null) surface.SetTexture("_BumpMap", normal);
+            if (specular != null) surface.SetTexture("_SpecGlossMap", specular);
+            if (emission != null) surface.SetTexture("_EmissionMap", emission);
             return surface;
         }
 
