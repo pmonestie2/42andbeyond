@@ -42,7 +42,7 @@ namespace FortyTwoAndBeyond.Client
         private int chatOpenedFrame = -1;
         private int lastFrameRate = 120;
         private int sampledFrames, displayFps;
-        private float sampledSeconds, slowestFrameMs, displayFrameMs, nextPerformanceLog;
+        private float sampledSeconds, slowestFrameMs, displayFrameMs, nextPerformanceLog, lastSnapshotAt;
         private float previousYaw, previousPitch, orbitYaw = 22, orbitPitch = 8, zoom = 2.8f, mapZoom = 1400;
         private Vector3 renderedPosition;
         private float authoritativePoseAt;
@@ -199,6 +199,7 @@ namespace FortyTwoAndBeyond.Client
                     next.AngularY != snapshot.AngularY || next.AngularZ != snapshot.AngularZ ||
                     !next.Orientation.SequenceEqual(snapshot.Orientation));
                 snapshot = next; if (worker.Error == null) status = next.Status;
+                lastSnapshotAt = Time.unscaledTime;
                 if (sector != next.Sector) { ClearWorld(); sector = next.Sector; target = 0; positioned = false; }
                 ApplyWorld(next);
                 ApplyStationAvatars(next);
@@ -284,7 +285,14 @@ namespace FortyTwoAndBeyond.Client
             sampledFrames = 0; sampledSeconds = slowestFrameMs = 0;
             if (Time.unscaledTime >= nextPerformanceLog)
             {
-                Debug.Log($"42 and Beyond frame pacing: {displayFps} FPS, slowest {displayFrameMs:0.0} ms, focused {Application.isFocused}, contacts {remoteShips.Count}");
+                float snapshotAge = snapshot == null ? -1 : Time.unscaledTime - lastSnapshotAt;
+                string currentStatus = (status ?? "").Replace('\r', ' ').Replace('\n', ' ');
+                if (currentStatus.Length > 96) currentStatus = currentStatus.Substring(0, 96);
+                Debug.Log($"42 and Beyond frame pacing: {displayFps} FPS, slowest {displayFrameMs:0.0} ms, " +
+                    $"focused {Application.isFocused}, contacts {remoteShips.Count}, worker {worker?.Running == true}, " +
+                    $"ready {Ready}, snapshot age {snapshotAge:0.0} s, chat {chatOpen}, " +
+                    $"input focus {hud?.InputFocused == true}, settings {hud?.SettingsOpen == true}, " +
+                    $"sector {sector}, status {currentStatus}");
                 nextPerformanceLog = Time.unscaledTime + 30;
             }
         }
@@ -746,7 +754,8 @@ namespace FortyTwoAndBeyond.Client
         /// <summary>Join the worker before removing the connected world's resources.</summary>
         public void Disconnect()
         {
-            worker?.Dispose(); worker = null; snapshot = null; sector = ""; target = 0; positioned = false; authoritativePoseAt = 0;
+            worker?.Dispose(); worker = null; snapshot = null; sector = ""; target = 0; positioned = false;
+            authoritativePoseAt = lastSnapshotAt = 0;
             picker?.Dispose(); picker = null; characters = null;
             previousYaw = previousPitch = 0; ClearWorld(); status = "Disconnected";
         }
