@@ -9,29 +9,10 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from .local_profiles import ClientProfile, ProfileDns, copy_client, prepare_profile, isolate_client_mutex, validate_instance_name
+from .local_profiles import ClientProfile, ProfileDns, prepare_profile, isolate_client_mutex, validate_instance_name
 
 
 class ProfileTests(unittest.TestCase):
-    def test_skips_locked_runtime_logs_but_reports_locked_required_files(self) -> None:
-        """Never open live logs, and name required files when copying fails."""
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            source, target = root / 'source', root / 'target'
-            for relative in ('release/chat.log', 'release/crash.DMP', 'Logs/session.txt', 'release/client.exe'):
-                path = source / relative
-                path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_bytes(b'fixture')
-            # Failing every copy proves runtime files were excluded before opening.
-            with patch('win_legacy.local_profiles.shutil.copy2', side_effect=PermissionError('sharing violation')) as copy:
-                with self.assertRaisesRegex(OSError, r'Cannot copy required client file .*client\.exe'):
-                    copy_client(source, target)
-            self.assertEqual(copy.call_count, 1)
-            self.assertEqual(copy.call_args.args[0].name, 'client.exe')
-            self.assertFalse((target / 'release/chat.log').exists())
-            self.assertFalse((target / 'release/crash.DMP').exists())
-            self.assertFalse((target / 'Logs').exists())
-
     def test_names_are_normalized_and_cannot_escape_profile_directory(self) -> None:
         """Reject traversal and names that cannot become safe host aliases."""
         self.assertEqual(validate_instance_name('Pilot1'), 'pilot1')
@@ -109,22 +90,6 @@ class ProfileTests(unittest.TestCase):
                     isolate_client_mutex(first, original, 'third')
                 self.assertEqual(first.read_bytes(), b'changed externally')
             self.assertEqual(original.read_bytes(), contents)
-
-    def test_copies_settings_and_links_only_immutable_assets(self) -> None:
-        """Copy writable files independently while sharing immutable assets."""
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            source, target = root / 'source', root / 'target'
-            for relative, content in [('release/client.exe',b'client'),('Data/client/ini/auth.ini',b'original'),
-                                      ('Data/client/art/model.w3d',b'model'),('Data/client/output/cache.pld',b'cache')]:
-                path = source / relative
-                path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_bytes(content)
-            copy_client(source, target)
-            (target / 'Data/client/ini/auth.ini').write_bytes(b'private')
-            self.assertEqual((source / 'Data/client/ini/auth.ini').read_bytes(),b'original')
-            self.assertTrue(os.path.samefile(source / 'Data/client/art/model.w3d',target / 'Data/client/art/model.w3d'))
-            self.assertFalse(os.path.samefile(source / 'Data/client/output/cache.pld',target / 'Data/client/output/cache.pld'))
 
     def test_profiles_reserve_distinct_interfaces_and_keep_original_endpoints(self) -> None:
         """Allocate distinct aliases without modifying installed INI files."""

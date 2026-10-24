@@ -142,7 +142,7 @@ def main() -> None:
         if args.check:
             print(subprocess.list2cmdline(plan.arguments()))
             if args.instance is not None:
-                print(f'Private instance: {args.instance}; independent client/proxy under server/state/clients/{args.instance}.')
+                print(f'Instance: {args.instance}; shared installation with small launch/proxy state under server/state/clients/{args.instance}.')
                 print('Launch allocates a private loopback IP, patches only the private client singleton, and configures only its owned proxy memory.')
             if args.scale is not None:
                 print(f'Client scaling: {args.scale}; previous DPI compatibility settings are restored on exit.')

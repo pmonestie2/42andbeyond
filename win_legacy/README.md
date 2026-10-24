@@ -46,10 +46,18 @@ the next. Keep each launcher console open. The original installed client may
 stay open while named instances run.
 
 Each name reserves one of eight private loopback addresses (`127.0.0.2` through
-`127.0.0.9`) and has its own game configuration, proxy, DPI settings and process
-job under `server/state/clients/<name>`. Immutable game assets use hard links when
-possible. Closing an instance stops only its owned process tree and relays and
-removes only its unchanged hosts entry. Private files remain for the next launch.
+`127.0.0.9`). All instances use the installed game assets directly through
+directory/file links. The small launch view under `server/state/clients/<name>`
+keeps only the singleton-specific executable, writable configuration, runtime
+output and proxy state private. No game asset tree is copied or hard-linked.
+Run elevated so Windows can create the links and update the hosts file.
+
+Closing an instance stops only its owned process tree and relays and removes only
+its unchanged hosts entry. Existing profiles convert on their next launch, after
+their game and proxy have exited. Conversion verifies old asset copies before
+removing their profile links; installed files, private settings and logs are
+preserved. If an old asset copy contains local edits, conversion stops and names
+the file rather than discarding it. Running clients are never converted.
 
 Named instances require the known client and Net7Proxy 2.46 builds. Their hashes
 are validated before setup. Only the private client's singleton-name string is

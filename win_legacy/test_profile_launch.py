@@ -21,7 +21,8 @@ class ProfileLaunchTests(unittest.TestCase):
             client, proxy = root / 'client.exe', root / 'net7proxy.exe'
             client.write_bytes(b'client fixture')
             proxy.write_bytes(b'proxy fixture')
-            profile = ClientProfile('pilot1', '127.0.0.2', root / 'profile')
+            profile = ClientProfile('pilot1', '127.0.0.2', root / 'state/clients/pilot1')
+            stack.enter_context(patch('win_legacy.local_profiles.ROOT', root))
             job = Mock(pid=42)
             relays = Mock()
             relays.start.side_effect = OSError('relay port busy')
@@ -31,7 +32,7 @@ class ProfileLaunchTests(unittest.TestCase):
             ):
                 stack.enter_context(patch(name, value))
             stack.enter_context(patch('win_legacy.local_profiles.named_mutex', side_effect=lambda *args, **kwargs: nullcontext()))
-            stack.enter_context(patch('win_legacy.local_profiles.prepare_profile', return_value=profile))
+            prepare = stack.enter_context(patch('win_legacy.local_profiles.prepare_profile', return_value=profile))
             stack.enter_context(patch('win_legacy.local_profiles.isolate_client_mutex'))
             stack.enter_context(patch('win_legacy.local_profiles.isolate_existing_windows'))
             stack.enter_context(patch('win_legacy.local_profiles.ProfileDns', return_value=nullcontext()))
@@ -49,6 +50,12 @@ class ProfileLaunchTests(unittest.TestCase):
             job.close.assert_called_once()
             relays.close.assert_called_once()
             job.wait.assert_not_called()
+            # A running profile must be rejected before any migration or INI edits.
+            prepare.reset_mock()
+            ensure.side_effect = RuntimeError('profile already active')
+            with self.assertRaisesRegex(RuntimeError, 'profile already active'):
+                launch_profile('pilot1', '192.168.47.1', client, proxy, no_build=True)
+            prepare.assert_not_called()
 
     def test_failed_loopback_override_never_resumes_the_owned_proxy(self) -> None:
         """Terminate only the newly suspended proxy if its data override fails."""

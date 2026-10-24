@@ -1,4 +1,4 @@
-"""Independent native client instances sharing only immutable installed assets.
+"""Small native launch profiles sharing the existing game installation.
 
 Each owns its writable configuration, proxy files, loopback listeners and job.
 Closing one launcher cannot close another client's process tree or undo its INIs.
@@ -20,6 +20,7 @@ import uuid
 from server.tools.build import ROOT
 from .client_config import local_configuration
 from .windows_sync import named_mutex
+from .shared_install import prepare_shared_install
 
 if TYPE_CHECKING:
     from .local_windows import ProxyJob
@@ -110,37 +111,6 @@ class ClientProfile:
         return f'{self.name}.local.net-7.org'
 
 
-def copy_client(source: Path, destination: Path) -> None:
-    """Copy settings and executables, linking assets and excluding runtime logs.
-
-    Raises:
-        OSError: A required game file cannot be copied; the message names that file.
-    """
-    immutable = {'.mix', '.pld', '.w3d', '.dds', '.tga', '.mp3', '.wav', '.bmp'}
-    for directory, folders, files in os.walk(source):
-        folders[:] = [name for name in folders if name.lower() != 'logs']
-        relative = Path(directory).relative_to(source)
-        target = destination / relative
-        target.mkdir(parents=True, exist_ok=True)
-        for filename in files:
-            original, copied = Path(directory) / filename, target / filename
-            # Live clients hold chat.log open exclusively. Runtime diagnostics
-            # belong to the new client and must never be copied from a live one.
-            if original.suffix.lower() in {'.log', '.dmp'}:
-                continue
-            if copied.exists(): continue
-            parts = {part.lower() for part in relative.parts}
-            if 'data' in parts and not parts.intersection({'ini', 'output', 'logs'}) and original.suffix.lower() in immutable:
-                try:
-                    os.link(original, copied)
-                    continue
-                except OSError: pass  # Another volume/filesystem: ordinary copy.
-            try:
-                shutil.copy2(original, copied)
-            except OSError as error:
-                raise OSError(f'Cannot copy required client file {original} to {copied}: {error}') from error
-
-
 def prepare_profile(name: str, client: Path, proxy: Path) -> ClientProfile:
     """Prepare private mutable files and allocate a persistent loopback address.
 
@@ -174,13 +144,15 @@ def prepare_profile(name: str, client: Path, proxy: Path) -> ClientProfile:
                       'source_proxy': str(proxy), 'prepared': False}
             metadata.write_text(json.dumps(record, indent=2))
         profile = ClientProfile(name, address, directory)
-        if not record['prepared']:
-            print(f'Preparing private game files for {name}; immutable assets use hard links', flush=True)
-            copy_client(client.parent.parent, directory / 'game')
+        if not record['prepared'] or record['version'] < 2:
+            print(f'Preparing shared-install launch view for {name}', flush=True)
+            prepare_shared_install(client.parent.parent, directory / 'game')
             profile.proxy.parent.mkdir(parents=True, exist_ok=True)
             for path in proxy.parent.iterdir():
-                if path.is_file() and path.suffix.lower() in {'.exe','.dll','.dat','.cer','.pem','.ini','.cfg'}:
-                    shutil.copy2(path, profile.proxy.parent / path.name)
+                copied = profile.proxy.parent / path.name
+                if not copied.exists() and path.is_file() and path.suffix.lower() in {'.exe','.dll','.dat','.cer','.pem','.ini','.cfg'}:
+                    shutil.copy2(path, copied)
+            record['version'] = 2
             record['prepared'] = True
             metadata.write_text(json.dumps(record, indent=2))
         for relative, kind in [('Data/client/ini/auth.ini','auth'), ('Data/common/network.ini','network'),
@@ -278,14 +250,15 @@ def launch_profile(name: str, server: str, client: Path, proxy: Path, *, no_buil
     from .start_proxy import ProxyPlan, ensure_server
     from .client_scaling import ClientScaling
     from .proxy_loopback import PROXY_SHA256
-    # Validate before copying large asset trees or editing any configuration.
+    # Validate before preparing launch aliases or editing any configuration.
     if hashlib.sha256(client.read_bytes()).hexdigest() != CLIENT_SHA256:
         raise RuntimeError('Unsupported client build; no instance files changed')
     if hashlib.sha256(proxy.read_bytes()).hexdigest() != PROXY_SHA256:
         raise RuntimeError('Unsupported proxy build; no instance files changed')
     with named_mutex('Global\\FortyTwoAndBeyondClient_' + name.lower(), timeout=0):
+        pending = ClientProfile(name, '', ROOT / 'state/clients' / name)
+        ensure_no_game(pending.client, pending.proxy)
         profile = prepare_profile(name, client, proxy)
-        ensure_no_game(profile.client, profile.proxy)
         isolate_client_mutex(profile.client, client, profile.name)
         ensure_server(server, no_build)
         plan = ProxyPlan(server, profile.client, profile.proxy)
