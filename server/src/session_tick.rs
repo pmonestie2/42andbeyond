@@ -89,6 +89,15 @@ impl PlayerSession {
         )? {
             self.emit_warp_event(event);
         }
+        if self.warp.active() {
+            self.warp_movement_elapsed += dt;
+            while self.warp_movement_elapsed >= 0.1 {
+                self.motion.movement_id = self.motion.movement_id.wrapping_add(1);
+                self.warp_movement_elapsed -= 0.1;
+            }
+        } else {
+            self.warp_movement_elapsed = 0.;
+        }
         let followed = self.advance_following(dt)?;
         if !followed && !was_warping && self.hull > 0. && self.formation_leader.is_none() {
             self.motion
@@ -296,7 +305,17 @@ impl PlayerSession {
             && self
                 .last_motion_report
                 .is_some_and(|at| at.elapsed() < Duration::from_millis(500));
-        if broadcast && !proxy_predicts {
+        if self.warp.active() {
+            if self.last_warp_broadcast.elapsed() >= Duration::from_millis(500) {
+                self.pending.push(packets::warp_movement(
+                    self.player_id(),
+                    self.position,
+                    tick,
+                    &self.motion,
+                ));
+                self.last_warp_broadcast = Instant::now();
+            }
+        } else if broadcast && !proxy_predicts {
             self.pending.push(packets::player_movement(
                 self.player_id(),
                 self.position,

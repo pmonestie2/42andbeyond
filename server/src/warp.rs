@@ -10,7 +10,6 @@ use std::io;
 pub const WARP_SPEED: f32 = 3000.;
 pub const CHARGE_SECONDS: f32 = 2.;
 pub const RECOVERY_SECONDS: f32 = 2.;
-const WARP_ACCELERATION: f32 = 6000.;
 const ARRIVAL_DISTANCE: f32 = 100.;
 fn default_speed() -> f32 {
     WARP_SPEED
@@ -166,6 +165,9 @@ impl Warp {
                 events.push(WarpEvent::Ready);
             } else {
                 self.phase = WarpPhase::Traveling;
+                // Native StartWarp assigns the group warp velocity before its
+                // first positional packet; there is no impulse-like ramp.
+                motion.speed = self.speed;
                 motion.set_speed = self.speed;
                 events.push(WarpEvent::Departed);
                 if let Some(point) = self.waypoints.front() {
@@ -180,10 +182,9 @@ impl Warp {
         if self.phase != WarpPhase::Traveling {
             return Ok(events);
         }
-        let previous_speed = motion.speed;
-        motion.speed = (motion.speed + WARP_ACCELERATION * dt).min(self.speed);
+        motion.speed = self.speed;
         motion.set_speed = self.speed;
-        let mut travel = (previous_speed + motion.speed) * 0.5 * dt;
+        let mut travel = self.speed * dt;
         if let Some(point) = self.waypoints.front().copied() {
             let length = distance(*position, point.position);
             if length > 0.001 {
@@ -232,6 +233,29 @@ impl Warp {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn departure_publishes_full_warp_speed_before_first_travel_step() {
+        let mut warp = Warp::default();
+        let mut motion = Motion::default();
+        let mut position = [0.; 3];
+        warp.start(VecDeque::new(), position, &mut motion).unwrap();
+        assert_eq!(motion.speed, 0.);
+        assert_eq!(
+            warp.advance(
+                &mut position,
+                &mut motion,
+                &Bounds::default(),
+                CHARGE_SECONDS
+            )
+            .unwrap(),
+            [WarpEvent::Departed]
+        );
+        assert_eq!(position, [0.; 3]);
+        assert_eq!(motion.speed, WARP_SPEED);
+        warp.advance(&mut position, &mut motion, &Bounds::default(), 0.1)
+            .unwrap();
+        assert!((position[0] - 300.).abs() < 0.01);
+    }
     #[test]
     fn route_charges_follows_waypoints_arrives_and_recovers() {
         let mut warp = Warp::default();

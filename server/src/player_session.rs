@@ -188,6 +188,8 @@ pub struct PlayerSession {
     resource_sync: f32,
     last_seen: Instant,
     last_broadcast: Instant,
+    last_warp_broadcast: Instant,
+    warp_movement_elapsed: f32,
     last_saved: Instant,
     pub state_dir: PathBuf,
     dirty: bool,
@@ -366,6 +368,8 @@ impl PlayerSession {
             resource_sync: 0.,
             last_seen: now,
             last_broadcast: now,
+            last_warp_broadcast: now,
+            warp_movement_elapsed: 0.,
             last_saved: now,
             state_dir,
             dirty: false,
@@ -1340,6 +1344,10 @@ impl PlayerSession {
 
     fn emit_warp_event(&mut self, event: WarpEvent) {
         let tick = self.tick_ms();
+        let send_movement = !matches!(event, WarpEvent::Waypoint { .. });
+        if event == WarpEvent::Charging {
+            self.warp_movement_elapsed = 0.;
+        }
         match event {
             WarpEvent::Charging => {
                 self.pending.push(packets::warp_state(
@@ -1402,12 +1410,14 @@ impl PlayerSession {
                 tick,
             )),
         }
-        self.pending.push(packets::player_movement(
-            self.player_id(),
-            self.position,
-            tick,
-            &self.motion,
-        ));
+        if send_movement {
+            self.pending.push(if self.warp.active() {
+                packets::warp_movement(self.player_id(), self.position, tick, &self.motion)
+            } else {
+                packets::player_movement(self.player_id(), self.position, tick, &self.motion)
+            });
+            self.last_warp_broadcast = Instant::now();
+        }
     }
     fn flush(&mut self) -> io::Result<()> {
         let Some(peer) = self.endpoint else {
@@ -3090,6 +3100,50 @@ mod tests {
             .iter()
             .flatten()
             .any(|item| item.template == 3641 && item.quantity == 1));
+    }
+
+    #[test]
+    fn warp_movement_uses_half_second_native_cadence_and_normal_updates_remain() {
+        let mut ship = session();
+        ship.logged_in = true;
+        ship.warp.phase = WarpPhase::Traveling;
+        ship.motion.speed = 3000.;
+        ship.motion.set_speed = 3000.;
+        ship.last_broadcast = Instant::now() - Duration::from_millis(250);
+        ship.last_warp_broadcast = Instant::now() - Duration::from_millis(400);
+        ship.publish_mobs().unwrap();
+        assert!(!ship.pending.iter().any(|packet| {
+            packet.opcode == 0x3e && packet.body[2..6] == ship.player_id().to_le_bytes()
+        }));
+        ship.pending.clear();
+
+        ship.last_warp_broadcast = Instant::now() - Duration::from_millis(510);
+        ship.publish_mobs().unwrap();
+        let movement = ship
+            .pending
+            .iter()
+            .find(|packet| {
+                packet.opcode == 0x3e && packet.body[2..6] == ship.player_id().to_le_bytes()
+            })
+            .unwrap();
+        assert_eq!(&movement.body[..2], &1u16.to_le_bytes());
+        assert_eq!(movement.body.len(), 46);
+        ship.pending.clear();
+
+        let before = ship.motion.movement_id;
+        ship.advance_player(0.5).unwrap();
+        assert_eq!(ship.motion.movement_id, before + 5);
+        ship.warp.phase = WarpPhase::Idle;
+        ship.last_broadcast = Instant::now() - Duration::from_millis(250);
+        ship.publish_mobs().unwrap();
+        let normal = ship
+            .pending
+            .iter()
+            .find(|packet| {
+                packet.opcode == 0x3e && packet.body[2..6] == ship.player_id().to_le_bytes()
+            })
+            .unwrap();
+        assert_eq!(&normal.body[..2], &0x7fu16.to_le_bytes());
     }
 
     #[test]

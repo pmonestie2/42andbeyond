@@ -81,6 +81,10 @@ mean the corresponding gameplay system is complete.
   free-warp drain, quality overrides, JE passives and supported passive item buffs.
   Equipped beams use real damage/range/energy/reload; slot firing and cooldowns
   survive restart. Native AUX carries capacities, speed, range and ready state.
+  Warp source now uses the archived speed-only 0x3e mask, advancing movement IDs,
+  roughly half-second owner updates and immediate full velocity at departure;
+  disposable UDP measurements confirmed the packet sequence. Live deployment
+  awaits a coordinated restart.
 - Station-scoped NPC conversations and vendor services: 305 NPC definitions,
   261 usable SQL talk trees, 269 vendor groups and 8,497 item rows. Native
   dialogue/trade packets, contextual quotes, atomic cargo/credit purchases and

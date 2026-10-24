@@ -229,6 +229,23 @@ pub fn player_movement(id: u32, position: [f32; 3], tick: u32, motion: &Motion) 
     position_update(id, position, tick, Some(motion))
 }
 
+/// Returns:
+///     Frame: Native 0x3e movement with bitmask 0x01 and current speed.
+pub fn warp_movement(id: u32, position: [f32; 3], tick: u32, motion: &Motion) -> Frame {
+    let mut data = Vec::from(1u16.to_le_bytes());
+    data.extend_from_slice(&id.to_le_bytes());
+    data.extend_from_slice(&tick.to_le_bytes());
+    for value in position {
+        data.extend_from_slice(&value.to_le_bytes());
+    }
+    for value in motion.orientation {
+        data.extend_from_slice(&value.to_le_bytes());
+    }
+    data.extend_from_slice(&motion.movement_id.to_le_bytes());
+    data.extend_from_slice(&(motion.speed * 0.001).to_le_bytes());
+    Frame::new(0x3e, data)
+}
+
 fn position_update(id: u32, position: [f32; 3], tick: u32, motion: Option<&Motion>) -> Frame {
     let flags = if motion.is_some() { 0x7fu16 } else { 0 };
     let mut data = Vec::from(flags.to_le_bytes());
@@ -2157,6 +2174,28 @@ mod tests {
         assert_eq!(reader.f32().unwrap(), 0.25);
         assert_eq!(reader.f32().unwrap(), 0.25);
         assert_eq!(reader.f32().unwrap(), 0.);
+    }
+
+    #[test]
+    fn warp_packet_uses_native_speed_only_mask_and_movement_identity() {
+        let motion = Motion {
+            speed: 3000.,
+            set_speed: 3000.,
+            movement_id: 105,
+            ..Motion::default()
+        };
+        let packet = warp_movement(FIRST_PLAYER_ID, [100., 200., 300.], 1234, &motion);
+        assert_eq!(packet.body.len(), 46);
+        let mut reader = crate::protocol::Reader::new(&packet.body);
+        assert_eq!(reader.u16().unwrap(), 1);
+        assert_eq!(reader.u32().unwrap(), FIRST_PLAYER_ID);
+        assert_eq!(reader.u32().unwrap(), 1234);
+        for expected in [100., 200., 300., 0., 0., 0., 1.] {
+            assert_eq!(reader.f32().unwrap(), expected);
+        }
+        assert_eq!(reader.u32().unwrap(), 105);
+        assert_eq!(reader.f32().unwrap(), 3000f32 * 0.001);
+        assert!(reader.rest().is_empty());
     }
 
     #[test]
