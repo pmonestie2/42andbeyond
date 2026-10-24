@@ -720,7 +720,7 @@ namespace FortyTwoAndBeyond.Client
             string targetName = target.Name.ToUpperInvariant();
             float nameHeight = Mathf.Max(26, wrappedBody.CalcHeight(new GUIContent(targetName), 355));
             float nameExtra = nameHeight - 26;
-            float height = (target.IsPlayer ? canJumpstart ? 238 : 201 : 194) + nameExtra;
+            float height = (target.IsPlayer ? canJumpstart ? 238 : 201 : 238) + nameExtra;
             float x = CanvasWidth >= 1500 ? CanvasWidth - 720 : (CanvasWidth - 390) * .5f;
             float y = CanvasHeight - height - 122;
             Panel(new Rect(x, y, 390, height));
@@ -731,8 +731,11 @@ namespace FortyTwoAndBeyond.Client
             GUI.Label(new Rect(x + 15, y + 37, 355, nameHeight), targetName, wrappedBody);
             float distance = target.Position.Distance(snapshot.Position);
             bool firingAtTarget = snapshot.WeaponsFiring && snapshot.SelectedTargetId == target.Id;
+            CombatEngagement engagement = snapshot.Engagement?.TargetId == target.Id ? snapshot.Engagement : null;
+            bool recentShot = engagement?.LastShot != null && engagement.LastShotAgeSeconds <= 2f;
             GUI.Label(new Rect(x + 15, y + 65 + nameExtra, 355, 20),
-                $"RANGE {distance / 1000:0.00} km   ·   " + (firingAtTarget ? "WEAPONS FIRING" : "WEAPONS SAFE"), small);
+                $"RANGE {distance / 1000:0.00} km   ·   " +
+                (!firingAtTarget ? "WEAPONS SAFE" : recentShot ? "SHOT CONFIRMED" : "WEAPONS ARMED"), small);
             GUI.Label(new Rect(x + 15, y + 91 + nameExtra, 169, 18), target.Shield >= 0 ?
                 $"SHIELD  {Mathf.Clamp01(target.Shield) * 100:0}%" : "SHIELD  NO DATA", small);
             GUI.Label(new Rect(x + 204, y + 91 + nameExtra, 169, 18), target.MaxHull > 0 ?
@@ -741,12 +744,21 @@ namespace FortyTwoAndBeyond.Client
             if (target.MaxHull > 0) Meter(new Rect(x + 204, y + 112 + nameExtra, 169, 7), "", target.Hull / target.MaxHull, gold);
             if (!target.IsPlayer)
             {
+                GUI.Label(new Rect(x + 15, y + 134 + nameExtra, 355, 18),
+                    CombatGuidance(engagement, firingAtTarget), small);
+                if (engagement?.LastResult != null && engagement.LastResultAgeSeconds <= 2f)
+                {
+                    string result = engagement.LastResult.Outcome == DamageOutcome.Miss ? "MISS" :
+                        engagement.LastResult.Outcome == DamageOutcome.Critical ? "CRITICAL HIT" : "HIT";
+                    GUI.Label(new Rect(x + 15, y + 154 + nameExtra, 355, 18),
+                        $"SERVER RESULT  {result}  ·  {engagement.LastResultAgeSeconds:0.0}s AGO", small);
+                }
                 GUI.enabled = client.Ready && !client.Incapacitated;
-                if (GUI.Button(new Rect(x + 15, y + 136 + nameExtra, 229, 38),
+                if (GUI.Button(new Rect(x + 15, y + 180 + nameExtra, 229, 38),
                     firingAtTarget ? "STOP WEAPONS" : "FIRE ON TARGET", firingAtTarget ? hostileButton : primaryButton))
                 { if (firingAtTarget) client.StopWeapons(); else client.ToggleWeapons(target.Id); }
                 GUI.enabled = true;
-                if (GUI.Button(new Rect(x + 253, y + 136 + nameExtra, 120, 38), "FOLLOW", button)) client.FollowSelected();
+                if (GUI.Button(new Rect(x + 253, y + 180 + nameExtra, 120, 38), "FOLLOW", button)) client.FollowSelected();
                 return;
             }
             bool member = snapshot.Group.Members.Any(item => item.Id == target.Id);
@@ -772,6 +784,20 @@ namespace FortyTwoAndBeyond.Client
                     client.ActivateAbility(65u);
                 GUI.enabled = true;
             }
+        }
+
+        /// <returns>string: A concise readiness cue, with approximate range and arc hints.</returns>
+        private static string CombatGuidance(CombatEngagement engagement, bool armedIntent)
+        {
+            if (!armedIntent) return "SELECT FIRE TO ARM MOUNTED WEAPONS";
+            if (engagement == null || engagement.Weapons.Length == 0) return "NO MOUNTED WEAPON DATA";
+            WeaponReadiness[] armed = engagement.Weapons.Where(weapon => weapon.Armed).ToArray();
+            if (armed.Length == 0) return "ARMING WEAPONS  ·  AWAITING SERVER";
+            if (armed.All(weapon => weapon.OutOfAmmo)) return "NO AMMO IN ARMED WEAPONS";
+            if (armed.All(weapon => weapon.Cooling)) return "RELOADING  ·  SERVER COOLDOWN";
+            if (armed.All(weapon => weapon.BeyondListedRange)) return "BEYOND LISTED WEAPON RANGE";
+            if (armed.All(weapon => weapon.OutsideFiringArc)) return "AIM TOWARD TARGET  ·  40° ARC";
+            return $"{armed.Length} MOUNT{(armed.Length == 1 ? "" : "S")} ARMED  ·  AWAITING SERVER SHOT";
         }
 
         /// <summary>Keep an opened wreck and its tractorable items beside the flight view.</summary>

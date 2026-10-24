@@ -42,10 +42,14 @@ namespace FortyTwoAndBeyond.Client
         private readonly Transform parent, player;
         private readonly RemoteShips ships;
         private readonly Material material;
+        private Camera effectCamera;
         private LineRenderer miningHalo, miningCore, miningRing;
         private MiningActivity miningActivity;
         private Vector3 miningPoint;
-        private readonly LineRenderer[] warpStreaks = new LineRenderer[18];
+        private LineRenderer lootHalo, lootCore, lootFilament, lootRing;
+        private LootActivity lootActivity;
+        private Vector3 lootPoint;
+        private readonly LineRenderer[] warpStreaks = new LineRenderer[28];
         private WarpPhase warpPhase;
         private bool warpArrived;
         private float warpChangedAt;
@@ -111,6 +115,7 @@ namespace FortyTwoAndBeyond.Client
                 if (impacts.Count > 24) RemoveImpact(0);
             }
             SetWarpPhase(snapshot.WarpPhase, snapshot.WarpArrived);
+            SetLootActivity(snapshot);
             MiningActivity activity = snapshot.MiningActivity;
             MapObject resource = activity == null ? null : snapshot.Objects.FirstOrDefault(item =>
                 item.Id == activity.TargetId && item.Kind == 38);
@@ -133,11 +138,43 @@ namespace FortyTwoAndBeyond.Client
                 SpaceClient.Convert(snapshot.Position);
         }
 
+        /// <summary>Anchor a wreck tractor effect to the server's transfer position and identity.</summary>
+        private void SetLootActivity(Snapshot snapshot)
+        {
+            LootActivity activity = snapshot.LootActivity;
+            if (activity == null || snapshot.Station != null || snapshot.WarpPhase != WarpPhase.Idle)
+            { ClearLoot(); return; }
+            if (lootActivity == null || lootActivity.EffectId != activity.EffectId ||
+                lootActivity.ArticleId != activity.ArticleId)
+            {
+                ClearLoot();
+                Color tint = new Color(1f, .64f, .28f);
+                lootHalo = Line("Wreck tractor field", .17f, tint, 2);
+                lootCore = Line("Wreck tractor core", .035f, Color.white, 2);
+                lootFilament = Line("Wreck tractor flow", .025f, tint, 16);
+                lootRing = Line("Wreck pickup lock", .04f, tint, 33);
+                if (lootRing != null) lootRing.useWorldSpace = false;
+                foreach (LineRenderer line in new[] { lootHalo, lootCore, lootFilament, lootRing })
+                    if (line != null) line.enabled = false;
+            }
+            lootActivity = activity;
+            lootPoint = player.position + SpaceClient.Convert(activity.Position) -
+                SpaceClient.Convert(snapshot.Position);
+        }
+
         /// <returns>bool: Whether a visible actor's rendered world position was found.</returns>
         private bool TryPoint(uint id, out Vector3 position)
         {
             if (id == playerId) { position = player.position; return true; }
             return ships.TryPosition(id, out position);
+        }
+
+        /// <returns>Camera: The active flight camera, including scenes without a MainCamera tag.</returns>
+        private Camera ViewCamera()
+        {
+            if (effectCamera == null)
+                effectCamera = Camera.main != null ? Camera.main : Object.FindFirstObjectByType<Camera>();
+            return effectCamera;
         }
 
         /// <summary>Track moving endpoints and animate the server-confirmed effects.</summary>
@@ -169,7 +206,7 @@ namespace FortyTwoAndBeyond.Client
                 if (age >= .48f || !TryPoint(impact.Target, out Vector3 position))
                 { RemoveImpact(index); continue; }
                 impact.Ring.transform.position = position;
-                Camera camera = Camera.main;
+                Camera camera = ViewCamera();
                 if (camera != null) impact.Ring.transform.rotation = camera.transform.rotation;
                 float radius = .12f + age * (impact.Critical ? 2f : 1.4f);
                 for (int point = 0; point < 25; point++)
@@ -197,7 +234,7 @@ namespace FortyTwoAndBeyond.Client
                 Color core = Color.white; core.a = .65f + .25f * pulse;
                 miningCore.startColor = miningCore.endColor = core;
                 miningRing.transform.position = miningPoint;
-                Camera camera = Camera.main;
+                Camera camera = ViewCamera();
                 if (camera != null) miningRing.transform.rotation = camera.transform.rotation;
                 float radius = .45f + progress * .7f;
                 for (int point = 0; point < 25; point++)
@@ -209,7 +246,50 @@ namespace FortyTwoAndBeyond.Client
                 tint.a = .75f;
                 miningRing.startColor = miningRing.endColor = tint;
             }
+            TickLoot();
             TickWarp();
+        }
+
+        /// <summary>Animate only a server-started wreck transfer, fading when its timer completes.</summary>
+        private void TickLoot()
+        {
+            if (lootActivity == null || lootHalo == null || lootCore == null ||
+                lootFilament == null || lootRing == null) return;
+            float progress = lootActivity.Progress(Stopwatch.GetTimestamp());
+            float pulse = .7f + .3f * Mathf.Sin(Time.unscaledTime * 14f);
+            Vector3 origin = player.position + player.forward * .3f;
+            lootHalo.SetPosition(0, lootPoint); lootHalo.SetPosition(1, origin);
+            lootCore.SetPosition(0, lootPoint); lootCore.SetPosition(1, origin);
+            lootHalo.enabled = lootCore.enabled = true;
+            Color amber = new Color(1f, .55f, .2f, (.28f + .12f * pulse) * (1f - progress * .5f));
+            lootHalo.startColor = lootHalo.endColor = amber;
+            Color core = new Color(1f, .93f, .72f, .65f * (1f - progress * .4f));
+            lootCore.startColor = lootCore.endColor = core;
+            Vector3 axis = (origin - lootPoint).normalized;
+            Camera camera = ViewCamera();
+            Vector3 tangent = Vector3.Cross(axis, camera != null ? camera.transform.forward : Vector3.up).normalized;
+            if (tangent.sqrMagnitude < .01f) tangent = Vector3.right;
+            for (int index = 0; index < 16; index++)
+            {
+                float along = index / 15f;
+                float wave = Mathf.Sin(along * Mathf.PI * 5f - Time.unscaledTime * 12f) *
+                    Mathf.Sin(along * Mathf.PI) * .13f;
+                lootFilament.SetPosition(index, Vector3.Lerp(lootPoint, origin, along) + tangent * wave);
+            }
+            lootFilament.enabled = true;
+            amber.a = .75f;
+            lootFilament.startColor = lootFilament.endColor = amber;
+            lootRing.transform.position = lootPoint;
+            if (camera != null) lootRing.transform.rotation = camera.transform.rotation;
+            float radius = .38f + progress * .5f + .06f * pulse;
+            for (int index = 0; index < 33; index++)
+            {
+                float angle = index * Mathf.PI * 2 / 32;
+                lootRing.SetPosition(index, new Vector3(Mathf.Cos(angle) * radius,
+                    Mathf.Sin(angle) * radius, 0));
+            }
+            lootRing.enabled = true;
+            lootRing.startColor = lootRing.endColor = amber;
         }
 
         /// <summary>Follow only the own-ship warp phase decoded from the native server event.</summary>
@@ -224,6 +304,7 @@ namespace FortyTwoAndBeyond.Client
                 for (int index = beams.Count - 1; index >= 0; index--) RemoveBeam(index);
                 for (int index = impacts.Count - 1; index >= 0; index--) RemoveImpact(index);
                 ClearMining();
+                ClearLoot();
             }
             for (int index = 0; index < warpStreaks.Length; index++)
                 if (warpStreaks[index] == null)
@@ -232,13 +313,14 @@ namespace FortyTwoAndBeyond.Client
                         new Color(.45f, .84f, 1f, .4f), 2);
                     if (warpStreaks[index] != null) warpStreaks[index].enabled = false;
                 }
+            TickWarp();
         }
 
         /// <summary>Animate phase-specific speed lines without changing authoritative movement.</summary>
         private void TickWarp()
         {
             if (warpPhase == WarpPhase.Idle) return;
-            Camera camera = Camera.main;
+            Camera camera = ViewCamera();
             if (camera == null) return;
             float age = Time.unscaledTime - warpChangedAt;
             float fade = warpPhase == WarpPhase.Charging ? Mathf.Clamp01(age / 1.2f) :
@@ -248,21 +330,21 @@ namespace FortyTwoAndBeyond.Client
                 LineRenderer streak = warpStreaks[index];
                 if (streak == null) continue;
                 float angle = index * 2.39996f;
-                float radius = .25f + (index % 4) * .035f;
-                float drift = Mathf.Repeat(Time.unscaledTime * .16f + index * .17f, .12f);
+                float radius = .21f + (index % 6) * .038f;
+                float drift = Mathf.Repeat(Time.unscaledTime * .24f + index * .17f, .11f);
                 float x = .5f + Mathf.Cos(angle) * (radius + drift);
                 float y = .5f + Mathf.Sin(angle) * (radius + drift);
-                float length = warpPhase == WarpPhase.Traveling ? .045f : .012f;
-                Vector3 start = camera.ViewportToWorldPoint(new Vector3(x, y, 12f));
+                float length = warpPhase == WarpPhase.Traveling ? .066f : .02f;
+                Vector3 start = camera.ViewportToWorldPoint(new Vector3(x, y, 8f));
                 Vector3 end = camera.ViewportToWorldPoint(new Vector3(
-                    x + Mathf.Cos(angle) * length, y + Mathf.Sin(angle) * length, 12f));
+                    x + Mathf.Cos(angle) * length, y + Mathf.Sin(angle) * length, 8f));
                 streak.SetPosition(0, start);
                 streak.SetPosition(1, end);
                 streak.enabled = true;
                 Color color = warpArrived ? new Color(1f, .74f, .34f) : new Color(.44f, .83f, 1f);
-                color.a = .48f * fade;
+                color.a = .72f * fade;
                 streak.startColor = streak.endColor = color;
-                streak.widthMultiplier = .022f * fade;
+                streak.widthMultiplier = .045f * fade;
             }
         }
 
@@ -286,6 +368,15 @@ namespace FortyTwoAndBeyond.Client
             miningActivity = null;
         }
 
+        /// <summary>Remove a wreck tractor as soon as its native transfer ends.</summary>
+        private void ClearLoot()
+        {
+            foreach (LineRenderer line in new[] { lootHalo, lootCore, lootFilament, lootRing })
+                if (line != null) Object.Destroy(line.gameObject);
+            lootHalo = lootCore = lootFilament = lootRing = null;
+            lootActivity = null;
+        }
+
         /// <summary>Destroy one expired two-layer beam.</summary>
         private void RemoveBeam(int index)
         {
@@ -304,6 +395,7 @@ namespace FortyTwoAndBeyond.Client
             for (int index = beams.Count - 1; index >= 0; index--) RemoveBeam(index);
             for (int index = impacts.Count - 1; index >= 0; index--) RemoveImpact(index);
             ClearMining();
+            ClearLoot();
             ClearWarp(); warpPhase = WarpPhase.Idle; warpArrived = false;
             lastShotSequence = lastDamageSequence = 0; playerId = 0;
         }
