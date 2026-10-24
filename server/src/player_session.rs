@@ -32,6 +32,8 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 #[path = "ability_actions.rs"]
 mod ability_actions;
+#[path = "combat_experience.rs"]
+mod combat_experience;
 #[path = "dev_session.rs"]
 mod dev_session;
 #[path = "follow_service.rs"]
@@ -3591,6 +3593,65 @@ mod tests {
                 .unwrap();
         assert_eq!(saved.explore_xp, 500);
         assert_eq!(saved.xp_start_level, 0);
+    }
+
+    /// A durable kill event replays safely across failed and repeated commits.
+    #[test]
+    fn combat_kill_award_commits_once_before_world_acknowledgment() {
+        let mut ship = session();
+        ship.logged_in = true;
+        let birth = crate::loot_world::CorpseBirth {
+            death: crate::loot_world::MobDeath {
+                spawn: 9999,
+                generation: 1,
+            },
+            template: 1,
+            name: "XP target".into(),
+            level: 50,
+            killer: ship.player_id(),
+            position: [0.; 3],
+            now_ms: crate::resources::unix_ms(),
+        };
+        let catalog = crate::loot::LootCatalog::load().unwrap();
+        lock_loot(&ship.loot_world)
+            .unwrap()
+            .spawn(birth, &catalog, &ship.items)
+            .unwrap();
+        let award = lock_loot(&ship.loot_world)
+            .unwrap()
+            .pending_awards(ship.player_id())
+            .pop()
+            .unwrap();
+        fs::create_dir_all(&ship.state_dir).unwrap();
+        let blocked = ship.state_dir.join("inventory.json.tmp");
+        fs::create_dir(&blocked).unwrap();
+        assert!(ship.settle_kill_award(&award).is_err());
+        assert_eq!(ship.inventory.combat_xp, 0);
+        assert_eq!(
+            lock_loot(&ship.loot_world)
+                .unwrap()
+                .pending_awards(ship.player_id())
+                .len(),
+            1
+        );
+        fs::remove_dir(&blocked).unwrap();
+
+        ship.settle_kill_award(&award).unwrap();
+        assert_eq!(ship.inventory.combat_xp, 1000);
+        ship.settle_kill_award(&award).unwrap(); // world acknowledgment was interrupted
+        assert_eq!(ship.inventory.combat_xp, 1000);
+        lock_loot(&ship.loot_world)
+            .unwrap()
+            .acknowledge_award(&award)
+            .unwrap();
+        assert!(lock_loot(&ship.loot_world)
+            .unwrap()
+            .pending_awards(ship.player_id())
+            .is_empty());
+        let restored =
+            PlayerSession::new(ship.sector.clone(), ship.bind, ship.state_dir.clone()).unwrap();
+        assert_eq!(restored.inventory.combat_xp, 1000);
+        assert_eq!(restored.inventory.combat_awards[&award.receipt_key()], 1);
     }
     #[test]
     fn resources_stream_once_and_leave_visibility_without_duplicate_creation() {

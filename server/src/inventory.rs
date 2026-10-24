@@ -82,6 +82,9 @@ pub struct Inventory {
     pub harvests: BTreeMap<u32, crate::resources::HarvestReceipt>,
     #[serde(default)]
     pub combat_xp: u64,
+    /// Latest credited death generation per sector and public spawn.
+    #[serde(default)]
+    pub combat_awards: BTreeMap<u64, u64>,
     #[serde(default)]
     pub explore_xp: u64,
     #[serde(default)]
@@ -226,6 +229,7 @@ impl Inventory {
             pending_launch: None,
             harvests: BTreeMap::new(),
             combat_xp: 0,
+            combat_awards: BTreeMap::new(),
             explore_xp: 0,
             trade_xp: 0,
             xp_start_level: sandbox_xp_start_level(),
@@ -270,6 +274,14 @@ impl Inventory {
     pub fn validate(&self, templates: &ItemCatalog) -> io::Result<()> {
         if self.xp_start_level > crate::experience::MAX_LEVEL {
             return Err(invalid("Invalid XP starting level."));
+        }
+        if self.combat_awards.len() > 20_000
+            || self
+                .combat_awards
+                .iter()
+                .any(|(key, generation)| key >> 32 == 0 || *key as u32 == 0 || *generation == 0)
+        {
+            return Err(invalid("Invalid combat award receipts."));
         }
         if !self.faction_standings.is_empty() {
             crate::factions::FactionCatalog::load()?.validate_overrides(&self.faction_standings)?;

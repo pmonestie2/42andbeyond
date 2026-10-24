@@ -100,6 +100,7 @@ impl GameState {
         for id in ids {
             state.attach_session(id)?;
         }
+        state.load_saved_loot_worlds()?;
         // A restart can occur before a departing player's cleanup tick. Clear
         // those account identities from each loaded sector's saved hate table.
         for (&sector, combat) in &state.combats {
@@ -158,6 +159,39 @@ impl GameState {
                 session.register_loot_receipts(&mut *lock_loot(world)?)?;
             }
             self.sessions.insert(id, session);
+        }
+        Ok(())
+    }
+
+    /// Load saved sectors with pending kills even when no pilot is there now.
+    fn load_saved_loot_worlds(&mut self) -> io::Result<()> {
+        let directory = self.root.join("loot");
+        if !directory.is_dir() {
+            return Ok(());
+        }
+        let items = crate::items::ItemCatalog::load()?;
+        for entry in std::fs::read_dir(directory)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.extension().and_then(|value| value.to_str()) != Some("json") {
+                continue;
+            }
+            let Some(sector) = path
+                .file_stem()
+                .and_then(|value| value.to_str())
+                .and_then(|value| value.parse::<u32>().ok())
+                .filter(|sector| (1..10_000).contains(sector))
+            else {
+                continue;
+            };
+            if self.loot_worlds.contains_key(&sector) {
+                continue;
+            }
+            let mut world = LootWorld::load(path, sector, &items)?;
+            for session in self.sessions.values() {
+                session.register_loot_receipts(&mut world)?;
+            }
+            self.loot_worlds.insert(sector, Arc::new(Mutex::new(world)));
         }
         Ok(())
     }
@@ -377,6 +411,28 @@ impl GameState {
             .handle_udp(port, peer, packet)
     }
 
+    /// Commit owner receipts before removing durable sector kill events.
+    fn settle_combat_awards(&mut self) -> io::Result<()> {
+        let worlds: Vec<_> = self.loot_worlds.values().cloned().collect();
+        for world in worlds {
+            let awards = {
+                let state = lock_loot(&world)?;
+                self.sessions
+                    .iter()
+                    .filter(|(_, session)| session.logged_in)
+                    .flat_map(|(id, _)| state.pending_awards(*id))
+                    .collect::<Vec<_>>()
+            };
+            for award in awards {
+                if let Some(session) = self.sessions.get_mut(&award.killer) {
+                    session.settle_kill_award(&award)?;
+                    lock_loot(&world)?.acknowledge_award(&award)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
     pub fn advance(&mut self, dt: f32) -> io::Result<()> {
         self.advance_at(dt, crate::resources::unix_ms())
     }
@@ -472,6 +528,7 @@ impl GameState {
                     .capture_deaths(&*lock_combat(combat)?, crate::resources::unix_ms())?;
             }
         }
+        self.settle_combat_awards()?;
         let connected: HashSet<u32> = self
             .sessions
             .iter()

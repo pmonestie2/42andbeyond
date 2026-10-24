@@ -122,6 +122,50 @@ fn land_npc_shots(game: &mut GameState) {
 }
 
 #[test]
+fn shared_combat_kill_awards_one_durable_combat_xp_receipt() {
+    let initial = game();
+    let root = initial.root.clone();
+    let sector = initial.initial_sector.clone();
+    let bind = initial.bind;
+    drop(initial);
+    let path = root.join("inventory.json");
+    let mut inventory: serde_json::Value =
+        serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    inventory["xp_start_level"] = serde_json::json!(1);
+    fs::write(&path, serde_json::to_vec(&inventory).unwrap()).unwrap();
+
+    let mut game = GameState::new(sector.clone(), bind, root.clone()).unwrap();
+    let player = FIRST_PLAYER_ID;
+    login(&mut game, player, 22451, "alice");
+    let combat = Arc::clone(&game.sessions[&player].combat);
+    let spawn = {
+        let mut world = lock_combat(&combat).unwrap();
+        let mob = &mut world.actors[0];
+        assert_eq!(mob.definition.level, 1);
+        mob.damage_by(1_000_000., player);
+        mob.definition.source_id
+    };
+    game.advance_at(0., crate::resources::unix_ms()).unwrap();
+    let saved: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    assert_eq!(saved["combat_xp"], 1000);
+    let key = ((1076u64 << 32) | spawn as u64).to_string();
+    assert_eq!(saved["combat_awards"][&key], 1);
+    assert!(lock_loot(&game.loot_worlds[&1076])
+        .unwrap()
+        .pending_awards(player)
+        .is_empty());
+
+    game.advance_at(0., crate::resources::unix_ms()).unwrap();
+    drop(game);
+    let restored = GameState::new(sector, bind, root).unwrap();
+    let saved: serde_json::Value = serde_json::from_slice(
+        &fs::read(restored.sessions[&player].state_dir.join("inventory.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(saved["combat_xp"], 1000);
+}
+
+#[test]
 fn native_jumpstart_action_recovers_an_incapacitated_player_without_a_group() {
     let mut game = game();
     let source = FIRST_PLAYER_ID;

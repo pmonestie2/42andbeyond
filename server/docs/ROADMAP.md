@@ -108,8 +108,12 @@ mean the corresponding gameplay system is complete.
 - Archived XP thresholds and skill-point bands now derive native combat, trade
   and explore bars from durable earned totals. Mining, refining and crafting
   commits publish updated player AUX after persistence. Existing sandbox pilots
-  retain their level-50 starting tracks; combat kill awards, spending points
-  and ordinary level-one character creation remain open.
+  retain their level-50 starting tracks. Player-owned MOB kills now queue a
+  durable sector award even when the MOB has no loot table; the player's XP and
+  death-generation receipt commit together before the world event is removed.
+  Queued awards replay after replacement, including sectors without a current
+  player. Group XP sharing, skill-point spending and ordinary level-one
+  character creation remain open.
 - Vault transfers require an authoritative station sector. Rejected space
   transfers preserve the inventory and send the current cargo/vault state.
 - Public Turbo Weapons devices now supply a timed self-buff through the same

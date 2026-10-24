@@ -55,6 +55,30 @@ pub fn track(start_level: u32, earned_xp: u64) -> io::Result<TrackProgress> {
     })
 }
 
+/// Apply the archived MOB level-difference combat XP table.
+///
+/// Returns:
+///     u64: Base kill award before future group-sharing rules.
+pub fn mob_xp(mob_level: u32, combat_level: u32) -> u64 {
+    let difference = mob_level as i32 - combat_level as i32;
+    match difference {
+        ..=-11 => 0,
+        -10..=-4 => 100,
+        -3 => 250,
+        -2 => 500,
+        -1 => 800,
+        0 => 1000,
+        1 => 1200,
+        2 => 1500,
+        3 => 1750,
+        4 => 2000,
+        5 => 3000,
+        6 => 4000,
+        7 => 5000,
+        _ => 8000,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -97,5 +121,30 @@ mod tests {
                 .level,
             50
         );
+    }
+
+    /// Preserve the archived relative-level combat XP breakpoints.
+    #[test]
+    fn mob_awards_follow_archived_relative_level_table() {
+        assert_eq!(mob_xp(39, 50), 0);
+        for (difference, expected) in [
+            (-10, 100),
+            (-4, 100),
+            (-3, 250),
+            (-2, 500),
+            (-1, 800),
+            (0, 1000),
+            (1, 1200),
+            (2, 1500),
+            (3, 1750),
+            (4, 2000),
+            (5, 3000),
+            (6, 4000),
+            (7, 5000),
+            (8, 8000),
+            (20, 8000),
+        ] {
+            assert_eq!(mob_xp((50 + difference) as u32, 50), expected);
+        }
     }
 }

@@ -36,6 +36,11 @@ impl PlayerSession {
             self.publish_resources()?;
             lock_loot(&self.loot_world)?
                 .capture_deaths(&*lock_combat(&self.combat)?, crate::resources::unix_ms())?;
+            let awards = lock_loot(&self.loot_world)?.pending_awards(self.player_id());
+            for award in awards {
+                self.settle_kill_award(&award)?;
+                lock_loot(&self.loot_world)?.acknowledge_award(&award)?;
+            }
             self.publish_corpses()?;
         }
         self.harvest_visuals.clear(); // standalone helper has no peer coordinator

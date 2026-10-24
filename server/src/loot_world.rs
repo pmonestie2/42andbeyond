@@ -35,7 +35,7 @@ impl LootReceipt {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MobDeath {
     pub spawn: u32,
     pub generation: u64,
@@ -51,6 +51,22 @@ pub struct CorpseBirth {
     pub killer: u32,
     pub position: [f32; 3],
     pub now_ms: u64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct KillAward {
+    pub sector: u32,
+    pub death: MobDeath,
+    pub killer: u32,
+    pub level: u32,
+}
+
+impl KillAward {
+    /// Returns:
+    ///     u64: Stable sector and spawn key for the owner's generation receipt.
+    pub fn receipt_key(&self) -> u64 {
+        (u64::from(self.sector) << 32) | u64::from(self.death.spawn)
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -135,6 +151,8 @@ struct WorldFile {
     next_id: u32,
     deaths: BTreeMap<u32, DeathRecord>,
     corpses: BTreeMap<u32, Corpse>,
+    #[serde(default)]
+    awards: Vec<KillAward>,
 }
 
 pub struct LootWorld {
@@ -171,6 +189,7 @@ impl LootWorld {
                 next_id: FIRST_CORPSE,
                 deaths: BTreeMap::new(),
                 corpses: BTreeMap::new(),
+                awards: Vec::new(),
             }
         };
         if state.version != 1
@@ -183,6 +202,18 @@ impl LootWorld {
                 .iter()
                 .any(|(spawn, death)| *spawn == 0 || death.generation == 0 || death.killed_ms == 0)
             || state.corpses.len() > 4096
+            || state.awards.len() > 8192
+            || state.awards.iter().any(|award| {
+                award.sector != sector
+                    || award.death.spawn == 0
+                    || award.death.generation == 0
+                    || award.killer & 0xff000000 != 0x40000000
+                    || !(1..=100).contains(&award.level)
+                    || state
+                        .deaths
+                        .get(&award.death.spawn)
+                        .is_none_or(|death| death.generation < award.death.generation)
+            })
         {
             return Err(invalid("Invalid corpse world file."));
         }
@@ -252,30 +283,86 @@ impl LootWorld {
             let Some(killer) = mob.killer else {
                 continue;
             };
-            if catalog.get(mob.definition.template_id).is_none() {
-                continue;
-            }
-            self.spawn(
-                CorpseBirth {
-                    death: MobDeath {
-                        spawn: mob.definition.source_id,
-                        generation: mob.death_generation,
-                    },
-                    template: mob.definition.template_id,
-                    name: mob.definition.name.clone(),
-                    level: mob.definition.level,
-                    killer,
-                    position: mob.position,
-                    now_ms,
+            let birth = CorpseBirth {
+                death: MobDeath {
+                    spawn: mob.definition.source_id,
+                    generation: mob.death_generation,
                 },
-                &catalog,
-                &items,
-            )?;
+                template: mob.definition.template_id,
+                name: mob.definition.name.clone(),
+                level: mob.definition.level,
+                killer,
+                position: mob.position,
+                now_ms,
+            };
+            if catalog.get(mob.definition.template_id).is_some() {
+                self.spawn(birth, &catalog, &items)?;
+            } else {
+                self.record_kill_only(&birth)?;
+            }
         }
         Ok(())
     }
     pub fn corpses(&self) -> impl Iterator<Item = &Corpse> {
         self.state.corpses.values()
+    }
+
+    /// Returns:
+    ///     Vec<KillAward>: Durable unacknowledged kills credited to this pilot.
+    pub fn pending_awards(&self, killer: u32) -> Vec<KillAward> {
+        self.state
+            .awards
+            .iter()
+            .filter(|award| award.killer == killer)
+            .cloned()
+            .collect()
+    }
+
+    /// Remove an event only after the owner's inventory receipt is durable.
+    pub fn acknowledge_award(&mut self, award: &KillAward) -> io::Result<()> {
+        if !self.state.awards.contains(award) {
+            return Ok(());
+        }
+        let mut candidate = self.state.clone();
+        candidate.awards.retain(|entry| entry != award);
+        self.save(&candidate)?;
+        self.state = candidate;
+        Ok(())
+    }
+
+    /// Record player combat XP for a public MOB with no loot table.
+    fn record_kill_only(&mut self, birth: &CorpseBirth) -> io::Result<()> {
+        if birth.death.spawn == 0
+            || birth.death.generation == 0
+            || birth.now_ms == 0
+            || !(1..=100).contains(&birth.level)
+            || birth.killer & 0xff000000 != 0x40000000
+        {
+            return Err(invalid("Invalid authoritative combat kill."));
+        }
+        if birth.death.generation <= self.generation(birth.death.spawn) {
+            return Ok(());
+        }
+        let mut candidate = self.state.clone();
+        if candidate.awards.len() >= 8192 {
+            return Err(invalid("Unclaimed combat award queue is full."));
+        }
+        candidate.deaths.insert(
+            birth.death.spawn,
+            DeathRecord {
+                generation: birth.death.generation,
+                killed_ms: birth.now_ms,
+            },
+        );
+        candidate.awards.push(KillAward {
+            sector: self.state.sector,
+            death: birth.death,
+            killer: birth.killer,
+            level: birth.level,
+        });
+        self.save(&candidate)?;
+        self.state = candidate;
+        Ok(())
     }
     pub fn get(&self, id: u32) -> io::Result<&Corpse> {
         self.state
@@ -312,7 +399,10 @@ impl LootWorld {
         candidate.corpses.retain(|_, corpse| {
             birth.now_ms < corpse.created_ms.saturating_add(CORPSE_LIFETIME_MS)
         });
-        if candidate.corpses.len() >= 4096 || candidate.next_id >= CORPSE_LIMIT {
+        if candidate.corpses.len() >= 4096
+            || candidate.next_id >= CORPSE_LIMIT
+            || candidate.awards.len() >= 8192
+        {
             return Err(invalid("Corpse world capacity reached."));
         }
         let id = candidate.next_id;
@@ -328,6 +418,12 @@ impl LootWorld {
                 killed_ms: birth.now_ms,
             },
         );
+        candidate.awards.push(KillAward {
+            sector: self.state.sector,
+            death: birth.death,
+            killer: birth.killer,
+            level: birth.level,
+        });
         candidate.corpses.insert(
             id,
             Corpse {
@@ -615,7 +711,9 @@ mod tests {
         let mut world = LootWorld::load(path.clone(), 1076, &items).unwrap();
         let id = world.spawn(birth(1), &catalog(), &items).unwrap().unwrap();
         assert_eq!(world.spawn(birth(1), &catalog(), &items).unwrap(), Some(id));
+        assert_eq!(world.pending_awards(ALICE).len(), 1);
         let mut restored = LootWorld::load(path.clone(), 1076, &items).unwrap();
+        assert_eq!(restored.pending_awards(ALICE), world.pending_awards(ALICE));
         assert_eq!(
             restored.get(id).unwrap().initial,
             world.get(id).unwrap().initial
@@ -630,7 +728,29 @@ mod tests {
         assert!(restored.spawn(birth(2), &catalog(), &items).is_err());
         assert_eq!(restored.generation(10), 1);
         assert_eq!(restored.corpses().count(), 1);
+        assert_eq!(restored.pending_awards(ALICE).len(), 1);
         fs::remove_dir(&path).unwrap();
+        fs::remove_dir(path.parent().unwrap()).unwrap();
+    }
+
+    /// Kills without a loot table still enter the durable combat award queue.
+    #[test]
+    fn no_loot_kills_have_acknowledgeable_replayable_xp_events() {
+        let items = ItemCatalog::load().unwrap();
+        let path = path();
+        let mut world = LootWorld::load(path.clone(), 1076, &items).unwrap();
+        world.record_kill_only(&birth(1)).unwrap();
+        assert_eq!(world.corpses().count(), 0);
+        assert_eq!(world.pending_awards(ALICE).len(), 1);
+        let mut restored = LootWorld::load(path.clone(), 1076, &items).unwrap();
+        let award = restored.pending_awards(ALICE).pop().unwrap();
+        restored.acknowledge_award(&award).unwrap();
+        restored.acknowledge_award(&award).unwrap();
+        assert!(LootWorld::load(path.clone(), 1076, &items)
+            .unwrap()
+            .pending_awards(ALICE)
+            .is_empty());
+        fs::remove_file(&path).unwrap();
         fs::remove_dir(path.parent().unwrap()).unwrap();
     }
 
