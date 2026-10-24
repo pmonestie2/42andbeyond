@@ -116,10 +116,14 @@ namespace FortyTwoAndBeyond.Protocol
             return new ShipActor(ship.Id, ship.Asset, ship.Scale, name, ship.Position, ship.Orientation,
                 ship.HasPosition, ship.IsPlayer, ship.Hostile, shield, hull, maxHull);
         }
-        /// <summary>Read owned ship resources and inventory without interpreting unrelated AUX fields.</summary>
-        public static void ReadOwn(byte[] body, EquipmentState equipment)
+        /// <summary>
+        /// Returns:
+        ///     WarpState: An authoritative warp revision, or null when this diff omits warp fields.
+        /// </summary>
+        public static WarpState ReadOwn(byte[] body, EquipmentState equipment)
         {
             var reader = new AuxState(body); Flags fields = reader.Mask(58);
+            uint? privateWarp = null, globalWarp = null;
             for (int i = 0; i <= 36; i++)
             {
                 if (!fields.Present[i] && fields.Default[i] && (i == 4 || i == 6 || i == 35 || i == 36))
@@ -137,11 +141,16 @@ namespace FortyTwoAndBeyond.Protocol
                     case 10: case 11: case 12: case 13: case 14: case 15: reader.Float(); break;
                     case 16: case 17: case 18: case 19: case 20: case 21: reader.Byte(); break;
                     case 27: equipment.TargetId = reader.UInt(); break;
-                    case 26: case 31: case 32: case 33: case 34: reader.UInt(); break;
+                    case 26: case 33: case 34: reader.UInt(); break;
+                    case 31: privateWarp = reader.UInt(); break;
+                    case 32: globalWarp = reader.UInt(); break;
                     case 36: reader.Inventory(equipment); break;
-                    default: return;
+                    default: return null;
                 }
             }
+            if (privateWarp.HasValue != globalWarp.HasValue)
+                throw new InvalidDataException("Incomplete native warp phase.");
+            return privateWarp.HasValue ? WarpState.Decode(privateWarp.Value, globalWarp.Value) : null;
         }
         /// <summary>Read ship inventory updates in native field order.</summary>
         private void Inventory(EquipmentState equipment)

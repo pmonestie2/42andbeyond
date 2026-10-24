@@ -415,6 +415,7 @@ namespace FortyTwoAndBeyond.Protocol
         public uint ResourceTargetId { get; private set; }
         public bool ResourceWindowOpen { get; private set; }
         public MiningActivity MiningActivity { get; private set; }
+        public WarpState Warp { get; private set; } = WarpState.Decode(0, 0);
         /// <summary>Track the selected resource while awaiting its native prospecting window.</summary>
         public void SetResourceTarget(uint id) { ResourceTargetId = id; ResourceWindowOpen = false; }
         /// <summary>Track the requested NPC while waiting for its talk tree.</summary>
@@ -449,7 +450,7 @@ namespace FortyTwoAndBeyond.Protocol
                     if (firstEnd < 0 || firstEnd + 1 >= b.Length) throw new InvalidDataException("Missing sector name.");
                     string name = Wire.Text(b, firstEnd + 1, b.Length - firstEnd - 1);
                     if (name.Length == 0) throw new InvalidDataException("Empty sector name.");
-                    if (Sector != name) { Objects.Clear(); Players.Clear(); Mobs.Clear(); StationAvatars.Clear(); Loot.Clear(); Resources.Clear(); ResourceTargetId = 0; ResourceWindowOpen = false; MiningActivity = null; OpenLootId = 0; Shots.Clear(); Damages.Clear(); ClearConfirmation(); nextShot = nextDamage = 0; }
+                    if (Sector != name) { Objects.Clear(); Players.Clear(); Mobs.Clear(); StationAvatars.Clear(); Loot.Clear(); Resources.Clear(); ResourceTargetId = 0; ResourceWindowOpen = false; MiningActivity = null; Warp = WarpState.Decode(0, 0); OpenLootId = 0; Shots.Clear(); Damages.Clear(); ClearConfirmation(); nextShot = nextDamage = 0; }
                     Sector = name;
                     break;
                 case 0x4f:
@@ -460,6 +461,7 @@ namespace FortyTwoAndBeyond.Protocol
                     StationAvatars.Clear();
                     Dialogue = null; Vendor = Array.Empty<ItemState>();
                     ResourceTargetId = 0; ResourceWindowOpen = false; MiningActivity = null;
+                    if (Station != null) Warp = WarpState.Decode(0, 0);
                     if (Station != null) Sector = "Station " + Station.Id;
                     break;
                 case 0x7f:
@@ -595,7 +597,11 @@ namespace FortyTwoAndBeyond.Protocol
                         GroupState group = AuxState.ReadGroup(b);
                         if (group != null) { Group = group; if (group.Joined) ClearInvitation(); }
                     }
-                    else if (Wire.U32(b, 0) == player) AuxState.ReadOwn(b, Equipment);
+                    else if (Wire.U32(b, 0) == player)
+                    {
+                        WarpState warp = AuxState.ReadOwn(b, Equipment);
+                        if (warp != null) Warp = warp;
+                    }
                     else if (Station != null && Production.LabId != 0 &&
                         Wire.U32(b, 0) == Production.LabId)
                         AuxState.ReadProduction(b, Production);
@@ -746,6 +752,8 @@ namespace FortyTwoAndBeyond.Protocol
         public readonly bool ResourceWindowOpen;
         public readonly MiningActivity MiningActivity;
         public readonly float MiningProgress, MiningRemainingSeconds;
+        public readonly WarpPhase WarpPhase;
+        public readonly bool WarpArrived;
         public readonly string Invitation;
         public readonly ConfirmationPrompt Confirmation;
         public readonly string[] Messages;
@@ -794,6 +802,7 @@ namespace FortyTwoAndBeyond.Protocol
             MiningProgress = MiningActivity?.Progress(now) ?? 0;
             MiningRemainingSeconds = MiningActivity == null ? 0 :
                 MiningActivity.DurationSeconds * (1 - MiningProgress);
+            WarpPhase = world.Warp.Phase; WarpArrived = world.Warp.Arrived;
             Invitation = world.Invitation; Confirmation = world.Confirmation; Messages = world.Messages.ToArray();
             OpenLootId = world.OpenLootId;
             Loot = world.Loot.Select(entry => new CorpseLoot(entry.Key, entry.Value, world.ItemCatalog)).ToArray();

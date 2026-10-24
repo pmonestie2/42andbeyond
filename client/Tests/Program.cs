@@ -12,7 +12,7 @@ internal static class Program
     private static void Main(string[] args)
     {
         CheckReassembly(); CheckWorld(); CheckMissionJournal(); CheckMissionDialogue();
-        CheckExperience(); CheckMiningPhases(); CheckFlightThrottle();
+        CheckExperience(); CheckMiningPhases(); CheckWarpPhases(); CheckFlightThrottle();
         CheckStationLayout(); CheckStationWalk(); CheckDemoRoster(); CheckAddress(); PeerChecks.Decode();
         Console.WriteLine("PASS: framing, ordering, fragmentation, duplicates, bounds, world decoding, private addresses");
         if (args.Length == 2 && args[0] == "--server") { PeerChecks.Live(args[1]); CheckServer(args[1]); }
@@ -237,6 +237,43 @@ internal static class Program
         byte[] invalid = (byte[])prospect.Clone();
         Array.Copy(BitConverter.GetBytes(100001u), 0, invalid, 16, 4);
         Reject(() => world.Apply(new Frame(0x2012, invalid), 1));
+    }
+
+    /// <summary>Keep warp visuals tied to the server's own-ship AUX phase revisions.</summary>
+    private static void CheckWarpPhases()
+    {
+        var world = new World();
+        byte[] phase(uint local, uint global) => Wire.Body(writer =>
+        {
+            writer.Write(1u); writer.Write((ushort)17); writer.Write((byte)1);
+            writer.Write(new byte[] { 2, 0, 0, 0, 0x18, 0, 0, 0 });
+            writer.Write(local); writer.Write(global);
+        });
+        world.Apply(new Frame(0x1b, phase(1, 1)), 1);
+        Snapshot charging = new Snapshot(world, "ready", true);
+        Assert(charging.WarpPhase == WarpPhase.Charging && !charging.WarpArrived,
+            "Native charge AUX did not start the warp display.");
+        world.Apply(new Frame(0x1b, phase(2, 2)), 1);
+        Assert(world.Warp.Phase == WarpPhase.Traveling && charging.WarpPhase == WarpPhase.Charging,
+            "Travel AUX did not advance warp while preserving the older snapshot.");
+        byte[] unrelated = Wire.Body(writer =>
+        {
+            writer.Write(1u); writer.Write((ushort)13); writer.Write((byte)1);
+            writer.Write(new byte[] { 2, 0, 0, 0, 0x20, 0, 0, 0 }); writer.Write(2u);
+        });
+        world.Apply(new Frame(0x1b, unrelated), 1);
+        Assert(world.Warp.Phase == WarpPhase.Traveling,
+            "An unrelated ship AUX diff erased warp travel.");
+        world.Apply(new Frame(0x1b, phase(8, 3)), 1);
+        Assert(world.Warp.Phase == WarpPhase.Recovering && world.Warp.Arrived,
+            "Arrival recovery lost the native arrival reason.");
+        world.Apply(new Frame(0x1b, phase(0, 0)), 1);
+        Assert(world.Warp.Phase == WarpPhase.Idle && !world.Warp.Arrived,
+            "Ready AUX did not clear warp recovery.");
+        world.Apply(new Frame(0x1b, phase(3, 3)), 1);
+        Assert(world.Warp.Phase == WarpPhase.Recovering && !world.Warp.Arrived,
+            "Cancelled warp recovery was mistaken for arrival.");
+        Reject(() => world.Apply(new Frame(0x1b, phase(2, 3)), 1));
     }
 
     /// <summary>Keep held flight controls reachable after focus and text entry.</summary>
