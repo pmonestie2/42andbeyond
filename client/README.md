@@ -324,3 +324,12 @@ owned Windows Earth & Beyond installation: entry 681, offset 16,047,960,
 length 240 bytes. The extracted DDS SHA-256 is
 `f5396a236a48343948e7a6a62c45df735b2c6f35ac4a3594e30e6df2f5c3bf32`.
 Keep the extracted DDS bytes unchanged; Unity creates its local `.meta` file.
+
+### Scene art sources
+
+The distant ringed planet uses NASA's [Saturn 3D texture](https://science.nasa.gov/3d-resources/saturn/),
+an illustrative map by Don Davis for JPL/Caltech, with NASA acknowledged as the
+source. The JPEG is unchanged; its URL, SHA-256 and NASA usage guidance are in
+[`SaturnNASA-SOURCE.md`](Assets/FortyTwoAndBeyond/Resources/SaturnNASA-SOURCE.md).
+The spacecraft source and CC BY 3.0 attribution are in
+[`ViktorShips/README.md`](Assets/FortyTwoAndBeyond/Resources/ViktorShips/README.md).

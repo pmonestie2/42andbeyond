@@ -405,7 +405,15 @@ namespace FortyTwoAndBeyond.Client
         public Transform Environment(Transform parent)
         {
             Transform root = Root(parent, "Distant sky scenery");
-            Transform planet = Part(root, PrimitiveType.Sphere, new Vector3(6500, -2000, 16000), Vector3.one * 6800, ShaderMaterial("42 and Beyond/Planet"));
+            Material planetMaterial = ShaderMaterial("42 and Beyond/Planet");
+            Texture2D saturn = Resources.Load<Texture2D>("SaturnNASA");
+            if (saturn != null)
+            {
+                planetMaterial.SetTexture("_MainTex", saturn);
+                planetMaterial.SetFloat("_UseTexture", 1f);
+            }
+            Transform planet = Part(root, PrimitiveType.Sphere, new Vector3(6500, -2000, 16000),
+                Vector3.one * 6800, planetMaterial);
             planet.localRotation = Quaternion.Euler(0, 0, -18);
             Material ringMaterial = ShaderMaterial("42 and Beyond/PlanetRings");
             Mesh belt = Annulus(1.25f, 2.15f, 160); meshes.Add(belt);
