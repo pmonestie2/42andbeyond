@@ -31,6 +31,12 @@ impl GameState {
             }
             ClientEvent::Group { action, target } => self.group_action(source, action, target),
             ClientEvent::JumpstartOffer { target } => self.jumpstart_offer(source, target),
+            ClientEvent::EnergyTransfer {
+                target,
+                slot,
+                epoch,
+                sequence,
+            } => self.transfer_reactor_energy(source, target, slot, epoch, sequence),
             ClientEvent::Chat { channel, text } => self.chat(source, channel, &text),
             ClientEvent::Formation { action, target } => {
                 match action {
@@ -90,6 +96,75 @@ impl GameState {
                 Ok(())
             }
         }
+    }
+
+    /// Settle a target-only reactor transfer through one atomic world revision.
+    fn transfer_reactor_energy(
+        &mut self,
+        source: u32,
+        target: u32,
+        slot: u8,
+        epoch: u64,
+        sequence: u32,
+    ) -> io::Result<()> {
+        if sequence == 0 || epoch != self.sessions[&source].energy_transfer_epoch() {
+            return Err(invalid("Stale reactor transfer request."));
+        }
+        if self.energy_ledger.seen(source, epoch, sequence) {
+            self.sessions
+                .get_mut(&source)
+                .unwrap()
+                .message("Transfer Reactor Energy completed.");
+            return Ok(());
+        }
+        self.update_views();
+        let sender = &self.sessions[&source];
+        let offer = sender.energy_transfer_offer(target, slot)?;
+        let recipient = self
+            .sessions
+            .get(&target)
+            .ok_or_else(|| invalid("Target pilot is unavailable."))?;
+        let recipient_snapshot = recipient
+            .peer_snapshot()
+            .ok_or_else(|| invalid("Target pilot is unavailable."))?;
+        if !recipient.logged_in
+            || recipient_snapshot.hull <= 0.
+            || recipient_snapshot.sector != sender.sector.id
+            || distance(sender.position, recipient.position) > offer.range
+        {
+            return Err(invalid("Target pilot left reactor transfer range."));
+        }
+        let (source_energy, _) = sender.energy_balance();
+        let (target_energy, target_capacity) = recipient.energy_balance();
+        if target_energy >= target_capacity {
+            return Err(invalid("Target reactor is already full."));
+        }
+        let source_after = source_energy - offer.cost;
+        let target_after = (target_energy + offer.amount).min(target_capacity);
+        self.energy_ledger
+            .transfer(source, target, epoch, sequence, source_after, target_after)?;
+        // The ledger is now authoritative. A checkpoint write failure must
+        // not undo one side: replacement reapplies the same revision to both.
+        for id in [source, target] {
+            let balance = self.energy_ledger.balance(id).unwrap();
+            if let Err(error) = self
+                .sessions
+                .get_mut(&id)
+                .unwrap()
+                .apply_energy_balance(balance)
+            {
+                crate::server_error!("Energy transfer checkpoint retry for {id}: {error}");
+            }
+        }
+        self.sessions
+            .get_mut(&source)
+            .unwrap()
+            .message("Transfer Reactor Energy completed.");
+        self.sessions
+            .get_mut(&target)
+            .unwrap()
+            .message("Reactor energy received from a nearby pilot.");
+        Ok(())
     }
 
     fn group_action(&mut self, source: u32, action: u32, target: u32) -> io::Result<()> {

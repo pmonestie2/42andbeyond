@@ -121,6 +121,168 @@ fn land_npc_shots(game: &mut GameState) {
     game.advance_at(0., deadline).unwrap();
 }
 
+/// A single ledger revision survives stale checkpoints and rejects repeat actions.
+#[test]
+fn targeted_reactor_transfer_is_atomic_across_two_players_and_replacement() {
+    let initial = game();
+    let root = initial.root.clone();
+    let sector = initial.initial_sector.clone();
+    let bind = initial.bind;
+    drop(initial);
+    let inventory_path = root.join("inventory.json");
+    let mut inventory: crate::inventory::Inventory =
+        serde_json::from_slice(&fs::read(&inventory_path).unwrap()).unwrap();
+    inventory.equipped[9] = Some(crate::inventory::ItemInstance::stock(1946, 1));
+    fs::write(&inventory_path, serde_json::to_vec(&inventory).unwrap()).unwrap();
+
+    let mut game = GameState::new(sector.clone(), bind, root.clone()).unwrap();
+    let alice = FIRST_PLAYER_ID;
+    let bob = alice + 1;
+    login(&mut game, alice, 22731, "alice");
+    login(&mut game, bob, 22732, "bob");
+    game.sessions
+        .get_mut(&bob)
+        .unwrap()
+        .set_energy_for_test(100.);
+    game.sessions
+        .get_mut(&bob)
+        .unwrap()
+        .checkpoint_session(true)
+        .unwrap();
+    game.advance_at(0., crate::resources::unix_ms()).unwrap();
+    game.handle_input(
+        alice,
+        0x17,
+        &[alice.to_le_bytes(), bob.to_le_bytes()].concat(),
+    )
+    .unwrap();
+    let before = game.sessions[&alice].energy_balance().0;
+    let epoch = game.sessions[&alice].energy_transfer_epoch();
+    let request = Datagram {
+        opcode: 0x5d,
+        player: alice,
+        sequence: 2,
+        body: [alice.to_le_bytes().as_slice(), &[2, 9]].concat(),
+    };
+    game.handle_udp(
+        SECTOR_PORT,
+        "127.0.0.1:22731".parse().unwrap(),
+        request.clone(),
+    )
+    .unwrap();
+    game.advance_at(0., crate::resources::unix_ms()).unwrap();
+    assert_eq!(game.sessions[&alice].energy_balance().0, before - 85.);
+    assert_eq!(game.sessions[&bob].energy_balance().0, 229.);
+    assert_eq!(game.energy_ledger.revision(), 1);
+    game.handle_udp(SECTOR_PORT, "127.0.0.1:22731".parse().unwrap(), request)
+        .unwrap();
+    game.advance_at(0., crate::resources::unix_ms()).unwrap();
+    assert_eq!(game.energy_ledger.revision(), 1);
+    game.sessions.get_mut(&bob).unwrap().position = [5_000., 0., 0.];
+    assert!(game
+        .handle_event(
+            alice,
+            ClientEvent::EnergyTransfer {
+                target: bob,
+                slot: 9,
+                epoch,
+                sequence: 3
+            }
+        )
+        .is_err());
+    assert_eq!(game.energy_ledger.revision(), 1);
+    game.sessions.get_mut(&bob).unwrap().position = [0.; 3];
+
+    // Simulate a crash after the atomic ledger rename but before either
+    // session checkpoint reached storage.
+    for (directory, old_energy) in [(&root, before), (&root.join("accounts/bob"), 100.)] {
+        let path = directory.join("session.local.json");
+        let mut saved: serde_json::Value =
+            serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        saved["energy"] = serde_json::json!(old_energy);
+        saved["energy_revision"] = serde_json::json!(0);
+        fs::write(path, serde_json::to_vec(&saved).unwrap()).unwrap();
+    }
+    drop(game);
+    let mut restored = GameState::new(sector.clone(), bind, root.clone()).unwrap();
+    assert_eq!(restored.sessions[&alice].energy_balance().0, before - 85.);
+    assert_eq!(restored.sessions[&bob].energy_balance().0, 229.);
+    restored
+        .handle_event(
+            alice,
+            ClientEvent::EnergyTransfer {
+                target: bob,
+                slot: 9,
+                epoch,
+                sequence: 2,
+            },
+        )
+        .unwrap();
+    assert_eq!(restored.energy_ledger.revision(), 1);
+
+    let temporary = root.join("energy_transfers.local.json.tmp");
+    fs::create_dir(&temporary).unwrap();
+    assert!(restored
+        .handle_event(
+            alice,
+            ClientEvent::EnergyTransfer {
+                target: bob,
+                slot: 9,
+                epoch,
+                sequence: 3
+            }
+        )
+        .is_err());
+    assert_eq!(restored.energy_ledger.revision(), 1);
+    assert_eq!(restored.sessions[&alice].energy_balance().0, before - 85.);
+    assert_eq!(restored.sessions[&bob].energy_balance().0, 229.);
+    fs::remove_dir(temporary).unwrap();
+
+    // The ledger commit still credits Bob when his checkpoint write fails.
+    // Restart then replays only Bob's lagging revision from that one file.
+    let recipient_temporary = root.join("accounts/bob/session.local.json.tmp");
+    fs::create_dir(&recipient_temporary).unwrap();
+    restored
+        .handle_event(
+            alice,
+            ClientEvent::EnergyTransfer {
+                target: bob,
+                slot: 9,
+                epoch,
+                sequence: 3,
+            },
+        )
+        .unwrap();
+    assert_eq!(restored.energy_ledger.revision(), 2);
+    assert_eq!(restored.sessions[&alice].energy_balance().0, before - 170.);
+    assert_eq!(restored.sessions[&bob].energy_balance().0, 358.);
+    fs::remove_dir(recipient_temporary).unwrap();
+    drop(restored);
+    let mut restored = GameState::new(sector.clone(), bind, root.clone()).unwrap();
+    assert_eq!(restored.sessions[&alice].energy_balance().0, before - 170.);
+    assert_eq!(restored.sessions[&bob].energy_balance().0, 358.);
+
+    // Real logout acknowledges the revision in player.json and retains the
+    // game's existing full-reactor behavior for the next ordinary login.
+    restored.sessions.get_mut(&alice).unwrap().logout().unwrap();
+    restored.sessions.get_mut(&bob).unwrap().logout().unwrap();
+    drop(restored);
+    let ordinary_login = GameState::new(sector, bind, root).unwrap();
+    assert_eq!(
+        ordinary_login.sessions[&alice].energy_transfer_revision(),
+        2
+    );
+    assert_eq!(ordinary_login.sessions[&bob].energy_transfer_revision(), 2);
+    assert_eq!(
+        ordinary_login.sessions[&alice].energy_balance().0,
+        ordinary_login.sessions[&alice].energy_balance().1
+    );
+    assert_eq!(
+        ordinary_login.sessions[&bob].energy_balance().0,
+        ordinary_login.sessions[&bob].energy_balance().1
+    );
+}
+
 #[test]
 fn shared_combat_kill_awards_one_durable_combat_xp_receipt() {
     let initial = game();

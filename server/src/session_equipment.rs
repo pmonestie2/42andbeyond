@@ -572,6 +572,17 @@ impl PlayerSession {
             if item.structure <= 0. {
                 return Err(invalid("Damaged device cannot be activated."));
             }
+            if energy_transfer::transfer_reactor_energy(template).is_some() {
+                self.client_events.push(ClientEvent::EnergyTransfer {
+                    target: self.target,
+                    slot: slot as u8,
+                    epoch: self.session_epoch,
+                    // The accepted datagram sequence is retained before this
+                    // handler runs, and is the durable retry identity.
+                    sequence: self.inputs.back().copied().unwrap_or(0),
+                });
+                return Ok(());
+            }
             if let Some((shield_percent, reactor_percent)) = reroute_shield_energy(template) {
                 let activation_cost = template.activation.energy;
                 let shield_cost = self.equipment.ship.shield_capacity * shield_percent / 100.;

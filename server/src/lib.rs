@@ -4,6 +4,7 @@ pub mod asset_geometry;
 pub mod content;
 pub mod crafting;
 pub mod crypto;
+pub mod energy_ledger;
 pub mod equipment_stats;
 pub mod events;
 pub mod experience;

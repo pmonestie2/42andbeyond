@@ -179,6 +179,13 @@ mean the corresponding gameplay system is complete.
   catalog energy cost, native buff AUX, durable expiry and recovery. The engine
   variant with zero duration and three multi-activated items remain gated until
   their native selection/stacking behavior is established.
+  Seven target-only Transfer Reactor Energy devices now use native 0x5d on a
+  selected, visible peer within the catalog range. A single atomic world ledger
+  records both reactor balances and the authenticated request identity before
+  either session publishes an update. Session/player transfer revisions replay
+  stale checkpoints once after process replacement, reject duplicate requests,
+  and preserve ordinary full-energy login after acknowledged logout. Disposable
+  two-client tests cover range, write failure, stale checkpoints and replay.
   Other activated families, ally/hostile
   targeting and concurrent buff stacking remain pending.
 - UDP send failures are logged per destination immediately, then summarized

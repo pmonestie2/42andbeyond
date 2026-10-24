@@ -3,6 +3,7 @@
 //! the server's existing mutex, and socket I/O remains outside that mutex.
 use crate::accounts::AccountDirectory;
 use crate::content::Sector;
+use crate::energy_ledger::EnergyLedger;
 use crate::events::ClientEvent;
 use crate::groups::GroupManager;
 use crate::loot_world::{lock_loot, KillCredit, LootWorld};
@@ -34,6 +35,7 @@ pub struct GameState {
     resource_fields: HashMap<u32, Arc<Mutex<ResourceField>>>,
     loot_worlds: HashMap<u32, Arc<Mutex<LootWorld>>>,
     groups: GroupManager,
+    energy_ledger: EnergyLedger,
     jumpstart_offers: HashMap<u32, JumpstartOffer>,
     registrations: HashMap<IpAddr, Instant>,
     outgoing: Vec<Outbound>,
@@ -61,6 +63,7 @@ impl GameState {
             resource_fields: HashMap::new(),
             loot_worlds: HashMap::new(),
             groups: GroupManager::default(),
+            energy_ledger: EnergyLedger::load(root.join("energy_transfers.local.json"))?,
             jumpstart_offers: HashMap::new(),
             registrations: HashMap::new(),
             outgoing: Vec::new(),
@@ -141,6 +144,14 @@ impl GameState {
                 stored.account,
                 self.root.clone(),
             )?;
+            if session.energy_transfer_revision() > self.energy_ledger.revision() {
+                return Err(invalid(
+                    "Player transfer revision exceeds the durable ledger.",
+                ));
+            }
+            if let Some(balance) = self.energy_ledger.balance(id) {
+                session.apply_energy_balance(balance)?;
+            }
             let clock = self
                 .sessions
                 .values()

@@ -48,6 +48,8 @@ pub(super) struct Checkpoint {
     #[serde(default = "full_energy")]
     energy: f32,
     #[serde(default)]
+    energy_revision: u64,
+    #[serde(default)]
     weapon_cooldowns: [f32; 20],
     #[serde(default)]
     weapon_firing: [bool; 20],
@@ -235,6 +237,7 @@ impl PlayerSession {
             (saved.hull / saved.hull_capacity).clamp(0., 1.) * capacity
         };
         self.energy = saved.energy;
+        self.energy_revision = saved.energy_revision;
         self.active_device = saved
             .active_device
             .filter(|active| active.valid_for(&self.inventory, &self.items, unix_ms()));
@@ -440,6 +443,7 @@ impl PlayerSession {
             hull: self.hull,
             hull_capacity: self.equipment.ship.hull_capacity,
             energy: self.energy,
+            energy_revision: self.energy_revision,
             weapon_cooldowns: self.weapon_cooldowns,
             weapon_firing: self.weapon_firing,
             active_device: self.active_device.clone(),
