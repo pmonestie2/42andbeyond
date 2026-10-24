@@ -19,6 +19,7 @@ impl PlayerSession {
         if room != u32::MAX && !station.rooms.iter().any(|entry| entry.index == room) {
             return Err(invalid("Unknown station room."));
         }
+        let previous_room = self.station_pose.as_ref().map(|pose| pose.room);
         match opcode {
             0x9f if body.len() == 12 => {
                 reader.u32()?; // OldRoom is descriptive, never an authority.
@@ -52,6 +53,9 @@ impl PlayerSession {
                 }
             }
             _ => return Err(invalid("Invalid station movement packet length.")),
+        }
+        if previous_room != self.station_pose.as_ref().map(|pose| pose.room) {
+            self.close_npc();
         }
         Ok(())
     }

@@ -349,26 +349,53 @@ namespace FortyTwoAndBeyond.Client
             Panel(new Rect(24, 110, 300, 265));
             GUI.Label(new Rect(40, 124, 270, 28), "STATION SERVICES", body);
             GUI.Label(new Rect(40, 158, 270, 54),
-                $"{snapshot.Station.Rooms} rooms   ·   {snapshot.Station.Terminals} terminals\n{snapshot.Station.NpcIds.Count} station contacts", small);
+                $"{snapshot.Station.Rooms} rooms   ·   {snapshot.Station.Terminals} terminals\n{snapshot.Station.Contacts.Count} station contacts", small);
             GUI.Label(new Rect(40, 216, 270, 43), "Cargo and installed equipment are available while docked.", small);
             string equipmentKey = client.Bindings.Display(ControlAction.Equipment);
             if (GUI.Button(new Rect(40, 280, 268, 34), equipmentOpen ? "CLOSE LOADOUT  ·  " + equipmentKey : "SHIP LOADOUT  ·  " + equipmentKey, button))
                 ToggleEquipment();
             if (GUI.Button(new Rect(40, 325, 268, 36), "LAUNCH INTO SPACE  ·  " + client.Bindings.Display(ControlAction.Launch), selected)) client.Launch();
+            Panel(new Rect(24, 385, 300, 185));
+            GUI.Label(new Rect(40, 398, 268, 24), "INTERIOR ROOMS", body);
+            GUILayout.BeginArea(new Rect(40, 426, 268, 132));
+            foreach (StationRoom room in snapshot.Station.RoomList)
+            {
+                GUI.enabled = snapshot.Dialogue == null;
+                if (GUILayout.Button("ROOM " + (room.Index + 1) +
+                    (room.Index == snapshot.Station.CurrentRoom ? "   ·   HERE" : ""),
+                    room.Index == snapshot.Station.CurrentRoom ? selected : button, GUILayout.Height(27)))
+                    client.EnterStationRoom(room.Index);
+            }
+            GUI.enabled = true;
+            GUILayout.EndArea();
             Panel(new Rect(CanvasWidth - 320, 20, 296, 116));
             GUI.Label(new Rect(CanvasWidth - 306, 34, 270, 24), "SHIP STATUS", body);
             GUI.Label(new Rect(CanvasWidth - 306, 63, 270, 58),
                 $"HULL   {snapshot.Hull:0} / {snapshot.MaxHull:0}\nSHIELD   {snapshot.Shield:0} / {snapshot.MaxShield:0}", small);
             float contactsHeight = Mathf.Max(210, CanvasHeight - 315);
             Panel(new Rect(CanvasWidth - 320, 150, 296, contactsHeight));
-            GUI.Label(new Rect(CanvasWidth - 306, 164, 270, 22), "STATION CONTACTS", body);
+            GUI.Label(new Rect(CanvasWidth - 306, 164, 270, 22),
+                "ROOM " + (snapshot.Station.CurrentRoom + 1) + " CONTACTS", body);
             GUILayout.BeginArea(new Rect(CanvasWidth - 308, 192, 272, contactsHeight - 54));
             npcScroll = GUILayout.BeginScrollView(npcScroll);
-            foreach (uint id in snapshot.Station.NpcIds)
+            foreach (StationContact contact in snapshot.Station.Contacts.Where(entry =>
+                entry.Room == snapshot.Station.CurrentRoom))
             {
+                uint id = contact.Id;
                 string label = npcNames.TryGetValue(id, out string npcName) ? npcName : "Contact " + id;
                 GUI.enabled = snapshot.Dialogue == null;
                 if (GUILayout.Button(label, button, GUILayout.Height(32))) client.OpenNpc(id);
+            }
+            if (!snapshot.Station.Contacts.Any(entry => entry.Room == snapshot.Station.CurrentRoom))
+                GUILayout.Label("No contacts in this room.", small);
+            StationAvatar[] roomPeers = snapshot.StationAvatars.Where(avatar =>
+                avatar.Room == snapshot.Station.CurrentRoom).ToArray();
+            if (roomPeers.Length > 0)
+            {
+                GUILayout.Space(12);
+                GUILayout.Label("OTHER PILOTS", body);
+                foreach (StationAvatar avatar in roomPeers)
+                    GUILayout.Label(avatar.Name, small);
             }
             GUI.enabled = true;
             GUILayout.EndScrollView(); GUILayout.EndArea();

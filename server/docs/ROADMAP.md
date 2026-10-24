@@ -93,6 +93,10 @@ mean the corresponding gameplay system is complete.
   native scene-resync requests and checkpointed visibility across replacement.
   `/who` includes docked players. A two-client protocol smoke verifies room
   isolation, entry, movement, restart without duplicate spawns and logout removal.
+- Station NPC conversations and vendor transfers now require an authoritative
+  avatar pose in the NPC's advertised room. Room departure closes the active
+  conversation and vendor window; restored vendor sessions are checked against
+  the saved room. Disposable native vendor/restart smoke passes with room entry.
 
 ## Next implementation work
 

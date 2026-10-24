@@ -10,7 +10,7 @@ internal static class Program
     /// <summary>Run pure protocol checks, with explicit opt-in to a disposable local server.</summary>
     private static void Main(string[] args)
     {
-        CheckReassembly(); CheckWorld(); CheckAddress(); PeerChecks.Decode();
+        CheckReassembly(); CheckWorld(); CheckStationLayout(); CheckAddress(); PeerChecks.Decode();
         Console.WriteLine("PASS: framing, ordering, fragmentation, duplicates, bounds, world decoding, private addresses");
         if (args.Length == 2 && args[0] == "--server") { PeerChecks.Live(args[1]); CheckServer(args[1]); }
         else if (args.Length != 0) throw new ArgumentException("Usage: ProtocolChecks [--server PRIVATE_IP]");
@@ -68,6 +68,47 @@ internal static class Program
         Assert(world.HasPosition, "Ignored matching player movement.");
     }
 
+    /// <summary>Check packed station room and NPC placement before interior navigation.</summary>
+    private static void CheckStationLayout()
+    {
+        byte[] layout = new byte[8 + 2 * 28 + 4 + 4 + 265];
+        Array.Copy(BitConverter.GetBytes(2u), 0, layout, 4, 4);
+        Array.Copy(BitConverter.GetBytes(9u), 0, layout, 8 + 4, 4);
+        Array.Copy(BitConverter.GetBytes(1u), 0, layout, 8 + 28, 4);
+        Array.Copy(BitConverter.GetBytes(12u), 0, layout, 8 + 28 + 4, 4);
+        int contact = 8 + 2 * 28 + 4;
+        Array.Copy(BitConverter.GetBytes(1u), 0, layout, contact, 4);
+        Array.Copy(BitConverter.GetBytes(1u), 0, layout, contact + 4, 4);
+        Array.Copy(BitConverter.GetBytes(77u), 0, layout, contact + 12, 4);
+        StationState station = new StationState(100).WithLayout(layout);
+        Assert(station.Rooms == 2 && station.RoomList[0].Style == 9 && station.RoomList[1].Index == 1 &&
+            station.Contacts.Count == 1 && station.Contacts[0].Room == 1 && station.Contacts[0].Id == 77,
+            "Station room or placed contact was decoded from the wrong native offset.");
+        Assert(station.WithRoom(1).CurrentRoom == 1 && station.CurrentRoom == uint.MaxValue,
+            "Station room selection modified an earlier immutable view.");
+        Reject(() => station.WithRoom(2));
+        var world = new World();
+        world.Apply(new Frame(0x4f, Wire.Body(w => { w.Write(100u); w.Write((byte)0); w.Write((byte)0); })), 1);
+        world.Apply(new Frame(0x52, layout), 1);
+        byte[] description = new byte[260];
+        Array.Copy(BitConverter.GetBytes(2u), description, 4);
+        Array.Copy(System.Text.Encoding.ASCII.GetBytes("Visitor"), 0, description, 4, 7);
+        world.Apply(new Frame(0x61, description), 1);
+        world.Apply(new Frame(0xa0, Wire.Body(w => { w.Write(2u); w.Write(1u); w.Write(uint.MaxValue); })), 1);
+        world.Apply(new Frame(0x9e, Wire.Body(w =>
+        {
+            w.Write(2u); w.Write(0.5f); w.Write(10f); w.Write(20f); w.Write(30f);
+            w.Write(0x41u); w.Write(1u);
+        })), 1);
+        Snapshot roomSnapshot = new Snapshot(world, "ready", true);
+        Assert(roomSnapshot.StationAvatars.Length == 1 && roomSnapshot.StationAvatars[0].Name == "Visitor" &&
+            roomSnapshot.StationAvatars[0].Room == 1 && roomSnapshot.StationAvatars[0].Position.Y == 20,
+            "Station peer room or native pose was not decoded.");
+        world.Apply(new Frame(0xa0, Wire.Body(w => { w.Write(2u); w.Write(uint.MaxValue); w.Write(1u); })), 1);
+        Assert(world.StationAvatars.Count == 0 && roomSnapshot.StationAvatars.Length == 1,
+            "Station peer departure changed an earlier display snapshot.");
+    }
+
     /// <summary>Ensure development credentials cannot be submitted to public endpoints.</summary>
     private static void CheckAddress()
     {
@@ -120,6 +161,11 @@ internal static class Program
                 20, "Docking handoff or station layout did not arrive.");
             Console.WriteLine("PASS: station target, docking clearance, interior handoff and layout");
             Assert(session.World.Station.NpcIds.Contains(7u), "Station NPC identities were not decoded.");
+            Assert(session.World.Station.CurrentRoom == 0 &&
+                session.World.Station.Contacts.Any(contact => contact.Id == 7 && contact.Room == 1),
+                "Station room or NPC placement was not decoded.");
+            session.EnterStationRoom(1);
+            Assert(session.World.Station.CurrentRoom == 1, "Station avatar did not enter the contact room.");
             session.OpenNpc(7);
             Wait(session, () => session.World.Dialogue?.NpcId == 7 &&
                 session.World.Dialogue.Choices.Any(choice => choice.Node == 2), 10, "NPC greeting or offered branches did not arrive.");
@@ -132,6 +178,8 @@ internal static class Program
             Wait(session, () => session.World.Dialogue == null, 10, "NPC conversation did not close.");
             Console.WriteLine("PASS: station NPC identity, greeting, offered branch and close");
             Assert(session.World.Station.NpcIds.Contains(16u), "Station vendor identity was not decoded.");
+            session.EnterStationRoom(2);
+            Assert(session.World.Station.CurrentRoom == 2, "Station avatar did not enter the vendor room.");
             session.OpenNpc(16);
             Wait(session, () => session.World.Dialogue?.NpcId == 16 &&
                 session.World.Dialogue.Choices.Any(choice => choice.Node == 2), 10,

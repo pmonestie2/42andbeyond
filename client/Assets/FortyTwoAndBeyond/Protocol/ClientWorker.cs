@@ -5,7 +5,7 @@ using System.Threading;
 
 namespace FortyTwoAndBeyond.Protocol
 {
-    public enum CommandKind { Thrust, Steer, Warp, Gate, Dock, Launch, OpenNpc, ChooseNpc, BuyVendor, SellVendor, EquipCargo, UnequipMount, ActivateWeapon, Chat, ToggleWeapons, Formation, SelectTarget, FollowTarget, InvitePlayer, AnswerConfirmation, StopWeapons, OpenLoot, TakeLoot, OpenResource, CloseResource, ProspectResource, ActivateAbility, RequestRescue, ChooseRescue, SelfJumpstart }
+    public enum CommandKind { Thrust, Steer, Warp, Gate, Dock, Launch, EnterStationRoom, OpenNpc, ChooseNpc, BuyVendor, SellVendor, EquipCargo, UnequipMount, ActivateWeapon, Chat, ToggleWeapons, Formation, SelectTarget, FollowTarget, InvitePlayer, AnswerConfirmation, StopWeapons, OpenLoot, TakeLoot, OpenResource, CloseResource, ProspectResource, ActivateAbility, RequestRescue, ChooseRescue, SelfJumpstart }
 
     public readonly struct ClientCommand
     {
@@ -76,6 +76,7 @@ namespace FortyTwoAndBeyond.Protocol
                                 case CommandKind.Gate: session.Gate(command.Target); break;
                                 case CommandKind.Dock: session.Dock(command.Target); break;
                                 case CommandKind.Launch: session.Launch(); break;
+                                case CommandKind.EnterStationRoom: session.EnterStationRoom(command.Target); break;
                                 case CommandKind.OpenNpc: session.OpenNpc(command.Target); break;
                                 case CommandKind.ChooseNpc: session.ChooseNpc((byte)command.Target); break;
                                 case CommandKind.BuyVendor: session.BuyVendor(command.Slot); break;

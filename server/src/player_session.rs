@@ -2738,6 +2738,57 @@ mod tests {
         ship.talk_choice(&[ship.player_id().to_le_bytes().as_slice(), &[choice]].concat())
     }
 
+    fn enter_npc_room(ship: &mut PlayerSession, npc_id: u32) {
+        let room = ship
+            .sector
+            .station
+            .as_ref()
+            .unwrap()
+            .npcs
+            .iter()
+            .find(|npc| npc.id == npc_id)
+            .unwrap()
+            .room;
+        ship.station_pose = Some(StationPose {
+            room,
+            orientation: 0.,
+            position: [0.; 3],
+            action: 0x41,
+        });
+    }
+
+    #[test]
+    fn npc_dialogue_and_vendor_require_the_npcs_room_after_a_room_change() {
+        let mut ship = session();
+        ship.sector = ship.sectors.sector(10761).unwrap();
+        ship.logged_in = true;
+        assert!(ship.open_npc(16).is_err()); // No confirmed room yet.
+        enter_npc_room(&mut ship, 7); // Room 1; vendor16 belongs to room 2.
+        assert!(ship.open_npc(16).is_err());
+        enter_npc_room(&mut ship, 16);
+        ship.open_npc(16).unwrap();
+        npc_choice(&mut ship, 2).unwrap();
+        ship.inventory.credits = 10_000_000;
+        let vendor_transfer = ItemTransfer {
+            source: 4,
+            source_slot: 0,
+            destination: 1,
+            destination_slot: 0,
+            quantity: 1,
+        };
+        assert!(ship.inventory_candidate(vendor_transfer).is_ok());
+        ship.handle_input(
+            0x9f,
+            &[ship.player_id(), 1, 2].map(u32::to_le_bytes).concat(),
+        )
+        .unwrap();
+        assert!(ship.npc_interaction.is_none());
+        assert!(ship.inventory_candidate(vendor_transfer).is_err());
+        assert!(ship.open_npc(16).is_err());
+        enter_npc_room(&mut ship, 7);
+        ship.open_npc(7).unwrap();
+    }
+
     #[test]
     fn npc_trades_require_station_offered_branch_and_live_vendor_and_persist_together() {
         let mut ship = session();
@@ -2746,6 +2797,7 @@ mod tests {
         ship.sector = ship.sectors.sector(10761).unwrap();
         assert!(ship.open_npc(9).is_err()); // another station
         assert!(npc_choice(&mut ship, 2).is_err()); // no dialogue
+        enter_npc_room(&mut ship, 16);
         ship.open_npc(16).unwrap();
         assert!(npc_choice(&mut ship, 99).is_err());
         assert!(ship
@@ -2805,6 +2857,7 @@ mod tests {
             .iter()
             .any(|frame| frame.opcode == 0x56 && frame.body == (-32i32).to_le_bytes()));
         ship.sector = ship.sectors.sector(12150).unwrap();
+        enter_npc_room(&mut ship, 446);
         ship.open_npc(446).unwrap();
         npc_choice(&mut ship, 3).unwrap(); // public trade tree, missing vendor group
         assert!(!ship.npc_interaction.as_ref().unwrap().vendor);
@@ -2818,6 +2871,7 @@ mod tests {
         let mut ship = session();
         ship.sector = ship.sectors.sector(10761).unwrap();
         ship.logged_in = true;
+        enter_npc_room(&mut ship, 16);
         ship.selected_peer = Some("127.0.0.1".parse().unwrap());
         ship.endpoint = Some("127.0.0.1:21002".parse().unwrap());
         ship.open_npc(16).unwrap();
@@ -2847,6 +2901,7 @@ mod tests {
         let mut ship = session();
         ship.sector = ship.sectors.sector(10761).unwrap();
         ship.logged_in = true;
+        enter_npc_room(&mut ship, 16);
         let endpoint: SocketAddr = "127.0.0.1:21003".parse().unwrap();
         ship.endpoint = Some(endpoint);
         ship.selected_peer = Some(endpoint.ip());
@@ -2881,6 +2936,7 @@ mod tests {
         let mut ship = session();
         ship.sector = ship.sectors.sector(10761).unwrap();
         ship.logged_in = true;
+        enter_npc_room(&mut ship, 16);
         ship.open_npc(16).unwrap();
         npc_choice(&mut ship, 2).unwrap();
         ship.inventory.credits = 10_000_000;

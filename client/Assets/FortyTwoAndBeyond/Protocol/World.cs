@@ -44,16 +44,74 @@ namespace FortyTwoAndBeyond.Protocol
         }
     }
 
+    /// <summary>One station room advertised by the native interior layout.</summary>
+    public sealed class StationRoom
+    {
+        public readonly uint Index, Style;
+        /// <summary>Keep a room's native index and visual style.</summary>
+        public StationRoom(uint index, uint style) { Index = index; Style = style; }
+    }
+
+    /// <summary>One NPC and its room in the server's station layout.</summary>
+    public sealed class StationContact
+    {
+        public readonly uint Id, Room;
+        /// <summary>Keep the contact's server identity and placement.</summary>
+        public StationContact(uint id, uint room) { Id = id; Room = room; }
+    }
+
+    /// <summary>A player avatar visible in the current station interior.</summary>
+    public sealed class StationAvatar
+    {
+        public readonly uint Id, Room;
+        public readonly string Name;
+        public readonly Position Position;
+        public readonly float Orientation;
+
+        /// <summary>Keep one immutable room and pose report for an interior peer.</summary>
+        public StationAvatar(uint id, string name, uint room = uint.MaxValue, Position position = default,
+            float orientation = 0)
+        { Id = id; Name = name; Room = room; Position = position; Orientation = orientation; }
+
+        /// <returns>
+        /// StationAvatar: The same avatar after a room or pose update.
+        /// </returns>
+        public StationAvatar WithRoom(uint room)
+        { return new StationAvatar(Id, Name, room, Position, Orientation); }
+
+        /// <returns>
+        /// StationAvatar: The same avatar after a native station pose report.
+        /// </returns>
+        public StationAvatar WithPose(byte[] body)
+        {
+            if (body.Length != 28 || Wire.U32(body, 0) != Id)
+                throw new InvalidDataException("Invalid station avatar pose.");
+            return new StationAvatar(Id, Name, Wire.U32(body, 24),
+                new Position(Wire.Float(body, 8), Wire.Float(body, 12), Wire.Float(body, 16)),
+                Wire.Float(body, 4));
+        }
+    }
+
     /// <summary>Server-owned station identity and available interior services.</summary>
     public sealed class StationState
     {
         public readonly uint Id, Kind, Rooms, Terminals;
         public readonly IReadOnlyList<uint> NpcIds;
+        public readonly IReadOnlyList<StationRoom> RoomList;
+        public readonly IReadOnlyList<StationContact> Contacts;
+        public readonly uint CurrentRoom;
         public readonly string Name;
 
         /// <summary>Keep station details immutable across display snapshots.</summary>
-        public StationState(uint id, uint kind = 0, uint rooms = 0, uint terminals = 0, uint[] npcIds = null, string name = "")
-        { Id = id; Kind = kind; Rooms = rooms; Terminals = terminals; NpcIds = Array.AsReadOnly((uint[])(npcIds ?? Array.Empty<uint>()).Clone()); Name = name; }
+        public StationState(uint id, uint kind = 0, uint terminals = 0, StationRoom[] rooms = null,
+            StationContact[] contacts = null, uint currentRoom = uint.MaxValue, string name = "")
+        {
+            Id = id; Kind = kind; Terminals = terminals;
+            RoomList = Array.AsReadOnly((StationRoom[])(rooms ?? Array.Empty<StationRoom>()).Clone());
+            Contacts = Array.AsReadOnly((StationContact[])(contacts ?? Array.Empty<StationContact>()).Clone());
+            Rooms = (uint)RoomList.Count; NpcIds = Array.AsReadOnly(Contacts.Select(contact => contact.Id).ToArray());
+            CurrentRoom = currentRoom; Name = name;
+        }
 
         /// <returns>The same station with its authoritative interior layout counts.</returns>
         public StationState WithLayout(byte[] body)
@@ -61,6 +119,13 @@ namespace FortyTwoAndBeyond.Protocol
             Wire.Require(body, 0, 8);
             uint kind = Wire.U32(body, 0), rooms = Wire.U32(body, 4);
             if (rooms == 0 || rooms > 5) throw new InvalidDataException("Invalid station room count.");
+            var roomList = new StationRoom[rooms];
+            for (int i = 0; i < roomList.Length; i++)
+            {
+                int roomOffset = 8 + i * 28;
+                Wire.Require(body, roomOffset, 28);
+                roomList[i] = new StationRoom(Wire.U32(body, roomOffset), Wire.U32(body, roomOffset + 4));
+            }
             int offset = checked(8 + (int)rooms * 28);
             Wire.Require(body, offset, 4);
             uint terminals = Wire.U32(body, offset);
@@ -70,14 +135,27 @@ namespace FortyTwoAndBeyond.Protocol
             uint npcs = Wire.U32(body, offset);
             if (npcs > 30 || offset + 4 + (int)npcs * 265 != body.Length)
                 throw new InvalidDataException("Invalid station NPC layout.");
-            var npcIds = new uint[(int)npcs];
-            for (int i = 0; i < npcIds.Length; i++) npcIds[i] = Wire.U32(body, offset + 4 + i * 265 + 8);
-            return new StationState(Id, kind, rooms, terminals, npcIds, Name);
+            var contacts = new StationContact[(int)npcs];
+            for (int i = 0; i < contacts.Length; i++)
+            {
+                int contactOffset = offset + 4 + i * 265;
+                contacts[i] = new StationContact(Wire.U32(body, contactOffset + 8), Wire.U32(body, contactOffset));
+            }
+            return new StationState(Id, kind, terminals, roomList, contacts, uint.MaxValue, Name);
         }
 
         /// <returns>The same station with its announced name.</returns>
         public StationState WithName(string name)
-        { return new StationState(Id, Kind, Rooms, Terminals, NpcIds.ToArray(), name); }
+        { return new StationState(Id, Kind, Terminals, RoomList.ToArray(), Contacts.ToArray(), CurrentRoom, name); }
+
+        /// <returns>
+        /// StationState: A station view after entering an advertised room.
+        /// </returns>
+        public StationState WithRoom(uint room)
+        {
+            if (!RoomList.Any(entry => entry.Index == room)) throw new InvalidDataException("Unknown station room.");
+            return new StationState(Id, Kind, Terminals, RoomList.ToArray(), Contacts.ToArray(), room, Name);
+        }
     }
 
     /// <summary>Worker-owned contents and depletion state for a mineable resource.</summary>
@@ -294,8 +372,11 @@ namespace FortyTwoAndBeyond.Protocol
         public void StartDialogue(uint npcId) { Dialogue = new DialogueState(npcId); }
         /// <summary>Clear the local conversation after the server closes it.</summary>
         public void CloseDialogue() { Dialogue = null; }
+        /// <summary>Record the room selected through an owned station movement packet.</summary>
+        public void SetStationRoom(uint room) { Station = Station?.WithRoom(room); }
         public Dictionary<uint, MapObject> Objects { get; } = new Dictionary<uint, MapObject>();
         public Dictionary<uint, ShipActor> Players { get; } = new Dictionary<uint, ShipActor>();
+        public Dictionary<uint, StationAvatar> StationAvatars { get; } = new Dictionary<uint, StationAvatar>();
         public Position Position { get; private set; }
         public float[] Orientation { get; private set; } = { 0, 0, 0, 1 };
         public bool HasPosition { get; private set; }
@@ -319,12 +400,13 @@ namespace FortyTwoAndBeyond.Protocol
                     if (firstEnd < 0 || firstEnd + 1 >= b.Length) throw new InvalidDataException("Missing sector name.");
                     string name = Wire.Text(b, firstEnd + 1, b.Length - firstEnd - 1);
                     if (name.Length == 0) throw new InvalidDataException("Empty sector name.");
-                    if (Sector != name) { Objects.Clear(); Players.Clear(); Mobs.Clear(); Loot.Clear(); Resources.Clear(); ResourceTargetId = 0; ResourceWindowOpen = false; OpenLootId = 0; Shots.Clear(); Damages.Clear(); ClearConfirmation(); nextShot = nextDamage = 0; }
+                    if (Sector != name) { Objects.Clear(); Players.Clear(); Mobs.Clear(); StationAvatars.Clear(); Loot.Clear(); Resources.Clear(); ResourceTargetId = 0; ResourceWindowOpen = false; OpenLootId = 0; Shots.Clear(); Damages.Clear(); ClearConfirmation(); nextShot = nextDamage = 0; }
                     Sector = name;
                     break;
                 case 0x4f:
                     if (b.Length != 6) throw new InvalidDataException("Invalid station identity.");
                     Station = b[4] == 0 ? new StationState(Wire.U32(b, 0)) : null;
+                    StationAvatars.Clear();
                     Dialogue = null; Vendor = Array.Empty<ItemState>();
                     ResourceTargetId = 0; ResourceWindowOpen = false;
                     if (Station != null) Sector = "Station " + Station.Id;
@@ -456,6 +538,13 @@ namespace FortyTwoAndBeyond.Protocol
                 case 0x61:
                     Wire.Require(b, 0, 24);
                     uint avatarId = Wire.U32(b, 0);
+                    if (Station != null && avatarId != player)
+                    {
+                        string stationAvatarName = Wire.Text(b, 4, 20);
+                        if (!StationAvatars.ContainsKey(avatarId) && StationAvatars.Count >= 64)
+                            throw new InvalidDataException("Station avatar limit exceeded.");
+                        StationAvatars[avatarId] = new StationAvatar(avatarId, stationAvatarName);
+                    }
                     if (Players.TryGetValue(avatarId, out ShipActor avatar))
                     {
                         string avatarName = Wire.Text(b, 4, 20);
@@ -470,6 +559,24 @@ namespace FortyTwoAndBeyond.Protocol
                     if (OpenLootId == Wire.U32(b, 0)) OpenLootId = 0;
                     if (ResourceTargetId == Wire.U32(b, 0)) SetResourceTarget(0);
                     Players.Remove(Wire.U32(b, 0)); Mobs.Remove(Wire.U32(b, 0));
+                    StationAvatars.Remove(Wire.U32(b, 0));
+                    break;
+                case 0xa0:
+                    if (b.Length != 12) throw new InvalidDataException("Invalid station avatar room.");
+                    uint roomAvatarId = Wire.U32(b, 0), newRoom = Wire.U32(b, 4);
+                    if (Station != null && roomAvatarId != player)
+                    {
+                        if (newRoom == uint.MaxValue) StationAvatars.Remove(roomAvatarId);
+                        else if (StationAvatars.TryGetValue(roomAvatarId, out StationAvatar roomAvatar) &&
+                            Station.RoomList.Any(entry => entry.Index == newRoom))
+                            StationAvatars[roomAvatarId] = roomAvatar.WithRoom(newRoom);
+                    }
+                    break;
+                case 0x9e:
+                    if (b.Length != 28) throw new InvalidDataException("Invalid station avatar pose.");
+                    uint posingId = Wire.U32(b, 0);
+                    if (Station != null && StationAvatars.TryGetValue(posingId, out StationAvatar posing))
+                        StationAvatars[posingId] = posing.WithPose(b);
                     break;
                 case 0x3e:
                     Wire.Require(b, 0, 38);
@@ -529,6 +636,7 @@ namespace FortyTwoAndBeyond.Protocol
         public readonly uint PlayerId;
         public readonly GroupState Group;
         public readonly StationState Station;
+        public readonly StationAvatar[] StationAvatars;
         public readonly DialogueState Dialogue;
         public readonly ulong Credits;
         public readonly uint[] AvailableAbilities;
@@ -562,7 +670,8 @@ namespace FortyTwoAndBeyond.Protocol
             AngularY = world.AngularY; AngularZ = world.AngularZ;
             Players = world.Players.Values.ToArray(); Mobs = world.Mobs.Values.ToArray();
             PlayerId = world.PlayerId; Shots = world.Shots.ToArray(); Damages = world.Damages.ToArray();
-            Group = world.Group; Station = world.Station; Dialogue = world.Dialogue; Credits = world.Credits;
+            Group = world.Group; Station = world.Station; StationAvatars = world.StationAvatars.Values.ToArray();
+            Dialogue = world.Dialogue; Credits = world.Credits;
             Vendor = new ItemView[world.Vendor.Length];
             AvailableAbilities = (uint[])world.AvailableAbilities.Clone();
             long now = System.Diagnostics.Stopwatch.GetTimestamp();

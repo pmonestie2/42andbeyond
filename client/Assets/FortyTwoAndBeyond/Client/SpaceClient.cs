@@ -383,8 +383,18 @@ namespace FortyTwoAndBeyond.Client
 
         /// <summary>Ask the server to open a contact placed in this station.</summary>
         public void OpenNpc(uint id)
-        { if (Ready && snapshot.Station != null && snapshot.Station.NpcIds.Contains(id))
+        { if (Ready && snapshot.Station != null && snapshot.Station.Contacts.Any(contact =>
+                contact.Id == id && contact.Room == snapshot.Station.CurrentRoom))
                 worker.Submit(new ClientCommand(CommandKind.OpenNpc, id)); }
+
+        /// <summary>Move the station avatar to one room offered by the server layout.</summary>
+        public void EnterStationRoom(uint room)
+        {
+            if (Ready && snapshot.Station != null && snapshot.Dialogue == null &&
+                snapshot.Station.RoomList.Any(entry => entry.Index == room) &&
+                snapshot.Station.CurrentRoom != room)
+                worker.Submit(new ClientCommand(CommandKind.EnterStationRoom, room));
+        }
 
         /// <summary>Send one server-offered dialogue branch or close command.</summary>
         public void ChooseNpc(byte node)

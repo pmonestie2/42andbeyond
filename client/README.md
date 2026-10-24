@@ -121,7 +121,9 @@ log in directly. The docking bay shows the parked ship, loadout and **Launch**.
 The server announces the station layout. The client lists public NPC names and
 follows the server-offered dialogue choices. A vendor branch opens its native
 stock and buy/sell panels with server quotes and credit balance. Room movement
-is next.
+uses the station's advertised room buttons. The avatar enters each selected room
+through native room and pose packets, and the contact list shows NPCs placed in
+that room.
 
 ## Players, groups and mobs
 
@@ -200,7 +202,7 @@ and the full original combat and equipment UI remain unfinished.
   Normal play uses the standalone app, without the Editor's extra overhead.
 - The combat and loadout panels cover selection, weapon toggling, health, cargo,
   hardpoints, equip/unequip, and wreck loot. Docking and launch work through the
-  station handoff; NPC dialogue and vendor trading work, while interior room movement remains unfinished.
+  station handoff, room selection and avatar presence, NPC dialogue and vendor trading.
   The account bridge supplies the toon names and selected server slot.
 
 Physical scenery uses server positions and scale with approximate replacement

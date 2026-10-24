@@ -257,11 +257,29 @@ namespace FortyTwoAndBeyond.Protocol
             Status = "Launching from " + World.Sector;
         }
 
+        /// <summary>Enter a server-advertised station room and publish this avatar's arrival.</summary>
+        public void EnterStationRoom(uint room)
+        {
+            StationState station = World.Station;
+            if (!Ready || station == null || station.CurrentRoom == room || World.Dialogue != null ||
+                !station.RoomList.Any(entry => entry.Index == room)) return;
+            uint previous = station.CurrentRoom;
+            Send(0x9f, Wire.Body(w => { w.Write(Player); w.Write(room); w.Write(previous); }));
+            Send(0x9d, Wire.Body(w =>
+            {
+                w.Write(Player); w.Write(room); w.Write(0f);
+                w.Write(0f); w.Write(0f); w.Write(0f); w.Write(0x41u);
+            }));
+            World.SetStationRoom(room);
+            Status = "Entered station room " + (room + 1);
+        }
+
         /// <summary>Open one NPC present in the authoritative station layout.</summary>
         public void OpenNpc(uint npcId)
         {
             if (!Ready || World.Station == null || World.Dialogue != null ||
-                !World.Station.NpcIds.Contains(npcId)) return;
+                !World.Station.Contacts.Any(contact => contact.Id == npcId &&
+                    contact.Room == World.Station.CurrentRoom)) return;
             World.StartDialogue(npcId);
             Send(0x4e, Wire.Body(w => { w.Write(Player); w.Write(npcId); w.Write((byte)4); }));
             Status = "Talking to station contact";
@@ -520,7 +538,14 @@ namespace FortyTwoAndBeyond.Protocol
                 case 0x2020: if (b.Length == 4) Send(0x2021, b); break;
                 case 5:
                     if (b.Length != 4) throw new InvalidDataException("Invalid sector start.");
-                    Send(6, b); Send(0x3004, Wire.Body(w => w.Write(Player))); Ready = true; Status = "Connected"; break;
+                    Send(6, b); Send(0x3004, Wire.Body(w => w.Write(Player))); Ready = true; Status = "Connected";
+                    if (World.Station?.RoomList.Count > 0 && World.Station.CurrentRoom == uint.MaxValue)
+                        EnterStationRoom(World.Station.RoomList[0].Index);
+                    break;
+                case 0x52:
+                    if (Ready && World.Station?.RoomList.Count > 0 && World.Station.CurrentRoom == uint.MaxValue)
+                        EnterStationRoom(World.Station.RoomList[0].Index);
+                    break;
                 case 0x54:
                     if (rescuePending) { rescuePending = false; Status = "Rescue options received"; }
                     break;

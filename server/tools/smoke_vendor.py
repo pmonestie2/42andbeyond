@@ -85,6 +85,8 @@ def exercise(binary: Path, host: str) -> None:
             process = start(binary, host, state, log)
             session = connect(host, allow_station=True)
             owner = session.ticket.player_id
+            session.send(0x9f, struct.pack('<3I', owner, 2, 0))
+            session.send(0x9d, struct.pack('<II4fI', owner, 2, 0., 0., 0., 0., 0x41))
             session.send(0x4e, struct.pack('<IIB', owner, 16, 4))
             greeting = await_frame(session, 0x54)
             assert b'@name' not in greeting.body and b'SandboxPilot' in greeting.body

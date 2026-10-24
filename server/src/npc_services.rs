@@ -12,6 +12,19 @@ pub(super) struct NpcInteraction {
 }
 
 impl PlayerSession {
+    /// Require the avatar to occupy the NPC's actual station room.
+    fn npc_in_current_room(&self, identity: u32) -> bool {
+        self.sector.station.as_ref().is_some_and(|station| {
+            station.npcs.iter().any(|npc| {
+                npc.id == identity
+                    && self
+                        .station_pose
+                        .as_ref()
+                        .is_some_and(|pose| pose.room == npc.room)
+            })
+        })
+    }
+
     pub(super) fn open_npc(&mut self, identity: u32) -> io::Result<()> {
         let station = self
             .sector
@@ -21,6 +34,9 @@ impl PlayerSession {
             .ok_or_else(|| invalid("Enter a station alive before talking to an NPC."))?;
         if !station.npcs.iter().any(|npc| npc.id == identity) {
             return Err(invalid("NPC is not placed in this station."));
+        }
+        if !self.npc_in_current_room(identity) {
+            return Err(invalid("Enter the NPC's room before talking."));
         }
         let npc = self.npcs.npc(identity, station.id)?;
         println!(
@@ -106,6 +122,9 @@ impl PlayerSession {
             .as_ref()
             .ok_or_else(|| invalid("No NPC conversation is active."))?
             .npc;
+        if !self.npc_in_current_room(identity) {
+            return Err(invalid("NPC conversation is no longer in your room."));
+        }
         let mut entry = self.npc_node(identity, node)?;
         if entry.flag > 1 {
             return Err(invalid("This NPC mission action is not implemented yet."));
@@ -190,6 +209,9 @@ impl PlayerSession {
             .npc_interaction
             .as_ref()
             .ok_or_else(|| invalid("No NPC conversation is active."))?;
+        if !self.npc_in_current_room(active.npc) {
+            return Err(invalid("NPC conversation is no longer in your room."));
+        }
         let current = self.npc_node(active.npc, active.node)?;
         // A modified client cannot jump directly to any trade/mission node.
         if !current.branches.iter().any(|branch| branch.node == choice)
@@ -260,7 +282,9 @@ impl PlayerSession {
 
     pub(super) fn restore_npc_service(&mut self) -> io::Result<()> {
         if let Some(active) = self.npc_interaction.clone() {
-            if self.sector.station.is_none() || self.npc_node(active.npc, active.node).is_err() {
+            if !self.npc_in_current_room(active.npc)
+                || self.npc_node(active.npc, active.node).is_err()
+            {
                 self.close_npc();
             } else if active.vendor {
                 self.pending.extend(self.vendor_frames(active.npc)?);
@@ -279,6 +303,9 @@ impl PlayerSession {
             .as_ref()
             .filter(|active| active.vendor)
             .ok_or_else(|| invalid("Open a vendor before trading."))?;
+        if !self.npc_in_current_room(active.npc) {
+            return Err(invalid("Enter the vendor's room before trading."));
+        }
         let npc = self.npcs.npc(active.npc, self.sector.id)?;
         let group = self.npcs.group(npc)?;
         match (transfer.source, transfer.destination) {
