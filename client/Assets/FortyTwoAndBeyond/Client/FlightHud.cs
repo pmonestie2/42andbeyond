@@ -11,6 +11,8 @@ namespace FortyTwoAndBeyond.Client
     public sealed class FlightHud : IDisposable
     {
         private readonly SpaceClient client;
+        private static readonly Vector2[] LabelOffsets = { new Vector2(12, -48), new Vector2(12, 12),
+            new Vector2(-184, -48), new Vector2(-184, 12) };
         public float Scale => Mathf.Max(.01f, Mathf.Min(1f, Screen.width / 1280f, Screen.height / 760f));
         private float CanvasWidth => Screen.width / Scale;
         private float CanvasHeight => Screen.height / Scale;
@@ -745,18 +747,43 @@ namespace FortyTwoAndBeyond.Client
         private void WorldLabels(Snapshot snapshot)
         {
             var occupied = new List<Rect>();
+            foreach (ShipActor actor in snapshot.Players.Concat(snapshot.Mobs).Where(item => item.HasPosition))
+            {
+                Vector3 point = client.ProjectPlayer(actor.Id); point.x /= Scale; point.y /= Scale;
+                if (point.z > 0) occupied.Add(new Rect(point.x + 10, point.y - 18, 255, 62));
+            }
+            occupied.Add(new Rect(CanvasWidth * .5f - 85, CanvasHeight * .5f - 65, 170, 130));
             MapObject selectedTarget = client.Target;
+            int shown = 0;
             foreach (MapObject item in destinations.OrderByDescending(item => selectedTarget?.Id == item.Id))
             {
-                if (occupied.Count >= 9) break; Vector3 p = client.Project(item.Position); p.x /= Scale; p.y /= Scale;
+                if (shown >= 7) break;
+                bool active = selectedTarget?.Id == item.Id;
+                float distance = item.Position.Distance(snapshot.Position);
+                if (!active && distance > 60000) continue;
+                Vector3 p = client.Project(item.Position); p.x /= Scale; p.y /= Scale;
                 if (p.z <= 0 || p.x < 30 || p.x > CanvasWidth - 335 || p.y < 100 || p.y > CanvasHeight - 145) continue;
-                bool active = selectedTarget?.Id == item.Id; Color color = active ? gold : cyan; float radius = active ? 11 : 5;
+                Color color = active ? gold : cyan; float radius = active ? 11 : 5;
                 Fill(new Rect(p.x - radius, p.y - radius, 5, 1), color); Fill(new Rect(p.x - radius, p.y - radius, 1, 5), color);
                 Fill(new Rect(p.x + radius - 5, p.y + radius, 5, 1), color); Fill(new Rect(p.x + radius, p.y + radius - 5, 1, 5), color);
-                var rect = new Rect(Mathf.Clamp(p.x - 85, 24, Mathf.Max(24, CanvasWidth - 510)), p.y + radius + 5, 175, 38);
-                for (int attempt = 0; attempt < 3 && occupied.Any(other => other.Overlaps(rect)); attempt++) rect.y += 38;
-                if (rect.yMax > CanvasHeight - 120 || occupied.Any(other => other.Overlaps(rect))) continue;
-                occupied.Add(rect); GUI.color = color; GUI.Label(rect, $"{item.Name}\n{item.Position.Distance(snapshot.Position) / 1000:0.0} km", small); GUI.color = Color.white;
+                Rect chosen = default;
+                bool placed = false;
+                foreach (Vector2 offset in LabelOffsets)
+                {
+                    var candidate = new Rect(p.x + offset.x, p.y + offset.y, 172, 36);
+                    if (candidate.xMin < 24 || candidate.xMax > CanvasWidth - 332 ||
+                        candidate.yMin < 95 || candidate.yMax > CanvasHeight - 122 ||
+                        occupied.Any(other => other.Overlaps(candidate))) continue;
+                    chosen = candidate; placed = true; break;
+                }
+                if (!placed) continue;
+                shown++; occupied.Add(chosen);
+                Fill(chosen, new Color(.004f, .018f, .035f, .82f));
+                Fill(new Rect(chosen.x, chosen.y, 2, chosen.height), color);
+                GUI.color = color;
+                GUI.Label(new Rect(chosen.x + 7, chosen.y + 1, chosen.width - 10, chosen.height - 2),
+                    $"{item.Name}\n{distance / 1000:0.0} km", small);
+                GUI.color = Color.white;
             }
         }
 

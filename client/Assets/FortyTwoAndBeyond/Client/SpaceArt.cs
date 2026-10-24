@@ -96,11 +96,20 @@ namespace FortyTwoAndBeyond.Client
             Transform root = Root(parent, "Explorer spacecraft");
             Model(root, shipHull, hull, Vector3.zero, new Vector3(.55f, .55f, .75f));
             Model(root, shipHull, glass, new Vector3(0, .15f, .15f), new Vector3(.22f, .34f, .32f));
+            Part(root, PrimitiveType.Cube, new Vector3(0, -.08f, -.45f), new Vector3(.22f, .12f, 1.3f), trim);
+            Part(root, PrimitiveType.Cube, new Vector3(0, .3f, -.5f), new Vector3(.08f, .14f, .62f), glow);
+            Transform nose = Model(root, shipHull, trim, new Vector3(0, -.03f, 1.02f),
+                new Vector3(.26f, .16f, .5f));
+            nose.localRotation = Quaternion.Euler(0, 180, 0);
             for (int side = -1; side <= 1; side += 2)
             {
                 Transform wing = Model(root, shipHull, trim, new Vector3(side * .65f, -.03f, -.3f), new Vector3(.5f, .1f, .48f));
                 wing.localRotation = Quaternion.Euler(0, side * -28, side * 8);
                 Part(root, PrimitiveType.Cube, new Vector3(side * .42f, .08f, -.35f), new Vector3(.25f, .26f, 1.1f), hull);
+                Part(root, PrimitiveType.Cube, new Vector3(side * .85f, -.02f, -.2f),
+                    new Vector3(.54f, .07f, .1f), glow);
+                Part(root, PrimitiveType.Cube, new Vector3(side * 1.03f, .12f, -.65f),
+                    new Vector3(.08f, .3f, .48f), hull);
                 Transform engine = Part(root, PrimitiveType.Cylinder, new Vector3(side * .42f, .08f, -.95f), new Vector3(.24f, .22f, .24f), dark);
                 engine.localRotation = Quaternion.Euler(90, 0, 0);
                 Transform flame = Part(root, PrimitiveType.Sphere, new Vector3(side * .42f, .08f, -1.2f), new Vector3(.14f, .14f, .45f), glow);
