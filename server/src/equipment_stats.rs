@@ -58,6 +58,9 @@ impl EquippedModifiers {
         let name = match modifier.stat.trim() {
             "STAT_ENGINE_TOP_SPEED" => "STAT_IMPULSE",
             "STAT_TURN_RATE" => "STAT_TURN",
+            // Public handling effects use the singular spelling while the
+            // archived player stat and weapon calculation use the plural.
+            "STAT_PROJECTILE_ACCURACY" => "STAT_PROJECTILES_ACCURACY",
             value => value,
         };
         if !(1..=4).contains(&modifier.operation) {

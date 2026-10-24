@@ -3881,6 +3881,129 @@ mod tests {
     }
 
     #[test]
+    /// Dual-stat handling devices change weapon damage and actual hit rolls.
+    fn activated_handling_devices_change_beam_and_projectile_combat() {
+        let state_dir =
+            std::env::temp_dir().join(format!("enb-handling-test-{}", rand::random::<u64>()));
+        crate::accounts::AccountDirectory::new(&state_dir)
+            .create_class(
+                "warrior".into(),
+                "example",
+                "Warrior".into(),
+                crate::classes::CharacterClass::parse("te").unwrap(),
+            )
+            .unwrap();
+        let mut ship = PlayerSession::new(
+            serde_json::from_str(include_str!("../data/sector.json")).unwrap(),
+            Ipv4Addr::new(127, 0, 0, 2),
+            state_dir,
+        )
+        .unwrap();
+        ship.logged_in = true;
+        ship.selected_peer = Some("127.0.0.1".parse().unwrap());
+        ship.endpoint = Some("127.0.0.1:22495".parse().unwrap());
+        let mut inventory = ship.inventory.clone();
+        inventory.equipped[9] = Some(crate::inventory::ItemInstance::stock(1925, 1));
+        ship.commit_inventory(inventory).unwrap();
+        let base_beam = ship.equipment.weapons[0].damage;
+        let base_beam_chances = ship.equipment.weapons[0].hit_chances;
+        let activation = [ship.player_id().to_le_bytes().as_slice(), &[2, 9]].concat();
+        ship.energy = ship.equipment.ship.energy_capacity;
+        ship.activate_equipped_item(&activation).unwrap();
+        assert!(ship.equipment.weapons[0].damage > base_beam);
+        assert_ne!(ship.equipment.weapons[0].hit_chances, base_beam_chances);
+        let mut restored =
+            PlayerSession::new(ship.sector.clone(), ship.bind, ship.state_dir.clone()).unwrap();
+        assert!(restored.equipment.weapons[0].damage > base_beam);
+        restored.active_device.as_mut().unwrap().expires_at_ms = crate::resources::unix_ms() - 1;
+        restored.advance_active_device().unwrap();
+        assert_eq!(restored.equipment.weapons[0].damage, base_beam);
+
+        let mut inventory = restored.inventory.clone();
+        inventory.equipped[3] = Some(crate::inventory::ItemInstance::stock(3022, 1));
+        inventory.ammunition[3] = Some(crate::inventory::ItemInstance::stock(512, 10));
+        inventory.equipped[9] = Some(crate::inventory::ItemInstance::stock(1806, 1));
+        restored.commit_inventory(inventory).unwrap();
+        let base_projectile = restored.equipment.weapons[0].damage;
+        let base_projectile_chances = restored.equipment.weapons[0].hit_chances;
+        restored.energy = restored.equipment.ship.energy_capacity;
+        restored.activate_equipped_item(&activation).unwrap();
+        assert!(restored.equipment.weapons[0].damage > base_projectile);
+        assert_ne!(
+            restored.equipment.weapons[0].hit_chances,
+            base_projectile_chances
+        );
+    }
+
+    #[test]
+    /// Shunt and Turbo Warp change their live resource and movement parameters.
+    fn activated_shunt_and_turbo_warp_change_authoritative_ship_stats() {
+        let mut ship = session();
+        ship.logged_in = true;
+        ship.selected_peer = Some("127.0.0.1".parse().unwrap());
+        ship.endpoint = Some("127.0.0.1:22496".parse().unwrap());
+        let mut inventory = ship.inventory.clone();
+        inventory.equipped[1] = Some(crate::inventory::ItemInstance::stock(3343, 1));
+        inventory.equipped[9] = Some(crate::inventory::ItemInstance::stock(1950, 1));
+        ship.commit_inventory(inventory).unwrap();
+        let base_energy = ship.equipment.ship.energy_recharge;
+        let base_shield = ship.equipment.ship.shield_recharge;
+        let activation = [ship.player_id().to_le_bytes().as_slice(), &[2, 9]].concat();
+        ship.energy = ship.equipment.ship.energy_capacity;
+        ship.activate_equipped_item(&activation).unwrap();
+        assert!((ship.equipment.ship.energy_recharge - base_energy * 1.25).abs() < 0.001);
+        assert!((ship.equipment.ship.shield_recharge - base_shield * 0.75).abs() < 0.001);
+        ship.active_device.as_mut().unwrap().expires_at_ms = crate::resources::unix_ms() - 1;
+        ship.advance_active_device().unwrap();
+        let state_dir =
+            std::env::temp_dir().join(format!("enb-turbo-warp-test-{}", rand::random::<u64>()));
+        crate::accounts::AccountDirectory::new(&state_dir)
+            .create_class(
+                "trader".into(),
+                "example",
+                "Trader".into(),
+                crate::classes::CharacterClass::parse("tt").unwrap(),
+            )
+            .unwrap();
+        let mut traveler = PlayerSession::new(
+            serde_json::from_str(include_str!("../data/sector.json")).unwrap(),
+            Ipv4Addr::new(127, 0, 0, 2),
+            state_dir,
+        )
+        .unwrap();
+        traveler.logged_in = true;
+        traveler.selected_peer = Some("127.0.0.1".parse().unwrap());
+        traveler.endpoint = Some("127.0.0.1:22497".parse().unwrap());
+        let mut inventory = traveler.inventory.clone();
+        inventory.equipped[9] = Some(crate::inventory::ItemInstance::stock(1836, 1));
+        traveler.commit_inventory(inventory).unwrap();
+        let base_warp = traveler.warp.speed;
+        traveler.energy = traveler.equipment.ship.energy_capacity;
+        let activation = [traveler.player_id().to_le_bytes().as_slice(), &[2, 9]].concat();
+        traveler.activate_equipped_item(&activation).unwrap();
+        let active = traveler.active_device.as_ref().unwrap();
+        assert_eq!(active.effect, session_equipment::ActiveEffect::TurboWarp);
+        assert!(active.valid_for(
+            &traveler.inventory,
+            &traveler.items,
+            crate::resources::unix_ms()
+        ));
+        assert_eq!(active.modifiers()[0].stat, "STAT_WARP");
+        assert_eq!(traveler.equipment.ship.warp_speed, base_warp + 750.);
+        assert_eq!(traveler.warp.speed, base_warp + 750.);
+        let mut restored = PlayerSession::new(
+            traveler.sector.clone(),
+            traveler.bind,
+            traveler.state_dir.clone(),
+        )
+        .unwrap();
+        assert_eq!(restored.warp.speed, base_warp + 750.);
+        restored.active_device.as_mut().unwrap().expires_at_ms = crate::resources::unix_ms() - 1;
+        restored.advance_active_device().unwrap();
+        assert_eq!(restored.warp.speed, base_warp);
+    }
+
+    #[test]
     fn legacy_turbo_checkpoint_and_catalog_mismatch_are_validated() {
         let ship = session();
         let active: session_equipment::ActiveDevice = serde_json::from_value(serde_json::json!({

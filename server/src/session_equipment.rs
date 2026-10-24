@@ -19,6 +19,10 @@ pub(super) enum ActiveEffect {
     DeflectEmp,
     DeflectChemical,
     ResistPsionic,
+    TurboWarp,
+    BeamHandling,
+    ProjectileHandling,
+    ShuntReactor,
 }
 
 impl ActiveEffect {
@@ -39,6 +43,10 @@ impl ActiveEffect {
             Self::DeflectEmp => "Deflect EMP",
             Self::DeflectChemical => "Deflect Chemical",
             Self::ResistPsionic => "Resist Psionic",
+            Self::TurboWarp => "Turbo Warp",
+            Self::BeamHandling => "Improved Beam Handling",
+            Self::ProjectileHandling => "Improved Projectile Handling",
+            Self::ShuntReactor => "Shunt to Reactor",
         }
     }
 
@@ -59,6 +67,10 @@ impl ActiveEffect {
             Self::DeflectEmp => ("STAT_EMP_DEFLECT", 1, 100.),
             Self::DeflectChemical => ("STAT_CHEM_DEFLECT", 1, 100.),
             Self::ResistPsionic => ("STAT_PSIONIC_DEFLECT", 1, 100.),
+            Self::TurboWarp => ("STAT_WARP", 1, 10_000.),
+            Self::BeamHandling => ("STAT_BEAM_ACCURACY", 2, 100.),
+            Self::ProjectileHandling => ("STAT_PROJECTILE_ACCURACY", 2, 100.),
+            Self::ShuntReactor => ("STAT_ENERGY_RECHARGE", 2, 100.),
         }
     }
 }
@@ -73,6 +85,8 @@ pub(super) struct ActiveDevice {
     pub value: f32,
     #[serde(default)]
     pub operation: u32,
+    #[serde(default)]
+    pub secondary: Option<Modifier>,
     pub expires_at_ms: u64,
 }
 
@@ -83,10 +97,11 @@ impl ActiveDevice {
         let expected = items.get(self.template).ok().and_then(device_effect);
         (9..20).contains(&usize::from(self.slot))
             && self.value.is_finite()
-            && expected.is_some_and(|(effect, value, operation, duration_ms)| {
+            && expected.is_some_and(|(effect, value, operation, secondary, duration_ms)| {
                 effect == self.effect
                     && (value - self.value).abs() < 0.001
                     && operation == self.effective_operation()
+                    && modifier_matches(self.secondary.as_ref(), secondary.as_ref())
                     && self.expires_at_ms <= now_ms.saturating_add(duration_ms)
             })
             && self.expires_at_ms > now_ms
@@ -99,11 +114,13 @@ impl ActiveDevice {
     ///     Vec<Modifier>: Frozen self-buff applied through ordinary stat rules.
     pub fn modifiers(&self) -> Vec<Modifier> {
         let (stat, _, _) = self.effect.rule();
-        vec![Modifier {
+        let mut modifiers = vec![Modifier {
             stat: stat.into(),
             operation: self.effective_operation(),
             value: self.value,
-        }]
+        }];
+        modifiers.extend(self.secondary.iter().cloned());
+        modifiers
     }
 
     /// Returns:
@@ -117,11 +134,27 @@ impl ActiveDevice {
     }
 }
 
+/// Returns:
+///     bool: Whether a saved second modifier matches the public catalog.
+fn modifier_matches(saved: Option<&Modifier>, catalog: Option<&Modifier>) -> bool {
+    match (saved, catalog) {
+        (None, None) => true,
+        (Some(saved), Some(catalog)) => {
+            saved.stat == catalog.stat
+                && saved.operation == catalog.operation
+                && (saved.value - catalog.value).abs() < 0.001
+        }
+        _ => false,
+    }
+}
+
 /// Read supported self-buffs and their explicit public duration.
 ///
 /// Returns:
-///     Option<(ActiveEffect, f32, u32, u64)>: Effect, boost, operation and duration.
-fn device_effect(template: &ItemTemplate) -> Option<(ActiveEffect, f32, u32, u64)> {
+///     Option<(ActiveEffect, f32, u32, Option<Modifier>, u64)>: Frozen effect rules.
+fn device_effect(
+    template: &ItemTemplate,
+) -> Option<(ActiveEffect, f32, u32, Option<Modifier>, u64)> {
     if template.item_type != 11 || template.activated.len() != 1 {
         return None;
     }
@@ -140,6 +173,10 @@ fn device_effect(template: &ItemTemplate) -> Option<(ActiveEffect, f32, u32, u64
             "Deflect EMP (Activated)" => ActiveEffect::DeflectEmp,
             "Deflect Chemical (Activated)" => ActiveEffect::DeflectChemical,
             "Resist Psionic (Activated)" => ActiveEffect::ResistPsionic,
+            "Turbo Warp (Activated)" => ActiveEffect::TurboWarp,
+            "Improved Beam Handling (Activated)" => ActiveEffect::BeamHandling,
+            "Improved Projectile Handling (Activated)" => ActiveEffect::ProjectileHandling,
+            "Shunt to Reactor (Activated)" => ActiveEffect::ShuntReactor,
             _ => return None,
         };
         let (stat, default_operation, maximum) = kind.rule();
@@ -148,9 +185,28 @@ fn device_effect(template: &ItemTemplate) -> Option<(ActiveEffect, f32, u32, u64
             .iter()
             .filter(|modifier| modifier.stat != "NO_STAT")
             .collect::<Vec<_>>();
-        let [modifier] = stat_modifiers.as_slice() else {
-            return None;
+        let modifier = stat_modifiers.first()?;
+        let secondary_rule = match kind {
+            ActiveEffect::BeamHandling => Some(("STAT_BEAM_DAMAGE", 2, 100.)),
+            ActiveEffect::ProjectileHandling => Some(("STAT_PROJECTILES_DAMAGE", 2, 100.)),
+            ActiveEffect::ShuntReactor => Some(("STAT_SHIELD_RECHARGE", 4, 100.)),
+            _ => None,
         };
+        let secondary = match (secondary_rule, stat_modifiers.get(1)) {
+            (Some((stat, operation, maximum)), Some(modifier))
+                if modifier.stat == stat
+                    && modifier.operation == operation
+                    && modifier.value.is_finite()
+                    && (0. ..=maximum).contains(&modifier.value) =>
+            {
+                Some((*modifier).clone())
+            }
+            (None, None) => None,
+            _ => return None,
+        };
+        if stat_modifiers.len() != 1 + usize::from(secondary.is_some()) {
+            return None;
+        }
         let operation = modifier.operation;
         if modifier.stat != stat
             || operation != default_operation
@@ -174,7 +230,7 @@ fn device_effect(template: &ItemTemplate) -> Option<(ActiveEffect, f32, u32, u64
         {
             return None;
         }
-        Some((kind, bonus, operation, (seconds * 1000.) as u64))
+        Some((kind, bonus, operation, secondary, (seconds * 1000.) as u64))
     })
 }
 
@@ -390,7 +446,8 @@ impl PlayerSession {
                 return Err(invalid("No equipped item in this mount."));
             };
             let template = self.items.get(item.template)?;
-            let Some((effect, bonus, operation, duration_ms)) = device_effect(template) else {
+            let Some((effect, bonus, operation, secondary, duration_ms)) = device_effect(template)
+            else {
                 self.pending.push(packets::message(
                     "This item activation is not implemented yet.",
                 ));
@@ -427,6 +484,7 @@ impl PlayerSession {
                 effect,
                 value: bonus,
                 operation,
+                secondary,
                 expires_at_ms: now_ms.saturating_add(duration_ms),
             });
             if let Err(error) = self.checkpoint_session(true) {
@@ -485,15 +543,47 @@ mod tests {
         for id in [2265, 2363, 2412] {
             assert!(device_effect(items.get(id).unwrap()).is_some());
         }
-        let (kind, value, operation, duration) = device_effect(items.get(1810).unwrap()).unwrap();
+        let (kind, value, operation, secondary, duration) =
+            device_effect(items.get(1810).unwrap()).unwrap();
         assert_eq!(kind, ActiveEffect::RechargeReactor);
+        assert!(secondary.is_none());
         assert_eq!((value, operation, duration), (4., 1, 240_000));
-        let (kind, value, operation, duration) = device_effect(items.get(2490).unwrap()).unwrap();
+        let (kind, value, operation, secondary, duration) =
+            device_effect(items.get(2490).unwrap()).unwrap();
         assert_eq!(kind, ActiveEffect::RechargeReactor);
+        assert!(secondary.is_none());
         assert_eq!((value, operation, duration), (30., 2, 2_160_000));
-        let (kind, value, operation, duration) = device_effect(items.get(1805).unwrap()).unwrap();
+        let (kind, value, operation, secondary, duration) =
+            device_effect(items.get(1805).unwrap()).unwrap();
         assert_eq!(kind, ActiveEffect::RechargeShields);
+        assert!(secondary.is_none());
         assert_eq!((value, operation, duration), (10., 2, 240_000));
         assert!(device_effect(items.get(1875).unwrap()).is_none());
+    }
+
+    #[test]
+    /// Public dual-modifier devices preserve both combat/recharge operations.
+    fn handling_and_shunt_catalog_effects_have_the_expected_second_modifier() {
+        let items = ItemCatalog::load().unwrap();
+        for (id, kind, stat, operation) in [
+            (1925, ActiveEffect::BeamHandling, "STAT_BEAM_DAMAGE", 2),
+            (
+                1806,
+                ActiveEffect::ProjectileHandling,
+                "STAT_PROJECTILES_DAMAGE",
+                2,
+            ),
+            (1950, ActiveEffect::ShuntReactor, "STAT_SHIELD_RECHARGE", 4),
+        ] {
+            let (effect, _, _, second, _) = device_effect(items.get(id).unwrap()).unwrap();
+            assert_eq!(effect, kind);
+            let second = second.unwrap();
+            assert_eq!((second.stat.as_str(), second.operation), (stat, operation));
+        }
+        let (kind, value, operation, second, duration) =
+            device_effect(items.get(1836).unwrap()).unwrap();
+        assert_eq!(kind, ActiveEffect::TurboWarp);
+        assert_eq!((value, operation, duration), (750., 1, 480_000));
+        assert!(second.is_none());
     }
 }
