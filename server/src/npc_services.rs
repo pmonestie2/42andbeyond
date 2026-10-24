@@ -139,23 +139,27 @@ impl PlayerSession {
     }
 
     /// Returns:
-    ///     Inventory: Atomic mission completion and supported public rewards.
-    fn mission_completion_candidate(&self, mission: u32, stage: u32) -> io::Result<Inventory> {
+    ///     Inventory: Atomic stage turn-in, objective costs and public rewards.
+    fn mission_transition_candidate(
+        &self,
+        mission: u32,
+        stage: u32,
+        destination: Option<u32>,
+    ) -> io::Result<Inventory> {
         let catalog = crate::missions::MissionCatalog::load()?;
         let definition = catalog.get(mission)?;
-        let final_stage = definition
+        let current_stage = definition
             .stages
             .get(stage as usize)
-            .filter(|_| stage as usize + 1 == definition.stages.len())
-            .ok_or_else(|| invalid("Mission is not at its final stage."))?;
-        if !final_stage.completion.iter().any(|objective| {
+            .ok_or_else(|| invalid("Mission stage is unavailable."))?;
+        if !current_stage.completion.iter().any(|objective| {
             objective.kind == 1
                 && objective.data == i64::from(self.npc_interaction.as_ref().unwrap().npc)
         }) {
-            return Err(invalid("Mission final NPC objective is unavailable."));
+            return Err(invalid("Mission NPC objective is unavailable."));
         }
         let mut candidate = self.inventory.clone();
-        for objective in &final_stage.completion {
+        for objective in &current_stage.completion {
             match objective.kind {
                 1 if objective.data == i64::from(self.npc_interaction.as_ref().unwrap().npc) => {}
                 14 => {
@@ -169,8 +173,12 @@ impl PlayerSession {
                 _ => return Err(invalid("Mission turn-in objective is not supported yet.")),
             }
         }
-        candidate.missions.complete(mission, &catalog)?;
-        for reward in &final_stage.rewards {
+        if let Some(destination) = destination {
+            candidate.missions.advance(mission, destination, &catalog)?;
+        } else {
+            candidate.missions.complete(mission, &catalog)?;
+        }
+        for reward in &current_stage.rewards {
             let amount = match &reward.data {
                 crate::missions::MissionRewardData::Number(value) => u64::try_from(*value)
                     .map_err(|_| invalid("Mission reward amount is negative."))?,
@@ -265,7 +273,11 @@ impl PlayerSession {
                     .missions
                     .start(mission, crate::resources::unix_ms(), &catalog)?;
             } else {
-                candidate.missions.advance(mission, destination, &catalog)?;
+                candidate = self.mission_transition_candidate(
+                    mission,
+                    active.mission_stage,
+                    Some(destination),
+                )?;
             }
             self.commit_inventory(candidate)?;
             self.npc_interaction.as_mut().unwrap().mission_stage = destination;
@@ -275,7 +287,8 @@ impl PlayerSession {
             )));
         } else if entry.flag == 6 {
             let mission = active.mission.unwrap();
-            let candidate = self.mission_completion_candidate(mission, active.mission_stage)?;
+            let candidate =
+                self.mission_transition_candidate(mission, active.mission_stage, None)?;
             self.commit_inventory(candidate)?;
             self.npc_interaction.as_mut().unwrap().mission = None;
             self.pending.push(packets::message(&format!(

@@ -3080,6 +3080,89 @@ mod tests {
     }
 
     #[test]
+    fn cash_for_roids_commits_each_npc_payment_and_reward_once() {
+        let mut ship = session();
+        ship.account.character.race = 0;
+        ship.account.character.profession = 2;
+        ship.skill_catalog = SkillCatalog::for_profile(&ship.account.character).unwrap();
+        ship.sector = ship.sectors.sector(12150).unwrap();
+        ship.logged_in = true;
+        enter_npc_room(&mut ship, 442);
+        ship.open_npc(442).unwrap();
+        assert_eq!(ship.npc_interaction.as_ref().unwrap().mission, Some(341));
+        for choice in [2, 3, 4, 5] {
+            npc_choice(&mut ship, choice).unwrap();
+        }
+        ship.close_npc();
+
+        enter_npc_room(&mut ship, 444);
+        ship.open_npc(444).unwrap();
+        for choice in [2, 3, 4, 5, 6] {
+            npc_choice(&mut ship, choice).unwrap();
+        }
+        assert_eq!(ship.inventory.credits, 60_000);
+        assert_eq!(ship.inventory.missions.active[0].stage, 2);
+        ship.close_npc();
+
+        enter_npc_room(&mut ship, 442);
+        ship.open_npc(442).unwrap();
+        for choice in [2, 3] {
+            npc_choice(&mut ship, choice).unwrap();
+        }
+        assert_eq!(ship.inventory.credits, 10_000);
+        assert_eq!(ship.inventory.missions.active[0].stage, 3);
+        ship.close_npc();
+
+        enter_npc_room(&mut ship, 447);
+        ship.open_npc(447).unwrap();
+        for choice in [2, 3, 4, 5] {
+            npc_choice(&mut ship, choice).unwrap();
+        }
+        assert_eq!(ship.inventory.credits, 85_000);
+        assert_eq!(ship.inventory.missions.active[0].stage, 4);
+        ship.close_npc();
+
+        enter_npc_room(&mut ship, 442);
+        ship.open_npc(442).unwrap();
+        for choice in [2, 3, 4, 5] {
+            npc_choice(&mut ship, choice).unwrap();
+        }
+        assert_eq!(ship.inventory.credits, 10_000);
+        assert_eq!(ship.inventory.combat_xp, 5000);
+        assert_eq!(ship.inventory.explore_xp, 5000);
+        assert_eq!(ship.inventory.trade_xp, 5000);
+        assert!(ship.inventory.mission_awarded_skills.contains(&36));
+        assert!(ship.inventory.missions.completed.contains(&341));
+        let saved: crate::inventory::Inventory =
+            serde_json::from_slice(&std::fs::read(ship.state_dir.join("inventory.json")).unwrap())
+                .unwrap();
+        assert_eq!(saved.missions, ship.inventory.missions);
+        assert_eq!(saved.credits, 10_000);
+    }
+
+    #[test]
+    fn repair_training_requires_station_payment_and_records_skill_reward() {
+        let mut ship = session();
+        ship.account.character.race = 0;
+        ship.account.character.profession = 0;
+        ship.skill_catalog = SkillCatalog::for_profile(&ship.account.character).unwrap();
+        ship.sector = ship.sectors.sector(10601).unwrap();
+        ship.logged_in = true;
+        enter_npc_room(&mut ship, 28);
+        ship.open_npc(28).unwrap();
+        assert_eq!(ship.npc_interaction.as_ref().unwrap().mission, Some(90));
+        npc_choice(&mut ship, 2).unwrap();
+        ship.close_npc();
+        ship.open_npc(28).unwrap();
+        for choice in [2, 3, 4, 5] {
+            npc_choice(&mut ship, choice).unwrap();
+        }
+        assert_eq!(ship.inventory.credits, 7500);
+        assert!(ship.inventory.mission_awarded_skills.contains(&47));
+        assert!(ship.inventory.missions.completed.contains(&90));
+    }
+
+    #[test]
     fn npc_dialogue_and_vendor_require_the_npcs_room_after_a_room_change() {
         let mut ship = session();
         ship.sector = ship.sectors.sector(10761).unwrap();
