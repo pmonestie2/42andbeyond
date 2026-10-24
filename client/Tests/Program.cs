@@ -10,7 +10,7 @@ internal static class Program
     /// <summary>Run pure protocol checks, with explicit opt-in to a disposable local server.</summary>
     private static void Main(string[] args)
     {
-        CheckReassembly(); CheckWorld(); CheckStationLayout(); CheckDemoRoster(); CheckAddress(); PeerChecks.Decode();
+        CheckReassembly(); CheckWorld(); CheckMissionJournal(); CheckStationLayout(); CheckDemoRoster(); CheckAddress(); PeerChecks.Decode();
         Console.WriteLine("PASS: framing, ordering, fragmentation, duplicates, bounds, world decoding, private addresses");
         if (args.Length == 2 && args[0] == "--server") { PeerChecks.Live(args[1]); CheckServer(args[1]); }
         else if (args.Length != 0) throw new ArgumentException("Usage: ProtocolChecks [--server PRIVATE_IP]");
@@ -88,6 +88,40 @@ internal static class Program
         world.Apply(new Frame(0x1d, scanEnd), 1);
         Assert(world.ActiveDeviceLabel.Length == 0 && scanSnapshot.ActiveDeviceLabel == "Scan Boost",
             "Generic device expiry changed an earlier display snapshot.");
+    }
+
+    /// <summary>Decode an actual server mission AUX fixture and preserve snapshot ownership.</summary>
+    private static void CheckMissionJournal()
+    {
+        const string fixture =
+            "1600fe0f76001efc0f0300000000140042617369632053686f6f74696e672052616e6765" +
+            "44004c6561726e2061626f757420636f6d6261742066726f6d204c742e205261696e652e20" +
+            "285265776172643a20456e7261676520736b696c6c2c20436f6d62617420585029010400000001000000" +
+            "160000feff0f9689004c742e205261696e65206861732073656e7420796f7520746f2064657374726f79" +
+            "20736f6d65207065736b7920726f67756520547261736820436f6c6c6563746f7220426f747320696e20" +
+            "4c756e6120536563746f722e20546865792063616e20626520666f756e64206e6561722074686520426173" +
+            "69632053686f6f74696e672052616e6765732e050505050505050505050505050505050505050505050505050505050505";
+        byte[] missions = Enumerable.Range(0, fixture.Length / 2)
+            .Select(index => Convert.ToByte(fixture.Substring(index * 2, 2), 16)).ToArray();
+        byte[] aux = Wire.Body(writer =>
+        {
+            writer.Write(0u); writer.Write((ushort)(missions.Length + 4)); writer.Write((byte)1);
+            writer.Write(new byte[] { 2, 0x20, 0 }); writer.Write(missions);
+        });
+        var world = new World(); world.Apply(new Frame(0x1b, aux), 1);
+        Snapshot first = new Snapshot(world, "ready", true);
+        Assert(first.Missions[0]?.Name == "Basic Shooting Range" &&
+            first.Missions[0].Stage == 1 && first.Missions[0].Objective.Contains("Trash Collector Bots"),
+            "Native mission journal did not decode its first active stage.");
+        Assert(first.Missions.Skip(1).All(mission => mission == null),
+            "Native mission reset slots remained populated.");
+        world.Apply(new Frame(0x1b, Wire.Body(writer =>
+        {
+            writer.Write(0u); writer.Write((ushort)7); writer.Write((byte)1);
+            writer.Write(new byte[] { 6, 0, 0, 0x80, 0, 5 });
+        })), 1);
+        Assert(world.Missions[0] == null && first.Missions[0] != null,
+            "Mission journal reset changed an earlier immutable snapshot.");
     }
 
     /// <summary>Check packed station room and NPC placement before interior navigation.</summary>

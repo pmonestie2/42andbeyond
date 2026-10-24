@@ -361,6 +361,7 @@ namespace FortyTwoAndBeyond.Protocol
         public ProductionState Production { get; private set; } = new ProductionState();
         public DialogueState Dialogue { get; private set; }
         public ulong Credits { get; private set; }
+        public MissionState[] Missions { get; private set; } = new MissionState[12];
         public uint[] AvailableAbilities { get; private set; } = Array.Empty<uint>();
         public uint CastingAbilityId { get; private set; } = uint.MaxValue;
         public string ActiveDeviceLabel { get; private set; } = "";
@@ -509,6 +510,8 @@ namespace FortyTwoAndBeyond.Protocol
                         ulong? credits = AuxState.ReadCredits(b);
                         if (credits.HasValue) Credits = credits.Value;
                         AuxState.ReadVault(b, Equipment);
+                        MissionState[] missions = AuxState.ReadMissions(b, Missions);
+                        if (missions != null) Missions = missions;
                         uint[] abilities = AuxState.ReadAvailableAbilities(b);
                         if (abilities != null) AvailableAbilities = abilities;
                         AbilityProgress progress = AuxState.ReadAbilityProgress(b);
@@ -663,6 +666,7 @@ namespace FortyTwoAndBeyond.Protocol
         public readonly StationAvatar[] StationAvatars;
         public readonly DialogueState Dialogue;
         public readonly ulong Credits;
+        public readonly MissionState[] Missions;
         public readonly uint[] AvailableAbilities;
         public readonly uint CastingAbilityId;
         public readonly bool TurboWeaponsActive;
@@ -700,6 +704,7 @@ namespace FortyTwoAndBeyond.Protocol
             Group = world.Group; Station = world.Station; StationAvatars = world.StationAvatars.Values.ToArray();
             Production = new ProductionView(world.Production, world.ItemCatalog);
             Dialogue = world.Dialogue; Credits = world.Credits;
+            Missions = (MissionState[])world.Missions.Clone();
             Vendor = new ItemView[world.Vendor.Length];
             AvailableAbilities = (uint[])world.AvailableAbilities.Clone();
             long now = System.Diagnostics.Stopwatch.GetTimestamp();
