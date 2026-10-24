@@ -3,9 +3,11 @@ from __future__ import annotations
 
 import argparse
 import fcntl
+import hashlib
 import os
 from pathlib import Path
 import shutil
+import stat
 import subprocess
 import sys
 
@@ -35,8 +37,46 @@ def running_client(client: Path) -> bool:
     return any(line.strip() == str(client) for line in inventory.splitlines())
 
 
+def file_digest(path: Path) -> bytes:
+    """Returns:
+        bytes: SHA-256 digest of a regular bundle file.
+    """
+    digest = hashlib.sha256()
+    with path.open('rb') as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b''):
+            digest.update(block)
+    return digest.digest()
+
+
+def bundles_equal(source: Path, destination: Path) -> bool:
+    """Returns:
+        bool: Whether both app bundles contain the same paths, file bytes, links, and modes.
+    """
+    if not destination.is_dir():
+        return False
+    source_paths = sorted(path.relative_to(source) for path in source.rglob('*'))
+    destination_paths = sorted(path.relative_to(destination) for path in destination.rglob('*'))
+    if source_paths != destination_paths:
+        return False
+    for relative in source_paths:
+        built = source / relative
+        installed = destination / relative
+        built_stat = built.lstat()
+        installed_stat = installed.lstat()
+        if stat.S_IFMT(built_stat.st_mode) != stat.S_IFMT(installed_stat.st_mode) or \
+                stat.S_IMODE(built_stat.st_mode) != stat.S_IMODE(installed_stat.st_mode):
+            return False
+        if built.is_symlink():
+            if os.readlink(built) != os.readlink(installed):
+                return False
+        elif built.is_file():
+            if built_stat.st_size != installed_stat.st_size or file_digest(built) != file_digest(installed):
+                return False
+    return True
+
+
 def install(project: Path) -> Path:
-    """Copy a newer build into Applications without replacing a running client.
+    """Copy a changed build into Applications without replacing a running client.
 
     Returns:
         Path: Installed app bundle ready to launch.
@@ -55,7 +95,7 @@ def install(project: Path) -> Path:
     with lock_path.open('a+') as lock:
         fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
         current = destination / EXECUTABLE
-        if current.is_file() and current.stat().st_mtime_ns >= built_client.stat().st_mtime_ns:
+        if current.is_file() and bundles_equal(source, destination):
             return destination
         if running_client(current):
             raise RuntimeError('Close 42 and Beyond before installing a new build.')
