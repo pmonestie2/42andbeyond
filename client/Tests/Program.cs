@@ -274,6 +274,12 @@ internal static class Program
         Assert(world.Warp.Phase == WarpPhase.Recovering && !world.Warp.Arrived,
             "Cancelled warp recovery was mistaken for arrival.");
         Reject(() => world.Apply(new Frame(0x1b, phase(2, 3)), 1));
+        byte[] ahead = WarpState.RouteRequest(0x12345678, 0);
+        Assert(ahead.Length == 6 && Wire.U32(ahead, 0) == 0x345678 && Wire.U16(ahead, 4) == 0,
+            "Free-flight and cancel warp did not encode a zero-waypoint native route.");
+        byte[] targeted = WarpState.RouteRequest(0x12345678, 77);
+        Assert(targeted.Length == 10 && Wire.U16(targeted, 4) == 1 && Wire.U32(targeted, 6) == 77,
+            "Targeted warp lost its native waypoint identity.");
     }
 
     /// <summary>Keep held flight controls reachable after focus and text entry.</summary>

@@ -512,8 +512,12 @@ namespace FortyTwoAndBeyond.Client
         public void Select(uint id)
         { if (snapshot != null && snapshot.Objects.Any(item => item.Id == id && item.Navigable)) target = id; }
 
-        /// <summary>Request a server-authoritative warp to the selected target.</summary>
-        public void WarpSelected() { if (Ready && Target != null) worker.Submit(new ClientCommand(CommandKind.Warp, target)); }
+        /// <summary>Warp to the selected target, fly ahead, or cancel active warp.</summary>
+        public void WarpSelected()
+        {
+            if (Ready && snapshot.Station == null && snapshot.WarpPhase != WarpPhase.Recovering)
+                worker.Submit(new ClientCommand(CommandKind.Warp, target: Target?.Id ?? 0));
+        }
 
         /// <summary>Request travel through the selected gate.</summary>
         public void GateSelected() { if (Ready && Target?.Kind == 11) worker.Submit(new ClientCommand(CommandKind.Gate, target)); }

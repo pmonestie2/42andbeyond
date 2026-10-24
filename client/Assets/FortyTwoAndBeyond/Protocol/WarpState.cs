@@ -30,5 +30,19 @@ namespace FortyTwoAndBeyond.Protocol
                 return new WarpState(WarpPhase.Recovering, privateState == 8);
             throw new InvalidDataException("Invalid native warp phase.");
         }
+
+        /// <summary>
+        /// Returns:
+        ///     byte[]: Native route request for one target, or no waypoints for free flight and cancellation.
+        /// </summary>
+        public static byte[] RouteRequest(uint owner, uint target)
+        {
+            return Wire.Body(writer =>
+            {
+                writer.Write(owner & 0xffffff);
+                writer.Write((ushort)(target == 0 ? 0 : 1));
+                if (target != 0) writer.Write(target);
+            });
+        }
     }
 }
