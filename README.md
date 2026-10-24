@@ -10,6 +10,9 @@ Standalone Unity client and Rust game server.
 | `win_legacy/` | Optional original-client/Net7Proxy launcher and reversible configuration |
 | `reference/cpp/` | Pinned archived C++ reference files for reimplementation |
 
+Mac and Windows agents can exchange short messages through the private HTTP
+relay documented in [tools/COORDINATION.md](tools/COORDINATION.md).
+
 ## Run locally
 
 Install Rust and Unity Editor 6000.3.13f1. From this directory:
