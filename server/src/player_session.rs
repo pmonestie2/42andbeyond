@@ -1139,7 +1139,7 @@ impl PlayerSession {
         let active_device = self
             .active_device
             .as_ref()
-            .filter(|active| active.valid_for(&candidate, crate::resources::unix_ms()))
+            .filter(|active| active.valid_for(&candidate, &self.items, crate::resources::unix_ms()))
             .cloned();
         let active_modifiers = active_device
             .as_ref()
@@ -3168,6 +3168,79 @@ mod tests {
         assert_eq!(restored.motion.max_speed, ordinary_speed);
         assert_eq!(restored.equipment.weapons[0].reload, ordinary_reload);
         assert!(restored.pending.iter().any(|frame| frame.opcode == 0x1b));
+    }
+
+    #[test]
+    fn catalog_scan_and_speed_devices_change_ship_stats_and_survive_recovery() {
+        let mut ship = session();
+        ship.logged_in = true;
+        ship.selected_peer = Some("127.0.0.1".parse().unwrap());
+        ship.endpoint = Some("127.0.0.1:22492".parse().unwrap());
+        let mut inventory = ship.inventory.clone();
+        inventory.equipped[1] = Some(crate::inventory::ItemInstance::stock(3343, 1));
+        inventory.equipped[9] = Some(crate::inventory::ItemInstance::stock(2500, 1));
+        ship.commit_inventory(inventory).unwrap();
+        let base_scan = ship.equipment.ship.scan_range;
+        let base_speed = ship.motion.max_speed;
+        ship.energy = ship.equipment.ship.energy_capacity;
+        let energy = ship.energy;
+        let activation = [ship.player_id().to_le_bytes().as_slice(), &[2, 9]].concat();
+        ship.activate_equipped_item(&activation).unwrap();
+        assert_eq!(ship.energy, energy - 1437.);
+        assert!(ship.equipment.ship.scan_range > base_scan);
+        assert_eq!(ship.motion.max_speed, base_speed);
+
+        let mut restored =
+            PlayerSession::new(ship.sector.clone(), ship.bind, ship.state_dir.clone()).unwrap();
+        assert!(restored.equipment.ship.scan_range > base_scan);
+        restored.active_device.as_mut().unwrap().expires_at_ms = crate::resources::unix_ms() - 1;
+        restored.advance_active_device().unwrap();
+        assert_eq!(restored.equipment.ship.scan_range, base_scan);
+
+        let mut inventory = restored.inventory.clone();
+        inventory.equipped[9] = Some(crate::inventory::ItemInstance::stock(2440, 1));
+        restored.commit_inventory(inventory).unwrap();
+        let base_speed = restored.motion.max_speed;
+        restored.energy = restored.equipment.ship.energy_capacity;
+        restored.activate_equipped_item(&activation).unwrap();
+        assert!(restored.motion.max_speed > base_speed);
+        assert_eq!(
+            restored.active_device.as_ref().unwrap().effect,
+            session_equipment::ActiveEffect::SpeedBoost
+        );
+
+        restored.active_device.as_mut().unwrap().expires_at_ms = crate::resources::unix_ms() - 1;
+        restored.advance_active_device().unwrap();
+        let mut inventory = restored.inventory.clone();
+        inventory.equipped[9] = Some(crate::inventory::ItemInstance::stock(5364, 1));
+        restored.commit_inventory(inventory).unwrap();
+        let base_capacity = restored.equipment.ship.energy_capacity;
+        restored.energy = base_capacity;
+        restored.activate_equipped_item(&activation).unwrap();
+        assert!(restored.equipment.ship.energy_capacity > base_capacity);
+        restored.active_device.as_mut().unwrap().expires_at_ms = crate::resources::unix_ms() - 1;
+        restored.advance_active_device().unwrap();
+        assert_eq!(restored.equipment.ship.energy_capacity, base_capacity);
+    }
+
+    #[test]
+    fn legacy_turbo_checkpoint_and_catalog_mismatch_are_validated() {
+        let ship = session();
+        let active: session_equipment::ActiveDevice = serde_json::from_value(serde_json::json!({
+            "slot": 9,
+            "template": 2265,
+            "weapon_turbo_percent": 7.0,
+            "expires_at_ms": crate::resources::unix_ms() + 60_000
+        }))
+        .unwrap();
+        assert_eq!(active.effect, session_equipment::ActiveEffect::TurboWeapons);
+        assert_eq!(active.value, 7.);
+        let mut inventory = ship.inventory.clone();
+        inventory.equipped[9] = Some(crate::inventory::ItemInstance::stock(2265, 1));
+        assert!(active.valid_for(&inventory, &ship.items, crate::resources::unix_ms()));
+        let mut modified = active;
+        modified.value = 95.;
+        assert!(!modified.valid_for(&inventory, &ship.items, crate::resources::unix_ms()));
     }
 
     #[test]

@@ -237,7 +237,7 @@ impl PlayerSession {
         self.energy = saved.energy;
         self.active_device = saved
             .active_device
-            .filter(|active| active.valid_for(&self.inventory, unix_ms()));
+            .filter(|active| active.valid_for(&self.inventory, &self.items, unix_ms()));
         self.weapon_cooldowns = saved.weapon_cooldowns;
         self.weapon_firing = saved.weapon_firing;
         self.player_firing = saved.player_firing;

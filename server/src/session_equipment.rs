@@ -1,25 +1,65 @@
 //! Reconcile owned equipment with cached combat/movement parameters. All calls
 //! run inside the authoritative player simulation, never from a socket worker.
 use super::*;
-use crate::items::{ItemTemplate, Modifier};
+use crate::items::{ItemCatalog, ItemTemplate, Modifier};
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub(super) enum ActiveEffect {
+    #[default]
+    TurboWeapons,
+    ScanBoost,
+    SpeedBoost,
+    ReactorBoost,
+}
+
+impl ActiveEffect {
+    /// Returns:
+    ///     &str: Native effect name used in activation feedback.
+    fn label(self) -> &'static str {
+        match self {
+            Self::TurboWeapons => "Turbo Weapons",
+            Self::ScanBoost => "Scan Boost",
+            Self::SpeedBoost => "Increase Speed",
+            Self::ReactorBoost => "Reactor Boost",
+        }
+    }
+
+    /// Returns:
+    ///     (&str, u32, f32): Canonical stat, operation and maximum boost.
+    fn rule(self) -> (&'static str, u32, f32) {
+        match self {
+            Self::TurboWeapons => ("STAT_WEAPON_TURBO", 1, 95.),
+            Self::ScanBoost => ("STAT_SCAN_RANGE", 2, 100.),
+            Self::SpeedBoost => ("STAT_ENGINE_TOP_SPEED", 1, 100.),
+            Self::ReactorBoost => ("STAT_ENERGY", 1, 100.),
+        }
+    }
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub(super) struct ActiveDevice {
     pub slot: u8,
     pub template: u32,
-    pub weapon_turbo_percent: f32,
+    #[serde(default)]
+    pub effect: ActiveEffect,
+    #[serde(alias = "weapon_turbo_percent")]
+    pub value: f32,
     pub expires_at_ms: u64,
 }
 
 impl ActiveDevice {
     /// Returns:
     ///     bool: Whether the frozen buff still belongs to equipped gear.
-    pub fn valid_for(&self, inventory: &Inventory, now_ms: u64) -> bool {
+    pub fn valid_for(&self, inventory: &Inventory, items: &ItemCatalog, now_ms: u64) -> bool {
+        let expected = items.get(self.template).ok().and_then(device_effect);
         (9..20).contains(&usize::from(self.slot))
-            && self.weapon_turbo_percent.is_finite()
-            && (0. ..=95.).contains(&self.weapon_turbo_percent)
+            && self.value.is_finite()
+            && expected.is_some_and(|(effect, value, duration_ms)| {
+                effect == self.effect
+                    && (value - self.value).abs() < 0.001
+                    && self.expires_at_ms <= now_ms.saturating_add(duration_ms)
+            })
             && self.expires_at_ms > now_ms
-            && self.expires_at_ms <= now_ms.saturating_add(3_600_000)
             && inventory.equipped[self.slot as usize]
                 .as_ref()
                 .is_some_and(|item| item.template == self.template && item.structure > 0.)
@@ -28,30 +68,36 @@ impl ActiveDevice {
     /// Returns:
     ///     Vec<Modifier>: Frozen self-buff applied through ordinary stat rules.
     pub fn modifiers(&self) -> Vec<Modifier> {
+        let (stat, operation, _) = self.effect.rule();
         vec![Modifier {
-            stat: "STAT_WEAPON_TURBO".into(),
-            operation: 1,
-            value: self.weapon_turbo_percent,
+            stat: stat.into(),
+            operation,
+            value: self.value,
         }]
     }
 }
 
-/// Read the public Turbo Weapons effect and its explicit duration.
+/// Read supported self-buffs and their explicit public duration.
 ///
 /// Returns:
-///     Option<(f32, u64)>: Percent boost and duration in milliseconds.
-fn turbo_effect(template: &ItemTemplate) -> Option<(f32, u64)> {
-    if template.item_type != 11 {
+///     Option<(ActiveEffect, f32, u64)>: Effect, boost and duration in milliseconds.
+fn device_effect(template: &ItemTemplate) -> Option<(ActiveEffect, f32, u64)> {
+    if template.item_type != 11 || template.activated.len() != 1 {
         return None;
     }
     template.activated.iter().find_map(|effect| {
-        if effect.description != "Turbo Weapons (Activated)" {
-            return None;
-        }
+        let kind = match effect.description.as_str() {
+            "Turbo Weapons (Activated)" => ActiveEffect::TurboWeapons,
+            "Scan Boost (Activated)" => ActiveEffect::ScanBoost,
+            "Increase Speed (Activated)" => ActiveEffect::SpeedBoost,
+            "Reactor Boost (Activated)" => ActiveEffect::ReactorBoost,
+            _ => return None,
+        };
+        let (stat, operation, maximum) = kind.rule();
         let bonus = effect
             .modifiers
             .iter()
-            .find(|modifier| modifier.stat == "STAT_WEAPON_TURBO" && modifier.operation == 1)?
+            .find(|modifier| modifier.stat == stat && modifier.operation == operation)?
             .value;
         let seconds = effect
             .modifiers
@@ -59,13 +105,13 @@ fn turbo_effect(template: &ItemTemplate) -> Option<(f32, u64)> {
             .find(|modifier| modifier.stat == "NO_STAT" && modifier.operation == 5)?
             .value;
         if !bonus.is_finite()
-            || !(0. ..=95.).contains(&bonus)
+            || !(0. ..=maximum).contains(&bonus)
             || !seconds.is_finite()
             || !(1. ..=3600.).contains(&seconds)
         {
             return None;
         }
-        Some((bonus, (seconds * 1000.) as u64))
+        Some((kind, bonus, (seconds * 1000.) as u64))
     })
 }
 
@@ -82,7 +128,9 @@ impl PlayerSession {
         let modifiers = self
             .active_device
             .as_ref()
-            .filter(|active| active.valid_for(&self.inventory, crate::resources::unix_ms()))
+            .filter(|active| {
+                active.valid_for(&self.inventory, &self.items, crate::resources::unix_ms())
+            })
             .map_or_else(Vec::new, ActiveDevice::modifiers);
         self.equipment = EquipmentStats::derive_with_activated(
             &self.inventory,
@@ -279,7 +327,7 @@ impl PlayerSession {
                 return Err(invalid("No equipped item in this mount."));
             };
             let template = self.items.get(item.template)?;
-            let Some((bonus, duration_ms)) = turbo_effect(template) else {
+            let Some((effect, bonus, duration_ms)) = device_effect(template) else {
                 self.pending.push(packets::message(
                     "This item activation is not implemented yet.",
                 ));
@@ -292,16 +340,19 @@ impl PlayerSession {
             if self
                 .active_device
                 .as_ref()
-                .is_some_and(|active| active.valid_for(&self.inventory, now_ms))
+                .is_some_and(|active| active.valid_for(&self.inventory, &self.items, now_ms))
             {
-                self.pending
-                    .push(packets::message("Turbo Weapons is already active."));
+                self.pending.push(packets::message(&format!(
+                    "{} is already active.",
+                    self.active_device.as_ref().unwrap().effect.label()
+                )));
                 return Ok(());
             }
             if self.energy < template.activation.energy {
-                self.pending.push(packets::message(
-                    "Insufficient reactor energy for Turbo Weapons.",
-                ));
+                self.pending.push(packets::message(&format!(
+                    "Insufficient reactor energy for {}.",
+                    effect.label()
+                )));
                 return Ok(());
             }
             let previous_energy = self.energy;
@@ -310,7 +361,8 @@ impl PlayerSession {
             self.active_device = Some(ActiveDevice {
                 slot: slot as u8,
                 template: item.template,
-                weapon_turbo_percent: bonus,
+                effect,
+                value: bonus,
                 expires_at_ms: now_ms.saturating_add(duration_ms),
             });
             if let Err(error) = self.checkpoint_session(true) {
@@ -320,7 +372,8 @@ impl PlayerSession {
             }
             self.refresh_equipment()?;
             self.pending.push(packets::message(&format!(
-                "Turbo Weapons active for {} seconds.",
+                "{} active for {} seconds.",
+                effect.label(),
                 duration_ms / 1000
             )));
         }
@@ -330,14 +383,15 @@ impl PlayerSession {
     /// Expire the self-buff before this tick's weapon firing is simulated.
     pub(super) fn advance_active_device(&mut self) -> io::Result<()> {
         if self.active_device.as_ref().is_some_and(|active| {
-            !active.valid_for(&self.inventory, crate::resources::unix_ms())
+            !active.valid_for(&self.inventory, &self.items, crate::resources::unix_ms())
                 || self.hull <= 0.
                 || self.sector.station.is_some()
         }) {
-            self.active_device = None;
+            let effect = self.active_device.take().unwrap().effect;
             self.checkpoint_session(true)?;
             self.refresh_equipment()?;
-            self.pending.push(packets::message("Turbo Weapons ended."));
+            self.pending
+                .push(packets::message(&format!("{} ended.", effect.label())));
         }
         Ok(())
     }

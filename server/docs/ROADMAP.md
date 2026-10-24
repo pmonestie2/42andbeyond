@@ -121,8 +121,11 @@ mean the corresponding gameplay system is complete.
   weapon reload modifiers as passive gear. Activation checks the equipped
   slot, reactor cost and ship state; firing rate is authoritative and the buff
   expires across replacement. Demo provisioning upgrades each class to its
-  legal device while preserving the displaced stock device in vault. Broader
-  activated device families and buff stacking remain pending.
+  legal device while preserving the displaced stock device in vault. Catalog
+  Scan Boost, Increase Speed and Reactor Boost self-buffs also affect real
+  ship parameters, consume energy and expire across replacement; old Turbo
+  Weapons checkpoints remain readable. Other activated families, target
+  effects and buff stacking remain pending.
 - UDP send failures are logged per destination immediately, then summarized
   at most every 30 seconds until recovery, avoiding floods from unreachable
   resumed clients while retaining error counts.
