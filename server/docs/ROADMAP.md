@@ -174,6 +174,11 @@ mean the corresponding gameplay system is complete.
   buff icon uses the same native AUX slot, with no 0x09 visual because those
   public effects advertise visual zero. It preserves energy cost, expiry and
   short-server-replacement state; Turbo Weapons remains the weapon reload buff.
+  Single-effect Increase Maneuverability devices/reactors now alter real turn
+  rate, and Maximize Shields devices alter real shield capacity, both with
+  catalog energy cost, native buff AUX, durable expiry and recovery. The engine
+  variant with zero duration and three multi-activated items remain gated until
+  their native selection/stacking behavior is established.
   Other activated families, ally/hostile
   targeting and concurrent buff stacking remain pending.
 - UDP send failures are logged per destination immediately, then summarized

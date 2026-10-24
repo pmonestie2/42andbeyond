@@ -3911,6 +3911,100 @@ mod tests {
         assert_eq!(ship.active_device.as_ref().unwrap().slot, 1);
     }
 
+    /// Self-targeted maneuverability changes authoritative turn rate and survives recovery.
+    #[test]
+    fn maneuverability_device_changes_turn_rate_and_expires() {
+        let mut ship = session();
+        ship.logged_in = true;
+        ship.selected_peer = Some("127.0.0.1".parse().unwrap());
+        ship.endpoint = Some("127.0.0.1:22496".parse().unwrap());
+        let mut inventory = ship.inventory.clone();
+        inventory.equipped[1] = Some(crate::inventory::ItemInstance::stock(3343, 1));
+        inventory.equipped[9] = Some(crate::inventory::ItemInstance::stock(2372, 1));
+        inventory
+            .validate_for_profile(&ship.account.character, &ship.items, &ship.skill_catalog)
+            .unwrap();
+        ship.commit_inventory(inventory).unwrap();
+        let turn = ship.equipment.ship.turn_rate;
+        let energy = ship.equipment.ship.energy_capacity;
+        ship.energy = energy;
+        let activation = [ship.player_id().to_le_bytes().as_slice(), &[2, 9]].concat();
+        ship.activate_equipped_item(&activation).unwrap();
+        assert!((ship.equipment.ship.turn_rate - turn * 1.3).abs() < 0.01);
+        assert!((ship.motion.turn_scale - ship.equipment.ship.turn_rate / 45.).abs() < 0.01);
+        assert_eq!(ship.energy, energy - 1750.);
+        assert!(ship.pending.iter().any(|frame| {
+            frame.opcode == 0x1b
+                && frame
+                    .body
+                    .windows(b"Increase maneuver".len())
+                    .any(|window| window == b"Increase maneuver")
+        }));
+        let mut restored =
+            PlayerSession::new(ship.sector.clone(), ship.bind, ship.state_dir.clone()).unwrap();
+        assert!((restored.equipment.ship.turn_rate - turn * 1.3).abs() < 0.01);
+        restored.active_device.as_mut().unwrap().expires_at_ms = crate::resources::unix_ms() - 1;
+        restored.advance_active_device().unwrap();
+        assert_eq!(restored.equipment.ship.turn_rate, turn);
+    }
+
+    /// A reactor with one native handling effect activates from slot one.
+    #[test]
+    fn maneuverability_reactor_changes_authoritative_turn_rate() {
+        let mut ship = session();
+        ship.logged_in = true;
+        let mut inventory = ship.inventory.clone();
+        inventory.equipped[1] = Some(crate::inventory::ItemInstance::stock(3254, 1));
+        inventory
+            .validate_for_profile(&ship.account.character, &ship.items, &ship.skill_catalog)
+            .unwrap();
+        ship.commit_inventory(inventory).unwrap();
+        let turn = ship.equipment.ship.turn_rate;
+        ship.energy = ship.equipment.ship.energy_capacity;
+        let activation = [ship.player_id().to_le_bytes().as_slice(), &[2, 1]].concat();
+        ship.activate_equipped_item(&activation).unwrap();
+        assert!((ship.equipment.ship.turn_rate - turn * 1.28).abs() < 0.01);
+        assert_eq!(ship.active_device.as_ref().unwrap().slot, 1);
+    }
+
+    /// Maximize Shields modifies actual capacity while retaining current points.
+    #[test]
+    fn maximize_shields_device_changes_capacity_and_restores_it() {
+        let mut ship = session();
+        ship.logged_in = true;
+        ship.selected_peer = Some("127.0.0.1".parse().unwrap());
+        ship.endpoint = Some("127.0.0.1:22497".parse().unwrap());
+        let mut inventory = ship.inventory.clone();
+        inventory.equipped[1] = Some(crate::inventory::ItemInstance::stock(3343, 1));
+        inventory.equipped[9] = Some(crate::inventory::ItemInstance::stock(5894, 1));
+        inventory
+            .validate_for_profile(&ship.account.character, &ship.items, &ship.skill_catalog)
+            .unwrap();
+        ship.commit_inventory(inventory).unwrap();
+        let capacity = ship.equipment.ship.shield_capacity;
+        ship.shield = capacity / 2.;
+        let shield = ship.shield;
+        ship.energy = ship.equipment.ship.energy_capacity;
+        let activation = [ship.player_id().to_le_bytes().as_slice(), &[2, 9]].concat();
+        ship.activate_equipped_item(&activation).unwrap();
+        assert!((ship.equipment.ship.shield_capacity - capacity * 1.05).abs() < 0.01);
+        assert_eq!(ship.shield, shield);
+        assert!(ship.pending.iter().any(|frame| {
+            frame.opcode == 0x1b
+                && frame
+                    .body
+                    .windows(b"Maximize_Shields".len())
+                    .any(|window| window == b"Maximize_Shields")
+        }));
+        let mut restored =
+            PlayerSession::new(ship.sector.clone(), ship.bind, ship.state_dir.clone()).unwrap();
+        assert!((restored.equipment.ship.shield_capacity - capacity * 1.05).abs() < 0.01);
+        restored.active_device.as_mut().unwrap().expires_at_ms = crate::resources::unix_ms() - 1;
+        restored.advance_active_device().unwrap();
+        assert_eq!(restored.equipment.ship.shield_capacity, capacity);
+        assert_eq!(restored.shield, shield);
+    }
+
     #[test]
     fn catalog_scan_and_speed_devices_change_ship_stats_and_survive_recovery() {
         let mut ship = session();

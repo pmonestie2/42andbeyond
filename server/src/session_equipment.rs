@@ -24,6 +24,8 @@ pub(super) enum ActiveEffect {
     ProjectileHandling,
     ShuntReactor,
     ImpulseTurbo,
+    Maneuverability,
+    MaximizeShields,
 }
 
 impl ActiveEffect {
@@ -49,6 +51,8 @@ impl ActiveEffect {
             Self::ProjectileHandling => "Improved Projectile Handling",
             Self::ShuntReactor => "Shunt to Reactor",
             Self::ImpulseTurbo => "Impulse Turbo",
+            Self::Maneuverability => "Increase Maneuverability",
+            Self::MaximizeShields => "Maximize Shields",
         }
     }
 
@@ -74,6 +78,8 @@ impl ActiveEffect {
             Self::ProjectileHandling => ("STAT_PROJECTILE_ACCURACY", 2, 100.),
             Self::ShuntReactor => ("STAT_ENERGY_RECHARGE", 2, 100.),
             Self::ImpulseTurbo => ("STAT_IMPULSE", 2, 200.),
+            Self::Maneuverability => ("STAT_TURN_RATE", 2, 100.),
+            Self::MaximizeShields => ("STAT_SHIELD", 2, 100.),
         }
     }
 }
@@ -116,12 +122,21 @@ impl ActiveDevice {
     ///     bool: Whether the frozen buff still belongs to equipped gear.
     pub fn valid_for(&self, inventory: &Inventory, items: &ItemCatalog, now_ms: u64) -> bool {
         let expected = items.get(self.template).ok().and_then(device_effect);
-        ((9..20).contains(&usize::from(self.slot))
-            || (self.slot == 1
-                && self.effect == ActiveEffect::ImpulseTurbo
-                && items
-                    .get(self.template)
-                    .is_ok_and(|template| template.item_type == 7)))
+        items
+            .get(self.template)
+            .is_ok_and(|template| match template.item_type {
+                11 => (9..20).contains(&usize::from(self.slot)),
+                7 => {
+                    self.slot == 1
+                        && matches!(
+                            self.effect,
+                            ActiveEffect::ImpulseTurbo | ActiveEffect::Maneuverability
+                        )
+                }
+                6 => self.slot == 2 && self.effect == ActiveEffect::Maneuverability,
+                2 => self.slot == 0 && self.effect == ActiveEffect::Maneuverability,
+                _ => false,
+            })
             && self.value.is_finite()
             && expected.is_some_and(|(effect, value, operation, secondary, duration_ms)| {
                 effect == self.effect
@@ -204,10 +219,22 @@ fn device_effect(
             "Improved Projectile Handling (Activated)" => ActiveEffect::ProjectileHandling,
             "Shunt to Reactor (Activated)" => ActiveEffect::ShuntReactor,
             "Turbo (Activated)" => ActiveEffect::ImpulseTurbo,
+            "Increase Maneuverability (Activated)" => ActiveEffect::Maneuverability,
+            "Maximize Shields (Activated)" => ActiveEffect::MaximizeShields,
             _ => return None,
         };
         if template.item_type != 11
-            && !(template.item_type == 7 && kind == ActiveEffect::ImpulseTurbo)
+            && !(template.item_type == 7
+                && matches!(
+                    kind,
+                    ActiveEffect::ImpulseTurbo | ActiveEffect::Maneuverability
+                ))
+            && !((template.item_type == 2 || template.item_type == 6)
+                && kind == ActiveEffect::Maneuverability)
+            || matches!(
+                kind,
+                ActiveEffect::Maneuverability | ActiveEffect::MaximizeShields
+            ) && (effect.flag1 != 0 || effect.flag2 != 2)
         {
             return None;
         }
@@ -704,12 +731,42 @@ mod tests {
             3343, 3356, 3864, 5879,
         ] {
             let (effect, bonus, operation, secondary, duration) =
-                device_effect(items.get(id).unwrap()).unwrap();
+                device_effect(items.get(id).unwrap()).unwrap_or_else(|| panic!("item {id}"));
             assert_eq!(effect, ActiveEffect::ImpulseTurbo, "item {id}");
             assert!((28. ..=150.).contains(&bonus), "item {id}");
             assert_eq!(operation, 2);
             assert!(secondary.is_none());
             assert_eq!(duration, 10_000);
+        }
+    }
+
+    /// Maneuverability and shield-capacity variants use self-targeted rules.
+    #[test]
+    fn public_handling_and_max_shield_effects_match_catalog_rules() {
+        let items = ItemCatalog::load().unwrap();
+        for id in [2372, 3254, 3273, 3292] {
+            let (effect, bonus, operation, secondary, duration) =
+                device_effect(items.get(id).unwrap()).unwrap_or_else(|| panic!("item {id}"));
+            assert_eq!(effect, ActiveEffect::Maneuverability, "item {id}");
+            assert!((28. ..=35.).contains(&bonus));
+            assert_eq!(operation, 2);
+            assert!(secondary.is_none());
+            assert!((1_400_000..=1_960_000).contains(&duration));
+        }
+        // This engine advertises zero seconds, while both shields combine two
+        // activated effects without a native choice index; all stay gated.
+        assert!(device_effect(items.get(2632).unwrap()).is_none());
+        assert!(device_effect(items.get(3764).unwrap()).is_none());
+        assert!(device_effect(items.get(3793).unwrap()).is_none());
+        assert!(device_effect(items.get(6117).unwrap()).is_none());
+        for id in [2423, 5484, 5894] {
+            let (effect, bonus, operation, secondary, duration) =
+                device_effect(items.get(id).unwrap()).unwrap();
+            assert_eq!(effect, ActiveEffect::MaximizeShields, "item {id}");
+            assert!((4. ..=8.).contains(&bonus));
+            assert_eq!(operation, 2);
+            assert!(secondary.is_none());
+            assert!((800_000..=2_420_000).contains(&duration));
         }
     }
 
