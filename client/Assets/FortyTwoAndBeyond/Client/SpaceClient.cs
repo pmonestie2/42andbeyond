@@ -42,7 +42,7 @@ namespace FortyTwoAndBeyond.Client
         private int lastFrameRate = 120;
         private int sampledFrames, displayFps;
         private float sampledSeconds, slowestFrameMs, displayFrameMs, nextPerformanceLog;
-        private float previousYaw, previousPitch, orbitYaw, orbitPitch, zoom = 2.8f, mapZoom = 1400;
+        private float previousYaw, previousPitch, orbitYaw = 22, orbitPitch = 8, zoom = 2.8f, mapZoom = 1400;
         private Vector3 renderedPosition;
         private float authoritativePoseAt;
         public Snapshot CurrentSnapshot => snapshot;
@@ -249,7 +249,7 @@ namespace FortyTwoAndBeyond.Client
             if (bindings.Pressed(ControlAction.Warp)) WarpSelected();
             if (bindings.Pressed(ControlAction.Gate)) GateSelected();
             if (bindings.Pressed(ControlAction.Dock)) DockSelected();
-            if (bindings.Pressed(ControlAction.ResetCamera)) { orbitYaw = 0; orbitPitch = 0; }
+            if (bindings.Pressed(ControlAction.ResetCamera)) { orbitYaw = 22; orbitPitch = 8; }
             float yaw = (bindings.Held(ControlAction.TurnLeft) ? 1 : 0) -
                 (bindings.Held(ControlAction.TurnRight) ? 1 : 0);
             float pitch = (bindings.Held(ControlAction.PitchUp) ? 1 : 0) -

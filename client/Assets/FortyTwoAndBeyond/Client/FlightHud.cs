@@ -14,6 +14,8 @@ namespace FortyTwoAndBeyond.Client
         private readonly EquipmentIcons icons;
         private static readonly Vector2[] LabelOffsets = { new Vector2(12, -48), new Vector2(12, 12),
             new Vector2(-184, -48), new Vector2(-184, 12) };
+        private static readonly Vector2[] ContactLabelOffsets = { new Vector2(23, -58), new Vector2(23, 20),
+            new Vector2(-273, -58), new Vector2(-273, 20) };
         public float Scale => Mathf.Max(.01f, Mathf.Min(1f, Screen.width / 1280f, Screen.height / 760f));
         private float CanvasWidth => Screen.width / Scale;
         private float CanvasHeight => Screen.height / Scale;
@@ -667,7 +669,8 @@ namespace FortyTwoAndBeyond.Client
             bool canJumpstart = target.IsPlayer && target.MaxHull > 0 && target.Hull <= 0 &&
                 snapshot.AvailableAbilities.Contains(65u);
             float height = target.IsPlayer ? canJumpstart ? 238 : 201 : 194;
-            float x = (CanvasWidth - 390) * .5f, y = CanvasHeight - height - 122;
+            float x = CanvasWidth >= 1500 ? CanvasWidth - 720 : (CanvasWidth - 390) * .5f;
+            float y = CanvasHeight - height - 122;
             Panel(new Rect(x, y, 390, height));
             Color signal = target.IsPlayer ? cyan : target.Hostile ? new Color(1f, .42f, .32f) : gold;
             Fill(new Rect(x + 15, y + 18, 6, 6), signal);
@@ -898,7 +901,9 @@ namespace FortyTwoAndBeyond.Client
         private void PlayerLabels(Snapshot snapshot)
         {
             int shown = 0;
-            foreach (ShipActor player in snapshot.Players.Concat(snapshot.Mobs))
+            var occupied = new List<Rect>();
+            foreach (ShipActor player in snapshot.Players.Concat(snapshot.Mobs)
+                .OrderByDescending(item => item.Id == contactId || item.Id == snapshot.SelectedTargetId))
             {
                 Vector3 point = client.ProjectPlayer(player.Id); point.x /= Scale; point.y /= Scale;
                 if (point.z <= 0 || point.x < 30 || point.x > CanvasWidth - 335 || point.y < 100 || point.y > CanvasHeight - 145) continue;
@@ -915,7 +920,19 @@ namespace FortyTwoAndBeyond.Client
                 Fill(new Rect(point.x + radius - 9, point.y + radius, 9, 2), color);
                 Fill(new Rect(point.x + radius - 1, point.y + radius - 7, 2, 9), color);
                 if (client.Chart && !active) continue;
-                float labelX = point.x + radius + 6, labelY = point.y - 16;
+                Rect label = default;
+                foreach (Vector2 offset in ContactLabelOffsets)
+                {
+                    Rect candidate = new Rect(point.x + offset.x, point.y + offset.y, 250, active ? 58 : 41);
+                    if (candidate.x < 292 || candidate.xMax > CanvasWidth - 315 ||
+                        candidate.y < 95 || candidate.yMax > CanvasHeight - 108 ||
+                        occupied.Any(area => area.Overlaps(candidate))) continue;
+                    label = candidate;
+                    break;
+                }
+                if (label.width == 0) continue;
+                occupied.Add(label);
+                float labelX = label.x, labelY = label.y;
                 Fill(new Rect(labelX, labelY, 250, active ? 58 : 41), new Color(.005f, .018f, .032f, .88f));
                 Fill(new Rect(labelX, labelY, 3, active ? 58 : 41), color);
                 GUI.Label(new Rect(labelX + 9, labelY + 3, 237, 19), player.Name, body);

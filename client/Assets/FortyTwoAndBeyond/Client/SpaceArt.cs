@@ -13,6 +13,8 @@ namespace FortyTwoAndBeyond.Client
         private readonly List<Mesh> meshes = new List<Mesh>();
         private readonly Mesh[] rocks = new Mesh[8];
         private readonly Mesh ring, shipHull;
+        private readonly GameObject corvetteAsset, frigateAsset;
+        private readonly Material corvetteSurface, frigateSurface;
         private readonly Material hull, trim, dark, glass, glow, amber, hostile, mineral, rock, oreRock, field;
         public Material Sky { get; }
 
@@ -38,6 +40,10 @@ namespace FortyTwoAndBeyond.Client
             oreRock.SetFloat("_TextureStrength", .95f);
             field = ShaderMaterial("42 and Beyond/GateField");
             Sky = ShaderMaterial("42 and Beyond/SpaceSky");
+            corvetteAsset = Resources.Load<GameObject>("ViktorShips/corvette03");
+            frigateAsset = Resources.Load<GameObject>("ViktorShips/frigate03");
+            corvetteSurface = ShipSurface("corvette03");
+            frigateSurface = ShipSurface("frigate03");
             ring = Torus(1, .12f, 48, 8); meshes.Add(ring);
             shipHull = Hull(); meshes.Add(shipHull);
             for (int i = 0; i < rocks.Length; i++) { rocks[i] = Asteroid(i + 17); meshes.Add(rocks[i]); }
@@ -90,10 +96,55 @@ namespace FortyTwoAndBeyond.Client
             return obj.transform;
         }
 
+        /// <returns>Material: A Unity standard material using the artist's UV texture maps.</returns>
+        private Material ShipSurface(string assetName)
+        {
+            Texture2D diffuse = Resources.Load<Texture2D>("ViktorShips/" + assetName + "_diffuse");
+            if (diffuse == null) return null;
+            Shader shader = Shader.Find("Standard (Specular setup)");
+            if (shader == null) throw new InvalidOperationException("Missing Unity standard specular shader");
+            var surface = new Material(shader); materials.Add(surface);
+            surface.SetTexture("_MainTex", diffuse);
+            surface.SetColor("_Color", new Color(.72f, .75f, .8f));
+            surface.SetColor("_SpecColor", new Color(.18f, .21f, .25f));
+            surface.SetFloat("_Glossiness", .28f);
+            surface.SetFloat("_GlossMapScale", .3f);
+            Texture2D normal = Resources.Load<Texture2D>("ViktorShips/" + assetName + "_normal");
+            Texture2D specular = Resources.Load<Texture2D>("ViktorShips/" + assetName + "_specular");
+            Texture2D emission = Resources.Load<Texture2D>("ViktorShips/" + assetName + "_emission");
+            if (normal != null) { surface.EnableKeyword("_NORMALMAP"); surface.SetTexture("_BumpMap", normal); }
+            if (specular != null) { surface.EnableKeyword("_SPECGLOSSMAP"); surface.SetTexture("_SpecGlossMap", specular); }
+            if (emission != null)
+            {
+                surface.EnableKeyword("_EMISSION");
+                surface.SetTexture("_EmissionMap", emission);
+                surface.SetColor("_EmissionColor", Color.white * .75f);
+            }
+            return surface;
+        }
+
+        /// <returns>Transform: A textured ship model instance, or null when its optional asset is absent.</returns>
+        private static Transform Imported(Transform parent, GameObject asset, string name, Vector3 scale,
+            Material surface)
+        {
+            if (asset == null || surface == null) return null;
+            GameObject instance = Object.Instantiate(asset, parent);
+            instance.name = name; instance.transform.localPosition = Vector3.zero;
+            instance.transform.localRotation = Quaternion.identity; instance.transform.localScale = scale;
+            foreach (Collider collider in instance.GetComponentsInChildren<Collider>()) Object.Destroy(collider);
+            foreach (Renderer renderer in instance.GetComponentsInChildren<Renderer>())
+                renderer.sharedMaterial = surface;
+            return instance.transform;
+        }
+
         /// <returns>A spacecraft with a solid hull, swept wings, cockpit and twin engines.</returns>
         public Transform Ship(Transform parent)
         {
             Transform root = Root(parent, "Explorer spacecraft");
+            if (Imported(root, corvetteAsset, "Viktor Hahn corvette", Vector3.one * 1.6f, corvetteSurface) != null)
+            {
+                return root;
+            }
             Model(root, shipHull, hull, Vector3.zero, new Vector3(.55f, .55f, .75f));
             Model(root, shipHull, glass, new Vector3(0, .15f, .15f), new Vector3(.22f, .34f, .32f));
             Part(root, PrimitiveType.Cube, new Vector3(0, -.08f, -.45f), new Vector3(.22f, .12f, 1.3f), trim);
@@ -198,6 +249,10 @@ namespace FortyTwoAndBeyond.Client
         public Transform Mob(Transform parent)
         {
             Transform root = Root(parent, "Server mob");
+            if (Imported(root, frigateAsset, "Viktor Hahn frigate", Vector3.one * 1.5f, frigateSurface) != null)
+            {
+                return root;
+            }
             Model(root, shipHull, dark, Vector3.zero, new Vector3(.8f, .5f, 1.2f));
             Part(root, PrimitiveType.Sphere, new Vector3(0, .2f, .4f), new Vector3(.65f, .4f, .65f), amber);
             for (int side = -1; side <= 1; side += 2)
@@ -245,6 +300,13 @@ namespace FortyTwoAndBeyond.Client
         /// <summary>Show a fallen ship as identifiable debris with a warm reactor glow.</summary>
         private void Wreck(Transform root)
         {
+            Transform imported = Imported(root, frigateAsset, "Wrecked frigate", Vector3.one * .85f, frigateSurface);
+            if (imported != null)
+            {
+                imported.localRotation = Quaternion.Euler(24, 31, -28);
+                Part(root, PrimitiveType.Sphere, new Vector3(0, 0, -.8f), Vector3.one * .28f, amber);
+                return;
+            }
             Transform hullPiece = Model(root, shipHull, dark, Vector3.zero, new Vector3(.9f, .3f, 1.4f));
             hullPiece.localRotation = Quaternion.Euler(25, 18, -35);
             Transform wing = Model(root, shipHull, rock, new Vector3(-.8f, -.18f, .45f), new Vector3(.55f, .15f, .8f));
@@ -255,7 +317,8 @@ namespace FortyTwoAndBeyond.Client
         /// <summary>Expose bright mineral seams and facets on mineable asteroids.</summary>
         private void ResourceRock(Transform root, uint id)
         {
-            Model(root, rocks[(int)(id % (uint)rocks.Length)], oreRock, Vector3.zero, new Vector3(2.1f, 1.5f, 1.9f));
+            Model(root, rocks[(int)(id % (uint)rocks.Length)], oreRock, Vector3.zero,
+                new Vector3(2.1f, 1.5f, 1.9f));
             for (int i = 0; i < 5; i++)
             {
                 float angle = (i * 72 + id % 31) * Mathf.Deg2Rad;

@@ -67,13 +67,29 @@ namespace FortyTwoAndBeyond.Client
             for (uint index = 0; index < names.Length; index++)
             {
                 Rect button = new Rect(panel.x + 18 + index * 187, panel.y + 76, 178, 31);
-                if (GUI.Button(button, names[index] + (mode == index + 1 ? "  ·" : ""),
-                    flightHud.ButtonStyle) && mode != index + 1)
+                bool active = mode == index + 1;
+                if (GUI.Button(button, names[index], flightHud.ButtonStyle) && !active)
                 {
                     client.OpenProduction(index + 1);
                     formulaScroll = detailScroll = Vector2.zero;
                 }
+                if (active)
+                {
+                    Accent(new Rect(button.x, button.y, 4, button.height),
+                        new Color(.35f, .9f, 1f, 1));
+                    Accent(new Rect(button.x, button.yMax - 3, button.width, 3),
+                        new Color(.35f, .9f, 1f, 1));
+                }
             }
+        }
+
+        /// <summary>Draw the active terminal accent without changing shared HUD textures.</summary>
+        private static void Accent(Rect rect, Color color)
+        {
+            Color previous = GUI.color;
+            GUI.color = color;
+            GUI.DrawTexture(rect, Texture2D.whiteTexture);
+            GUI.color = previous;
         }
 
         /// <summary>Filter recipe levels through the native nine-bit mask.</summary>
@@ -147,14 +163,28 @@ namespace FortyTwoAndBeyond.Client
                 GUILayout.Space(8);
                 GUILayout.Label(production.Mode == 3 ? "POSSIBLE RECOVERY" : "REQUIRED COMPONENTS",
                     flightHud.BodyStyle);
-                foreach (ItemView item in production.Components.Where(item => item != null))
-                    GUILayout.Label((item.Quantity > 0 ? "✓  " : "○  ") + item.Name,
-                        flightHud.SmallStyle);
+                foreach (var group in production.Components.Where(item => item != null)
+                    .GroupBy(item => item.Template))
+                {
+                    ItemView first = group.First();
+                    int required = group.Count();
+                    int present = group.Count(item => item.Quantity > 0);
+                    string availability = production.Mode == 3 ?
+                        production.Validity == 16 ? $"{present}/{required} recovered" :
+                        $"{required} possible" : $"{present}/{required} available";
+                    GUILayout.BeginHorizontal(GUILayout.Height(29));
+                    GUILayout.Label($"{required} × {first.Name}", flightHud.BodyStyle,
+                        GUILayout.Width(225));
+                    GUILayout.Label(availability, present == required ? flightHud.SectionStyle :
+                        flightHud.SmallStyle, GUILayout.Width(155));
+                    GUILayout.EndHorizontal();
+                }
                 GUILayout.Space(8);
                 string result = production.Validity == 13 ? "Ready" :
                     production.Validity == 16 ? "Completed" :
                     production.Failure.Length > 0 ? production.Failure : "Waiting for server";
-                GUILayout.Label(result, flightHud.SmallStyle);
+                GUILayout.Label(result, production.Ready ? flightHud.SectionStyle :
+                    flightHud.SmallStyle);
                 GUI.enabled = production.Ready;
                 if (GUILayout.Button(production.Mode == 1 ? "MANUFACTURE ONE" :
                     production.Mode == 2 ? "ANALYZE SAMPLE" :
