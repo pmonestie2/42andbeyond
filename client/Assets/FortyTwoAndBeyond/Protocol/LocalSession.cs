@@ -513,12 +513,15 @@ namespace FortyTwoAndBeyond.Protocol
             Status = "Retrieving vault item";
         }
 
-        /// <summary>Select a visible contact for group targeting and combat.</summary>
+        /// <summary>Select a visible actor or world object to receive native target verbs.</summary>
         public void SelectTarget(uint target)
         {
-            if (!Ready || gate != 0 || (!World.Mobs.ContainsKey(target) && !World.Players.ContainsKey(target))) return;
+            bool selectableObject = World.Objects.TryGetValue(target, out MapObject item) &&
+                (item.Navigable || item.Kind == 25 || item.Kind == 38);
+            if (!Ready || gate != 0 || (!World.Mobs.ContainsKey(target) &&
+                !World.Players.ContainsKey(target) && !selectableObject)) return;
             if (followTarget != target) followTarget = 0;
-            World.SetOpenLoot(0);
+            if (World.Equipment.TargetId != target) World.SetOpenLoot(0);
             Send(0x17, Wire.Body(w => { w.Write(Player); w.Write(target); }));
         }
 

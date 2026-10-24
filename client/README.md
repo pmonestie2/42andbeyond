@@ -125,6 +125,8 @@ travel, and recovery. Warp to a gate first, then travel through it once stopped 
 gate sequence takes approximately 15 seconds. Loss of window focus sends brake
 and neutral steering. Disconnect and leaving Play mode cancel and join the
 network worker before its session is released.
+Gate and Dock buttons use the server's native target verbs after selection, so
+their availability follows the server's surface range and ship state.
 
 Select a station, warp nearby, then choose **Dock at station**. The server grants
 clearance and moves the character to its interior. Characters already docked can
@@ -182,7 +184,8 @@ mobs leave server-owned wrecks. Click a wreck to open its fixed loot panel;
 within 6 km, open it; within 2 km, tractor listed items into cargo. The client tracks
 the server's timed tractor packet and blocks repeat collection until completion
 or cancellation. Wreck and prospecting windows share a native interface packet;
-the client keeps their state separate. The radar shows nearby
+the client keeps their state separate. The Open Wreck control follows the
+server's native loot verb. The radar shows nearby
 contacts and navigation targets.
 The loadout shows each weapon's server firing state and loaded ammunition.
 Select an installed weapon to toggle that hardpoint alone during space combat.
@@ -201,7 +204,8 @@ window, and choose a server-listed ore slot. The server checks the ship, skill,
 distance, reactor energy, and shared resource claim before it awards ore to cargo.
 The panel shows the resource level, depletion, stock, and timed Prospect/Tractor
 phases from native packets. It blocks repeat ore clicks until the server reports
-completion or cancellation.
+completion or cancellation. The Prospect control follows the server's native
+verb; while the ship is moving, its button brakes before opening the window.
 The Skills button lists abilities advertised by the connected character's native
 RPG packet. Selecting one sends the native activation command, and the panel
 shows the server's combat, trade and explore levels, next-level progress bars,

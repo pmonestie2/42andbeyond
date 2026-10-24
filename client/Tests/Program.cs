@@ -13,7 +13,7 @@ internal static class Program
     {
         CheckReassembly(); CheckWorld(); CheckMissionJournal(); CheckMissionDialogue();
         CheckExperience(); CheckMiningPhases(); CheckLootTractor(); CheckWarpPhases(); CheckNavigationSelection(); CheckWeaponReady();
-        CheckDamageResults(); CheckCombatEngagement(); CheckContactSelection(); CheckDeviceEffects();
+        CheckDamageResults(); CheckCombatEngagement(); CheckContactSelection(); CheckTargetVerbs(); CheckDeviceEffects();
         CheckAmmunitionTransfer(); CheckFlightThrottle();
         CheckStationLayout(); CheckStationWalk(); CheckDemoRoster(); CheckAddress(); PeerChecks.Decode();
         Console.WriteLine("PASS: framing, ordering, fragmentation, duplicates, bounds, world decoding, private addresses");
@@ -507,6 +507,30 @@ internal static class Program
         selection.Reset();
         selection.Observe(20, visible, 7);
         Assert(selection.SelectedId == 20, "A new sector retained previous target history.");
+    }
+
+    /// <summary>Decode bounded native verb lists and retain immutable availability revisions.</summary>
+    private static void CheckTargetVerbs()
+    {
+        const string fixture = "0000004d0000000202000a00020008000000000200000a0002000800";
+        byte[] body = Enumerable.Range(0, fixture.Length / 2)
+            .Select(index => Convert.ToByte(fixture.Substring(index * 2, 2), 16)).ToArray();
+        var world = new World();
+        world.Apply(new Frame(0x5c, body), 1);
+        Snapshot first = new Snapshot(world, "ready", true);
+        Assert(first.Verbs.TargetId == 77 && first.Verbs.Available(77, 10) == true &&
+            first.Verbs.Available(77, 8) == false && first.Verbs.Available(77, 9) == null &&
+            first.Verbs.Available(78, 10) == null,
+            "Native gate and dock verb availability was decoded incorrectly.");
+        byte[] changed = (byte[])body.Clone();
+        changed[20] = 2;
+        world.Apply(new Frame(0x5c, changed), 1);
+        Assert(first.Verbs.Available(77, 10) == true && world.Verbs.Available(77, 10) == false,
+            "A newer verb revision mutated an older snapshot.");
+        Reject(() => TargetVerbs.Decode(body.Take(body.Length - 1).ToArray()));
+        byte[] excessive = (byte[])body.Clone();
+        excessive[7] = 65;
+        Reject(() => TargetVerbs.Decode(excessive));
     }
 
     /// <summary>Recognize catalog-backed active devices and their server notices.</summary>

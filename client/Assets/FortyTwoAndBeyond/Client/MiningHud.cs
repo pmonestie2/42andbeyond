@@ -50,6 +50,7 @@ namespace FortyTwoAndBeyond.Client
             if (found == 0) return false;
             selectedId = found; oreScroll = Vector2.zero;
             flightHud.ClearSelection();
+            client.SelectWorldObject(found);
             return true;
         }
 
@@ -93,12 +94,20 @@ namespace FortyTwoAndBeyond.Client
             if (stock != null) detail += $"   ·   {stock.Fraction * 100:0}% REMAINING";
             GUI.Label(new Rect(panel.x + 12, panel.y + 53, panel.width - 24, 20), detail, flightHud.SmallStyle);
             GUI.Label(new Rect(panel.x + 12, panel.yMax - 25, panel.width - 24, 18), client.Status, flightHud.SmallStyle);
+            bool stopped = Mathf.Abs(snapshot.Speed) <= .5f && Mathf.Abs(snapshot.TargetSpeed) <= .5f;
+            bool? prospectVerb = snapshot.Verbs.Available(selectedId, 9);
             if (!open)
             {
+                GUI.enabled = client.Ready && !client.Incapacitated &&
+                    (!stopped || prospectVerb == true);
                 if (GUI.Button(new Rect(panel.x + 12, panel.y + 79, panel.width - 24, 32),
-                    "OPEN PROSPECTING WINDOW", flightHud.ButtonStyle)) client.OpenResource(selectedId);
+                    !stopped ? "BRAKE SHIP TO PROSPECT" : prospectVerb == true ?
+                    "OPEN PROSPECTING WINDOW" : prospectVerb == false ?
+                    "SERVER: PROSPECT UNAVAILABLE" : "WAITING FOR PROSPECT VERB", flightHud.ButtonStyle))
+                { if (stopped) client.OpenResource(selectedId); else client.Thrust(4); }
+                GUI.enabled = true;
                 GUI.Label(new Rect(panel.x + 12, panel.y + 115, panel.width - 24, 18),
-                    "Stop nearby. The server checks skill and range.", flightHud.SmallStyle);
+                    "Server checks skill, range, warp, and shared claim.", flightHud.SmallStyle);
                 return;
             }
             if (GUI.Button(new Rect(panel.x + panel.width - 88, panel.y + 7, 76, 28), "CLOSE", flightHud.ButtonStyle))
@@ -116,7 +125,7 @@ namespace FortyTwoAndBeyond.Client
                 if (items.Length == 0) GUILayout.Label("Resource depleted", flightHud.SmallStyle);
                 foreach (ItemView item in items)
                 {
-                    GUI.enabled = !mining;
+                    GUI.enabled = !mining && stopped && prospectVerb == true;
                     if (GUILayout.Button($"PROSPECT  {item.Name}  ×{item.Quantity}", flightHud.ButtonStyle, GUILayout.Height(34)))
                         client.ProspectResource(item.Slot);
                     GUI.enabled = true;

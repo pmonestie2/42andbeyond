@@ -86,7 +86,8 @@ namespace FortyTwoAndBeyond.Client
             SelectWreck(selectedWreck); return true;
         }
         /// <summary>Show a chosen corpse without retaining the previous ship lock.</summary>
-        private void SelectWreck(uint id) { wreckId = id; contactSelection.ClearLocal(); lootScroll = Vector2.zero; }
+        private void SelectWreck(uint id)
+        { wreckId = id; contactSelection.ClearLocal(); lootScroll = Vector2.zero; client.SelectWorldObject(id); }
         /// <summary>Open or close the ship equipment overlay.</summary>
         public void ToggleEquipment() { equipmentOpen = !equipmentOpen; }
         private string chatText = "";
@@ -686,11 +687,16 @@ namespace FortyTwoAndBeyond.Client
             if (GUI.Button(new Rect(x + 12, top + 63, 272, 32),
                 client.Bindings.Display(ControlAction.Warp) + "    " + warpAction, button)) client.WarpSelected();
             bool station = target?.Kind == 12;
+            bool? targetAction = target == null ? null : snapshot.Verbs.Available(target.Id,
+                station ? (ushort)8 : (ushort)10);
             GUI.enabled = client.Ready && !client.Incapacitated &&
-                (target?.Kind == 11 || station && target.Position.Distance(snapshot.Position) <= 5000);
-            if (GUI.Button(new Rect(x + 12, top + 102, 272, 30), station ?
-                client.Bindings.Display(ControlAction.Dock) + "    DOCK AT STATION" :
-                client.Bindings.Display(ControlAction.Gate) + "    ACTIVATE GATE", button))
+                (target?.Kind == 11 || station) && targetAction == true;
+            string actionLabel = target == null || target.Kind != 11 && !station ? "SELECT GATE OR STATION" :
+                targetAction == true ? station ? "DOCK AT STATION" : "ACTIVATE GATE" :
+                targetAction == false ? "SERVER: ACTION UNAVAILABLE" : "WAITING FOR TARGET VERBS";
+            if (GUI.Button(new Rect(x + 12, top + 102, 272, 30),
+                (station ? client.Bindings.Display(ControlAction.Dock) : client.Bindings.Display(ControlAction.Gate)) +
+                "    " + actionLabel, button))
             { if (station) client.DockSelected(); else client.GateSelected(); }
             GUI.enabled = true;
         }
@@ -834,9 +840,11 @@ namespace FortyTwoAndBeyond.Client
             GUI.Label(new Rect(x + 12, y + 8, 336, 22), wreck.Name, body);
             float distance = wreck.Position.Distance(snapshot.Position);
             GUI.Label(new Rect(x + 12, y + 33, 336, 20), $"WRECK RANGE  {distance / 1000:0.00} km", small);
-            GUI.enabled = client.Ready && distance < 6000 && !open;
+            bool? lootVerb = snapshot.Verbs.Available(wreckId, 3);
+            GUI.enabled = client.Ready && lootVerb == true && !open;
             if (GUI.Button(new Rect(x + 12, y + 57, 336, 30), open ? "WRECK OPEN" :
-                distance >= 6000 ? "MOVE WITHIN 6 KM TO OPEN" : "OPEN WRECK", button))
+                lootVerb == false ? "SERVER: LOOT UNAVAILABLE" :
+                lootVerb == null ? "WAITING FOR LOOT VERB" : "OPEN WRECK", button))
                 client.OpenLoot(wreckId);
             GUI.enabled = true;
             if (!open) return;
@@ -1134,12 +1142,13 @@ namespace FortyTwoAndBeyond.Client
                 if (selectedWreck != null)
                 {
                     float distance = selectedWreck.Position.Distance(snapshot.Position);
-                    bool nearby = distance < 6000;
+                    bool? lootVerb = snapshot.Verbs.Available(wreckId, 3);
                     bool tractoring = snapshot.LootActivity != null && snapshot.LootActivity.CorpseId == wreckId;
-                    GUI.enabled = nearby && snapshot.OpenLootId != wreckId;
-                    if (GUILayout.Button(snapshot.OpenLootId == wreckId ? "WRECK OPEN" : "OPEN WRECK", button)) client.OpenLoot(wreckId);
+                    GUI.enabled = lootVerb == true && snapshot.OpenLootId != wreckId;
+                    if (GUILayout.Button(snapshot.OpenLootId == wreckId ? "WRECK OPEN" :
+                        lootVerb == true ? "OPEN WRECK" : "LOOT UNAVAILABLE", button)) client.OpenLoot(wreckId);
                     GUI.enabled = true;
-                    if (!nearby) GUILayout.Label("Move within 6 km to open", small);
+                    if (lootVerb == false) GUILayout.Label("Move closer or leave warp to open", small);
                     if (tractoring) GUILayout.Label($"TRACTORING  {snapshot.LootProgress * 100:0}%  ·  {snapshot.LootRemainingSeconds:0.0}s", small);
                     CorpseLoot contents = snapshot.Loot.FirstOrDefault(item => item.Id == wreckId);
                     if (snapshot.OpenLootId == wreckId && contents != null)

@@ -39,6 +39,7 @@ namespace FortyTwoAndBeyond.Client
         private readonly Dictionary<uint, Transform> stationBodies = new Dictionary<uint, Transform>();
         private string host = "192.168.47.1", username = "", password = "", status = "Ready to connect", sector = "";
         private readonly NavigationSelection navigationSelection = new NavigationSelection();
+        private uint pendingNavigationTarget;
         private bool chart, positioned;
         private bool chatOpen;
         private int chatOpenedFrame = -1;
@@ -210,6 +211,9 @@ namespace FortyTwoAndBeyond.Client
                 if (sector != next.Sector) { ClearWorld(); sector = next.Sector; positioned = false; }
                 hud?.ObserveAuthoritativeTarget(next);
                 ApplyWorld(next);
+                if (Ready && pendingNavigationTarget != 0 &&
+                    navigationSelection.TargetId == pendingNavigationTarget)
+                { SelectWorldObject(pendingNavigationTarget); pendingNavigationTarget = 0; }
                 ApplyStationAvatars(next);
                 remoteShips.Apply(next.Players.Concat(next.Mobs).ToArray(), next.Group, next.SelectedTargetId);
                 combatEffects.Apply(next);
@@ -336,8 +340,10 @@ namespace FortyTwoAndBeyond.Client
             { Destroy(bodies[id].gameObject); bodies.Remove(id); }
             uint nearest = next.Objects.Where(item => item.Navigable)
                 .OrderBy(item => item.Position.Distance(next.Position)).FirstOrDefault()?.Id ?? 0;
-            navigationSelection.Resolve(new HashSet<uint>(next.Objects.Where(item => item.Navigable)
+            uint previous = navigationSelection.TargetId;
+            uint selected = navigationSelection.Resolve(new HashSet<uint>(next.Objects.Where(item => item.Navigable)
                 .Select(item => item.Id)), nearest);
+            if (selected != previous) pendingNavigationTarget = selected;
         }
 
         /// <summary>Show only server-advertised pilots in the current station room.</summary>
@@ -496,7 +502,7 @@ namespace FortyTwoAndBeyond.Client
                 float distance = Vector2.Distance(new Vector2(point.x, point.y), pointer);
                 if (distance < best) { best = distance; selected = item.Id; }
             }
-            if (selected != 0) navigationSelection.ChooseTarget(selected);
+            if (selected != 0) Select(selected);
         }
 
         /// <returns>A projected position in GUI coordinates with signed camera depth.</returns>
@@ -514,11 +520,25 @@ namespace FortyTwoAndBeyond.Client
 
         /// <summary>Select an existing navigable server object.</summary>
         public void Select(uint id)
-        { if (snapshot != null && snapshot.Objects.Any(item => item.Id == id && item.Navigable)) navigationSelection.ChooseTarget(id); }
+        {
+            if (snapshot == null || !snapshot.Objects.Any(item => item.Id == id && item.Navigable)) return;
+            navigationSelection.ChooseTarget(id);
+            pendingNavigationTarget = 0;
+            SelectWorldObject(id);
+        }
+
+        /// <summary>Select a visible navigation, resource, or wreck object for server verbs.</summary>
+        public void SelectWorldObject(uint id)
+        {
+            if (Ready && snapshot.Station == null && snapshot.Objects.Any(item => item.Id == id &&
+                (item.Navigable || item.Kind == 25 || item.Kind == 38)))
+                worker.Submit(new ClientCommand(CommandKind.SelectTarget, id));
+        }
 
         /// <summary>Clear the destination so the next warp travels ahead.</summary>
         public void SelectFreeFlight()
-        { if (snapshot != null && snapshot.Station == null) navigationSelection.ChooseFreeFlight(); }
+        { if (snapshot != null && snapshot.Station == null)
+            { navigationSelection.ChooseFreeFlight(); pendingNavigationTarget = 0; } }
 
         /// <summary>Warp to the selected target, fly ahead, or cancel active warp.</summary>
         public void WarpSelected()
@@ -528,11 +548,13 @@ namespace FortyTwoAndBeyond.Client
         }
 
         /// <summary>Request travel through the selected gate.</summary>
-        public void GateSelected() { if (Ready && Target?.Kind == 11) worker.Submit(new ClientCommand(CommandKind.Gate, Target.Id)); }
+        public void GateSelected()
+        { if (Ready && Target?.Kind == 11 && snapshot.Verbs.Available(Target.Id, 10) == true)
+                worker.Submit(new ClientCommand(CommandKind.Gate, Target.Id)); }
 
         /// <summary>Request docking at the selected nearby station.</summary>
         public void DockSelected()
-        { if (Ready && Target?.Kind == 12 && Target.Position.Distance(snapshot.Position) <= 5000)
+        { if (Ready && Target?.Kind == 12 && snapshot.Verbs.Available(Target.Id, 8) == true)
                 worker.Submit(new ClientCommand(CommandKind.Dock, Target.Id)); }
 
         /// <summary>Leave the station after its server-owned launch transition.</summary>
@@ -678,7 +700,8 @@ namespace FortyTwoAndBeyond.Client
         /// <summary>Open a visible wreck through the server's loot protocol.</summary>
         public void OpenLoot(uint id)
         {
-            if (Ready && snapshot.Objects.Any(item => item.Id == id && item.Kind == 25))
+            if (Ready && snapshot.Verbs.Available(id, 3) == true &&
+                snapshot.Objects.Any(item => item.Id == id && item.Kind == 25))
                 worker.Submit(new ClientCommand(CommandKind.OpenLoot, id));
         }
 
@@ -692,7 +715,8 @@ namespace FortyTwoAndBeyond.Client
         /// <summary>Open a visible asteroid's native prospecting window.</summary>
         public void OpenResource(uint id)
         {
-            if (Ready && snapshot.Objects.Any(item => item.Id == id && item.Kind == 38))
+            if (Ready && snapshot.Verbs.Available(id, 9) == true &&
+                snapshot.Objects.Any(item => item.Id == id && item.Kind == 38))
                 worker.Submit(new ClientCommand(CommandKind.OpenResource, id));
         }
 
@@ -831,7 +855,7 @@ namespace FortyTwoAndBeyond.Client
         /// <summary>Join the worker before removing the connected world's resources.</summary>
         public void Disconnect()
         {
-            worker?.Dispose(); worker = null; snapshot = null; sector = ""; navigationSelection.Reset(); positioned = false;
+            worker?.Dispose(); worker = null; snapshot = null; sector = ""; navigationSelection.Reset(); pendingNavigationTarget = 0; positioned = false;
             authoritativePoseAt = lastSnapshotAt = 0;
             picker?.Dispose(); picker = null; characters = null;
             previousYaw = previousPitch = 0; flightThrottle.Reset(); ClearWorld(); status = "Disconnected";
@@ -841,6 +865,7 @@ namespace FortyTwoAndBeyond.Client
         private void ClearWorld()
         {
             navigationSelection.Reset();
+            pendingNavigationTarget = 0;
             hud?.ResetTargetSelection();
             stationWalk.EnterRoom(uint.MaxValue); nextStationPoseAt = 0;
             combatEffects?.Clear(); remoteShips?.Clear(); miningHud?.Clear();

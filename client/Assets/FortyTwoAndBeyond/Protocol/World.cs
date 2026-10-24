@@ -406,6 +406,7 @@ namespace FortyTwoAndBeyond.Protocol
         }
         public readonly Queue<ShotEvent> Shots = new Queue<ShotEvent>();
         public GroupState Group { get; private set; } = new GroupState(false, Array.Empty<GroupMember>());
+        public TargetVerbs Verbs { get; private set; } = TargetVerbs.Empty;
         private ConfirmationPrompt confirmation;
         private long confirmationAt;
         public ConfirmationPrompt Confirmation =>
@@ -493,7 +494,7 @@ namespace FortyTwoAndBeyond.Protocol
                     if (firstEnd < 0 || firstEnd + 1 >= b.Length) throw new InvalidDataException("Missing sector name.");
                     string name = Wire.Text(b, firstEnd + 1, b.Length - firstEnd - 1);
                     if (name.Length == 0) throw new InvalidDataException("Empty sector name.");
-                    if (Sector != name) { Objects.Clear(); Players.Clear(); Mobs.Clear(); StationAvatars.Clear(); Loot.Clear(); Resources.Clear(); ResourceTargetId = 0; ResourceWindowOpen = false; MiningActivity = null; LootActivity = null; Warp = WarpState.Decode(0, 0); lastServerTickAt = 0; OpenLootId = 0; Shots.Clear(); Damages.Clear(); ClearConfirmation(); nextShot = nextDamage = 0; }
+                    if (Sector != name) { Objects.Clear(); Players.Clear(); Mobs.Clear(); StationAvatars.Clear(); Loot.Clear(); Resources.Clear(); ResourceTargetId = 0; ResourceWindowOpen = false; MiningActivity = null; LootActivity = null; Warp = WarpState.Decode(0, 0); lastServerTickAt = 0; OpenLootId = 0; Verbs = TargetVerbs.Empty; Shots.Clear(); Damages.Clear(); ClearConfirmation(); nextShot = nextDamage = 0; }
                     Sector = name;
                     break;
                 case 0x4f:
@@ -593,6 +594,9 @@ namespace FortyTwoAndBeyond.Protocol
                 case 0x1e:
                     confirmation = ConfirmationPrompt.Decode(b);
                     confirmationAt = System.Diagnostics.Stopwatch.GetTimestamp();
+                    break;
+                case 0x5c:
+                    Verbs = TargetVerbs.Decode(b);
                     break;
                 case 0x1d:
                     Wire.Require(b, 0, 3);
@@ -817,6 +821,7 @@ namespace FortyTwoAndBeyond.Protocol
         public readonly CombatEngagement Engagement;
         public readonly uint PlayerId;
         public readonly GroupState Group;
+        public readonly TargetVerbs Verbs;
         public readonly StationState Station;
         public readonly StationAvatar[] StationAvatars;
         public readonly DialogueState Dialogue;
@@ -864,7 +869,8 @@ namespace FortyTwoAndBeyond.Protocol
             AngularY = world.AngularY; AngularZ = world.AngularZ;
             Players = world.Players.Values.ToArray(); Mobs = world.Mobs.Values.ToArray();
             PlayerId = world.PlayerId; Shots = world.Shots.ToArray(); Damages = world.Damages.ToArray();
-            Group = world.Group; Station = world.Station; StationAvatars = world.StationAvatars.Values.ToArray();
+            Group = world.Group; Verbs = world.Verbs;
+            Station = world.Station; StationAvatars = world.StationAvatars.Values.ToArray();
             Production = new ProductionView(world.Production, world.ItemCatalog);
             Dialogue = world.Dialogue; Credits = world.Credits;
             Missions = (MissionState[])world.Missions.Clone();
