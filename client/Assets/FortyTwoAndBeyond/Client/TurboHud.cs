@@ -26,13 +26,13 @@ namespace FortyTwoAndBeyond.Client
             Rect panel = new Rect((CanvasWidth - 208) * .5f - 45, 22, 208, 76);
             flightHud.Panel(panel);
             GUI.Label(new Rect(panel.x + 12, panel.y + 8, 184, 19),
-                "WEAPON TURBO  ·  " + device.Name, flightHud.SmallStyle);
+                "TURBO  ·  " + device.Name, flightHud.SmallStyle);
             GUI.enabled = client.Ready && !client.Incapacitated && snapshot.ActiveDeviceLabel.Length == 0 &&
                 snapshot.WarpPhase != WarpPhase.Charging && snapshot.WarpPhase != WarpPhase.Traveling;
             if (GUI.Button(new Rect(panel.x + 12, panel.y + 31, 184, 32),
-                snapshot.TurboWeaponsActive ? "TURBO WEAPONS ACTIVE" :
-                snapshot.ActiveDeviceLabel.Length > 0 ? "OTHER DEVICE ACTIVE" :
-                "TURBO WEAPONS  ·  " + client.Bindings.Display(ControlAction.TurboWeapons),
+                snapshot.TurboWeaponsActive ? "TURBO ACTIVE" :
+                snapshot.ActiveDeviceLabel.Length > 0 ? "DEVICE ACTIVE" :
+                "ACTIVATE  ·  " + client.Bindings.Display(ControlAction.TurboWeapons),
                 flightHud.ButtonStyle))
                 client.ActivateTurboWeapons();
             GUI.enabled = true;

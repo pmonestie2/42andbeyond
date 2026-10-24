@@ -669,7 +669,7 @@ namespace FortyTwoAndBeyond.Client
             scroll.x = 0;
             scroll = GUILayout.BeginScrollView(scroll);
             MapObject selectedTarget = client.Target;
-            if (GUILayout.Button("FREE FLIGHT\nWARP AHEAD ALONG YOUR HEADING",
+            if (GUILayout.Button("FREE FLIGHT\nWARP ALONG HEADING",
                 client.FreeFlight ? selected : button, GUILayout.Width(250), GUILayout.Height(54)))
                 client.SelectFreeFlight();
             foreach (MapObject item in destinations)
@@ -694,13 +694,13 @@ namespace FortyTwoAndBeyond.Client
                 station ? (ushort)8 : (ushort)10);
             GUI.enabled = client.Ready && !client.Incapacitated &&
                 (target?.Kind == 11 || station) && targetAction == true;
-            string actionLabel = target == null || target.Kind != 11 && !station ? "SELECT GATE OR STATION" :
-                targetAction == true ? station ? "DOCK AT STATION" : "ACTIVATE GATE" :
+            string actionLabel = target == null || target.Kind != 11 && !station ? "SELECT GATE / PORT" :
+                targetAction == true ? station ? "DOCK" : "ENTER GATE" :
                 targetAction == false || snapshot.Verbs.TargetId == target.Id ?
-                "SERVER: ACTION UNAVAILABLE" : "WAITING FOR TARGET VERBS";
+                station ? "DOCK UNAVAILABLE" : "GATE UNAVAILABLE" : "TARGET SYNCING";
             if (GUI.Button(new Rect(x + 12, top + 102, 272, 30),
                 (station ? client.Bindings.Display(ControlAction.Dock) : client.Bindings.Display(ControlAction.Gate)) +
-                "    " + actionLabel, button))
+                "  " + actionLabel, button))
             { if (station) client.DockSelected(); else client.GateSelected(); }
             GUI.enabled = true;
         }
