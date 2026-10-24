@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Threading;
+using FortyTwoAndBeyond.Client;
 using FortyTwoAndBeyond.Protocol;
 
 internal static class Program
@@ -10,7 +11,8 @@ internal static class Program
     /// <summary>Run pure protocol checks, with explicit opt-in to a disposable local server.</summary>
     private static void Main(string[] args)
     {
-        CheckReassembly(); CheckWorld(); CheckMissionJournal(); CheckStationLayout(); CheckDemoRoster(); CheckAddress(); PeerChecks.Decode();
+        CheckReassembly(); CheckWorld(); CheckMissionJournal(); CheckFlightThrottle();
+        CheckStationLayout(); CheckDemoRoster(); CheckAddress(); PeerChecks.Decode();
         Console.WriteLine("PASS: framing, ordering, fragmentation, duplicates, bounds, world decoding, private addresses");
         if (args.Length == 2 && args[0] == "--server") { PeerChecks.Live(args[1]); CheckServer(args[1]); }
         else if (args.Length != 0) throw new ArgumentException("Usage: ProtocolChecks [--server PRIVATE_IP]");
@@ -124,6 +126,32 @@ internal static class Program
         })), 1);
         Assert(world.Missions[0] == null && first.Missions[0] != null,
             "Mission journal reset changed an earlier immutable snapshot.");
+    }
+
+    /// <summary>Keep held flight controls reachable after focus and text entry.</summary>
+    private static void CheckFlightThrottle()
+    {
+        var throttle = new FlightThrottle();
+        Assert(throttle.Sample(true, true, false, false) == 2, "Forward key did not start thrust.");
+        Assert(throttle.Sample(true, true, false, false) == null, "Held forward key repeated a request.");
+        Assert(throttle.Sample(false, true, false, false) == null,
+            "A blocked control sent thrust while typing or unfocused.");
+        Assert(throttle.Sample(true, true, false, false) == 2,
+            "Held forward key did not resume after returning to flight.");
+        Assert(throttle.Sample(true, true, false, true) == 4, "Brake did not override forward.");
+        Assert(throttle.Sample(true, true, false, false) == 2,
+            "Releasing brake did not restore held forward thrust.");
+        Assert(throttle.Sample(true, false, false, false) == null,
+            "Releasing thrust should leave the server's speed setting alone.");
+        Assert(throttle.Sample(true, false, true, false) == 3, "Reverse key did not set reverse thrust.");
+        throttle.Reset();
+        Assert(throttle.Sample(true, false, true, false) == 3,
+            "Focus restoration did not resubmit a still-held reverse key.");
+        Assert(throttle.Sample(true, false, true, false) == null,
+            "Unchanged reverse key repeated a request before steering.");
+        throttle.Reset();
+        Assert(throttle.Sample(true, false, true, false) == 3,
+            "Steering away from follow did not resubmit held thrust after the steer command.");
     }
 
     /// <summary>Check packed station room and NPC placement before interior navigation.</summary>

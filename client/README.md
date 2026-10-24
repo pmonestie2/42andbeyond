@@ -149,7 +149,9 @@ The leader can share the selected target with the group.
 Press Enter for chat. The checkbox chooses group chat or sector chat. A short
 message history remains visible. Slash commands still work, including `/invite
 NAME`, `/accept`, `/decline`, `/leave`, `/disband`, `/kick NAME`, `/d_spawn
-Achilles Drone 1` and `/d_jump`. Typing in chat suspends flight-key input.
+Achilles Drone 1` and `/d_jump`. Typing in chat suspends flight-key input;
+Send and Escape return control to flight. A held thrust key resumes after
+returning to flight or refocusing the window.
 
 Select a mob in Contacts or click its ship in space for shield and hull readings.
 Hostile contacts have red markers; other NPCs have gold markers. Press F or use

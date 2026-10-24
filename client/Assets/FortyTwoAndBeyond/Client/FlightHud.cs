@@ -28,6 +28,7 @@ namespace FortyTwoAndBeyond.Client
         internal GUIStyle ButtonStyle => button;
         private Vector2 scroll;
         private bool navigation = true, equipmentOpen, settingsOpen, crewTab, inspectMount;
+        private bool clearInputFocus;
         private ControlAction? bindingAction;
         private Vector2 settingsScroll;
         private int selectedCargo = -1, selectedMount = -1;
@@ -103,6 +104,10 @@ namespace FortyTwoAndBeyond.Client
 
         /// <summary>Bind the HUD to its concrete foreground controller.</summary>
         public FlightHud(SpaceClient client) { this.client = client; icons = new EquipmentIcons(); }
+
+        /// <summary>Release text-field ownership when the pilot returns to flight.</summary>
+        public void ReleaseInputFocus()
+        { InputFocused = false; clearInputFocus = true; }
 
         /// <returns>float: Available height for the contacts or crew roster.</returns>
         private float SocialHeight(Snapshot snapshot)
@@ -245,6 +250,7 @@ namespace FortyTwoAndBeyond.Client
         /// <summary>Draw connection controls, flight instruments and navigation.</summary>
         public void Draw(ref string host, ref string username, ref string password)
         {
+            if (clearInputFocus) { GUI.FocusControl(null); clearInputFocus = false; }
             EnsureStyles();
             if (settingsOpen) { InputFocused = false; Settings(); return; }
             if (!client.Connected) { InputFocused = false; Connection(ref host, ref username, ref password); Settings(); return; }
@@ -309,7 +315,7 @@ namespace FortyTwoAndBeyond.Client
             if (!client.AbilitiesOpen && !client.Incapacitated)
             { if (!client.Chart) TargetLock(snapshot); WreckPanel(snapshot); }
             if (equipmentOpen) Equipment(snapshot);
-            InputFocused = GUI.GetNameOfFocusedControl() == "Group invite";
+            InputFocused = crewTab && GUI.GetNameOfFocusedControl() == "Group invite";
             ChatEntry();
             if (!client.Chart)
             {
@@ -1004,7 +1010,8 @@ namespace FortyTwoAndBeyond.Client
             int hostileCount = socialContacts.Count(actor => actor.Hostile);
             GUI.Label(new Rect(37, 137, 245, 18),
                 $"{hostileCount} THREATS   ·   {socialContacts.Length} CONTACTS", small);
-            if (GUI.Button(new Rect(37, 165, 124, 31), "CONTACTS", crewTab ? button : selected)) crewTab = false;
+            if (GUI.Button(new Rect(37, 165, 124, 31), "CONTACTS", crewTab ? button : selected))
+            { crewTab = false; ReleaseInputFocus(); }
             if (GUI.Button(new Rect(166, 165, 124, 31),
                 snapshot.Confirmation != null && snapshot.Confirmation.Kind != ConfirmationKind.Jumpstart ? "CREW  !" : "CREW",
                 crewTab ? selected : button)) crewTab = true;

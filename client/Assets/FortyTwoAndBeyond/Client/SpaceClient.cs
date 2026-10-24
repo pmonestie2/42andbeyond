@@ -29,6 +29,7 @@ namespace FortyTwoAndBeyond.Client
         private ProductionHud productionHud;
         private MissionHud missionHud;
         private TurboHud turboHud;
+        private readonly FlightThrottle flightThrottle = new FlightThrottle();
         public bool AbilitiesOpen => abilityHud != null && abilityHud.IsOpen;
         public bool Incapacitated => snapshot != null && snapshot.Station == null &&
             snapshot.MaxHull > 0 && snapshot.Hull <= 0;
@@ -208,27 +209,33 @@ namespace FortyTwoAndBeyond.Client
                 if (poseChanged) authoritativePoseAt = Time.unscaledTime;
                 if (!positioned && next.HasPosition) { renderedPosition = Convert(next.Position); positioned = true; }
             }
-            if (!Ready) return;
+            if (!Ready || !Application.isFocused) { flightThrottle.Reset(); return; }
             if (bindings.Pressed(ControlAction.OpenChat) && !chatOpen && !hud.InputFocused && !hud.SettingsOpen)
             {
                 chatOpen = true;
                 chatOpenedFrame = Time.frameCount;
             }
-            if (Input.GetKeyDown(KeyCode.Escape)) chatOpen = false;
+            if (Input.GetKeyDown(KeyCode.Escape))
+            { chatOpen = false; hud.ReleaseInputFocus(); }
+            if (hud.InputFocused && Input.GetMouseButtonDown(0) && !hud.ContainsPointer())
+                hud.ReleaseInputFocus();
             if (chatOpen || hud.InputFocused || hud.SettingsOpen)
             {
+                flightThrottle.Reset();
                 if (previousYaw != 0 || previousPitch != 0) worker.Submit(new ClientCommand(CommandKind.Steer));
                 previousYaw = previousPitch = 0;
                 return;
             }
             if (snapshot.Station != null)
             {
+                flightThrottle.Reset();
                 if (bindings.Pressed(ControlAction.Equipment)) hud.ToggleEquipment();
                 if (bindings.Pressed(ControlAction.Launch)) Launch();
                 return;
             }
             if (Incapacitated)
             {
+                flightThrottle.Reset();
                 if (previousYaw != 0 || previousPitch != 0)
                     worker.Submit(new ClientCommand(CommandKind.Steer));
                 previousYaw = previousPitch = 0;
@@ -246,9 +253,6 @@ namespace FortyTwoAndBeyond.Client
             for (int abilitySlot = 0; abilitySlot < 6; abilitySlot++)
                 if (bindings.Pressed((ControlAction)((int)ControlAction.AbilityOne + abilitySlot)))
                     abilityHud.ActivateSlot(abilitySlot, snapshot);
-            if (bindings.Pressed(ControlAction.Forward)) Thrust(2);
-            if (bindings.Pressed(ControlAction.Reverse)) Thrust(3);
-            if (bindings.Pressed(ControlAction.Brake)) Thrust(4);
             if (bindings.Pressed(ControlAction.Warp)) WarpSelected();
             if (bindings.Pressed(ControlAction.Gate)) GateSelected();
             if (bindings.Pressed(ControlAction.Dock)) DockSelected();
@@ -258,7 +262,14 @@ namespace FortyTwoAndBeyond.Client
             float pitch = (bindings.Held(ControlAction.PitchUp) ? 1 : 0) -
                 (bindings.Held(ControlAction.PitchDown) ? 1 : 0);
             if (yaw != previousYaw || pitch != previousPitch)
-            { worker.Submit(new ClientCommand(CommandKind.Steer, yaw: yaw, pitch: pitch)); previousYaw = yaw; previousPitch = pitch; }
+            {
+                worker.Submit(new ClientCommand(CommandKind.Steer, yaw: yaw, pitch: pitch));
+                previousYaw = yaw; previousPitch = pitch;
+                flightThrottle.Reset();
+            }
+            byte? thrust = flightThrottle.Sample(true, bindings.Held(ControlAction.Forward),
+                bindings.Held(ControlAction.Reverse), bindings.Held(ControlAction.Brake));
+            if (thrust.HasValue) Thrust(thrust.Value);
             if (bindings.Pressed(ControlAction.Follow)) FollowSelected();
             if (!hud.ContainsPointer() && !miningHud.ContainsPointer() &&
                 !abilityHud.ContainsPointer() && !missionHud.ContainsPointer())
@@ -757,7 +768,7 @@ namespace FortyTwoAndBeyond.Client
             worker?.Dispose(); worker = null; snapshot = null; sector = ""; target = 0; positioned = false;
             authoritativePoseAt = lastSnapshotAt = 0;
             picker?.Dispose(); picker = null; characters = null;
-            previousYaw = previousPitch = 0; ClearWorld(); status = "Disconnected";
+            previousYaw = previousPitch = 0; flightThrottle.Reset(); ClearWorld(); status = "Disconnected";
         }
 
         /// <summary>Release scene instances belonging to the departed sector.</summary>
@@ -773,6 +784,7 @@ namespace FortyTwoAndBeyond.Client
         private void OnApplicationFocus(bool focused)
         {
             Application.targetFrameRate = focused ? 120 : 60;
+            if (!focused) flightThrottle.Reset();
             if (focused || worker == null || snapshot?.Station != null) return;
             worker.Submit(new ClientCommand(CommandKind.Thrust, 4)); worker.Submit(new ClientCommand(CommandKind.Steer));
             previousYaw = previousPitch = 0;

@@ -11,6 +11,7 @@
   <ItemGroup>
     <Compile Include="Program.cs" />
     <Compile Include="PeerChecks.cs" />
+    <Compile Include="../Assets/FortyTwoAndBeyond/Client/FlightThrottle.cs" Link="FlightThrottle.cs" />
     <ProjectReference Include="FortyTwoAndBeyond.Protocol.csproj" />
   </ItemGroup>
 </Project>
