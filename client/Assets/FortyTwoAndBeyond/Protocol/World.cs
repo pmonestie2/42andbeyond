@@ -198,6 +198,9 @@ namespace FortyTwoAndBeyond.Protocol
         public DialogueChoice(byte node, string text) { Node = node; Text = text; }
     }
 
+    /// <summary>Server-announced mission state for the current NPC conversation.</summary>
+    public enum MissionDialogueKind { None, Offer, Objective, Updated, Completed }
+
     /// <summary>The active station conversation and its authoritative choices.</summary>
     public sealed class DialogueState
     {
@@ -205,10 +208,19 @@ namespace FortyTwoAndBeyond.Protocol
         public readonly string Text;
         public readonly DialogueChoice[] Choices;
         public readonly bool VendorOpen;
+        public readonly MissionDialogueKind MissionKind;
+        public readonly string MissionName;
+        public readonly uint MissionStage;
 
         /// <summary>Store one immutable conversation view.</summary>
-        public DialogueState(uint npcId, string text = "", DialogueChoice[] choices = null, bool vendorOpen = false)
-        { NpcId = npcId; Text = text; Choices = choices ?? Array.Empty<DialogueChoice>(); VendorOpen = vendorOpen; }
+        public DialogueState(uint npcId, string text = "", DialogueChoice[] choices = null,
+            bool vendorOpen = false, MissionDialogueKind missionKind = MissionDialogueKind.None,
+            string missionName = "", uint missionStage = 0)
+        {
+            NpcId = npcId; Text = text; Choices = choices ?? Array.Empty<DialogueChoice>();
+            VendorOpen = vendorOpen; MissionKind = missionKind; MissionName = missionName;
+            MissionStage = missionStage;
+        }
 
         /// <returns>A conversation updated from the native talk-tree packet.</returns>
         public DialogueState WithTree(byte[] body)
@@ -230,12 +242,41 @@ namespace FortyTwoAndBeyond.Protocol
                 offset = labelEnd + 1;
             }
             if (offset != body.Length) throw new InvalidDataException("Unexpected NPC dialogue data.");
-            return new DialogueState(NpcId, Wire.Text(body, 0, end), choices, VendorOpen);
+            return new DialogueState(NpcId, Wire.Text(body, 0, end), choices, VendorOpen,
+                MissionKind, MissionName, MissionStage);
         }
 
         /// <returns>The same conversation with its vendor status changed.</returns>
         public DialogueState WithVendor(bool open)
-        { return new DialogueState(NpcId, Text, Choices, open); }
+        { return new DialogueState(NpcId, Text, Choices, open, MissionKind, MissionName, MissionStage); }
+
+        /// <summary>
+        /// Returns:
+        ///     DialogueState: This conversation with an authoritative mission notice, if present.
+        /// </summary>
+        public DialogueState WithMissionMessage(string message)
+        {
+            MissionDialogueKind kind;
+            string name;
+            uint stage = 0;
+            if (message.StartsWith("Mission offer: ", StringComparison.Ordinal) && message.EndsWith(".", StringComparison.Ordinal))
+            { kind = MissionDialogueKind.Offer; name = message.Substring(15, message.Length - 16); }
+            else if (message.StartsWith("Mission objective: ", StringComparison.Ordinal) && message.EndsWith(".", StringComparison.Ordinal))
+            { kind = MissionDialogueKind.Objective; name = message.Substring(19, message.Length - 20); }
+            else if (message.StartsWith("Mission completed: ", StringComparison.Ordinal) && message.EndsWith(".", StringComparison.Ordinal))
+            { kind = MissionDialogueKind.Completed; name = message.Substring(19, message.Length - 20); }
+            else if (message.StartsWith("Mission ", StringComparison.Ordinal) && message.EndsWith(".", StringComparison.Ordinal))
+            {
+                int marker = message.LastIndexOf(": stage ", StringComparison.Ordinal);
+                if (marker < 9 || !uint.TryParse(message.Substring(marker + 8, message.Length - marker - 9), out stage))
+                    return this;
+                kind = MissionDialogueKind.Updated;
+                name = message.Substring(8, marker - 8);
+            }
+            else return this;
+            if (name.Length == 0) return this;
+            return new DialogueState(NpcId, Text, Choices, VendorOpen, kind, name, stage);
+        }
     }
 
     /// <summary>An immutable visible ship contact copied across the network boundary.</summary>
@@ -482,6 +523,7 @@ namespace FortyTwoAndBeyond.Protocol
                 case 0x1d:
                     Wire.Require(b, 0, 3);
                     string message = Wire.Text(b, 3, b.Length - 3);
+                    if (Dialogue != null) Dialogue = Dialogue.WithMissionMessage(message);
                     foreach (string label in DeviceEffectLabels)
                     {
                         if (message.StartsWith(label + " active for ", StringComparison.Ordinal) ||

@@ -200,7 +200,10 @@ an unfinished job without spending its materials or credits. The server sends
 the completed item, cargo and credit updates.
 The Missions button shows accepted missions, the current stage objective, and
 earlier stage descriptions from the native journal. Kill counts and return
-instructions update when the server publishes mission progress.
+instructions update when the server publishes mission progress. NPC conversations
+show server-announced mission offers, active objectives, acceptance, and completion;
+the response buttons are the choices advertised by that NPC. The journal entry
+remains the authority for the current stage and is removed on completion.
 Models are placeholders rather than the original NPC assets. Station interiors
 and the full original combat and equipment UI remain unfinished.
 

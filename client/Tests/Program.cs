@@ -11,7 +11,7 @@ internal static class Program
     /// <summary>Run pure protocol checks, with explicit opt-in to a disposable local server.</summary>
     private static void Main(string[] args)
     {
-        CheckReassembly(); CheckWorld(); CheckMissionJournal(); CheckFlightThrottle();
+        CheckReassembly(); CheckWorld(); CheckMissionJournal(); CheckMissionDialogue(); CheckFlightThrottle();
         CheckStationLayout(); CheckDemoRoster(); CheckAddress(); PeerChecks.Decode();
         Console.WriteLine("PASS: framing, ordering, fragmentation, duplicates, bounds, world decoding, private addresses");
         if (args.Length == 2 && args[0] == "--server") { PeerChecks.Live(args[1]); CheckServer(args[1]); }
@@ -126,6 +126,44 @@ internal static class Program
         })), 1);
         Assert(world.Missions[0] == null && first.Missions[0] != null,
             "Mission journal reset changed an earlier immutable snapshot.");
+    }
+
+    /// <summary>Keep server mission notices attached only to their current NPC talk tree.</summary>
+    private static void CheckMissionDialogue()
+    {
+        var world = new World(); world.StartDialogue(46);
+        Action<string> notice = message =>
+        {
+            byte[] text = System.Text.Encoding.ASCII.GetBytes(message + "\0");
+            world.Apply(new Frame(0x1d, Wire.Body(writer =>
+            { writer.Write((ushort)text.Length); writer.Write((byte)11); writer.Write(text); })), 1);
+        };
+        notice("Mission offer: Basic Shooting Range.");
+        DialogueState offered = world.Dialogue;
+        Assert(offered.MissionKind == MissionDialogueKind.Offer && offered.MissionName == "Basic Shooting Range",
+            "Authoritative mission offer was not identified.");
+        byte[] tree = Wire.Body(writer =>
+        {
+            writer.Write(System.Text.Encoding.ASCII.GetBytes("An assignment for you.\0"));
+            writer.Write((byte)0); writer.Write((byte)1); writer.Write(2u);
+            writer.Write(System.Text.Encoding.ASCII.GetBytes("Tell me more.\0"));
+        });
+        world.Apply(new Frame(0x54, tree), 1);
+        Assert(world.Dialogue.MissionKind == MissionDialogueKind.Offer && world.Dialogue.Choices[0].Node == 2,
+            "Talk-tree delivery erased the mission offer or its advertised choice.");
+        notice("Mission Basic Shooting Range: stage 1.");
+        Assert(world.Dialogue.MissionKind == MissionDialogueKind.Updated && world.Dialogue.MissionStage == 1 &&
+            offered.MissionKind == MissionDialogueKind.Offer,
+            "Mission acceptance did not create an immutable dialogue revision.");
+        notice("Mission completed: Basic Shooting Range.");
+        Assert(world.Dialogue.MissionKind == MissionDialogueKind.Completed,
+            "Mission completion was not reflected in the active dialogue.");
+        world.CloseDialogue(); world.StartDialogue(41);
+        Assert(world.Dialogue.MissionKind == MissionDialogueKind.None,
+            "An ordinary NPC inherited a previous mission badge.");
+        notice("Mission objective: Finer Points of Negotiation.");
+        Assert(world.Dialogue.MissionKind == MissionDialogueKind.Objective,
+            "An active mission objective notice was not identified.");
     }
 
     /// <summary>Keep held flight controls reachable after focus and text entry.</summary>

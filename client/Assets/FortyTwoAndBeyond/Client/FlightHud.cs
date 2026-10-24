@@ -470,6 +470,21 @@ namespace FortyTwoAndBeyond.Client
             if (GUI.Button(new Rect(x + width - 102, top + 12, 84, 26), "Close", button)) client.ChooseNpc(230);
             GUILayout.BeginArea(new Rect(x + 18, top + 47, width - 36, trading ? 125 : 195));
             dialogueScroll = GUILayout.BeginScrollView(dialogueScroll);
+            if (dialogue.MissionKind != MissionDialogueKind.None)
+            {
+                string phase = dialogue.MissionKind == MissionDialogueKind.Offer ? "MISSION OFFER" :
+                    dialogue.MissionKind == MissionDialogueKind.Objective ? "ACTIVE MISSION" :
+                    dialogue.MissionKind == MissionDialogueKind.Completed ? "MISSION COMPLETED" :
+                    dialogue.MissionStage == 1 ? "MISSION ACCEPTED" : "MISSION UPDATED";
+                GUILayout.Label(phase + "  ·  " + dialogue.MissionName, section);
+                MissionState mission = snapshot.Missions.FirstOrDefault(entry => entry?.Name == dialogue.MissionName);
+                if (mission != null && !string.IsNullOrEmpty(mission.Objective))
+                {
+                    GUILayout.Label("CURRENT OBJECTIVE", small);
+                    GUILayout.Label(mission.Objective, small);
+                    GUILayout.Space(8);
+                }
+            }
             string line = dialogue.Text;
             if (line.StartsWith("/", StringComparison.Ordinal))
             {
