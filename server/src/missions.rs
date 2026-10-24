@@ -157,7 +157,7 @@ impl MissionCatalog {
         inventory: &Inventory,
     ) -> Option<u32> {
         self.0.values().find_map(|mission| {
-            (mission.id == 102
+            (matches!(mission.id, 3 | 102 | 104)
                 && mission.stages.len() >= 2
                 && mission.time_limit == 0
                 && !mission.forfeitable

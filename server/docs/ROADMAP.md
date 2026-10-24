@@ -115,16 +115,17 @@ mean the corresponding gameplay system is complete.
   player. Accepted in-range group members now receive their own frozen native
   base XP, with independent receipts and retry after one member's write fails.
   Skill-point spending and ordinary level-one character creation remain open.
-- The public mission catalog loads all 364 imported definitions, but offers only
-  the fully wired EarthCorps Basic Shooting Range mission (ID 102) for now.
-  Lieutenant Kyle Raine's native dialogue starts it; the twelve-slot player
-  journal and stage descriptions publish through native AUX. Destroying the
-  specified Trash Collector Bots advances both kill stages with the same durable
-  death receipt as combat XP. Return dialogue commits the next stage and the
-  final combat XP and skill-unlock receipt atomically. The class catalog still
-  grants sandbox skills at their ceiling, so training effects remain future
-  work. Other mission objectives, offers,
-  scripts, item/faction rewards and timed/forfeitable jobs remain pending.
+- The public mission catalog loads all 364 imported definitions; the runtime
+  currently offers three fully wired NPC missions: Finer Points of Negotiation
+  (3), Basic Shooting Range (102), and its prerequisite-gated sequel Kill
+  Scuttle Larva (104). The twelve-slot journal, reached-stage descriptions and
+  durable kill counts publish through native player AUX. Combat objectives
+  share the death-generation receipt with combat XP; NPC dialogue, required
+  credit payment, XP/credit and owned-item rewards commit atomically. Skill
+  unlocks are recorded durably, while the sandbox class catalog still grants
+  those skills at their ceiling. Other mission objectives, offers, scripts,
+  faction rewards and timed/forfeitable jobs remain pending. Mission 111's
+  starting NPC is absent from the public NPC placements.
 - Vault transfers require an authoritative station sector. Rejected space
   transfers preserve the inventory and send the current cargo/vault state.
 - Public Turbo Weapons devices now supply a timed self-buff through the same

@@ -155,6 +155,20 @@ impl PlayerSession {
             return Err(invalid("Mission final NPC objective is unavailable."));
         }
         let mut candidate = self.inventory.clone();
+        for objective in &final_stage.completion {
+            match objective.kind {
+                1 if objective.data == i64::from(self.npc_interaction.as_ref().unwrap().npc) => {}
+                14 => {
+                    let fee = u64::try_from(objective.data)
+                        .map_err(|_| invalid("Mission credit requirement is invalid."))?;
+                    candidate.credits = candidate
+                        .credits
+                        .checked_sub(fee)
+                        .ok_or_else(|| invalid("Insufficient credits for mission turn-in."))?;
+                }
+                _ => return Err(invalid("Mission turn-in objective is not supported yet.")),
+            }
+        }
         candidate.missions.complete(mission, &catalog)?;
         for reward in &final_stage.rewards {
             let amount = match &reward.data {
@@ -188,6 +202,14 @@ impl PlayerSession {
                         .trade_xp
                         .checked_add(amount)
                         .ok_or_else(|| invalid("Mission trade reward overflow."))?;
+                }
+                6 => {
+                    let item = u32::try_from(amount)
+                        .map_err(|_| invalid("Mission item template is invalid."))?;
+                    let quantity = u32::try_from(if reward.flags == 0 { 1 } else { reward.flags })
+                        .map_err(|_| invalid("Mission item quantity is invalid."))?;
+                    candidate =
+                        candidate.received(item, quantity, u32::MAX as usize, &self.items)?;
                 }
                 9 => {
                     let skill = u32::try_from(amount)

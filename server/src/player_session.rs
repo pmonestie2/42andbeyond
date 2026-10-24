@@ -2992,6 +2992,94 @@ mod tests {
     }
 
     #[test]
+    fn negotiation_mission_turn_in_debits_credits_with_repeated_rewards_once() {
+        let mut ship = session();
+        ship.account.character.race = 0;
+        ship.account.character.profession = 1;
+        ship.skill_catalog = SkillCatalog::for_profile(&ship.account.character).unwrap();
+        ship.sector = ship.sectors.sector(10201).unwrap();
+        ship.logged_in = true;
+        enter_npc_room(&mut ship, 41);
+        ship.open_npc(41).unwrap();
+        assert_eq!(ship.npc_interaction.as_ref().unwrap().mission, Some(3));
+        npc_choice(&mut ship, 3).unwrap();
+        npc_choice(&mut ship, 4).unwrap();
+        ship.close_npc();
+        ship.open_npc(41).unwrap();
+        assert_eq!(ship.npc_interaction.as_ref().unwrap().mission_stage, 1);
+        ship.inventory.credits = 4999;
+        assert!(npc_choice(&mut ship, 2).is_err());
+        assert!(!ship.inventory.missions.completed.contains(&3));
+        ship.inventory.credits = 5000;
+        npc_choice(&mut ship, 2).unwrap();
+        assert_eq!(ship.inventory.credits, 1000);
+        assert_eq!(ship.inventory.explore_xp, 4250);
+        assert!(ship.inventory.mission_awarded_skills.contains(&36));
+        assert!(ship.inventory.missions.completed.contains(&3));
+        assert!(npc_choice(&mut ship, 2).is_err());
+        let saved: crate::inventory::Inventory =
+            serde_json::from_slice(&std::fs::read(ship.state_dir.join("inventory.json")).unwrap())
+                .unwrap();
+        assert_eq!(saved.credits, 1000);
+        assert_eq!(saved.explore_xp, 4250);
+    }
+
+    #[test]
+    fn scuttle_larva_mission_requires_prerequisite_and_awards_owned_item() {
+        let mut ship = session();
+        ship.account.character.race = 0;
+        ship.account.character.profession = 0;
+        ship.skill_catalog = SkillCatalog::for_profile(&ship.account.character).unwrap();
+        ship.sector = ship.sectors.sector(10151).unwrap();
+        ship.logged_in = true;
+        enter_npc_room(&mut ship, 46);
+        ship.inventory.missions.completed.insert(102);
+        ship.open_npc(46).unwrap();
+        assert_eq!(ship.npc_interaction.as_ref().unwrap().mission, Some(104));
+        for choice in [2, 3, 4] {
+            npc_choice(&mut ship, choice).unwrap();
+        }
+        ship.close_npc();
+        let player = ship.player_id();
+        for generation in 1..=3 {
+            ship.settle_kill_award(&crate::loot_world::KillAward {
+                sector: 1015,
+                death: crate::loot_world::MobDeath {
+                    spawn: 476202,
+                    generation,
+                },
+                killer: player,
+                level: 1,
+                amount: Some(100),
+                source_killer: player,
+                template: 1253,
+            })
+            .unwrap();
+        }
+        assert_eq!(ship.inventory.missions.active[0].stage, 2);
+        ship.open_npc(46).unwrap();
+        for choice in [2, 3] {
+            npc_choice(&mut ship, choice).unwrap();
+        }
+        let cargo = ship.inventory.cargo.clone();
+        for slot in &mut ship.inventory.cargo {
+            *slot = Some(crate::inventory::ItemInstance::stock(2837, 1));
+        }
+        assert!(npc_choice(&mut ship, 4).is_err());
+        assert!(!ship.inventory.missions.completed.contains(&104));
+        ship.inventory.cargo = cargo;
+        npc_choice(&mut ship, 4).unwrap();
+        assert!(ship.inventory.missions.completed.contains(&104));
+        assert_eq!(ship.inventory.combat_xp, 5300);
+        assert!(ship
+            .inventory
+            .cargo
+            .iter()
+            .flatten()
+            .any(|item| item.template == 3640 && item.quantity == 1));
+    }
+
+    #[test]
     fn npc_dialogue_and_vendor_require_the_npcs_room_after_a_room_change() {
         let mut ship = session();
         ship.sector = ship.sectors.sector(10761).unwrap();
