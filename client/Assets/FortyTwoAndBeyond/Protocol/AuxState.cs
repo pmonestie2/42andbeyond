@@ -43,7 +43,7 @@ namespace FortyTwoAndBeyond.Protocol
     }
 
     /// <summary>Read the supported prefixes of native AUX records without guessing unknown layouts.</summary>
-    internal sealed class AuxState
+    internal sealed partial class AuxState
     {
         private readonly byte[] body;
         private int offset = 7;

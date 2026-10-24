@@ -5,7 +5,7 @@ using System.Threading;
 
 namespace FortyTwoAndBeyond.Protocol
 {
-    public enum CommandKind { Thrust, Steer, Warp, Gate, Dock, Launch, EnterStationRoom, OpenNpc, ChooseNpc, BuyVendor, SellVendor, EquipCargo, UnequipMount, StoreCargo, RetrieveVault, ActivateWeapon, ActivateTurboWeapons, Chat, ToggleWeapons, Formation, SelectTarget, FollowTarget, InvitePlayer, AnswerConfirmation, StopWeapons, OpenLoot, TakeLoot, OpenResource, CloseResource, ProspectResource, ActivateAbility, RequestRescue, ChooseRescue, SelfJumpstart }
+    public enum CommandKind { Thrust, Steer, Warp, Gate, Dock, Launch, EnterStationRoom, OpenNpc, ChooseNpc, BuyVendor, SellVendor, EquipCargo, UnequipMount, StoreCargo, RetrieveVault, OpenProduction, CloseProduction, SelectProductionRecipe, SelectProductionCategory, SetProductionLevels, StartProduction, InsertAnalysisSample, ReturnAnalysisSample, ActivateWeapon, ActivateTurboWeapons, Chat, ToggleWeapons, Formation, SelectTarget, FollowTarget, InvitePlayer, AnswerConfirmation, StopWeapons, OpenLoot, TakeLoot, OpenResource, CloseResource, ProspectResource, ActivateAbility, RequestRescue, ChooseRescue, SelfJumpstart }
 
     public readonly struct ClientCommand
     {
@@ -85,6 +85,14 @@ namespace FortyTwoAndBeyond.Protocol
                                 case CommandKind.UnequipMount: session.UnequipMount((int)command.Target); break;
                                 case CommandKind.StoreCargo: session.StoreCargo((int)command.Target); break;
                                 case CommandKind.RetrieveVault: session.RetrieveVault((int)command.Target); break;
+                                case CommandKind.OpenProduction: session.OpenProduction(command.Target); break;
+                                case CommandKind.CloseProduction: session.CloseProduction(); break;
+                                case CommandKind.SelectProductionRecipe: session.SelectProductionRecipe(command.Target); break;
+                                case CommandKind.SelectProductionCategory: session.SelectProductionCategory(command.Target); break;
+                                case CommandKind.SetProductionLevels: session.SetProductionLevels(command.Target, command.Slot != 0); break;
+                                case CommandKind.StartProduction: session.StartProduction(command.Target != 0); break;
+                                case CommandKind.InsertAnalysisSample: session.InsertAnalysisSample((int)command.Target); break;
+                                case CommandKind.ReturnAnalysisSample: session.ReturnAnalysisSample(); break;
                                 case CommandKind.ActivateWeapon: session.ActivateWeapon((int)command.Target); break;
                                 case CommandKind.ActivateTurboWeapons: session.ActivateTurboWeapons(); break;
                                 case CommandKind.Chat: session.Chat(command.Text, (byte)command.Target); break;

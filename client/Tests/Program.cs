@@ -194,6 +194,16 @@ internal static class Program
             Assert(session.World.Station.CurrentRoom == 0 &&
                 session.World.Station.Contacts.Any(contact => contact.Id == 7 && contact.Room == 1),
                 "Station room or NPC placement was not decoded.");
+            Wait(session, () => session.World.Production.LabId == (session.Player | 0x80000000),
+                10, "Station workbench identity did not arrive.");
+            session.OpenProduction(4);
+            Wait(session, () => session.World.Production.Mode == 4 &&
+                new ProductionView(session.World.Production, session.World.ItemCatalog).Open,
+                10, "Native refinery window did not open.");
+            session.CloseProduction();
+            Wait(session, () => !session.World.Production.Open, 10,
+                "Native refinery window did not close.");
+            Console.WriteLine("PASS: station workbench identity, refinery AUX window and native open/close");
             session.EnterStationRoom(1);
             Assert(session.World.Station.CurrentRoom == 1, "Station avatar did not enter the contact room.");
             session.OpenNpc(7);

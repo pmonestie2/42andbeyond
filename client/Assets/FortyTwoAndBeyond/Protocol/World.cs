@@ -356,6 +356,7 @@ namespace FortyTwoAndBeyond.Protocol
         public Dictionary<uint, ShipActor> Mobs { get; } = new Dictionary<uint, ShipActor>();
         public string Sector { get; private set; } = "Connecting";
         public StationState Station { get; private set; }
+        public ProductionState Production { get; private set; } = new ProductionState();
         public DialogueState Dialogue { get; private set; }
         public ulong Credits { get; private set; }
         public uint[] AvailableAbilities { get; private set; } = Array.Empty<uint>();
@@ -407,10 +408,17 @@ namespace FortyTwoAndBeyond.Protocol
                 case 0x4f:
                     if (b.Length != 6) throw new InvalidDataException("Invalid station identity.");
                     Station = b[4] == 0 ? new StationState(Wire.U32(b, 0)) : null;
+                    Production = new ProductionState();
                     StationAvatars.Clear();
                     Dialogue = null; Vendor = Array.Empty<ItemState>();
                     ResourceTargetId = 0; ResourceWindowOpen = false;
                     if (Station != null) Sector = "Station " + Station.Id;
+                    break;
+                case 0x7f:
+                    if (b.Length != 4) throw new InvalidDataException("Invalid production lab identity.");
+                    uint labId = Wire.U32(b, 0, true);
+                    if (Station != null && labId == (player | 0x80000000))
+                        Production.LabId = labId;
                     break;
                 case 0x52:
                     if (Station == null) throw new InvalidDataException("Station layout arrived before its identity.");
@@ -515,6 +523,9 @@ namespace FortyTwoAndBeyond.Protocol
                         if (group != null) { Group = group; if (group.Joined) ClearInvitation(); }
                     }
                     else if (Wire.U32(b, 0) == player) AuxState.ReadOwn(b, Equipment);
+                    else if (Station != null && Production.LabId != 0 &&
+                        Wire.U32(b, 0) == Production.LabId)
+                        AuxState.ReadProduction(b, Production);
                     else
                     {
                         uint id = Wire.U32(b, 0);
@@ -661,6 +672,7 @@ namespace FortyTwoAndBeyond.Protocol
         public readonly float Speed, Energy, Shield, Hull, MaxEnergy, MaxShield, MaxHull;
         public readonly float TargetSpeed, Acceleration, AngularY, AngularZ;
         public readonly ItemView[] Cargo, Mounted, Ammo, Vault;
+        public readonly ProductionView Production;
         public readonly CorpseLoot[] Loot;
         public readonly uint OpenLootId;
         public readonly uint WeaponMounts, DeviceMounts, SelectedTargetId;
@@ -678,6 +690,7 @@ namespace FortyTwoAndBeyond.Protocol
             Players = world.Players.Values.ToArray(); Mobs = world.Mobs.Values.ToArray();
             PlayerId = world.PlayerId; Shots = world.Shots.ToArray(); Damages = world.Damages.ToArray();
             Group = world.Group; Station = world.Station; StationAvatars = world.StationAvatars.Values.ToArray();
+            Production = new ProductionView(world.Production, world.ItemCatalog);
             Dialogue = world.Dialogue; Credits = world.Credits;
             Vendor = new ItemView[world.Vendor.Length];
             AvailableAbilities = (uint[])world.AvailableAbilities.Clone();

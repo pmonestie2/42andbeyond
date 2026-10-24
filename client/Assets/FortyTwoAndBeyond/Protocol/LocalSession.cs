@@ -386,6 +386,80 @@ namespace FortyTwoAndBeyond.Protocol
             }));
         }
 
+        /// <summary>Send a native station workbench command with network-order owner and value.</summary>
+        private void SendProduction(ushort opcode, uint value)
+        {
+            Send(opcode, Wire.Body(w => { Wire.Big(w, Player); Wire.Big(w, value); }));
+        }
+
+        /// <summary>Open manufacturing, analysis, dismantling, or refining at a station.</summary>
+        public void OpenProduction(uint mode)
+        {
+            if (!Ready || World.Station == null || World.Equipment.Hull <= 0 || mode < 1 || mode > 4) return;
+            SendProduction(0x79, mode);
+            Status = "Opening production terminal";
+        }
+
+        /// <summary>Close the workbench and cancel its pending operation without consuming inputs.</summary>
+        public void CloseProduction()
+        {
+            if (!Ready || World.Station == null || !World.Production.Open) return;
+            SendProduction(0x79, 0);
+            Status = "Closing production terminal";
+        }
+
+        /// <summary>Select one server-advertised manufacturing or refinery formula.</summary>
+        public void SelectProductionRecipe(uint template)
+        {
+            if (!Ready || World.Station == null || World.Production.Mode != 1 && World.Production.Mode != 4 ||
+                !World.Production.Formulas.Any(formula => formula?.Template == template)) return;
+            SendProduction(World.Production.Mode == 4 ? (ushort)0x7c : (ushort)0x7b, template);
+            Status = "Selecting production recipe";
+        }
+
+        /// <summary>Filter known manufacturing formulas by native category ID.</summary>
+        public void SelectProductionCategory(uint category)
+        {
+            if (!Ready || World.Station == null || World.Production.Mode != 1) return;
+            SendProduction(0x7a, category);
+        }
+
+        /// <summary>Change one bounded native level-filter mask.</summary>
+        public void SetProductionLevels(uint mask, bool enabled)
+        {
+            if (!Ready || World.Station == null || !World.Production.Open || mask == 0 || (mask & ~0x1ffu) != 0) return;
+            Send(0x80, Wire.Body(w => { Wire.Big(w, Player); w.Write((byte)(enabled ? 1 : 0)); Wire.Big(w, mask); }));
+        }
+
+        /// <summary>Start one production operation or the refinery's available stack.</summary>
+        public void StartProduction(bool stack)
+        {
+            if (!Ready || World.Station == null || !World.Production.Open || World.Production.Validity != 13 ||
+                stack && World.Production.Mode != 4) return;
+            SendProduction(0x7e, stack ? 3u : 2u);
+            Status = "Starting production";
+        }
+
+        /// <summary>Move one owned cargo item into the analyzer's escrow slot.</summary>
+        public void InsertAnalysisSample(int cargoSlot)
+        {
+            if (!Ready || World.Station == null || World.Production.Mode != 2 && World.Production.Mode != 3 ||
+                cargoSlot < 0 || cargoSlot >= World.Equipment.Cargo.Length ||
+                World.Equipment.Cargo[cargoSlot]?.Present != true || World.Production.Target[0]?.Present == true) return;
+            SendInventoryTransfer(1, (uint)cargoSlot, 12, 0, 1);
+            Status = "Placing analyzer sample";
+        }
+
+        /// <summary>Return the analyzer's owned sample to an empty cargo slot.</summary>
+        public void ReturnAnalysisSample()
+        {
+            if (!Ready || World.Station == null || World.Production.Target[0]?.Present != true) return;
+            int cargoSlot = Array.FindIndex(World.Equipment.Cargo, item => item?.Present != true);
+            if (cargoSlot < 0) { Status = "Cargo hold is full"; return; }
+            SendInventoryTransfer(12, 0, 1, (uint)cargoSlot, 1);
+            Status = "Returning analyzer sample";
+        }
+
         /// <summary>Store a full cargo stack in the first available server vault slot.</summary>
         public void StoreCargo(int slot)
         {
