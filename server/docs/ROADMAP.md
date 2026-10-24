@@ -169,6 +169,11 @@ mean the corresponding gameplay system is complete.
   reactor capacity after the item energy cost. Both resources commit atomically
   before AUX publication, including type-7 reactor mounts and type-11 device
   mounts; insufficient shield or reactor activation energy leaves state intact.
+  The separate eighteen-template Impulse Turbo catalog family now raises actual
+  impulse speed for ten seconds from a device or reactor mount. Its catalog
+  buff icon uses the same native AUX slot, with no 0x09 visual because those
+  public effects advertise visual zero. It preserves energy cost, expiry and
+  short-server-replacement state; Turbo Weapons remains the weapon reload buff.
   Other activated families, ally/hostile
   targeting and concurrent buff stacking remain pending.
 - UDP send failures are logged per destination immediately, then summarized

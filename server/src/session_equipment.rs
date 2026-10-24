@@ -23,6 +23,7 @@ pub(super) enum ActiveEffect {
     BeamHandling,
     ProjectileHandling,
     ShuntReactor,
+    ImpulseTurbo,
 }
 
 impl ActiveEffect {
@@ -47,6 +48,7 @@ impl ActiveEffect {
             Self::BeamHandling => "Improved Beam Handling",
             Self::ProjectileHandling => "Improved Projectile Handling",
             Self::ShuntReactor => "Shunt to Reactor",
+            Self::ImpulseTurbo => "Impulse Turbo",
         }
     }
 
@@ -71,6 +73,7 @@ impl ActiveEffect {
             Self::BeamHandling => ("STAT_BEAM_ACCURACY", 2, 100.),
             Self::ProjectileHandling => ("STAT_PROJECTILE_ACCURACY", 2, 100.),
             Self::ShuntReactor => ("STAT_ENERGY_RECHARGE", 2, 100.),
+            Self::ImpulseTurbo => ("STAT_IMPULSE", 2, 200.),
         }
     }
 }
@@ -98,10 +101,27 @@ impl ActiveDevice {
     }
 
     /// Returns:
+    ///     Option<u16>: Catalog object visual, or none when this buff has no effect.
+    fn visual_asset(&self, items: &ItemCatalog) -> Option<u16> {
+        items
+            .get(self.template)
+            .ok()?
+            .activated
+            .first()
+            .and_then(|effect| u16::try_from(effect.visual).ok())
+            .filter(|visual| *visual != 0)
+    }
+
+    /// Returns:
     ///     bool: Whether the frozen buff still belongs to equipped gear.
     pub fn valid_for(&self, inventory: &Inventory, items: &ItemCatalog, now_ms: u64) -> bool {
         let expected = items.get(self.template).ok().and_then(device_effect);
-        (9..20).contains(&usize::from(self.slot))
+        ((9..20).contains(&usize::from(self.slot))
+            || (self.slot == 1
+                && self.effect == ActiveEffect::ImpulseTurbo
+                && items
+                    .get(self.template)
+                    .is_ok_and(|template| template.item_type == 7)))
             && self.value.is_finite()
             && expected.is_some_and(|(effect, value, operation, secondary, duration_ms)| {
                 effect == self.effect
@@ -161,7 +181,7 @@ fn modifier_matches(saved: Option<&Modifier>, catalog: Option<&Modifier>) -> boo
 fn device_effect(
     template: &ItemTemplate,
 ) -> Option<(ActiveEffect, f32, u32, Option<Modifier>, u64)> {
-    if template.item_type != 11 || template.activated.len() != 1 {
+    if template.activated.len() != 1 {
         return None;
     }
     template.activated.iter().find_map(|effect| {
@@ -183,8 +203,14 @@ fn device_effect(
             "Improved Beam Handling (Activated)" => ActiveEffect::BeamHandling,
             "Improved Projectile Handling (Activated)" => ActiveEffect::ProjectileHandling,
             "Shunt to Reactor (Activated)" => ActiveEffect::ShuntReactor,
+            "Turbo (Activated)" => ActiveEffect::ImpulseTurbo,
             _ => return None,
         };
+        if template.item_type != 11
+            && !(template.item_type == 7 && kind == ActiveEffect::ImpulseTurbo)
+        {
+            return None;
+        }
         let (stat, default_operation, maximum) = kind.rule();
         let stat_modifiers = effect
             .modifiers
@@ -295,15 +321,13 @@ impl PlayerSession {
             name,
             removal_tick,
         ));
-        if let Ok(visual) = u16::try_from(effect.visual) {
-            if visual != 0 {
-                self.pending.push(packets::object_effect(
-                    self.player_id(),
-                    active.visual_id(self.player_id()),
-                    visual,
-                    self.tick_ms(),
-                ));
-            }
+        if let Some(visual) = active.visual_asset(&self.items) {
+            self.pending.push(packets::object_effect(
+                self.player_id(),
+                active.visual_id(self.player_id()),
+                visual,
+                self.tick_ms(),
+            ));
         }
     }
 
@@ -625,8 +649,10 @@ impl PlayerSession {
             self.refresh_equipment()?;
             self.pending
                 .push(packets::ship_active_buff(self.player_id(), "", 0));
-            self.pending
-                .push(packets::remove_effect(active.visual_id(self.player_id())));
+            if active.visual_asset(&self.items).is_some() {
+                self.pending
+                    .push(packets::remove_effect(active.visual_id(self.player_id())));
+            }
             self.pending.push(packets::message(&format!(
                 "{} ended.",
                 active.effect.label()
@@ -667,6 +693,24 @@ mod tests {
             assert!((18. ..=24.).contains(&reactor), "item {id}");
         }
         assert!(reroute_shield_energy(items.get(1845).unwrap()).is_none());
+    }
+
+    /// Public Impulse Turbo devices and reactors share the ten-second rule.
+    #[test]
+    fn public_impulse_turbo_items_have_consistent_catalog_rules() {
+        let items = ItemCatalog::load().unwrap();
+        for id in [
+            1869, 1891, 1976, 2039, 2062, 2148, 2221, 2237, 2312, 2337, 2436, 3301, 3319, 3331,
+            3343, 3356, 3864, 5879,
+        ] {
+            let (effect, bonus, operation, secondary, duration) =
+                device_effect(items.get(id).unwrap()).unwrap();
+            assert_eq!(effect, ActiveEffect::ImpulseTurbo, "item {id}");
+            assert!((28. ..=150.).contains(&bonus), "item {id}");
+            assert_eq!(operation, 2);
+            assert!(secondary.is_none());
+            assert_eq!(duration, 10_000);
+        }
     }
 
     #[test]

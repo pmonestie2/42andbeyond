@@ -3841,6 +3841,76 @@ mod tests {
         assert!((ship.energy - (before + capacity * 0.24).min(capacity)).abs() < 0.01);
     }
 
+    /// Impulse Turbo changes authoritative movement and retains its buff on restart.
+    #[test]
+    fn impulse_turbo_device_changes_speed_and_expires_after_recovery() {
+        let mut ship = session();
+        ship.logged_in = true;
+        ship.selected_peer = Some("127.0.0.1".parse().unwrap());
+        ship.endpoint = Some("127.0.0.1:22495".parse().unwrap());
+        let mut inventory = ship.inventory.clone();
+        inventory.equipped[1] = Some(crate::inventory::ItemInstance::stock(3343, 1));
+        inventory.equipped[9] = Some(crate::inventory::ItemInstance::stock(1891, 1));
+        inventory
+            .validate_for_profile(&ship.account.character, &ship.items, &ship.skill_catalog)
+            .unwrap();
+        ship.commit_inventory(inventory).unwrap();
+        let ordinary_speed = ship.motion.max_speed;
+        ship.energy = ship.equipment.ship.energy_capacity;
+        let energy = ship.energy;
+        let activation = [ship.player_id().to_le_bytes().as_slice(), &[2, 9]].concat();
+        ship.activate_equipped_item(&activation).unwrap();
+        assert!((ship.motion.max_speed - ordinary_speed * 1.48).abs() < 0.01);
+        assert_eq!(ship.energy, energy - 96.);
+        assert!(ship.pending.iter().any(|frame| {
+            frame.opcode == 0x1b
+                && frame
+                    .body
+                    .windows(b"Increase Combat Speed".len())
+                    .any(|window| window == b"Increase Combat Speed")
+        }));
+        assert!(ship.pending.iter().any(|frame| {
+            frame.opcode == 0x1d
+                && frame
+                    .body
+                    .windows(b"Impulse Turbo active for 10 seconds.".len())
+                    .any(|window| window == b"Impulse Turbo active for 10 seconds.")
+        }));
+        assert!(!ship.pending.iter().any(|frame| frame.opcode == 0x09));
+        let mut restored =
+            PlayerSession::new(ship.sector.clone(), ship.bind, ship.state_dir.clone()).unwrap();
+        assert!((restored.motion.max_speed - ordinary_speed * 1.48).abs() < 0.01);
+        restored.active_device.as_mut().unwrap().expires_at_ms = crate::resources::unix_ms() - 1;
+        restored.advance_active_device().unwrap();
+        assert_eq!(restored.motion.max_speed, ordinary_speed);
+        assert!(restored.pending.iter().any(|frame| {
+            frame.opcode == 0x1d
+                && frame
+                    .body
+                    .windows(b"Impulse Turbo ended.".len())
+                    .any(|window| window == b"Impulse Turbo ended.")
+        }));
+        assert!(!restored.pending.iter().any(|frame| frame.opcode == 0x0f));
+    }
+
+    /// Reactor-mounted Impulse Turbo uses native activation slot one.
+    #[test]
+    fn impulse_turbo_reactor_mount_changes_authoritative_speed() {
+        let mut ship = session();
+        ship.logged_in = true;
+        let mut inventory = ship.inventory.clone();
+        inventory.equipped[1] = Some(crate::inventory::ItemInstance::stock(3343, 1));
+        inventory
+            .validate_for_profile(&ship.account.character, &ship.items, &ship.skill_catalog)
+            .unwrap();
+        ship.commit_inventory(inventory).unwrap();
+        let ordinary_speed = ship.motion.max_speed;
+        let activation = [ship.player_id().to_le_bytes().as_slice(), &[2, 1]].concat();
+        ship.activate_equipped_item(&activation).unwrap();
+        assert!((ship.motion.max_speed - ordinary_speed * 2.2).abs() < 0.01);
+        assert_eq!(ship.active_device.as_ref().unwrap().slot, 1);
+    }
+
     #[test]
     fn catalog_scan_and_speed_devices_change_ship_stats_and_survive_recovery() {
         let mut ship = session();
