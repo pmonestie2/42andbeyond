@@ -581,6 +581,29 @@ pub fn object_effect(id: u32, effect_id: u32, asset: u16, tick: u32) -> Frame {
     Frame::new(9, data)
 }
 
+/// Returns:
+///     Frame: Native ship buff slot update used by the legacy status icons.
+pub fn ship_active_buff(id: u32, name: &str, removal_tick: u32) -> Frame {
+    let buff = aux_diff(
+        5,
+        BTreeMap::from([
+            (0, text(name)),
+            (2, vec![0]),
+            (3, removal_tick.to_le_bytes().to_vec()),
+        ]),
+    );
+    ship_diff(
+        id,
+        BTreeMap::from([(42, aux_diff(16, BTreeMap::from([(0, buff)])))]),
+    )
+}
+
+/// Returns:
+///     Frame: Native removal of a previously published object effect.
+pub fn remove_effect(effect_id: u32) -> Frame {
+    Frame::new(0x0f, effect_id.to_le_bytes().to_vec())
+}
+
 /// Simulation supplies raw points. AuxPercent.StartValue is a fraction; hull
 /// alone stays in absolute points. This applies equally to players and peers.
 pub fn ship_resources(

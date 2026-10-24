@@ -92,6 +92,12 @@ pub(super) struct ActiveDevice {
 
 impl ActiveDevice {
     /// Returns:
+    ///     u32: Stable native visual identity across a short server replacement.
+    pub(super) fn visual_id(&self, player_id: u32) -> u32 {
+        (self.expires_at_ms as u32) ^ player_id
+    }
+
+    /// Returns:
     ///     bool: Whether the frozen buff still belongs to equipped gear.
     pub fn valid_for(&self, inventory: &Inventory, items: &ItemCatalog, now_ms: u64) -> bool {
         let expected = items.get(self.template).ok().and_then(device_effect);
@@ -235,6 +241,42 @@ fn device_effect(
 }
 
 impl PlayerSession {
+    /// Publish the catalog buff name and visual for the current timed device.
+    fn publish_active_device_presentation(&mut self, remaining_ms: u64) {
+        let Some(active) = self.active_device.as_ref() else {
+            return;
+        };
+        let Some(effect) = self
+            .items
+            .get(active.template)
+            .ok()
+            .and_then(|template| template.activated.first())
+        else {
+            return;
+        };
+        let name = if effect.buff_name.is_empty() {
+            active.effect.label()
+        } else {
+            effect.buff_name.as_str()
+        };
+        let removal_tick = self.tick_ms().wrapping_add(remaining_ms as u32);
+        self.pending.push(packets::ship_active_buff(
+            self.player_id(),
+            name,
+            removal_tick,
+        ));
+        if let Ok(visual) = u16::try_from(effect.visual) {
+            if visual != 0 {
+                self.pending.push(packets::object_effect(
+                    self.player_id(),
+                    active.visual_id(self.player_id()),
+                    visual,
+                    self.tick_ms(),
+                ));
+            }
+        }
+    }
+
     pub(super) fn ship_resources(&self) -> packets::ShipResources {
         packets::ShipResources {
             energy: self.energy,
@@ -493,6 +535,7 @@ impl PlayerSession {
                 return Err(error);
             }
             self.refresh_equipment()?;
+            self.publish_active_device_presentation(duration_ms);
             self.pending.push(packets::message(&format!(
                 "{} active for {} seconds.",
                 effect.label(),
@@ -509,11 +552,17 @@ impl PlayerSession {
                 || self.hull <= 0.
                 || self.sector.station.is_some()
         }) {
-            let effect = self.active_device.take().unwrap().effect;
+            let active = self.active_device.take().unwrap();
             self.checkpoint_session(true)?;
             self.refresh_equipment()?;
             self.pending
-                .push(packets::message(&format!("{} ended.", effect.label())));
+                .push(packets::ship_active_buff(self.player_id(), "", 0));
+            self.pending
+                .push(packets::remove_effect(active.visual_id(self.player_id())));
+            self.pending.push(packets::message(&format!(
+                "{} ended.",
+                active.effect.label()
+            )));
         }
         Ok(())
     }
@@ -525,9 +574,10 @@ impl PlayerSession {
                 .expires_at_ms
                 .saturating_sub(crate::resources::unix_ms())
                 .div_ceil(1000);
+            let label = active.effect.label();
+            self.publish_active_device_presentation(remaining * 1000);
             self.pending.push(packets::message(&format!(
-                "{} active for {remaining} seconds.",
-                active.effect.label()
+                "{label} active for {remaining} seconds."
             )));
         }
     }

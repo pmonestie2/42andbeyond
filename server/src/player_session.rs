@@ -3712,6 +3712,23 @@ mod tests {
         ship.activate_equipped_item(&activation).unwrap();
         assert_eq!(ship.energy, ordinary_energy - 758.);
         assert_eq!(ship.motion.max_speed, ordinary_speed);
+        let active = ship.active_device.as_ref().unwrap().clone();
+        let visual_id = active.visual_id(ship.player_id());
+        assert!(ship.pending.iter().any(|frame| {
+            frame.opcode == 0x09
+                && frame.body[0] == 3
+                && u16::from_le_bytes(frame.body[5..7].try_into().unwrap()) == 604
+                && u32::from_le_bytes(frame.body[7..11].try_into().unwrap()) == visual_id
+        }));
+        assert!(ship.pending.iter().any(|frame| {
+            frame.opcode == 0x1b
+                && frame.body.len() > 20
+                && frame.body[12] & 0x40 != 0
+                && frame
+                    .body
+                    .windows(b"Turbo Weapons".len())
+                    .any(|window| window == b"Turbo Weapons")
+        }));
         let boosted_reload = ship.equipment.weapons[0].reload;
         assert!(boosted_reload < ordinary_reload);
         ship.target = MOB_ID;
@@ -3727,6 +3744,10 @@ mod tests {
         assert!(restored.logged_in);
         assert_eq!(restored.equipment.weapons[0].reload, boosted_reload);
         assert!(restored.pending.iter().any(|frame| {
+            frame.opcode == 0x09
+                && u32::from_le_bytes(frame.body[7..11].try_into().unwrap()) == visual_id
+        }));
+        assert!(restored.pending.iter().any(|frame| {
             frame.opcode == 0x1d
                 && frame
                     .body
@@ -3734,11 +3755,21 @@ mod tests {
                     .any(|window| window == b"Turbo Weapons active for")
         }));
         restored.active_device.as_mut().unwrap().expires_at_ms = crate::resources::unix_ms() - 1;
+        let expired_visual_id = restored
+            .active_device
+            .as_ref()
+            .unwrap()
+            .visual_id(restored.player_id());
         restored.advance_active_device().unwrap();
         assert!(restored.active_device.is_none());
         assert_eq!(restored.motion.max_speed, ordinary_speed);
         assert_eq!(restored.equipment.weapons[0].reload, ordinary_reload);
-        assert!(restored.pending.iter().any(|frame| frame.opcode == 0x1b));
+        assert!(restored.pending.iter().any(|frame| {
+            frame.opcode == 0x0f && frame.body == expired_visual_id.to_le_bytes()
+        }));
+        assert!(restored.pending.iter().any(|frame| {
+            frame.opcode == 0x1b && frame.body.len() > 20 && frame.body[12] & 0x40 != 0
+        }));
     }
 
     #[test]

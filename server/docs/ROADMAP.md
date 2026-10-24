@@ -159,7 +159,12 @@ mean the corresponding gameplay system is complete.
   Shunt to Reactor shifts both recharge rates. Active snapshots freeze every
   catalog modifier and remain readable after replacement. The supported
   families cover 170 single-effect device templates before malformed or
-  mismatched entries are gated. Other activated families, ally/hostile
+  mismatched entries are gated. Supported timed devices now publish the native
+  ShipIndex.Buffs slot and catalog object effect (0x09), clear both on expiry,
+  and replay them after server replacement; a disposable pje Turbo Weapons
+  trace verified visual 604, buff AUX, 0x0f removal and text over its ten-second
+  duration. Legacy Windows graphical icon/visual verification is still pending.
+  Other activated families, ally/hostile
   targeting and concurrent buff stacking remain pending.
 - UDP send failures are logged per destination immediately, then summarized
   at most every 30 seconds until recovery, avoiding floods from unreachable
