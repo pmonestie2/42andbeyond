@@ -155,7 +155,7 @@ impl PlayerSession {
         Ok(())
     }
 
-    fn advance_ship_resources(&mut self, dt: f32) {
+    pub(super) fn advance_ship_resources(&mut self, dt: f32) {
         let stats = self.equipment.ship;
         if self.warp.draining_energy() {
             self.energy = (self.energy - stats.warp_drain * dt).max(0.);

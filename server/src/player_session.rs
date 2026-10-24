@@ -3789,6 +3789,92 @@ mod tests {
     }
 
     #[test]
+    fn activated_recharge_devices_change_actual_energy_and_shield_regeneration() {
+        let mut ship = session();
+        ship.logged_in = true;
+        ship.selected_peer = Some("127.0.0.1".parse().unwrap());
+        ship.endpoint = Some("127.0.0.1:22493".parse().unwrap());
+        let mut inventory = ship.inventory.clone();
+        inventory.equipped[1] = Some(crate::inventory::ItemInstance::stock(3343, 1));
+        inventory.equipped[9] = Some(crate::inventory::ItemInstance::stock(1810, 1));
+        ship.commit_inventory(inventory).unwrap();
+        let base_energy_recharge = ship.equipment.ship.energy_recharge;
+        let activation = [ship.player_id().to_le_bytes().as_slice(), &[2, 9]].concat();
+        ship.energy = ship.equipment.ship.energy_capacity - 100.;
+        ship.activate_equipped_item(&activation).unwrap();
+        assert_eq!(
+            ship.equipment.ship.energy_recharge,
+            base_energy_recharge + 4.
+        );
+        let energy = ship.energy;
+        ship.advance_ship_resources(1.);
+        assert!((ship.energy - energy - base_energy_recharge - 4.).abs() < 0.001);
+        let mut restored =
+            PlayerSession::new(ship.sector.clone(), ship.bind, ship.state_dir.clone()).unwrap();
+        assert_eq!(
+            restored.equipment.ship.energy_recharge,
+            base_energy_recharge + 4.
+        );
+        restored.active_device.as_mut().unwrap().expires_at_ms = crate::resources::unix_ms() - 1;
+        restored.advance_active_device().unwrap();
+        assert_eq!(
+            restored.equipment.ship.energy_recharge,
+            base_energy_recharge
+        );
+
+        let mut inventory = restored.inventory.clone();
+        inventory.equipped[9] = Some(crate::inventory::ItemInstance::stock(1805, 1));
+        restored.commit_inventory(inventory).unwrap();
+        let base_shield_recharge = restored.equipment.ship.shield_recharge;
+        restored.shield = 0.;
+        restored.activate_equipped_item(&activation).unwrap();
+        assert_eq!(restored.active_device.as_ref().unwrap().operation, 2);
+        assert_eq!(
+            restored.equipment.ship.shield_recharge,
+            base_shield_recharge * 1.1
+        );
+        restored.advance_ship_resources(1.);
+        assert!((restored.shield - restored.equipment.ship.shield_recharge).abs() < 0.001);
+    }
+
+    #[test]
+    fn activated_plasma_deflect_reduces_authoritative_incoming_damage() {
+        let mut ship = session();
+        ship.logged_in = true;
+        ship.selected_peer = Some("127.0.0.1".parse().unwrap());
+        ship.endpoint = Some("127.0.0.1:22494".parse().unwrap());
+        let mut inventory = ship.inventory.clone();
+        inventory.equipped[1] = Some(crate::inventory::ItemInstance::stock(3343, 1));
+        inventory.equipped[9] = Some(crate::inventory::ItemInstance::stock(1893, 1));
+        ship.commit_inventory(inventory).unwrap();
+        ship.energy = ship.equipment.ship.energy_capacity;
+        ship.shield = 200.;
+        let activation = [ship.player_id().to_le_bytes().as_slice(), &[2, 9]].concat();
+        ship.activate_equipped_item(&activation).unwrap();
+        assert_eq!(ship.equipment.ship.deflects[2], 20.);
+        let mut restored =
+            PlayerSession::new(ship.sector.clone(), ship.bind, ship.state_dir.clone()).unwrap();
+        assert_eq!(restored.equipment.ship.deflects[2], 20.);
+        restored.shield = 200.;
+        lock_combat(&restored.combat).unwrap().actors[0]
+            .combat
+            .damage_type = 2;
+        restored.receive_hit(0, 100.).unwrap();
+        let reduced_loss = 200. - restored.shield;
+        restored.active_device.as_mut().unwrap().expires_at_ms = crate::resources::unix_ms() - 1;
+        restored.advance_active_device().unwrap();
+        assert_eq!(restored.equipment.ship.deflects[2], 0.);
+        restored.shield = 200.;
+        restored.receive_hit(0, 100.).unwrap();
+        assert!(
+            200. - restored.shield > reduced_loss,
+            "buffed_loss={reduced_loss}; unbuffed_loss={}; shield={}",
+            200. - restored.shield,
+            restored.shield
+        );
+    }
+
+    #[test]
     fn legacy_turbo_checkpoint_and_catalog_mismatch_are_validated() {
         let ship = session();
         let active: session_equipment::ActiveDevice = serde_json::from_value(serde_json::json!({
