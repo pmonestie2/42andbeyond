@@ -317,6 +317,13 @@ namespace FortyTwoAndBeyond.Client
             if (equipmentOpen) Equipment(snapshot);
             InputFocused = crewTab && GUI.GetNameOfFocusedControl() == "Group invite";
             ChatEntry();
+            if (InputFocused)
+            {
+                Rect typing = new Rect((CanvasWidth - 440) * .5f, CanvasHeight - 165, 440, 34);
+                Panel(typing);
+                GUI.Label(new Rect(typing.x + 12, typing.y + 6, typing.width - 24, 23),
+                    "TYPING CREW INVITE  ·  ESC OR CLICK EMPTY SPACE TO FLY", small);
+            }
             if (!client.Chart)
             {
                 float x = CanvasWidth * .5f, y = CanvasHeight * .5f;
