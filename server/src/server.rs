@@ -48,7 +48,7 @@ fn authenticate_proxy(body: &[u8], peer: SocketAddr, game: &Mutex<GameState>) ->
     let response = match ticket {
         Ok(ticket) => format!("Valid=TRUE\r\nTicket={ticket}\r\n").into_bytes(),
         Err(error) => {
-            eprintln!("Local account authentication rejected ({peer}): {error}");
+            crate::server_error!("Local account authentication rejected ({peer}): {error}");
             b"Valid=False\r\n".to_vec()
         }
     };
@@ -104,7 +104,7 @@ fn dispatch(
             };
             if let Some(id) = state.consume_ticket(ticket.trim_end_matches('\0'), peer.ip()) {
                 context.authenticated = Some(id);
-                println!("Local account ticket accepted ({peer})");
+                crate::server_log!("Local account ticket accepted ({peer})");
                 Some(state.characters(id)?)
             } else {
                 Some(packets::global_error(
@@ -135,7 +135,7 @@ fn dispatch(
             None
         }
         _ => {
-            eprintln!(
+            crate::server_error!(
                 "Unsupported {} TCP opcode {:#06x}, bytes={}",
                 if bridge { "bridge" } else { "global" },
                 frame.opcode,
@@ -215,7 +215,7 @@ fn accept_connections(
                 let clone = match stream.try_clone() {
                     Ok(clone) => clone,
                     Err(error) => {
-                        eprintln!("TCP clone failed: {error}");
+                        crate::server_error!("TCP clone failed: {error}");
                         continue;
                     }
                 };
@@ -231,7 +231,7 @@ fn accept_connections(
                                 | io::ErrorKind::ConnectionReset
                                 | io::ErrorKind::ConnectionAborted
                         ) {
-                            eprintln!("TCP {peer} ended: {error}");
+                            crate::server_error!("TCP {peer} ended: {error}");
                         }
                     }
                     if let Ok(mut registry) = owned.lock() {
@@ -243,7 +243,7 @@ fn accept_connections(
                 thread::sleep(Duration::from_millis(25))
             }
             Err(error) => {
-                eprintln!("TCP accept failed: {error}");
+                crate::server_error!("TCP accept failed: {error}");
                 break;
             }
         }
@@ -316,15 +316,15 @@ pub fn run(config: Config, stop: Arc<AtomicBool>) -> io::Result<()> {
             accept_connections(listener, bridge, game, stop, connections, ids)
         }));
     }
-    println!(
+    crate::server_log!(
         "Rust ENB sandbox ready: {} (shared sectors and player sessions)",
         config.bind
     );
     {
         let state = lock_game(&game)?;
-        println!("Local sandbox accounts loaded: {}", state.account_count());
+        crate::server_log!("Local sandbox accounts loaded: {}", state.account_count());
     }
-    println!("TCP 3805 global, 3807/3809/3810 proxy bridge; UDP 3806 registration, 3808 master, {SECTOR_PORT} sector");
+    crate::server_log!("TCP 3805 global, 3807/3809/3810 proxy bridge; UDP 3806 registration, 3808 master, {SECTOR_PORT} sector");
     let mut buffer = [0u8; 65535];
     let mut last_tick = Instant::now();
     let mut failure = None;
@@ -339,11 +339,13 @@ pub fn run(config: Config, stop: Arc<AtomicBool>) -> io::Result<()> {
                         let result = Datagram::decode(&buffer[..size])
                             .and_then(|packet| lock_game(&game)?.handle_udp(*port, peer, packet));
                         if let Err(error) = result {
-                            eprintln!("Rejected UDP {peer}, port={port}, size={size}: {error}");
+                            crate::server_error!(
+                                "Rejected UDP {peer}, port={port}, size={size}: {error}"
+                            );
                             // Header metadata helps diagnose proxy-version differences
                             // without recording login tickets or message contents.
                             if size >= 12 {
-                                eprintln!(
+                                crate::server_error!(
                                     "UDP header: claimed_size={}, opcode=0x{:04x}, sequence={}",
                                     u16::from_le_bytes([buffer[0], buffer[1]]),
                                     u16::from_le_bytes([buffer[2], buffer[3]]),
@@ -354,7 +356,7 @@ pub fn run(config: Config, stop: Arc<AtomicBool>) -> io::Result<()> {
                     }
                     Err(error) if error.kind() == io::ErrorKind::WouldBlock => break,
                     Err(error) => {
-                        eprintln!("UDP read error on {port}: {error}");
+                        crate::server_error!("UDP read error on {port}: {error}");
                         break;
                     }
                 }
@@ -376,7 +378,7 @@ pub fn run(config: Config, stop: Arc<AtomicBool>) -> io::Result<()> {
         for packet in output {
             if let Some(socket) = udp.get(&packet.port) {
                 if let Err(error) = socket.send_to(&packet.data, packet.peer) {
-                    eprintln!("UDP send error: {error}");
+                    crate::server_error!("UDP send error: {error}");
                 }
             }
         }
@@ -392,7 +394,7 @@ pub fn run(config: Config, stop: Arc<AtomicBool>) -> io::Result<()> {
         let _ = acceptor.join();
     }
     lock_game(&game)?.save()?;
-    println!("Server stopped; character position saved");
+    crate::server_log!("Server stopped; character position saved");
     match failure {
         Some(error) => Err(error),
         None => Ok(()),

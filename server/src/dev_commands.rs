@@ -66,9 +66,11 @@ impl GameState {
             "Dev spawn: {} x {} (template {}), 1000m ahead; first object {}.",
             request.count, template.name, template.template_id, first
         ));
-        println!(
+        crate::server_log!(
             "Dev spawn: {}; template={}; count={}; first_object={first}",
-            self.sessions[&source].account.character.name, template.template_id, request.count
+            self.sessions[&source].account.character.name,
+            template.template_id,
+            request.count
         );
         Ok(())
     }
@@ -84,9 +86,11 @@ impl GameState {
             .sessions
             .get_mut(&source)
             .ok_or_else(|| invalid("Unknown developer character."))?;
-        println!(
+        crate::server_log!(
             "Dev jump: {}; destination={} {}",
-            session.account.character.name, destination.id, destination.name
+            session.account.character.name,
+            destination.id,
+            destination.name
         );
         session.developer_jump(destination.id)
     }

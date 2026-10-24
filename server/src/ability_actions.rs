@@ -130,9 +130,10 @@ impl PlayerSession {
             effect,
             jumpstart,
         });
-        println!(
+        crate::server_log!(
             "Ability charging: {}; {} ({index}); target={target}",
-            self.account.character.name, ability.name
+            self.account.character.name,
+            ability.name
         );
         Ok(())
     }
@@ -287,9 +288,10 @@ impl PlayerSession {
                 {
                     self.pending.push(packets::message(&error.to_string()));
                 } else {
-                    println!(
+                    crate::server_log!(
                         "Ability applied: {}; {}",
-                        self.account.character.name, ability.name
+                        self.account.character.name,
+                        ability.name
                     );
                 }
             }

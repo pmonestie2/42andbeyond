@@ -10,9 +10,10 @@ impl PlayerSession {
             self.follow_peer = None;
             self.motion.stop();
             self.last_motion_report = None;
-            println!(
+            crate::server_log!(
                 "Following stopped: {}; target={}",
-                self.account.character.name, self.target
+                self.account.character.name,
+                self.target
             );
         }
     }
@@ -40,9 +41,10 @@ impl PlayerSession {
         self.motion.stop();
         self.following = true;
         self.last_motion_report = None;
-        println!(
+        crate::server_log!(
             "Following started: {}; target={}",
-            self.account.character.name, self.target
+            self.account.character.name,
+            self.target
         );
         Ok(())
     }

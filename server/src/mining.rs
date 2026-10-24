@@ -260,9 +260,11 @@ impl PlayerSession {
             self.tick_ms(),
             (remaining * 1000.) as u32,
         ));
-        println!(
+        crate::server_log!(
             "Mining started: {}; node={}; slot={}; item={template}; quantity={quantity}",
-            self.account.character.name, self.target, transfer.source_slot
+            self.account.character.name,
+            self.target,
+            transfer.source_slot
         );
         Ok(())
     }
@@ -275,9 +277,10 @@ impl PlayerSession {
                 self.emit_harvest_visual(Frame::new(7, article.to_le_bytes().to_vec()));
             }
             self.pending.push(packets::message(reason));
-            println!(
+            crate::server_log!(
                 "Mining stopped: {}; node={}; reason={reason}",
-                self.account.character.name, cast.node
+                self.account.character.name,
+                cast.node
             );
         }
         Ok(())
@@ -379,7 +382,7 @@ impl PlayerSession {
             cast.quantity,
             self.items.get(cast.template)?.name
         )));
-        println!(
+        crate::server_log!(
             "Mining collected: {}; node={}; item={}; quantity={}; explore_xp={}",
             self.account.character.name,
             cast.node,

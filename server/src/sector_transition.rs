@@ -95,9 +95,10 @@ pub(super) fn recover(
     let record: TransitionRecord = serde_json::from_slice(&bytes)?;
     record.validate(account, bind, sectors, initial_sector)?;
     record.materialize(directory)?;
-    println!(
+    crate::server_log!(
         "Sector transition recovered: {}; sector={}",
-        account.character.name, record.player.sector
+        account.character.name,
+        record.player.sector
     );
     Ok(())
 }
@@ -147,9 +148,10 @@ impl PlayerSession {
         if let Some(join) = &self.handoff {
             self.pending.push(Frame::new(0x3a, join.clone()));
         }
-        println!(
+        crate::server_log!(
             "Sector handoff published: {}; sector={}",
-            self.account.character.name, self.sector.id
+            self.account.character.name,
+            self.sector.id
         );
         Ok(())
     }

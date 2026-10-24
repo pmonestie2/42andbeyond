@@ -233,9 +233,9 @@ impl PlayerSession {
         self.handoff = Some(join.clone());
         self.transition_pending = Some(transition);
         if let Err(error) = self.finish_transition() {
-            println!("Sector transition committed; waiting for storage: {}; sector={destination}; reason={error}",self.account.character.name);
+            crate::server_log!("Sector transition committed; waiting for storage: {}; sector={destination}; reason={error}",self.account.character.name);
         }
-        println!(
+        crate::server_log!(
             "Sector handoff: {}; {previous} -> {destination}",
             self.account.character.name
         );

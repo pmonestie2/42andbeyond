@@ -13,6 +13,7 @@ pub mod gating;
 pub mod groups;
 pub mod inventory;
 pub mod items;
+pub mod logging;
 pub mod loot;
 pub mod loot_world;
 pub mod mob;
@@ -40,6 +41,7 @@ pub mod classes;
 
 pub mod mob_stats;
 
+pub mod demo_accounts;
 pub mod durable_json;
 pub mod projectiles;
 

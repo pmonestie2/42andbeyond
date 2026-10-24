@@ -281,7 +281,7 @@ impl PlayerSession {
         self.last_seen = Instant::now();
         if let Some(join) = &self.handoff {
             self.pending.push(Frame::new(0x3a, join.clone()));
-            println!("Resumed sector handoff: {}", self.account.character.name);
+            crate::server_log!("Resumed sector handoff: {}", self.account.character.name);
             return Ok(true);
         }
         // An inventory file can be newer than the transport checkpoint if the
@@ -369,7 +369,7 @@ impl PlayerSession {
         self.pending.push(packets::message(
             "Local server resumed; your game session was preserved.",
         ));
-        println!(
+        crate::server_log!(
             "Resumed game session: {}; next_sequence={}; outage={}ms",
             self.account.character.name,
             self.sequence,

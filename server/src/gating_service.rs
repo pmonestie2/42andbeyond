@@ -55,7 +55,7 @@ impl PlayerSession {
         });
         self.pending.push(packets::gate_render_state(target, 1));
         self.refresh_target_verbs(true);
-        println!(
+        crate::server_log!(
             "Gate opening: {}; gate={target}; destination={destination}",
             self.account.character.name
         );
@@ -73,7 +73,7 @@ impl PlayerSession {
             return Err(invalid("Gate completion target mismatch."));
         }
         active.completion_requested = true;
-        println!(
+        crate::server_log!(
             "Gate completion received: {}; gate={}; camera_sent={}; elapsed_ms={}",
             self.account.character.name,
             active.gate,
@@ -112,9 +112,10 @@ impl PlayerSession {
             if !active.camera_sent {
                 self.pending.push(packets::gate_camera(4, active.gate));
                 self.gate_transit.as_mut().unwrap().camera_sent = true;
-                println!(
+                crate::server_log!(
                     "Gate camera started: {}; gate={}",
-                    self.account.character.name, active.gate
+                    self.account.character.name,
+                    active.gate
                 );
             }
         }

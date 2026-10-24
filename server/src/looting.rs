@@ -156,9 +156,12 @@ impl PlayerSession {
         self.next_effect = self.next_effect.wrapping_add(2);
         drop(world);
         self.send_loot_tractor(&cast)?;
-        println!(
+        crate::server_log!(
             "Loot started: {}; corpse={}; slot={slot}; item={}; quantity={}",
-            self.account.character.name, self.target, item.template, item.quantity
+            self.account.character.name,
+            self.target,
+            item.template,
+            item.quantity
         );
         self.loot_cast = Some(cast);
         Ok(())
@@ -187,9 +190,10 @@ impl PlayerSession {
             self.emit_harvest_visual(Frame::new(0xf, cast.effect.to_le_bytes().to_vec()));
             self.emit_harvest_visual(Frame::new(7, cast.article.to_le_bytes().to_vec()));
             self.pending.push(packets::message(reason));
-            println!(
+            crate::server_log!(
                 "Loot stopped: {}; corpse={}; reason={reason}",
-                self.account.character.name, cast.corpse
+                self.account.character.name,
+                cast.corpse
             );
         }
         Ok(())
@@ -287,9 +291,12 @@ impl PlayerSession {
             cast.quantity,
             self.items.get(cast.template)?.name
         )));
-        println!(
+        crate::server_log!(
             "Loot collected: {}; corpse={}; item={}; quantity={}",
-            self.account.character.name, cast.corpse, cast.template, cast.quantity
+            self.account.character.name,
+            cast.corpse,
+            cast.template,
+            cast.quantity
         );
         Ok(())
     }

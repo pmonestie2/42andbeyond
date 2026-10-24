@@ -115,9 +115,11 @@ pub fn provision(
     file.sync_all()?;
     drop(file);
     fs::rename(temporary, directory.join("inventory.json"))?;
-    println!(
+    crate::server_log!(
         "Sandbox grant: {}; revision={}; credits={}",
-        profile.name, grant.revision, candidate.credits
+        profile.name,
+        grant.revision,
+        candidate.credits
     );
     Ok(Some(candidate))
 }

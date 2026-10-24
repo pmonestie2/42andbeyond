@@ -7,12 +7,25 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-fn main() -> io::Result<()> {
+/// Report all process failures with the same timestamped server logger.
+fn main() {
+    std::panic::set_hook(Box::new(|info| {
+        beyond_server::server_error!("Server panic: {info}");
+    }));
+    if let Err(error) = run() {
+        beyond_server::server_error!("Server failed: {error}");
+        std::process::exit(1);
+    }
+}
+
+/// Parse command-line modes, then run the owned server or offline action.
+fn run() -> io::Result<()> {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let mut bind = Ipv4Addr::new(127, 0, 0, 1);
     let mut content = root.join("data/asteroid_belt_alpha.json");
     let mut state_dir = root.join("state");
     let mut check = false;
+    let mut seed_play_accounts = false;
     let mut create_account: Option<String> = None;
     let mut character = String::from("SandboxPilot");
     let mut class = beyond_server::classes::CharacterClass::parse("je")?;
@@ -39,6 +52,7 @@ fn main() -> io::Result<()> {
                     .ok_or_else(|| io::Error::other("--state-dir needs a directory"))?
             }
             "--check" => check = true,
+            "--seed-demo-accounts" | "--seed-play-accounts" => seed_play_accounts = true,
             "--create-account" => create_account = arguments.next(),
             "--class" => {
                 class = beyond_server::classes::CharacterClass::parse(
@@ -53,11 +67,21 @@ fn main() -> io::Result<()> {
                     .ok_or_else(|| io::Error::other("--character needs a name"))?
             }
             "--help" | "-h" => {
-                println!("beyond-server [--bind 127.0.0.1] [--content data/sector.json] [--state-dir state] [--check] [--create-account NAME --character NAME --class te|tt|ts|jd|js|je|pw|pp|ps]\nConnect the 42 and Beyond client, or use win_legacy/launch_original_client.cmd on Windows. Demo account: local / local.");
+                beyond_server::server_log!("beyond-server [--bind 127.0.0.1] [--content data/sector.json] [--state-dir state] [--check] [--create-account NAME --character NAME --class te|tt|ts|jd|js|je|pw|pp|ps] [--seed-demo-accounts]\nConnect the 42 and Beyond client, or use win_legacy/launch_original_client.cmd on Windows. Demo account: local / local.");
                 return Ok(());
             }
             _ => return Err(io::Error::other(format!("unknown option {argument}"))),
         }
+    }
+    if seed_play_accounts {
+        if check || create_account.is_some() {
+            return Err(io::Error::other(
+                "Seed demos separately from --check or --create-account.",
+            ));
+        }
+        let codes = beyond_server::demo_accounts::seed(&state_dir)?;
+        beyond_server::server_log!("Published demo pilots: {}", codes.join(", "));
+        return Ok(());
     }
     if let Some(username) = create_account {
         let mut password = String::new();
@@ -69,7 +93,7 @@ fn main() -> io::Result<()> {
             character.clone(),
             class,
         )?;
-        println!("Created local account {username}; character {character}; class {}. Password hash saved.", class.code());
+        beyond_server::server_log!("Created local account {username}; character {character}; class {}. Password hash saved.", class.code());
         return Ok(());
     }
     // Loopback is the default. Private LAN addresses also allow a Linux/macOS
@@ -84,7 +108,7 @@ fn main() -> io::Result<()> {
         serde_json::from_slice(&std::fs::read(&content)?).map_err(io::Error::other)?;
     sector.validate()?;
     if check {
-        println!(
+        beyond_server::server_log!(
             "Configuration valid: sector={} {}, navpoints={}, mobs={}, bind={bind}",
             sector.id,
             sector.name,

@@ -39,9 +39,10 @@ impl PlayerSession {
             return Err(invalid("Enter the NPC's room before talking."));
         }
         let npc = self.npcs.npc(identity, station.id)?;
-        println!(
+        crate::server_log!(
             "NPC conversation: {}; npc={identity} ({})",
-            self.account.character.name, npc.name
+            self.account.character.name,
+            npc.name
         );
         self.close_npc();
         self.npc_interaction = Some(NpcInteraction {
@@ -143,7 +144,7 @@ impl PlayerSession {
                 node: 0,
                 text: "Goodbye.".into(),
             }];
-            eprintln!("NPC vendor content unavailable: npc={identity}");
+            crate::server_error!("NPC vendor content unavailable: npc={identity}");
         }
         let text = self.talk_text(&entry.text);
         let mut branches: Vec<(u8, String)> = entry
@@ -164,7 +165,7 @@ impl PlayerSession {
             self.pending.push(packets::talk_control(3));
             self.pending.push(packets::talk_tree(&text, &branches));
             self.pending.push(packets::talk_control(6));
-            println!(
+            crate::server_log!(
                 "Vendor opened: {}; npc={identity}",
                 self.account.character.name
             );

@@ -101,6 +101,11 @@ mean the corresponding gameplay system is complete.
   and dock buttons/admission measure the original 5,000 m from object surface.
   A metadata-only comparison and boundary tests pass. Native graphical checks
   across other gates and stations remain pending.
+- Nine explicitly published class-code demo pilots can be seeded offline.
+  They carry class-legal full mounts, high-end core gear, credits and compatible
+  loaded/reserve ammo for Terran/Progen launchers. A read-only UDP roster
+  advertises only these demos; reruns preserve their owned state. Full earned
+  XP progression is still pending.
 
 ## Next implementation work
 

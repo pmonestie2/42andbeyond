@@ -386,7 +386,7 @@ impl PlayerSession {
             crate::resources::unix_ms(),
         );
         if let Err(error) = session.restore_session() {
-            eprintln!("Session recovery skipped: {error}");
+            crate::server_error!("Session recovery skipped: {error}");
             session.cancel_mining("Session recovery could not complete.")?;
             session.cancel_looting("Session recovery could not complete.")?;
             session.logged_in = false;
@@ -493,7 +493,7 @@ impl PlayerSession {
             // login may replace a stale native/proxy connection immediately.
             // Retire its claims, transport and casts before issuing a ticket;
             // old endpoint/comms logout packets then fail the normal pin checks.
-            println!(
+            crate::server_log!(
                 "Authenticated session takeover: {}",
                 self.account.character.name
             );
@@ -521,9 +521,10 @@ impl PlayerSession {
             self.nonce[..16].copy_from_slice(b"MY_Avatar_Ticket");
         }
         self.last_seen = Instant::now();
-        println!(
+        crate::server_log!(
             "Character selected: {}, sector={}",
-            self.account.character.name, self.sector.id
+            self.account.character.name,
+            self.sector.id
         );
         Ok(packets::character_ticket(
             self.sector.id,
@@ -729,7 +730,7 @@ impl PlayerSession {
                         ));
                     }
                 }
-                println!(
+                crate::server_log!(
                     "Sector login complete: {}, navpoints={}, mobs={}",
                     self.account.character.name,
                     self.sector.navpoints.len(),
@@ -849,7 +850,7 @@ impl PlayerSession {
                     self.pending.push(Frame::new(0x19, reply));
                     self.pending
                         .push(packets::ship_target(self.player_id(), target));
-                    println!(
+                    crate::server_log!(
                         "Target selected: {}; object={target}",
                         self.account.character.name
                     );
@@ -873,9 +874,10 @@ impl PlayerSession {
                     return Err(invalid("warp owner mismatch"));
                 }
                 let count = reader.u16()? as usize;
-                println!(
+                crate::server_log!(
                     "Warp request: {}; waypoints={count}; phase={:?}",
-                    self.account.character.name, self.warp.phase
+                    self.account.character.name,
+                    self.warp.phase
                 );
                 if count > 64 || reader.rest().len() != count * 4 {
                     return Err(invalid("invalid warp waypoint count"));
@@ -1039,7 +1041,7 @@ impl PlayerSession {
             }
             0x98 | 0xa3 | 0x1a | 0x2025 | 0x3005 => {}
             _ => {
-                eprintln!(
+                crate::server_error!(
                     "Unimplemented client opcode {opcode:#06x}, bytes={}",
                     body.len()
                 );
@@ -1119,7 +1121,7 @@ impl PlayerSession {
             self.refresh_workbench_target();
         }
         self.refresh_workbench(true)?;
-        println!(
+        crate::server_log!(
             "Inventory move accepted: {}; transfer={transfer:?}",
             self.account.character.name
         );
@@ -1188,7 +1190,7 @@ impl PlayerSession {
             &prices,
         ));
         if let Some(active) = self.npc_interaction.as_ref().filter(|active| active.vendor) {
-            println!("Vendor inventory committed: {}; npc={}; credits_before={previous_credits}; credits_after={}", self.account.character.name, active.npc, self.inventory.credits);
+            crate::server_log!("Vendor inventory committed: {}; npc={}; credits_before={previous_credits}; credits_after={}", self.account.character.name, active.npc, self.inventory.credits);
         }
         Ok(())
     }
@@ -1313,7 +1315,7 @@ impl PlayerSession {
                     tick,
                 ));
                 self.add_warp_effect(443);
-                println!("Warp charging: {}", self.account.character.name);
+                crate::server_log!("Warp charging: {}", self.account.character.name);
             }
             WarpEvent::Departed => {
                 self.add_warp_effect(23);
@@ -1354,7 +1356,7 @@ impl PlayerSession {
                     FinishReason::Boundary => "Warp stopped at the sector boundary.",
                 }));
                 self.dirty = true;
-                println!(
+                crate::server_log!(
                     "Warp stopped: {}; reason={reason:?}",
                     self.account.character.name
                 );
@@ -1427,7 +1429,7 @@ impl PlayerSession {
         self.stop_weapons();
         self.forget_session()?;
         self.skills = SkillState::default();
-        println!("Local character logged out");
+        crate::server_log!("Local character logged out");
         Ok(())
     }
     pub fn save(&mut self) -> io::Result<()> {

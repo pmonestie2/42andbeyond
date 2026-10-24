@@ -246,7 +246,7 @@ impl PlayerSession {
             candidate.refine_job = None;
             candidate.craft_job = None;
             self.commit_inventory(candidate)?;
-            println!(
+            crate::server_log!(
                 "Production cancelled: {}; terminal closed; no materials or credits consumed",
                 self.account.character.name
             );
@@ -295,9 +295,10 @@ impl PlayerSession {
         if let Some(window) = &mut self.workbench {
             window.completed = false;
         }
-        println!(
+        crate::server_log!(
             "Refining started: {}; product={}; iterations={count}; unit_cost={REFINE_PRICE}",
-            self.account.character.name, recipe.output
+            self.account.character.name,
+            recipe.output
         );
         self.pending.push(packets::message("Refining in progress."));
         Ok(())
@@ -438,7 +439,7 @@ impl PlayerSession {
             window.operation_failed = false;
             window.recovered_components.clear();
         }
-        println!(
+        crate::server_log!(
             "Production started: {}; operation={operation:?}; product={product}",
             self.account.character.name
         );
@@ -488,7 +489,7 @@ impl PlayerSession {
                     "{outcome}: {}.",
                     self.items.get(job.recipe.product)?.name
                 )));
-                println!(
+                crate::server_log!(
                     "Production completed: {}; operation={:?}; product={}; analysis_succeeded={}",
                     self.account.character.name,
                     job.operation,
@@ -503,7 +504,7 @@ impl PlayerSession {
                 self.pending.push(packets::message(&format!(
                     "Production cancelled: {error}; no charge or materials consumed."
                 )));
-                println!(
+                crate::server_log!(
                     "Production cancelled: {}; reason={error}",
                     self.account.character.name
                 );
@@ -668,9 +669,11 @@ impl PlayerSession {
                             job.iterations,
                             self.items.get(job.product)?.name
                         )));
-                        println!(
+                        crate::server_log!(
                             "Refining completed: {}; product={}; iterations={}",
-                            self.account.character.name, job.product, job.iterations
+                            self.account.character.name,
+                            job.product,
+                            job.iterations
                         );
                     }
                     Err(error) => {
@@ -680,7 +683,7 @@ impl PlayerSession {
                         self.pending.push(packets::message(&format!(
                             "Refining stopped: {error}; no materials or credits consumed."
                         )));
-                        println!(
+                        crate::server_log!(
                             "Refining stopped: {}; reason={error}",
                             self.account.character.name
                         );

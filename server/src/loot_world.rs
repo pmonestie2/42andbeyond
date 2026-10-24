@@ -358,7 +358,7 @@ impl LootWorld {
                     .map(|item| format!("{slot}:{}x{}", item.template, item.quantity))
             })
             .collect();
-        println!(
+        crate::server_log!(
             "Corpse created: sector={}, corpse={id}, spawn={}, generation={}, template={}, killer={}, items=[{}], credits={}",
             self.state.sector, corpse.death.spawn, corpse.death.generation,
             birth.template, corpse.killer, stock.join(", "), corpse.initial.credits

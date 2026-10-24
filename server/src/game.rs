@@ -219,7 +219,7 @@ impl GameState {
         } else {
             Ok(())
         } {
-            eprintln!(
+            crate::server_error!(
                 "Weapon journal recovery deferred: {}; {error}",
                 session.account.character.name
             );
@@ -316,6 +316,30 @@ impl GameState {
             .handle_input(opcode, body)
     }
     pub fn handle_udp(&mut self, port: u16, peer: SocketAddr, packet: Datagram) -> io::Result<()> {
+        if port == 3806 && packet.opcode == 0x1002 {
+            if packet.player != 0 || packet.sequence != 0 || !packet.body.is_empty() {
+                return Err(invalid(
+                    "Demo roster request must be empty and unauthenticated.",
+                ));
+            }
+            let codes = crate::demo_accounts::published_codes(&self.root)?;
+            let mut body = vec![1, codes.len() as u8];
+            for code in codes {
+                body.extend_from_slice(code.as_bytes());
+            }
+            self.outgoing.push(Outbound {
+                port,
+                peer,
+                data: Datagram {
+                    opcode: 0x1003,
+                    player: 0,
+                    sequence: 0,
+                    body,
+                }
+                .encode()?,
+            });
+            return Ok(());
+        }
         if port == 3806 && packet.opcode == 0x1000 {
             if packet.body.len() != 4 {
                 return Err(invalid("registration requires a version"));
@@ -551,7 +575,9 @@ impl GameState {
                 .last_deferred_error
                 .is_none_or(|last| last.elapsed() >= Duration::from_secs(5))
             {
-                eprintln!("Gameplay work deferred; independent sessions remain active: {error}");
+                crate::server_error!(
+                    "Gameplay work deferred; independent sessions remain active: {error}"
+                );
                 self.last_deferred_error = Some(Instant::now());
             }
         } else {
@@ -611,7 +637,7 @@ impl GameState {
         }
         for session in self.sessions.values_mut() {
             if let Err(error) = session.save() {
-                eprintln!(
+                crate::server_error!(
                     "Character save failed: {}; {error}",
                     session.account.character.name
                 );
@@ -620,7 +646,7 @@ impl GameState {
                 }
             }
             if let Err(error) = session.checkpoint_session(true) {
-                eprintln!(
+                crate::server_error!(
                     "Character checkpoint failed: {}; {error}",
                     session.account.character.name
                 );
@@ -652,7 +678,7 @@ impl GameState {
         }
         for session in self.sessions.values_mut() {
             if let Err(error) = session.checkpoint_session(force) {
-                eprintln!(
+                crate::server_error!(
                     "Character checkpoint failed: {}; {error}",
                     session.account.character.name
                 );

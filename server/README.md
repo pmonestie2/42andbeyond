@@ -12,9 +12,16 @@ python3 server/tools/run_server.py --bind 127.0.0.1
 python3 server/tools/create_account.py
 ```
 
+For a stopped server, seed the nine public class demos with
+`server/target/debug/beyond-server --seed-demo-accounts --state-dir server/state`.
+The accounts are `pte`, `ptt`, `pts`, `pjd`, `pjs`, `pje`, `ppw`, `ppp`, `pps`; each password matches its
+username. Rerunning the command preserves their inventory and credits. See
+`docs/DEMO_ACCOUNTS.md` for the class list and roster protocol.
+
 `target/debug/beyond-server` is the executable (`.exe` on Windows). It accepts
 `--bind`, `--content`, `--state-dir`, `--check`, and `--create-account`; run
 `--help` for details. Default state is `server/state`, outside version control.
+Server stdout/stderr messages use UTC timestamps in square brackets.
 Use a private LAN bind address when connecting from another machine or Net7Proxy.
 
 `tools/restart_server.py` validates the recorded process identity, builds a staged
