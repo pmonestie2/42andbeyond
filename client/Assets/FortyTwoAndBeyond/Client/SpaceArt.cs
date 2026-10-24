@@ -325,6 +325,12 @@ namespace FortyTwoAndBeyond.Client
                 Vector3 position = new Vector3(Mathf.Cos(angle) * 1.2f, Mathf.Sin(angle * 1.7f) * .55f, Mathf.Sin(angle) * 1.1f);
                 Transform shard = Part(root, PrimitiveType.Cube, position, new Vector3(.2f, .14f, .85f), mineral);
                 shard.localRotation = Quaternion.Euler(20 + i * 13, i * 73, 25 + i * 19);
+                if (i < 2)
+                {
+                    Transform crystal = Part(root, PrimitiveType.Capsule, position * 1.16f,
+                        new Vector3(.17f, .42f + i * .035f, .17f), mineral);
+                    crystal.localRotation = Quaternion.Euler(i * 31, i * 67, 24 + i * 9);
+                }
             }
         }
 
