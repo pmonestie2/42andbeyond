@@ -111,14 +111,23 @@ class ClientProfile:
 
 
 def copy_client(source: Path, destination: Path) -> None:
-    """Hard-link immutable game assets; copy writable settings and executables."""
+    """Copy settings and executables, linking assets and excluding runtime logs.
+
+    Raises:
+        OSError: A required game file cannot be copied; the message names that file.
+    """
     immutable = {'.mix', '.pld', '.w3d', '.dds', '.tga', '.mp3', '.wav', '.bmp'}
-    for directory, _, files in os.walk(source):
+    for directory, folders, files in os.walk(source):
+        folders[:] = [name for name in folders if name.lower() != 'logs']
         relative = Path(directory).relative_to(source)
         target = destination / relative
         target.mkdir(parents=True, exist_ok=True)
         for filename in files:
             original, copied = Path(directory) / filename, target / filename
+            # Live clients hold chat.log open exclusively. Runtime diagnostics
+            # belong to the new client and must never be copied from a live one.
+            if original.suffix.lower() in {'.log', '.dmp'}:
+                continue
             if copied.exists(): continue
             parts = {part.lower() for part in relative.parts}
             if 'data' in parts and not parts.intersection({'ini', 'output', 'logs'}) and original.suffix.lower() in immutable:
@@ -126,7 +135,10 @@ def copy_client(source: Path, destination: Path) -> None:
                     os.link(original, copied)
                     continue
                 except OSError: pass  # Another volume/filesystem: ordinary copy.
-            shutil.copy2(original, copied)
+            try:
+                shutil.copy2(original, copied)
+            except OSError as error:
+                raise OSError(f'Cannot copy required client file {original} to {copied}: {error}') from error
 
 
 def prepare_profile(name: str, client: Path, proxy: Path) -> ClientProfile:

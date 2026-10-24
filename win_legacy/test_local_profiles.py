@@ -13,6 +13,25 @@ from .local_profiles import ClientProfile, ProfileDns, copy_client, prepare_prof
 
 
 class ProfileTests(unittest.TestCase):
+    def test_skips_locked_runtime_logs_but_reports_locked_required_files(self) -> None:
+        """Never open live logs, and name required files when copying fails."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source, target = root / 'source', root / 'target'
+            for relative in ('release/chat.log', 'release/crash.DMP', 'Logs/session.txt', 'release/client.exe'):
+                path = source / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(b'fixture')
+            # Failing every copy proves runtime files were excluded before opening.
+            with patch('win_legacy.local_profiles.shutil.copy2', side_effect=PermissionError('sharing violation')) as copy:
+                with self.assertRaisesRegex(OSError, r'Cannot copy required client file .*client\.exe'):
+                    copy_client(source, target)
+            self.assertEqual(copy.call_count, 1)
+            self.assertEqual(copy.call_args.args[0].name, 'client.exe')
+            self.assertFalse((target / 'release/chat.log').exists())
+            self.assertFalse((target / 'release/crash.DMP').exists())
+            self.assertFalse((target / 'Logs').exists())
+
     def test_names_are_normalized_and_cannot_escape_profile_directory(self) -> None:
         """Reject traversal and names that cannot become safe host aliases."""
         self.assertEqual(validate_instance_name('Pilot1'), 'pilot1')
