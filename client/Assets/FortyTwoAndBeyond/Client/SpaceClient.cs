@@ -28,8 +28,9 @@ namespace FortyTwoAndBeyond.Client
         public bool AbilitiesOpen => abilityHud != null && abilityHud.IsOpen;
         public bool Incapacitated => snapshot != null && snapshot.Station == null &&
             snapshot.MaxHull > 0 && snapshot.Hull <= 0;
-        private Transform ship, worldRoot, environment, hangar;
+        private Transform ship, worldRoot, environment, hangar, concourse;
         private readonly Dictionary<uint, Transform> bodies = new Dictionary<uint, Transform>();
+        private readonly Dictionary<uint, Transform> stationBodies = new Dictionary<uint, Transform>();
         private string host = "192.168.47.1", username = "", password = "", status = "Ready to connect", sector = "";
         private uint target;
         private bool chart, positioned;
@@ -80,6 +81,7 @@ namespace FortyTwoAndBeyond.Client
             ship = art.Ship(transform); combatEffects = new CombatEffects(transform, ship, remoteShips); ship.localScale = Vector3.one * .25f;
             environment = art.Environment(transform);
             hangar = art.Hangar(transform); hangar.gameObject.SetActive(false);
+            concourse = art.StationConcourse(transform); concourse.gameObject.SetActive(false);
             RenderSettings.skybox = art.Sky; RenderSettings.ambientLight = new Color(.18f, .23f, .32f);
             RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Flat;
             var sun = new GameObject("Sunlight", typeof(Light)); sun.transform.SetParent(transform, false);
@@ -190,6 +192,7 @@ namespace FortyTwoAndBeyond.Client
                 snapshot = next; if (worker.Error == null) status = next.Status;
                 if (sector != next.Sector) { ClearWorld(); sector = next.Sector; target = 0; positioned = false; }
                 ApplyWorld(next);
+                ApplyStationAvatars(next);
                 remoteShips.Apply(next.Players.Concat(next.Mobs).ToArray());
                 combatEffects.Apply(next);
                 if (poseChanged) authoritativePoseAt = Time.unscaledTime;
@@ -294,6 +297,35 @@ namespace FortyTwoAndBeyond.Client
                 target = next.Objects.Where(item => item.Navigable).OrderBy(item => item.Position.Distance(next.Position)).FirstOrDefault()?.Id ?? 0;
         }
 
+        /// <summary>Show only server-advertised pilots in the current station room.</summary>
+        private void ApplyStationAvatars(Snapshot next)
+        {
+            uint room = next.Station?.CurrentRoom ?? uint.MaxValue;
+            var visible = new HashSet<uint>();
+            foreach (StationAvatar avatar in next.StationAvatars.Where(item =>
+                room != uint.MaxValue && item.Room == room))
+            {
+                visible.Add(avatar.Id);
+                if (!stationBodies.TryGetValue(avatar.Id, out Transform body))
+                {
+                    body = art.StationAvatar(transform);
+                    body.name = avatar.Name + " station avatar";
+                    stationBodies[avatar.Id] = body;
+                }
+                float x = float.IsNaN(avatar.Position.X) || float.IsInfinity(avatar.Position.X)
+                    ? 0 : avatar.Position.X;
+                float z = float.IsNaN(avatar.Position.Z) || float.IsInfinity(avatar.Position.Z)
+                    ? 0 : avatar.Position.Z;
+                body.localPosition = new Vector3(Mathf.Clamp(x * .25f, -6, 6), 0,
+                    Mathf.Clamp(z * .25f, -9, 9));
+                float orientation = float.IsNaN(avatar.Orientation) || float.IsInfinity(avatar.Orientation)
+                    ? 0 : avatar.Orientation;
+                body.localRotation = Quaternion.Euler(0, orientation * Mathf.Rad2Deg, 0);
+            }
+            foreach (uint id in stationBodies.Keys.Where(id => !visible.Contains(id)).ToArray())
+            { Destroy(stationBodies[id].gameObject); stationBodies.Remove(id); }
+        }
+
         /// <summary>Smooth authoritative poses and position the camera without changing gameplay state.</summary>
         private void LateUpdate()
         {
@@ -319,17 +351,30 @@ namespace FortyTwoAndBeyond.Client
                     ? predicted : Vector3.Lerp(renderedPosition, predicted, 1 - Mathf.Exp(-10 * delta));
             }
             worldRoot.position = -renderedPosition;
+            worldRoot.gameObject.SetActive(!docked);
             remoteShips.Tick(Time.unscaledDeltaTime); combatEffects.Tick();
-            hangar.gameObject.SetActive(docked);
+            bool dockingBay = docked && (snapshot.Station.CurrentRoom == 0 ||
+                snapshot.Station.CurrentRoom == uint.MaxValue);
+            hangar.gameObject.SetActive(dockingBay);
+            concourse.gameObject.SetActive(docked && !dockingBay);
+            ship.gameObject.SetActive(!docked || dockingBay);
             environment.gameObject.SetActive(!chart && !docked);
             if (docked)
             {
                 view.orthographic = false; view.clearFlags = CameraClearFlags.SolidColor;
                 view.backgroundColor = new Color(.025f, .055f, .075f);
-                ship.position = new Vector3(0, 1.4f, 0); ship.rotation = Quaternion.identity;
-                ship.localScale = Vector3.one * 1.3f;
-                view.transform.position = new Vector3(4, 3.5f, -8);
-                view.transform.LookAt(new Vector3(0, 1.2f, 0));
+                if (dockingBay)
+                {
+                    ship.position = new Vector3(0, 1.4f, 0); ship.rotation = Quaternion.identity;
+                    ship.localScale = Vector3.one * 1.3f;
+                    view.transform.position = new Vector3(4, 3.5f, -8);
+                    view.transform.LookAt(new Vector3(0, 1.2f, 0));
+                }
+                else
+                {
+                    view.transform.position = new Vector3(0, 3.8f, -9);
+                    view.transform.LookAt(new Vector3(0, 1.5f, 2));
+                }
                 return;
             }
             ship.localPosition = Vector3.zero;
@@ -605,7 +650,13 @@ namespace FortyTwoAndBeyond.Client
         }
 
         /// <summary>Release scene instances belonging to the departed sector.</summary>
-        private void ClearWorld() { combatEffects?.Clear(); remoteShips?.Clear(); miningHud?.Clear(); foreach (Transform body in bodies.Values) Destroy(body.gameObject); bodies.Clear(); renderedObjects = System.Array.Empty<MapObject>(); }
+        private void ClearWorld()
+        {
+            combatEffects?.Clear(); remoteShips?.Clear(); miningHud?.Clear();
+            foreach (Transform body in bodies.Values) Destroy(body.gameObject);
+            foreach (Transform body in stationBodies.Values) Destroy(body.gameObject);
+            bodies.Clear(); stationBodies.Clear(); renderedObjects = System.Array.Empty<MapObject>();
+        }
 
         /// <summary>Brake and neutralize steering when foreground control is lost.</summary>
         private void OnApplicationFocus(bool focused)

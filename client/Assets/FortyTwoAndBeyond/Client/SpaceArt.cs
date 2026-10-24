@@ -139,6 +139,52 @@ namespace FortyTwoAndBeyond.Client
             return root;
         }
 
+        /// <returns>A station concourse with a distinct floor, kiosks and luminous ceiling ribs.</returns>
+        public Transform StationConcourse(Transform parent)
+        {
+            Transform root = Root(parent, "Station concourse");
+            Part(root, PrimitiveType.Cube, new Vector3(0, -.25f, 0), new Vector3(20, .4f, 25), dark);
+            Part(root, PrimitiveType.Cube, new Vector3(0, 7, 11.5f), new Vector3(20, 14, .8f), trim);
+            Part(root, PrimitiveType.Cube, new Vector3(0, 8.5f, 0), new Vector3(20, .5f, 25), hull);
+            for (int side = -1; side <= 1; side += 2)
+            {
+                Part(root, PrimitiveType.Cube, new Vector3(side * 9.5f, 4, 0), new Vector3(.7f, 8, 25), trim);
+                Part(root, PrimitiveType.Cube, new Vector3(side * 7.5f, .03f, 0), new Vector3(.1f, .04f, 22), glow);
+                for (int stall = -1; stall <= 1; stall++)
+                {
+                    float z = stall * 6;
+                    Part(root, PrimitiveType.Cube, new Vector3(side * 7.2f, 1.1f, z), new Vector3(3.4f, 1.4f, 3.2f), hull);
+                    Part(root, PrimitiveType.Cube, new Vector3(side * 7.2f, 2.7f, z + 1.35f), new Vector3(2.5f, 1.2f, .08f), glass);
+                    Part(root, PrimitiveType.Cube, new Vector3(side * 7.2f, 3.45f, z + 1.35f), new Vector3(2.7f, .08f, .1f), glow);
+                    Part(root, PrimitiveType.Cube, new Vector3(side * 9.1f, 4.5f, z + 3), new Vector3(.16f, 8, .18f), hull);
+                }
+            }
+            for (int rib = -2; rib <= 2; rib++)
+            {
+                Part(root, PrimitiveType.Cube, new Vector3(0, 7.9f, rib * 5), new Vector3(18, .16f, .18f), glow);
+                Part(root, PrimitiveType.Cube, new Vector3(0, .025f, rib * 5), new Vector3(14, .035f, .1f), amber);
+            }
+            Part(root, PrimitiveType.Cylinder, new Vector3(0, .02f, 2), new Vector3(2.4f, .06f, 2.4f), hull);
+            Transform medallion = Model(root, ring, glow, new Vector3(0, .08f, 2), Vector3.one * 2.3f);
+            medallion.localRotation = Quaternion.Euler(90, 0, 0);
+            return root;
+        }
+
+        /// <returns>A compact station pilot silhouette built from shared materials.</returns>
+        public Transform StationAvatar(Transform parent)
+        {
+            Transform root = Root(parent, "Station pilot");
+            Part(root, PrimitiveType.Capsule, new Vector3(0, 1.1f, 0), new Vector3(.55f, .8f, .42f), hull);
+            Part(root, PrimitiveType.Sphere, new Vector3(0, 2.1f, 0), new Vector3(.48f, .48f, .48f), glass);
+            Part(root, PrimitiveType.Cube, new Vector3(0, 1.38f, .26f), new Vector3(.32f, .14f, .05f), glow);
+            for (int side = -1; side <= 1; side += 2)
+            {
+                Part(root, PrimitiveType.Capsule, new Vector3(side * .48f, 1.25f, 0), new Vector3(.22f, .6f, .26f), trim);
+                Part(root, PrimitiveType.Capsule, new Vector3(side * .2f, .38f, 0), new Vector3(.25f, .45f, .3f), dark);
+            }
+            return root;
+        }
+
         /// <returns>A distinct procedural NPC craft using shared rendering assets.</returns>
         public Transform Mob(Transform parent)
         {

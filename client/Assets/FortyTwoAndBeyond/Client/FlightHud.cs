@@ -15,8 +15,8 @@ namespace FortyTwoAndBeyond.Client
         private float CanvasWidth => Screen.width / Scale;
         private float CanvasHeight => Screen.height / Scale;
         private readonly Color cyan = new Color(.3f, .85f, 1), white = new Color(.86f, .93f, 1), muted = new Color(.46f, .62f, .72f), gold = new Color(1, .72f, .3f);
-        private GUIStyle heading, body, small, section, button, selected, playerButton, hostileButton, damageStyle;
-        private Texture2D buttonTexture, selectedTexture, panelTexture, radarTexture, platingTexture;
+        private GUIStyle heading, body, small, section, button, selected, playerButton, hostileButton, damageStyle, input, primaryButton;
+        private Texture2D buttonTexture, selectedTexture, panelTexture, radarTexture, weaveTexture, frameTexture;
         internal GUIStyle BodyStyle => body;
         internal GUIStyle SmallStyle => small;
         internal GUIStyle SectionStyle => section;
@@ -148,17 +148,18 @@ namespace FortyTwoAndBeyond.Client
         private void EnsureStyles()
         {
             if (heading != null) return;
-            heading = new GUIStyle(GUI.skin.label) { fontSize = 25, fontStyle = FontStyle.Bold }; heading.normal.textColor = white;
+            heading = new GUIStyle(GUI.skin.label) { fontSize = 27, fontStyle = FontStyle.Bold }; heading.normal.textColor = white;
             body = new GUIStyle(GUI.skin.label) { fontSize = 16, fontStyle = FontStyle.Bold }; body.normal.textColor = white;
             small = new GUIStyle(GUI.skin.label) { fontSize = 13 }; small.normal.textColor = muted;
-            section = new GUIStyle(GUI.skin.label) { fontSize = 14, fontStyle = FontStyle.Bold }; section.normal.textColor = cyan;
+            section = new GUIStyle(GUI.skin.label) { fontSize = 15, fontStyle = FontStyle.Bold }; section.normal.textColor = cyan;
             damageStyle = new GUIStyle(GUI.skin.label) { fontSize = 20, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
             damageStyle.normal.textColor = gold;
-            panelTexture = SurfaceTexture(new Color(.025f, .072f, .103f, .98f), new Color(.006f, .018f, .035f, .97f), 64, 64);
-            platingTexture = Resources.Load<Texture2D>("HullPlating");
-            if (platingTexture != null) platingTexture.wrapMode = TextureWrapMode.Repeat;
-            buttonTexture = SurfaceTexture(new Color(.07f, .16f, .205f, 1), new Color(.025f, .065f, .1f, 1), 32, 32);
-            selectedTexture = SurfaceTexture(new Color(.13f, .32f, .38f, 1), new Color(.06f, .18f, .235f, 1), 32, 32);
+            panelTexture = SurfaceTexture(new Color(.02f, .055f, .085f, .98f), new Color(.004f, .014f, .03f, .98f), 64, 64);
+            weaveTexture = Resources.Load<Texture2D>("HudWeave");
+            frameTexture = Resources.Load<Texture2D>("HudFrame");
+            if (weaveTexture != null) weaveTexture.wrapMode = TextureWrapMode.Repeat;
+            buttonTexture = SurfaceTexture(new Color(.065f, .17f, .23f, 1), new Color(.018f, .052f, .085f, 1), 32, 32);
+            selectedTexture = SurfaceTexture(new Color(.15f, .38f, .45f, 1), new Color(.045f, .15f, .22f, 1), 32, 32);
             radarTexture = RadarTexture();
             button = new GUIStyle(GUI.skin.button) { fontSize = 15, fontStyle = FontStyle.Bold, wordWrap = true,
                 alignment = TextAnchor.MiddleLeft, padding = new RectOffset(10, 8, 4, 4) };
@@ -167,6 +168,12 @@ namespace FortyTwoAndBeyond.Client
             selected = new GUIStyle(button); selected.normal.background = selectedTexture; selected.normal.textColor = cyan;
             playerButton = new GUIStyle(button); playerButton.normal.textColor = cyan;
             hostileButton = new GUIStyle(button); hostileButton.normal.textColor = new Color(1f, .53f, .4f);
+            input = new GUIStyle(GUI.skin.textField) { fontSize = 16, padding = new RectOffset(10, 10, 7, 7) };
+            input.normal.background = buttonTexture; input.focused.background = selectedTexture;
+            input.normal.textColor = white; input.focused.textColor = white;
+            primaryButton = new GUIStyle(button) { alignment = TextAnchor.MiddleCenter, fontSize = 17 };
+            primaryButton.normal.background = selectedTexture; primaryButton.normal.textColor = white;
+            primaryButton.hover.background = selectedTexture; primaryButton.hover.textColor = cyan;
         }
 
         /// <returns>A shared transparent scanner dial with concentric range rings.</returns>
@@ -190,21 +197,23 @@ namespace FortyTwoAndBeyond.Client
         private static void Fill(Rect rect, Color color)
         { Color previous = GUI.color; GUI.color = color; GUI.DrawTexture(rect, Texture2D.whiteTexture); GUI.color = previous; }
 
-        /// <summary>Draw a textured instrument panel with clear frame corners.</summary>
+        /// <summary>Draw a woven instrument panel with bright, restrained frame corners.</summary>
         internal void Panel(Rect rect)
         {
             GUI.DrawTexture(rect, panelTexture);
-            if (platingTexture != null)
+            if (weaveTexture != null)
             {
                 Color previous = GUI.color;
-                GUI.color = new Color(.5f, .7f, .8f, .23f);
-                GUI.DrawTextureWithTexCoords(rect, platingTexture,
-                    new Rect(0, 0, rect.width / 310f, rect.height / 310f));
+                GUI.color = new Color(.56f, .78f, 1f, .36f);
+                GUI.DrawTextureWithTexCoords(rect, weaveTexture,
+                    new Rect(0, 0, rect.width / 270f, rect.height / 270f));
                 GUI.color = previous;
             }
-            Fill(new Rect(rect.x, rect.y, rect.width, 2), new Color(.35f, .77f, .85f, .75f));
-            Fill(new Rect(rect.x, rect.y + 2, rect.width, 12), new Color(.045f, .16f, .23f, .55f));
-            Fill(new Rect(rect.x, rect.y + rect.height - 2, rect.width, 2), new Color(.15f, .43f, .5f, .75f));
+            Fill(new Rect(rect.x, rect.y, rect.width, 2), new Color(.24f, .66f, .78f, .85f));
+            Fill(new Rect(rect.x, rect.y + 2, rect.width, 10), new Color(.025f, .13f, .2f, .7f));
+            Fill(new Rect(rect.x, rect.y + rect.height - 2, rect.width, 2), new Color(.1f, .35f, .5f, .8f));
+            Fill(new Rect(rect.x, rect.y + 14, 1, rect.height - 28), new Color(.08f, .31f, .43f, .48f));
+            Fill(new Rect(rect.x + rect.width - 1, rect.y + 14, 1, rect.height - 28), new Color(.08f, .31f, .43f, .48f));
             Fill(new Rect(rect.x, rect.y, 3, 22), cyan);
             Fill(new Rect(rect.x + rect.width - 3, rect.y + rect.height - 22, 3, 22), cyan);
             Fill(new Rect(rect.x + rect.width - 22, rect.y + rect.height - 3, 22, 3), cyan);
@@ -344,7 +353,11 @@ namespace FortyTwoAndBeyond.Client
             string name = snapshot.Station.Name.Length > 0 ? snapshot.Station.Name : "STATION " + snapshot.Station.Id;
             Panel(new Rect(24, 20, 470, 72));
             GUI.Label(new Rect(40, 30, 440, 32), name.ToUpperInvariant(), heading);
-            GUI.Label(new Rect(40, 64, 440, 20), "DOCKING BAY   /   42 AND BEYOND", small);
+            GUI.Label(new Rect(40, 64, 440, 20),
+                (snapshot.Station.CurrentRoom == 0 ? "DOCKING BAY" :
+                    snapshot.Station.CurrentRoom == uint.MaxValue ? "STATION INTERIOR" :
+                    "CONCOURSE  /  ROOM " + (snapshot.Station.CurrentRoom + 1)) +
+                "   /   42 AND BEYOND", small);
             GUI.Label(new Rect(510, 29, 190, 22), $"{client.Fps} FPS   ·   {client.FrameMs:0} ms max", small);
             Panel(new Rect(24, 110, 300, 265));
             GUI.Label(new Rect(40, 124, 270, 28), "STATION SERVICES", body);
@@ -361,7 +374,7 @@ namespace FortyTwoAndBeyond.Client
             foreach (StationRoom room in snapshot.Station.RoomList)
             {
                 GUI.enabled = snapshot.Dialogue == null;
-                if (GUILayout.Button("ROOM " + (room.Index + 1) +
+                if (GUILayout.Button((room.Index == 0 ? "DOCKING BAY" : "CONCOURSE " + (room.Index + 1)) +
                     (room.Index == snapshot.Station.CurrentRoom ? "   ·   HERE" : ""),
                     room.Index == snapshot.Station.CurrentRoom ? selected : button, GUILayout.Height(27)))
                     client.EnterStationRoom(room.Index);
@@ -522,11 +535,18 @@ namespace FortyTwoAndBeyond.Client
         private void Connection(ref string host, ref string username, ref string password)
         {
             var rect = new Rect(CanvasWidth / 2 - 220, CanvasHeight / 2 - 260, 440, 520); Panel(rect);
+            if (frameTexture != null)
+            {
+                Color previous = GUI.color;
+                GUI.color = new Color(.65f, .85f, 1f, .5f);
+                GUI.DrawTexture(rect, frameTexture, ScaleMode.StretchToFill);
+                GUI.color = previous;
+            }
             GUILayout.BeginArea(new Rect(rect.x + 24, rect.y + 20, 392, 480));
-            GUILayout.Label("42 AND BEYOND", heading); GUILayout.Label("LOCAL UNIVERSE", small); GUILayout.Space(10);
+            GUILayout.Label("42 AND BEYOND", heading); GUILayout.Label("CAPTAIN'S TERMINAL  /  LOCAL UNIVERSE", small); GUILayout.Space(10);
             GUILayout.Label("Server IPv4", small);
             GUILayout.BeginHorizontal();
-            host = GUILayout.TextField(host);
+            host = GUILayout.TextField(host, input);
             if (GUILayout.Button("DISCOVER", button, GUILayout.Width(112))) client.DiscoverDemoAccounts(host);
             GUILayout.EndHorizontal();
             GUILayout.Space(10);
@@ -555,9 +575,9 @@ namespace FortyTwoAndBeyond.Client
             }
             GUILayout.Space(12);
             GUILayout.Label("ACCOUNT LOGIN", section);
-            GUILayout.Label("Account", small); username = GUILayout.TextField(username);
-            GUILayout.Label("Password", small); password = GUILayout.PasswordField(password, '*'); GUILayout.Space(10);
-            if (GUILayout.Button("ENTER SPACE", button, GUILayout.Height(36))) client.StartLocalSession(host, username, password);
+            GUILayout.Label("Account", small); username = GUILayout.TextField(username, input);
+            GUILayout.Label("Password", small); password = GUILayout.PasswordField(password, '*', input); GUILayout.Space(10);
+            if (GUILayout.Button("ENTER SPACE", primaryButton, GUILayout.Height(39))) client.StartLocalSession(host, username, password);
             GUILayout.Label(client.Status, small); GUILayout.EndArea();
         }
 
