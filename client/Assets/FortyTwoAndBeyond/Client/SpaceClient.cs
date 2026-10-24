@@ -26,6 +26,7 @@ namespace FortyTwoAndBeyond.Client
         private AbilityHud abilityHud;
         private RecoveryHud recoveryHud;
         private VaultHud vaultHud;
+        private TurboHud turboHud;
         public bool AbilitiesOpen => abilityHud != null && abilityHud.IsOpen;
         public bool Incapacitated => snapshot != null && snapshot.Station == null &&
             snapshot.MaxHull > 0 && snapshot.Hull <= 0;
@@ -78,6 +79,7 @@ namespace FortyTwoAndBeyond.Client
             abilityHud = new AbilityHud(this, hud);
             recoveryHud = new RecoveryHud(this, hud);
             vaultHud = new VaultHud(this, hud);
+            turboHud = new TurboHud(this, hud);
             worldRoot = new GameObject("Server world").transform; worldRoot.SetParent(transform, false);
             remoteShips = new RemoteShips(art, worldRoot);
             ship = art.Ship(transform); combatEffects = new CombatEffects(transform, ship, remoteShips); ship.localScale = Vector3.one * .25f;
@@ -233,6 +235,7 @@ namespace FortyTwoAndBeyond.Client
                 if (snapshot.WeaponsFiring) StopWeapons();
                 else ToggleWeapons(hud.SelectedContactId);
             }
+            if (bindings.Pressed(ControlAction.TurboWeapons)) ActivateTurboWeapons();
             if (bindings.Pressed(ControlAction.NextHostile)) TargetNextHostile();
             for (int abilitySlot = 0; abilitySlot < 6; abilitySlot++)
                 if (bindings.Pressed((ControlAction)((int)ControlAction.AbilityOne + abilitySlot)))
@@ -514,6 +517,15 @@ namespace FortyTwoAndBeyond.Client
                 worker.Submit(new ClientCommand(CommandKind.ActivateWeapon, (uint)slot));
         }
 
+        /// <summary>Request activation of the equipped Turbo Weapons device.</summary>
+        public void ActivateTurboWeapons()
+        {
+            if (Ready && !Incapacitated && !snapshot.TurboWeaponsActive && snapshot.Station == null &&
+                snapshot.Mounted.Skip(9).Take((int)snapshot.DeviceMounts).Any(item =>
+                    item?.Template == 2363 || item?.Template == 2412 || item?.Template == 2265))
+                worker.Submit(new ClientCommand(CommandKind.ActivateTurboWeapons));
+        }
+
         /// <summary>Request a server-authoritative formation change or follow action.</summary>
         public void Formation(uint action)
         { if (Ready) worker.Submit(new ClientCommand(CommandKind.Formation, action)); }
@@ -655,6 +667,7 @@ namespace FortyTwoAndBeyond.Client
                 if (!hud.SettingsOpen && !hud.EquipmentOpen) vaultHud.Draw(snapshot);
                 if (!hud.SettingsOpen && !hud.EquipmentOpen && !AbilitiesOpen && !Incapacitated) miningHud.Draw(snapshot);
                 if (!hud.SettingsOpen && !hud.EquipmentOpen && !Incapacitated) abilityHud.Draw(snapshot);
+                if (!hud.SettingsOpen && !hud.EquipmentOpen && !AbilitiesOpen) turboHud.Draw(snapshot);
                 if (!hud.SettingsOpen && Incapacitated) recoveryHud.Draw(snapshot);
             }
             finally { GUI.matrix = previous; }

@@ -359,6 +359,23 @@ namespace FortyTwoAndBeyond.Protocol
                 "Firing weapon slot " + slot;
         }
 
+        /// <summary>Activate the equipped Turbo Weapons device through native item control.</summary>
+        public void ActivateTurboWeapons()
+        {
+            if (!Ready || gate != 0 || World.Station != null || World.Equipment.Hull <= 0 ||
+                World.TurboWeaponsActive) return;
+            int first = 9, last = Math.Min(World.Equipment.Mounted.Length, first + (int)World.Equipment.DeviceMounts);
+            for (int slot = first; slot < last; slot++)
+            {
+                ItemState item = World.Equipment.Mounted[slot];
+                if (item?.Present != true || item.Template != 2363 && item.Template != 2412 &&
+                    item.Template != 2265) continue;
+                Send(0x5d, Wire.Body(w => { w.Write(Player); w.Write((byte)2); w.Write((byte)slot); }));
+                Status = "Requesting Turbo Weapons";
+                return;
+            }
+        }
+
         /// <summary>Submit a bounded owned-inventory move through the server's durable transfer path.</summary>
         private void SendInventoryTransfer(uint source, uint sourceSlot, uint destination, uint destinationSlot, uint quantity)
         {

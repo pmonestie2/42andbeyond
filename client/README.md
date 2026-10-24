@@ -83,6 +83,7 @@ loopback IPv4 addresses; it does not connect to the public game service.
 | Tab | Toggle chase camera / top-down sector chart |
 | E | Open ship loadout |
 | F | Fire on the selected MOB, or stop active weapons |
+| B | Activate an equipped Turbo Weapons device |
 | Enter | Open chat and server command line |
 | Click a target-list entry or world label | Select a destination |
 | Click a ship in space or Contacts | Select that ship |
@@ -164,6 +165,9 @@ within 2 km, open it and tractor listed items into cargo. The radar shows nearby
 contacts and navigation targets.
 The loadout shows each weapon's server firing state and loaded ammunition.
 Select an installed weapon to toggle that hardpoint alone during space combat.
+The Turbo Weapons button and B key activate a matching equipped device. The
+server decides energy cost, firing-rate bonus, and duration; the HUD reflects
+the server's activation and expiry messages.
 
 Explorer pilots can click a mineable asteroid or gas cloud, open its prospecting
 window, and choose a server-listed ore slot. The server checks the ship, skill,

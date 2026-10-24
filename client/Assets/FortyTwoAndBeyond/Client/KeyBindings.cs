@@ -8,7 +8,7 @@ namespace FortyTwoAndBeyond.Client
     {
         OpenChat, Forward, Reverse, TurnLeft, TurnRight, PitchUp, PitchDown, Brake,
         Warp, Fire, NextHostile, Follow, Gate, Dock, Launch, Chart, Equipment, ResetCamera,
-        AbilityOne, AbilityTwo, AbilityThree, AbilityFour, AbilityFive, AbilitySix
+        AbilityOne, AbilityTwo, AbilityThree, AbilityFour, AbilityFive, AbilitySix, TurboWeapons
     }
 
     /// <summary>Persist one unique keyboard key for each flight action.</summary>
@@ -22,7 +22,7 @@ namespace FortyTwoAndBeyond.Client
             KeyCode.T, KeyCode.R, KeyCode.G, KeyCode.O, KeyCode.L,
             KeyCode.Tab, KeyCode.E, KeyCode.C,
             KeyCode.Alpha1, KeyCode.Alpha2, KeyCode.Alpha3,
-            KeyCode.Alpha4, KeyCode.Alpha5, KeyCode.Alpha6
+            KeyCode.Alpha4, KeyCode.Alpha5, KeyCode.Alpha6, KeyCode.B
         };
         public static readonly ControlAction[] Actions = (ControlAction[])Enum.GetValues(typeof(ControlAction));
         private readonly KeyCode[] keys = (KeyCode[])Defaults.Clone();
@@ -80,6 +80,7 @@ namespace FortyTwoAndBeyond.Client
                 case ControlAction.Brake: return "Brake / cancel follow";
                 case ControlAction.Warp: return "Warp to destination";
                 case ControlAction.Fire: return "Fire / stop weapons";
+                case ControlAction.TurboWeapons: return "Turbo Weapons device";
                 case ControlAction.NextHostile: return "Next hostile target";
                 case ControlAction.Follow: return "Follow target";
                 case ControlAction.Gate: return "Activate gate";

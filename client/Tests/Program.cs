@@ -66,6 +66,17 @@ internal static class Program
         Assert(!world.HasPosition, "Accepted a different player's movement.");
         movement[2] = 1; world.Apply(new Frame(0x3e, movement), 1);
         Assert(world.HasPosition, "Ignored matching player movement.");
+        byte[] turboStart = Wire.Body(w => { w.Write((ushort)37); w.Write((byte)0);
+            w.Write(System.Text.Encoding.ASCII.GetBytes("Turbo Weapons active for 10 seconds.\0")); });
+        world.Apply(new Frame(0x1d, turboStart), 1);
+        Snapshot turboSnapshot = new Snapshot(world, "ready", true);
+        Assert(turboSnapshot.TurboWeaponsActive,
+            "Turbo Weapons activation feedback did not set the display state.");
+        byte[] turboEnd = Wire.Body(w => { w.Write((ushort)21); w.Write((byte)0);
+            w.Write(System.Text.Encoding.ASCII.GetBytes("Turbo Weapons ended.\0")); });
+        world.Apply(new Frame(0x1d, turboEnd), 1);
+        Assert(!world.TurboWeaponsActive && turboSnapshot.TurboWeaponsActive,
+            "Turbo Weapons expiry changed an earlier immutable display snapshot.");
     }
 
     /// <summary>Check packed station room and NPC placement before interior navigation.</summary>
