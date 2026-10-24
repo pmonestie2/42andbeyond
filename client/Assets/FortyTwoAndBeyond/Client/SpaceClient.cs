@@ -646,6 +646,7 @@ namespace FortyTwoAndBeyond.Client
         public void ActivateDevice(int slot)
         {
             if (Ready && !Incapacitated && snapshot.Station == null &&
+                snapshot.WarpPhase != WarpPhase.Charging && snapshot.WarpPhase != WarpPhase.Traveling &&
                 slot >= 9 && slot < 9 + snapshot.DeviceMounts && slot < snapshot.Mounted.Length &&
                 snapshot.Mounted[slot]?.ActivationLabel.Length > 0 &&
                 snapshot.ActiveDeviceLabel.Length == 0)
@@ -655,7 +656,8 @@ namespace FortyTwoAndBeyond.Client
         /// <summary>Request activation of the equipped Turbo Weapons device.</summary>
         public void ActivateTurboWeapons()
         {
-            if (Ready && !Incapacitated && !snapshot.TurboWeaponsActive && snapshot.Station == null &&
+            if (Ready && !Incapacitated && snapshot.ActiveDeviceLabel.Length == 0 && snapshot.Station == null &&
+                snapshot.WarpPhase != WarpPhase.Charging && snapshot.WarpPhase != WarpPhase.Traveling &&
                 snapshot.Mounted.Skip(9).Take((int)snapshot.DeviceMounts).Any(item =>
                     item?.Template == 2363 || item?.Template == 2412 || item?.Template == 2265))
                 worker.Submit(new ClientCommand(CommandKind.ActivateTurboWeapons));

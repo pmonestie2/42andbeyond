@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Globalization;
 
 namespace FortyTwoAndBeyond.Protocol
 {
@@ -385,8 +386,6 @@ namespace FortyTwoAndBeyond.Protocol
 
     public sealed class World
     {
-        private static readonly string[] DeviceEffectLabels =
-            { "Turbo Weapons", "Scan Boost", "Increase Speed", "Reactor Boost" };
         public uint PlayerId { get; private set; }
         private long nextShot, nextDamage;
         public readonly Queue<DamageEvent> Damages = new Queue<DamageEvent>();
@@ -425,6 +424,7 @@ namespace FortyTwoAndBeyond.Protocol
         public uint[] AvailableAbilities { get; private set; } = Array.Empty<uint>();
         public uint CastingAbilityId { get; private set; } = uint.MaxValue;
         public string ActiveDeviceLabel { get; private set; } = "";
+        public long ActiveDeviceEndsAt { get; private set; }
         public bool TurboWeaponsActive => ActiveDeviceLabel == "Turbo Weapons";
         public long CastEndsAt { get; private set; }
         public Dictionary<uint, long> AbilityCooldownEnds { get; } = new Dictionary<uint, long>();
@@ -493,7 +493,7 @@ namespace FortyTwoAndBeyond.Protocol
                 case 0x4f:
                     if (b.Length != 6) throw new InvalidDataException("Invalid station identity.");
                     Station = b[4] == 0 ? new StationState(Wire.U32(b, 0)) : null;
-                    if (Station != null) ActiveDeviceLabel = "";
+                    if (Station != null) { ActiveDeviceLabel = ""; ActiveDeviceEndsAt = 0; }
                     Production = new ProductionState();
                     StationAvatars.Clear();
                     Dialogue = null; Vendor = Array.Empty<ItemState>();
@@ -596,12 +596,28 @@ namespace FortyTwoAndBeyond.Protocol
                         message.StartsWith("Reactor depleted while prospecting", StringComparison.Ordinal))
                         MiningActivity = null;
                     if (Dialogue != null) Dialogue = Dialogue.WithMissionMessage(message);
-                    foreach (string label in DeviceEffectLabels)
+                    foreach (string label in DeviceEffects.Labels)
                     {
-                        if (message.StartsWith(label + " active for ", StringComparison.Ordinal) ||
-                            message == label + " is already active.") ActiveDeviceLabel = label;
+                        string prefix = label + " active for ";
+                        const string suffix = " seconds.";
+                        if (message.StartsWith(prefix, StringComparison.Ordinal) &&
+                            message.Length > prefix.Length + suffix.Length &&
+                            message.EndsWith(suffix, StringComparison.Ordinal) &&
+                            uint.TryParse(message.Substring(prefix.Length,
+                                message.Length - prefix.Length - suffix.Length), NumberStyles.None,
+                                CultureInfo.InvariantCulture, out uint seconds) && seconds > 0 && seconds <= 3600)
+                        {
+                            ActiveDeviceLabel = label;
+                            ActiveDeviceEndsAt = System.Diagnostics.Stopwatch.GetTimestamp() +
+                                (long)(seconds * (double)System.Diagnostics.Stopwatch.Frequency);
+                        }
+                        else if (message == label + " is already active.")
+                        {
+                            if (ActiveDeviceLabel != label) ActiveDeviceEndsAt = 0;
+                            ActiveDeviceLabel = label;
+                        }
                         else if (message == label + " ended." && ActiveDeviceLabel == label)
-                            ActiveDeviceLabel = "";
+                        { ActiveDeviceLabel = ""; ActiveDeviceEndsAt = 0; }
                     }
                     Messages.Enqueue(message);
                     if (Station != null && message.StartsWith("Welcome aboard ", StringComparison.Ordinal))
@@ -804,6 +820,7 @@ namespace FortyTwoAndBeyond.Protocol
         public readonly uint CastingAbilityId;
         public readonly bool TurboWeaponsActive;
         public readonly string ActiveDeviceLabel;
+        public readonly float ActiveDeviceRemainingSeconds;
         public readonly float CastRemainingSeconds;
         public readonly IReadOnlyDictionary<uint, float> AbilityCooldownSeconds;
         public readonly ItemView[] Vendor;
@@ -851,6 +868,9 @@ namespace FortyTwoAndBeyond.Protocol
             CastingAbilityId = world.CastingAbilityId;
             TurboWeaponsActive = world.TurboWeaponsActive;
             ActiveDeviceLabel = world.ActiveDeviceLabel;
+            ActiveDeviceRemainingSeconds = ActiveDeviceLabel.Length == 0 || world.ActiveDeviceEndsAt == 0 ? 0 :
+                (float)Math.Max(0, (world.ActiveDeviceEndsAt - now) /
+                    (double)System.Diagnostics.Stopwatch.Frequency);
             CastRemainingSeconds = (float)Math.Max(0,
                 (world.CastEndsAt - now) / (double)System.Diagnostics.Stopwatch.Frequency);
             AbilityCooldownSeconds = world.AbilityCooldownEnds.ToDictionary(entry => entry.Key,

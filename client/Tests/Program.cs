@@ -13,7 +13,7 @@ internal static class Program
     {
         CheckReassembly(); CheckWorld(); CheckMissionJournal(); CheckMissionDialogue();
         CheckExperience(); CheckMiningPhases(); CheckLootTractor(); CheckWarpPhases(); CheckWeaponReady();
-        CheckDamageResults(); CheckFlightThrottle();
+        CheckDamageResults(); CheckDeviceEffects(); CheckFlightThrottle();
         CheckStationLayout(); CheckStationWalk(); CheckDemoRoster(); CheckAddress(); PeerChecks.Decode();
         Console.WriteLine("PASS: framing, ordering, fragmentation, duplicates, bounds, world decoding, private addresses");
         if (args.Length == 2 && args[0] == "--server") { PeerChecks.Live(args[1]); CheckServer(args[1]); }
@@ -399,6 +399,56 @@ internal static class Program
         byte[] invalid = (byte[])missed.Clone();
         Array.Copy(BitConverter.GetBytes(9u), 0, invalid, 8, 4);
         Reject(() => world.Apply(new Frame(0x64, invalid), 1));
+    }
+
+    /// <summary>Recognize catalog-backed recharge and deflect devices and their server notices.</summary>
+    private static void CheckDeviceEffects()
+    {
+        foreach (string description in new[]
+        {
+            "Recharge Reactor", "Recharge Shields", "Deflect Impact", "Deflect Explosive",
+            "Deflect Plasma", "Deflect Energy", "Deflect EMP", "Deflect Chemical", "Resist Psionic"
+        })
+            Assert(DeviceEffects.LabelFor(description + " (Activated)") == description,
+                "A server-supported recharge or typed deflect device is missing from the catalog allowlist.");
+        Assert(DeviceEffects.LabelFor("Unknown (Activated)") == "",
+            "An unsupported device was offered as activatable.");
+        const string fixture =
+            "de012500000007120b0000006e0000000b000000070300000003000000070000000000000009000000000000000b0000000c004465766963652054656368000d00000014004c6576656c20312044657669636520546563680011000000000000001200000004000000000000011800526567656e657261746520456e65726779204974656d20431c0052656368617267652052656163746f7220284163746976617465642945002b342052656163746f7220526563686172676520666f72202576616c7565322e306625207365636f6e647320746f20746172676574207768656e206163746976617465642e000000000000000343700000437000000000000040000000010000000000000000000000a00f000000000000000000000225028b0001000007fe0000000100000000000000001700466f726e6178204175737472616c6973204920524520318800446973636f766572207468652066757475726521202053756e646172692e5c6e5768656e20616374697661746564206f6e206120746172676574656420667269656e646c792074686973206974656d20676976657320616e20696e63726561736520746f2074617267657427732072656163746f7220726567656e65726174696f6e20726174652e070053756e64617269";
+        byte[] packet = Enumerable.Range(0, fixture.Length / 2)
+            .Select(index => Convert.ToByte(fixture.Substring(index * 2, 2), 16)).ToArray();
+        Assert(packet.Length == 478 && Wire.U16(packet, 0) == 478 && Wire.U16(packet, 2) == 0x25,
+            "Native recharge-device metadata fixture is malformed.");
+        ItemTemplateInfo template = ItemTemplateInfo.Decode(packet.Skip(4).ToArray());
+        Assert(template.Id == 1810 && template.Type == 11 &&
+            template.ActivationLabel == "Recharge Reactor",
+            "Native recharge device metadata was not exposed to the equipped-device control.");
+        var world = new World();
+        Action<string> notice = message =>
+        {
+            byte[] text = System.Text.Encoding.UTF8.GetBytes(message + "\0");
+            world.Apply(new Frame(0x1d, Wire.Body(writer =>
+            { writer.Write((ushort)text.Length); writer.Write((byte)0); writer.Write(text); })), 1);
+        };
+        notice("Recharge Reactor active for 90 seconds.");
+        Snapshot active = new Snapshot(world, "ready", true);
+        Assert(active.ActiveDeviceLabel == "Recharge Reactor" &&
+            active.ActiveDeviceRemainingSeconds > 89 && active.ActiveDeviceRemainingSeconds <= 90,
+            "Recharge activation notice did not establish a bounded active timer.");
+        notice("Recharge Reactor is already active.");
+        Assert(world.ActiveDeviceLabel == "Recharge Reactor" && world.ActiveDeviceEndsAt != 0,
+            "Repeat activation erased the server-acknowledged effect timer.");
+        notice("Recharge Reactor ended.");
+        Assert(world.ActiveDeviceLabel == "" && world.ActiveDeviceEndsAt == 0 &&
+            active.ActiveDeviceLabel == "Recharge Reactor",
+            "Recharge expiry changed an earlier immutable snapshot.");
+        notice("Deflect Plasma active for 120 seconds.");
+        Assert(world.ActiveDeviceLabel == "Deflect Plasma",
+            "Typed deflect activation notice was not recognized.");
+        notice("Deflect Plasma ended.");
+        notice("Recharge Reactor active for seconds.");
+        Assert(world.ActiveDeviceLabel == "",
+            "Malformed active-device duration created a false effect state.");
     }
 
     /// <summary>Keep held flight controls reachable after focus and text entry.</summary>

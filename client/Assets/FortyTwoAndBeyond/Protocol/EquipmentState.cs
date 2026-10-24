@@ -46,13 +46,7 @@ namespace FortyTwoAndBeyond.Protocol
                         if (block == 0 && effects == 1 && part == 1)
                         {
                             string description = Wire.Text(body, offset, length);
-                            switch (description)
-                            {
-                                case "Turbo Weapons (Activated)": activationLabel = "Turbo Weapons"; break;
-                                case "Scan Boost (Activated)": activationLabel = "Scan Boost"; break;
-                                case "Increase Speed (Activated)": activationLabel = "Increase Speed"; break;
-                                case "Reactor Boost (Activated)": activationLabel = "Reactor Boost"; break;
-                            }
+                            activationLabel = DeviceEffects.LabelFor(description);
                         }
                         else Wire.Require(body, offset, length);
                         offset += length;

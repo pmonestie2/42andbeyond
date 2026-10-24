@@ -374,6 +374,8 @@ namespace FortyTwoAndBeyond.Protocol
         public void ActivateDevice(int slot)
         {
             if (!Ready || gate != 0 || World.Station != null || World.Equipment.Hull <= 0 ||
+                World.Warp.Phase == WarpPhase.Charging || World.Warp.Phase == WarpPhase.Traveling ||
+                World.ActiveDeviceLabel.Length > 0 ||
                 slot < 9 || slot >= 9 + World.Equipment.DeviceMounts ||
                 slot >= World.Equipment.Mounted.Length) return;
             ItemState item = World.Equipment.Mounted[slot];
@@ -388,7 +390,8 @@ namespace FortyTwoAndBeyond.Protocol
         public void ActivateTurboWeapons()
         {
             if (!Ready || gate != 0 || World.Station != null || World.Equipment.Hull <= 0 ||
-                World.TurboWeaponsActive) return;
+                World.Warp.Phase == WarpPhase.Charging || World.Warp.Phase == WarpPhase.Traveling ||
+                World.ActiveDeviceLabel.Length > 0) return;
             int first = 9, last = Math.Min(World.Equipment.Mounted.Length, first + (int)World.Equipment.DeviceMounts);
             for (int slot = first; slot < last; slot++)
             {
