@@ -6,6 +6,7 @@ pub mod crafting;
 pub mod crypto;
 pub mod equipment_stats;
 pub mod events;
+pub mod experience;
 pub mod factions;
 pub mod following;
 pub mod game;

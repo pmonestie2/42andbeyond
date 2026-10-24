@@ -652,6 +652,17 @@ pub fn player_aux(
     items: &ItemCatalog,
 ) -> Frame {
     let catalog = SkillCatalog::for_profile(profile).expect("validated built-in class catalog");
+    let combat = crate::experience::track(inventory.xp_start_level, inventory.combat_xp)
+        .expect("validated XP starting level");
+    let trade = crate::experience::track(inventory.xp_start_level, inventory.trade_xp)
+        .expect("validated XP starting level");
+    let explore = crate::experience::track(inventory.xp_start_level, inventory.explore_xp)
+        .expect("validated XP starting level");
+    let skill_points = combat
+        .skill_points
+        .saturating_add(trade.skill_points)
+        .saturating_add(explore.skill_points)
+        .min(u64::from(u32::MAX)) as u32;
     let skills = aux_record(
         64,
         &(0..64).collect::<Vec<_>>(),
@@ -712,18 +723,14 @@ pub fn player_aux(
             (1, profile.profession.to_le_bytes().to_vec()),
             (2, skills),
             (3, abilities),
-            (
-                7,
-                crate::account::SANDBOX_TRACK_LEVEL.to_le_bytes().to_vec(),
-            ),
-            (
-                9,
-                crate::account::SANDBOX_TRACK_LEVEL.to_le_bytes().to_vec(),
-            ),
-            (
-                11,
-                crate::account::SANDBOX_TRACK_LEVEL.to_le_bytes().to_vec(),
-            ),
+            (4, skill_points.to_le_bytes().to_vec()),
+            (5, skill_points.to_le_bytes().to_vec()),
+            (6, combat.fraction.to_le_bytes().to_vec()),
+            (7, combat.level.to_le_bytes().to_vec()),
+            (8, trade.fraction.to_le_bytes().to_vec()),
+            (9, trade.level.to_le_bytes().to_vec()),
+            (10, explore.fraction.to_le_bytes().to_vec()),
+            (11, explore.level.to_le_bytes().to_vec()),
             (12, 6u32.to_le_bytes().to_vec()),
             (15, u32::MAX.to_le_bytes().to_vec()),
         ]),

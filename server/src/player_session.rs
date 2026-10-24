@@ -1156,6 +1156,10 @@ impl PlayerSession {
             .map(|item| item.packet())
             .collect();
         let previous_credits = self.inventory.credits;
+        let experience_changed = candidate.combat_xp != self.inventory.combat_xp
+            || candidate.explore_xp != self.inventory.explore_xp
+            || candidate.trade_xp != self.inventory.trade_xp
+            || candidate.xp_start_level != self.inventory.xp_start_level;
         // Publish only after durable replacement. A disk failure leaves the
         // authoritative inventory unchanged and sends no success snapshot.
         fs::create_dir_all(&self.state_dir)?;
@@ -1184,6 +1188,14 @@ impl PlayerSession {
         self.publish_weapon_states();
         self.pending
             .push(packets::vault_update(&self.inventory, &self.items));
+        if experience_changed {
+            self.pending.push(packets::player_aux(
+                &self.sector,
+                &self.account.character,
+                &self.inventory,
+                &self.items,
+            ));
+        }
         self.pending.extend(packets::inventory_prices(
             self.player_id(),
             &self.inventory,
@@ -1196,6 +1208,9 @@ impl PlayerSession {
     }
 
     fn inventory_candidate(&self, transfer: ItemTransfer) -> io::Result<Inventory> {
+        if (transfer.source == 3 || transfer.destination == 3) && self.sector.station.is_none() {
+            return Err(invalid("Vault storage is available only while docked."));
+        }
         self.check_workbench_transfer(transfer)?;
         if transfer.source == 4 || transfer.destination == 4 {
             return self.vendor_transaction(transfer);
@@ -3462,6 +3477,56 @@ mod tests {
             std::env::temp_dir().join(format!("enb-rust-test-{}", rand::random::<u64>())),
         )
         .unwrap()
+    }
+
+    /// Remote vault packets must never move owned items outside a station.
+    #[test]
+    fn vault_transfer_requires_a_station_and_preserves_items_when_rejected() {
+        let mut ship = session();
+        ship.logged_in = true;
+        ship.inventory.cargo[0] = Some(crate::inventory::ItemInstance::stock(2837, 1));
+        let original = ship.inventory.clone();
+        let transfer = ItemTransfer {
+            source: 1,
+            source_slot: 0,
+            destination: 3,
+            destination_slot: 0,
+            quantity: 1,
+        };
+        ship.transfer_inventory(transfer).unwrap();
+        assert_eq!(ship.inventory, original);
+        assert!(ship.pending.iter().any(|frame| frame.opcode == 0x1d));
+
+        ship.sector = ship.sectors.sector(10761).unwrap();
+        ship.transfer_inventory(transfer).unwrap();
+        assert!(ship.inventory.cargo[0].is_none());
+        assert_eq!(ship.inventory.vault[0], original.cargo[0]);
+    }
+
+    /// Publish XP only after its inventory replacement reaches disk.
+    #[test]
+    fn earned_xp_is_committed_before_publishing_player_progress() {
+        let mut ship = session();
+        ship.logged_in = true;
+        let mut candidate = ship.inventory.clone();
+        candidate.xp_start_level = 0;
+        candidate.explore_xp = 500;
+        let before = ship.pending.len();
+        ship.commit_inventory(candidate).unwrap();
+        assert_eq!(
+            crate::experience::track(ship.inventory.xp_start_level, ship.inventory.explore_xp)
+                .unwrap()
+                .level,
+            1
+        );
+        assert!(ship.pending[before..]
+            .iter()
+            .any(|frame| frame.opcode == 0x1b));
+        let saved: Inventory =
+            serde_json::from_slice(&fs::read(ship.state_dir.join("inventory.json")).unwrap())
+                .unwrap();
+        assert_eq!(saved.explore_xp, 500);
+        assert_eq!(saved.xp_start_level, 0);
     }
     #[test]
     fn resources_stream_once_and_leave_visibility_without_duplicate_creation() {

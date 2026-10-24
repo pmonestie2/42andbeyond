@@ -22,6 +22,12 @@ fn starting_credits() -> u64 {
     10_000
 }
 
+/// Returns:
+///     u32: Legacy sandbox starting level for each earned XP track.
+fn sandbox_xp_start_level() -> u32 {
+    crate::experience::MAX_LEVEL
+}
+
 fn empty_production_target() -> Vec<Option<ItemInstance>> {
     vec![None]
 }
@@ -75,9 +81,14 @@ pub struct Inventory {
     #[serde(default)]
     pub harvests: BTreeMap<u32, crate::resources::HarvestReceipt>,
     #[serde(default)]
+    pub combat_xp: u64,
+    #[serde(default)]
     pub explore_xp: u64,
     #[serde(default)]
     pub trade_xp: u64,
+    /// Legacy sandbox inventories default to three level-50 tracks.
+    #[serde(default = "sandbox_xp_start_level")]
+    pub xp_start_level: u32,
     #[serde(default)]
     pub refine_job: Option<crate::refining::RefineJob>,
     #[serde(default)]
@@ -214,8 +225,10 @@ impl Inventory {
             shot_sequence: 0,
             pending_launch: None,
             harvests: BTreeMap::new(),
+            combat_xp: 0,
             explore_xp: 0,
             trade_xp: 0,
+            xp_start_level: sandbox_xp_start_level(),
             refine_job: None,
             last_production_request: None,
             known_formulas: std::collections::BTreeSet::new(),
@@ -255,6 +268,9 @@ impl Inventory {
     }
 
     pub fn validate(&self, templates: &ItemCatalog) -> io::Result<()> {
+        if self.xp_start_level > crate::experience::MAX_LEVEL {
+            return Err(invalid("Invalid XP starting level."));
+        }
         if !self.faction_standings.is_empty() {
             crate::factions::FactionCatalog::load()?.validate_overrides(&self.faction_standings)?;
         }

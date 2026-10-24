@@ -104,8 +104,14 @@ mean the corresponding gameplay system is complete.
 - Nine explicitly published class-code demo pilots can be seeded offline.
   They carry class-legal full mounts, high-end core gear, credits and compatible
   loaded/reserve ammo for Terran/Progen launchers. A read-only UDP roster
-  advertises only these demos; reruns preserve their owned state. Full earned
-  XP progression is still pending.
+  advertises only these demos; reruns preserve their owned state.
+- Archived XP thresholds and skill-point bands now derive native combat, trade
+  and explore bars from durable earned totals. Mining, refining and crafting
+  commits publish updated player AUX after persistence. Existing sandbox pilots
+  retain their level-50 starting tracks; combat kill awards, spending points
+  and ordinary level-one character creation remain open.
+- Vault transfers require an authoritative station sector. Rejected space
+  transfers preserve the inventory and send the current cargo/vault state.
 
 ## Next implementation work
 
