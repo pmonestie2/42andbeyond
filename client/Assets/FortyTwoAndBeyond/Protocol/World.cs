@@ -16,6 +16,84 @@ namespace FortyTwoAndBeyond.Protocol
         { float x = X - other.X, y = Y - other.Y, z = Z - other.Z; return (float)Math.Sqrt(x * x + y * y + z * z); }
     }
 
+    /// <summary>One native leader-relative offset for a formed wing ship.</summary>
+    public sealed class FormationAnchor
+    {
+        public readonly uint LeaderId;
+        public readonly Position Offset;
+
+        /// <summary>Keep one server-advertised formation anchor immutable.</summary>
+        private FormationAnchor(uint leaderId, Position offset)
+        { LeaderId = leaderId; Offset = offset; }
+
+        /// <summary>
+        /// Returns:
+        ///     FormationAnchor: The validated native 0x41 offset for this player.
+        /// Raises:
+        ///     InvalidDataException: The body has an invalid owner, leader, or offset.
+        /// </summary>
+        public static FormationAnchor Decode(byte[] body, uint player)
+        {
+            if (body.Length != 20 || Wire.U32(body, 0) != player)
+                throw new InvalidDataException("Invalid formation owner or length.");
+            uint leader = Wire.U32(body, 4);
+            float x = Wire.Float(body, 8), y = Wire.Float(body, 12), z = Wire.Float(body, 16);
+            if (leader == 0 || leader == player || float.IsNaN(x) || float.IsInfinity(x) ||
+                float.IsNaN(y) || float.IsInfinity(y) || float.IsNaN(z) || float.IsInfinity(z) ||
+                Math.Abs(x) > 10000 || Math.Abs(y) > 10000 || Math.Abs(z) > 10000)
+                throw new InvalidDataException("Invalid formation leader or offset.");
+            return new FormationAnchor(leader, new Position(x, y, z));
+        }
+
+        /// <summary>
+        /// Returns:
+        ///     FormationAnchor: The archived offset for a server-authored formed slot, or null.
+        /// </summary>
+        public static FormationAnchor ForGroupMember(uint leaderId, string shape, uint slot)
+        {
+            if (leaderId == 0 || slot < 1 || slot > 5) return null;
+            Position[] offsets = shape == "Slot Back" ? new[] {
+                new Position(-300, -200, 50), new Position(-300, 200, 50),
+                new Position(-300, 0, 50), new Position(-400, -200, 100),
+                new Position(-400, 200, 100) } :
+                shape == "Block" ? new[] {
+                    new Position(0, -200, 0), new Position(0, 200, 0),
+                    new Position(-300, 0, 100), new Position(-300, -200, 100),
+                    new Position(-300, 200, 100) } :
+                shape == "Pipe" ? new[] {
+                    new Position(-300, -200, 0), new Position(-300, 200, 0),
+                    new Position(-400, 0, 0), new Position(-600, -200, 0),
+                    new Position(-600, 200, 0) } : null;
+            return offsets == null ? null : new FormationAnchor(leaderId, offsets[(int)slot - 1]);
+        }
+
+        /// <summary>
+        /// Returns:
+        ///     Position: The leader-relative position rotated into sector coordinates.
+        /// </summary>
+        public Position Project(ShipActor leader)
+        { return Project(leader.Position, leader.Orientation); }
+
+        /// <summary>
+        /// Returns:
+        ///     Position: The offset projected from an authoritative leader pose.
+        /// </summary>
+        public Position Project(Position leaderPosition, float[] orientation)
+        {
+            float[] q = orientation;
+            float x = Offset.X, y = Offset.Y, z = Offset.Z;
+            float ux = q[1] * z - q[2] * y;
+            float uy = q[2] * x - q[0] * z;
+            float uz = q[0] * y - q[1] * x;
+            float vx = q[1] * uz - q[2] * uy;
+            float vy = q[2] * ux - q[0] * uz;
+            float vz = q[0] * uy - q[1] * ux;
+            return new Position(leaderPosition.X + x + 2 * (q[3] * ux + vx),
+                leaderPosition.Y + y + 2 * (q[3] * uy + vy),
+                leaderPosition.Z + z + 2 * (q[3] * uz + vz));
+        }
+    }
+
     public sealed class MapObject
     {
         public readonly uint Id;
@@ -311,6 +389,13 @@ namespace FortyTwoAndBeyond.Protocol
             return new ShipActor(Id, Asset, Scale, Name, position, orientation, true, IsPlayer, Hostile, Shield, Hull, MaxHull);
         }
 
+        /// <summary>
+        /// Returns:
+        ///     ShipActor: A visual pose derived from the leader's authoritative group slot.
+        /// </summary>
+        public ShipActor WithFormationPose(Position position, float[] orientation)
+        { return new ShipActor(Id, Asset, Scale, Name, position, orientation, true, IsPlayer, Hostile, Shield, Hull, MaxHull); }
+
         /// <returns>A new actor with its public avatar name.</returns>
         public ShipActor WithName(string name)
         { return new ShipActor(Id, Asset, Scale, name, Position, Orientation, HasPosition, IsPlayer, Hostile, Shield, Hull, MaxHull); }
@@ -406,6 +491,7 @@ namespace FortyTwoAndBeyond.Protocol
         }
         public readonly Queue<ShotEvent> Shots = new Queue<ShotEvent>();
         public GroupState Group { get; private set; } = new GroupState(false, Array.Empty<GroupMember>());
+        public FormationAnchor Formation { get; private set; }
         public TargetVerbs Verbs { get; private set; } = TargetVerbs.Empty;
         private ConfirmationPrompt confirmation;
         private long confirmationAt;
@@ -482,6 +568,31 @@ namespace FortyTwoAndBeyond.Protocol
             return unchecked(lastServerTick + (uint)Math.Min(elapsedMs, uint.MaxValue));
         }
 
+        /// <summary>Apply the server's leader pose and native offset to a formed wing ship.</summary>
+        private void ApplyFormationPose()
+        {
+            if (Formation == null || !Group.Formed || !Players.TryGetValue(Formation.LeaderId, out ShipActor leader) ||
+                !leader.HasPosition) return;
+            Position = Formation.Project(leader);
+            Orientation = (float[])leader.Orientation.Clone();
+            HasPosition = true;
+        }
+
+        /// <summary>Present formed peers at server-authored slots around this leader pose.</summary>
+        private void ApplyFormedPeers()
+        {
+            if (!Group.IsLeader || !HasPosition || Group.Formation.Length == 0) return;
+            foreach (GroupMember member in Group.Members)
+            {
+                if (!member.Formed || !Players.TryGetValue(member.Id, out ShipActor peer) ||
+                    !peer.HasPosition) continue;
+                FormationAnchor offset = FormationAnchor.ForGroupMember(PlayerId,
+                    Group.Formation, member.FormationSlot);
+                if (offset != null)
+                    Players[member.Id] = peer.WithFormationPose(offset.Project(Position, Orientation), Orientation);
+            }
+        }
+
         /// <summary>Update server-authoritative display state.</summary>
         public void Apply(Frame frame, uint player)
         {
@@ -496,13 +607,13 @@ namespace FortyTwoAndBeyond.Protocol
                     if (firstEnd < 0 || firstEnd + 1 >= b.Length) throw new InvalidDataException("Missing sector name.");
                     string name = Wire.Text(b, firstEnd + 1, b.Length - firstEnd - 1);
                     if (name.Length == 0) throw new InvalidDataException("Empty sector name.");
-                    if (Sector != name) { Objects.Clear(); Players.Clear(); Mobs.Clear(); StationAvatars.Clear(); Loot.Clear(); Resources.Clear(); ResourceTargetId = 0; ResourceWindowOpen = false; MiningActivity = null; LootActivity = null; Warp = WarpState.Decode(0, 0); lastServerTickAt = 0; OpenLootId = 0; Verbs = TargetVerbs.Empty; Shots.Clear(); Damages.Clear(); ClearConfirmation(); nextShot = nextDamage = 0; }
+                    if (Sector != name) { Objects.Clear(); Players.Clear(); Mobs.Clear(); StationAvatars.Clear(); Loot.Clear(); Resources.Clear(); ResourceTargetId = 0; ResourceWindowOpen = false; MiningActivity = null; LootActivity = null; Formation = null; Warp = WarpState.Decode(0, 0); lastServerTickAt = 0; OpenLootId = 0; Verbs = TargetVerbs.Empty; Shots.Clear(); Damages.Clear(); ClearConfirmation(); nextShot = nextDamage = 0; }
                     Sector = name;
                     break;
                 case 0x4f:
                     if (b.Length != 6) throw new InvalidDataException("Invalid station identity.");
                     Station = b[4] == 0 ? new StationState(Wire.U32(b, 0)) : null;
-                    if (Station != null) { ActiveDeviceLabel = ""; ActiveDeviceEndsAt = 0; ActiveBuff = TimedDeviceBuff.Empty; awaitingDeviceVisual = false; }
+                    if (Station != null) { ActiveDeviceLabel = ""; ActiveDeviceEndsAt = 0; ActiveBuff = TimedDeviceBuff.Empty; awaitingDeviceVisual = false; Formation = null; }
                     Production = new ProductionState();
                     StationAvatars.Clear();
                     Dialogue = null; Vendor = Array.Empty<ItemState>();
@@ -685,7 +796,13 @@ namespace FortyTwoAndBeyond.Protocol
                         ItemState[] vendor = AuxState.ReadVendor(b);
                         if (vendor != null) Vendor = vendor;
                         GroupState group = AuxState.ReadGroup(b);
-                        if (group != null) { Group = group; if (group.Joined) ClearInvitation(); }
+                        if (group != null)
+                        {
+                            Group = group;
+                            if (group.Joined) ClearInvitation();
+                            if (!group.Formed) Formation = null;
+                            else { ApplyFormationPose(); ApplyFormedPeers(); }
+                        }
                     }
                     else if (Wire.U32(b, 0) == player)
                     {
@@ -782,6 +899,8 @@ namespace FortyTwoAndBeyond.Protocol
                     {
                         if (Players.TryGetValue(movingId, out ShipActor moving)) Players[movingId] = moving.WithPose(b);
                         if (Mobs.TryGetValue(movingId, out ShipActor mob)) Mobs[movingId] = mob.WithPose(b);
+                        if (Formation?.LeaderId == movingId) ApplyFormationPose();
+                        if (Group.IsLeader) ApplyFormedPeers();
                         break;
                     }
                     Position = new Position(Wire.Float(b, 10), Wire.Float(b, 14), Wire.Float(b, 18));
@@ -798,6 +917,11 @@ namespace FortyTwoAndBeyond.Protocol
                         AngularZ = Wire.Float(b, 62);
                     }
                     else if (b.Length >= 46) Speed = Wire.Float(b, 42) * 1000;
+                    ApplyFormedPeers();
+                    break;
+                case 0x41:
+                    Formation = FormationAnchor.Decode(b, player);
+                    ApplyFormationPose();
                     break;
                 case 0x66:
                     if (b.Length != 8 || Wire.U32(b, 4) != 0 || Wire.U32(b, 0) > 1)
@@ -841,6 +965,7 @@ namespace FortyTwoAndBeyond.Protocol
         public readonly CombatEngagement Engagement;
         public readonly uint PlayerId;
         public readonly GroupState Group;
+        public readonly FormationAnchor Formation;
         public readonly TargetVerbs Verbs;
         public readonly StationState Station;
         public readonly StationAvatar[] StationAvatars;
@@ -890,7 +1015,7 @@ namespace FortyTwoAndBeyond.Protocol
             AngularY = world.AngularY; AngularZ = world.AngularZ;
             Players = world.Players.Values.ToArray(); Mobs = world.Mobs.Values.ToArray();
             PlayerId = world.PlayerId; Shots = world.Shots.ToArray(); Damages = world.Damages.ToArray();
-            Group = world.Group; Verbs = world.Verbs;
+            Group = world.Group; Formation = world.Formation; Verbs = world.Verbs;
             Station = world.Station; StationAvatars = world.StationAvatars.Values.ToArray();
             Production = new ProductionView(world.Production, world.ItemCatalog);
             Dialogue = world.Dialogue; Credits = world.Credits;

@@ -9,9 +9,10 @@ namespace FortyTwoAndBeyond.Protocol
         public readonly uint Id;
         public readonly string Name;
         public readonly bool Formed;
+        public readonly uint FormationSlot;
         /// <summary>Store one authoritative group member and formation status.</summary>
-        public GroupMember(uint id, string name, bool formed = false)
-        { Id = id; Name = name; Formed = formed; }
+        public GroupMember(uint id, string name, bool formed = false, uint formationSlot = uint.MaxValue)
+        { Id = id; Name = name; Formed = formed; FormationSlot = formationSlot; }
     }
 
     public sealed class GroupState
@@ -495,8 +496,8 @@ namespace FortyTwoAndBeyond.Protocol
                     if (member.Present[0]) name = reader.Text();
                     if (member.Present[1]) id = reader.UInt();
                     if (member.Present[2]) memberFormation = reader.UInt();
-                    if (member.Present[3]) reader.UInt();
-                    if (id != 0) members.Add(new GroupMember(id, name, memberFormation != 0));
+                    uint memberSlot = member.Present[3] ? reader.UInt() : uint.MaxValue;
+                    if (id != 0) members.Add(new GroupMember(id, name, memberFormation != 0, memberSlot));
                 }
             }
             return new GroupState(leader, members.ToArray(), formation, formed);

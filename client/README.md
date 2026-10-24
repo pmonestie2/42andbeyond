@@ -154,6 +154,11 @@ kick members or disband. Invitations expire after the server's 30-second window.
 The roster lists the other members, with your own role in its heading. The leader
 can choose Slot Back, Block or Pipe formation and release it later. Members can
 form up within 5 km of the leader, or leave formation without leaving the group.
+Each member must click **Form up with leader** after the leader chooses a shape;
+changing the shape requires members to form up again. A formed wing ship follows
+the leader's native position and rotation updates through impulse and warp.
+Its manual flight and Follow controls stay inactive until **Leave formation** is
+chosen. Switching windows preserves a group's travel instead of sending a brake.
 The leader can share the selected target with the group. If the server accepts
 that target for a member who can see it, the member's target panel follows the server's
 selection, even when an older contact was selected locally. A recent local click

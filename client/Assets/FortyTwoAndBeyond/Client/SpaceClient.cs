@@ -235,7 +235,8 @@ namespace FortyTwoAndBeyond.Client
             {
                 flightThrottle.Reset();
                 StopStationWalk();
-                if (previousYaw != 0 || previousPitch != 0) worker.Submit(new ClientCommand(CommandKind.Steer));
+                if ((previousYaw != 0 || previousPitch != 0) && !FollowingFormation)
+                    worker.Submit(new ClientCommand(CommandKind.Steer));
                 previousYaw = previousPitch = 0;
                 return;
             }
@@ -272,20 +273,24 @@ namespace FortyTwoAndBeyond.Client
             if (bindings.Pressed(ControlAction.Gate)) GateSelected();
             if (bindings.Pressed(ControlAction.Dock)) DockSelected();
             if (bindings.Pressed(ControlAction.ResetCamera)) { orbitYaw = 22; orbitPitch = 8; }
-            float yaw = (bindings.Held(ControlAction.TurnLeft) ? 1 : 0) -
-                (bindings.Held(ControlAction.TurnRight) ? 1 : 0);
-            float pitch = (bindings.Held(ControlAction.PitchUp) ? 1 : 0) -
-                (bindings.Held(ControlAction.PitchDown) ? 1 : 0);
-            if (yaw != previousYaw || pitch != previousPitch)
+            if (!FollowingFormation)
             {
-                worker.Submit(new ClientCommand(CommandKind.Steer, yaw: yaw, pitch: pitch));
-                previousYaw = yaw; previousPitch = pitch;
-                flightThrottle.Reset();
+                float yaw = (bindings.Held(ControlAction.TurnLeft) ? 1 : 0) -
+                    (bindings.Held(ControlAction.TurnRight) ? 1 : 0);
+                float pitch = (bindings.Held(ControlAction.PitchUp) ? 1 : 0) -
+                    (bindings.Held(ControlAction.PitchDown) ? 1 : 0);
+                if (yaw != previousYaw || pitch != previousPitch)
+                {
+                    worker.Submit(new ClientCommand(CommandKind.Steer, yaw: yaw, pitch: pitch));
+                    previousYaw = yaw; previousPitch = pitch;
+                    flightThrottle.Reset();
+                }
+                byte? thrust = flightThrottle.Sample(true, bindings.Held(ControlAction.Forward),
+                    bindings.Held(ControlAction.Reverse), bindings.Held(ControlAction.Brake));
+                if (thrust.HasValue) Thrust(thrust.Value);
+                if (bindings.Pressed(ControlAction.Follow)) FollowSelected();
             }
-            byte? thrust = flightThrottle.Sample(true, bindings.Held(ControlAction.Forward),
-                bindings.Held(ControlAction.Reverse), bindings.Held(ControlAction.Brake));
-            if (thrust.HasValue) Thrust(thrust.Value);
-            if (bindings.Pressed(ControlAction.Follow)) FollowSelected();
+            else { previousYaw = previousPitch = 0; flightThrottle.Reset(); }
             if (!hud.ContainsPointer() && !miningHud.ContainsPointer() &&
                 !abilityHud.ContainsPointer() && !missionHud.ContainsPointer())
             {
@@ -414,8 +419,10 @@ namespace FortyTwoAndBeyond.Client
             bool docked = snapshot?.Station != null;
             if (snapshot != null && !docked)
             {
+                bool formed = snapshot.Formation != null && snapshot.Group.Formed;
                 float age = Mathf.Clamp(Time.unscaledTime - authoritativePoseAt, 0, .25f);
-                Quaternion projectedRotation = ProjectRotation(snapshot, age);
+                Quaternion projectedRotation = formed ? ConvertRotation(snapshot.Orientation) :
+                    ProjectRotation(snapshot, age);
                 ship.rotation = Quaternion.Slerp(ship.rotation, projectedRotation, blend);
                 float ramp = snapshot.Acceleration > .001f
                     ? Mathf.Min(age, Mathf.Abs(snapshot.TargetSpeed - snapshot.Speed) / snapshot.Acceleration) : 0;
@@ -424,9 +431,9 @@ namespace FortyTwoAndBeyond.Client
                 float distance = snapshot.Speed * ramp +
                     .5f * direction * snapshot.Acceleration * ramp * ramp + currentSpeed * (age - ramp);
                 Vector3 velocity = ship.forward * (currentSpeed * MetersToWorld);
-                Vector3 predicted = Convert(snapshot.Position) +
+                Vector3 predicted = formed ? Convert(snapshot.Position) : Convert(snapshot.Position) +
                     projectedRotation * Vector3.forward * (distance * MetersToWorld);
-                renderedPosition += velocity * delta;
+                if (!formed) renderedPosition += velocity * delta;
                 renderedPosition = Vector3.Distance(renderedPosition, predicted) > 50
                     ? predicted : Vector3.Lerp(renderedPosition, predicted, 1 - Mathf.Exp(-10 * delta));
             }
@@ -543,9 +550,18 @@ namespace FortyTwoAndBeyond.Client
         /// <summary>Warp to the selected target, fly ahead, or cancel active warp.</summary>
         public void WarpSelected()
         {
+            if (FollowingFormation)
+            { status = "Leader controls formation warp. Leave formation to warp alone."; return; }
             if (Ready && snapshot.Station == null && snapshot.WarpPhase != WarpPhase.Recovering)
                 worker.Submit(new ClientCommand(CommandKind.Warp, target: Target?.Id ?? 0));
         }
+
+        /// <summary>
+        /// Returns:
+        ///     bool: Whether this ship is formed under the leader's travel control.
+        /// </summary>
+        private bool FollowingFormation => snapshot?.Group.Joined == true &&
+            !snapshot.Group.IsLeader && snapshot.Group.Formed;
 
         /// <summary>Request travel through the selected gate.</summary>
         public void GateSelected()
@@ -881,14 +897,22 @@ namespace FortyTwoAndBeyond.Client
             bodies.Clear(); stationBodies.Clear(); renderedObjects = System.Array.Empty<MapObject>();
         }
 
-        /// <summary>Brake and neutralize steering when foreground control is lost.</summary>
+        /// <summary>Release held steering on focus loss while preserving authoritative travel.</summary>
         private void OnApplicationFocus(bool focused)
         {
             Application.targetFrameRate = focused ? 120 : 60;
             if (!focused) flightThrottle.Reset();
             if (!focused) StopStationWalk();
             if (focused || worker == null || snapshot?.Station != null) return;
-            worker.Submit(new ClientCommand(CommandKind.Thrust, 4)); worker.Submit(new ClientCommand(CommandKind.Steer));
+            bool warping = snapshot?.WarpPhase == WarpPhase.Charging ||
+                snapshot?.WarpPhase == WarpPhase.Traveling;
+            bool formationTravel = snapshot?.Group.Joined == true &&
+                snapshot.Group.Formation.Length > 0;
+            if (!warping && !formationTravel)
+                worker.Submit(new ClientCommand(CommandKind.Thrust, 4));
+            if (!FollowingFormation && !warping &&
+                (previousYaw != 0 || previousPitch != 0))
+                worker.Submit(new ClientCommand(CommandKind.Steer));
             previousYaw = previousPitch = 0;
         }
 

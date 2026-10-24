@@ -1291,7 +1291,8 @@ namespace FortyTwoAndBeyond.Client
                 GUILayout.BeginHorizontal();
                 GUI.enabled = visible;
                 if (GUILayout.Button("TARGET", button, GUILayout.Width(77))) SelectContact(member.Id);
-                if (GUILayout.Button("FOLLOW", button, GUILayout.Width(78)))
+                GUI.enabled = visible && !snapshot.Group.Formed;
+                if (GUILayout.Button(snapshot.Group.Formed ? "FORMED" : "FOLLOW", button, GUILayout.Width(78)))
                 { SelectContact(member.Id); client.FollowSelected(); }
                 GUI.enabled = true;
                 if (snapshot.Group.IsLeader && GUILayout.Button("KICK", button, GUILayout.Width(57)))
@@ -1320,6 +1321,7 @@ namespace FortyTwoAndBeyond.Client
                     if (GUILayout.Button(snapshot.Group.Formed ? "Leave formation" : "Form up with leader", button))
                         client.Formation(snapshot.Group.Formed ? 8u : 7u);
                     if (!snapshot.Group.Formed) GUILayout.Label("Join within 5 km of your leader", small);
+                    else GUILayout.Label("Leader controls travel and warp; leave formation to fly alone.", small);
                 }
                 GUILayout.BeginHorizontal();
                 if (GUILayout.Button("Leave", button)) client.SendChat("/leave");

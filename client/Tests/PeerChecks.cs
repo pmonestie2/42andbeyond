@@ -207,6 +207,21 @@ internal static class PeerChecks
                 visitor.Formation(7);
                 Wait(observer, visitor, () => visitor.World.Group.Formed &&
                     observer.World.Group.Members.Any(m => m.Id == peerId && m.Formed), "Follower did not form up.");
+                Position leadBefore = observer.World.Position, wingBefore = visitor.World.Position;
+                observer.Thrust(2);
+                Wait(observer, visitor, () => observer.World.Position.Distance(leadBefore) > 50 &&
+                    visitor.World.Position.Distance(wingBefore) > 50 && visitor.World.Group.Formed,
+                    "Formed follower did not travel with leader impulse.");
+                observer.Thrust(4);
+                Position wingWarpStart = visitor.World.Position;
+                observer.Warp(0);
+                Wait(observer, visitor, () => observer.World.Warp.Phase == WarpPhase.Traveling &&
+                    visitor.World.Position.Distance(wingWarpStart) > 1000 &&
+                    visitor.World.Formation?.LeaderId == observer.Player && visitor.World.Group.Formed,
+                    "Native 0x41 formation did not carry the follower through leader warp.");
+                observer.Warp(0);
+                Wait(observer, visitor, () => observer.World.Warp.Phase != WarpPhase.Traveling &&
+                    visitor.World.Group.Formed, "Leader warp cancellation released the follower.");
                 visitor.Formation(8);
                 Wait(observer, visitor, () => !visitor.World.Group.Formed, "Follower did not leave formation.");
                 observer.Formation(6);

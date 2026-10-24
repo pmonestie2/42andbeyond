@@ -15,7 +15,7 @@ internal static class Program
         CheckExperience(); CheckMiningPhases(); CheckLootTractor(); CheckWarpPhases(); CheckNavigationSelection(); CheckWeaponReady();
         CheckDamageResults(); CheckCombatEngagement(); CheckContactSelection(); CheckTargetVerbs(); CheckDeviceEffects();
         CheckNativeDeviceBuff();
-        CheckAmmunitionTransfer(); CheckFlightThrottle();
+        CheckAmmunitionTransfer(); CheckFlightThrottle(); CheckFormationAnchor();
         CheckStationLayout(); CheckStationWalk(); CheckDemoRoster(); CheckAddress(); PeerChecks.Decode();
         Console.WriteLine("PASS: framing, ordering, fragmentation, duplicates, bounds, world decoding, private addresses");
         if (args.Length == 2 && args[0] == "--server") { PeerChecks.Live(args[1]); CheckServer(args[1]); }
@@ -628,6 +628,41 @@ internal static class Program
         var device = new ItemTemplateInfo(101, 11, "Test device", "");
         Assert(cargo.EquipQuantity(ammunition) == 120 && cargo.EquipQuantity(device) == 1,
             "Cargo-to-mount transfer would load only one round or install an entire equipment stack.");
+    }
+
+    /// <summary>Decode and rotate the native leader-relative formation offset.</summary>
+    private static void CheckFormationAnchor()
+    {
+        byte[] body = Wire.Body(writer =>
+        {
+            writer.Write(2u); writer.Write(1u);
+            writer.Write(100f); writer.Write(0f); writer.Write(0f);
+        });
+        FormationAnchor anchor = FormationAnchor.Decode(body, 2);
+        FormationAnchor blockWing = FormationAnchor.ForGroupMember(1, "Block", 1);
+        Assert(blockWing?.Offset.X == 0 && blockWing.Offset.Y == -200 &&
+            FormationAnchor.ForGroupMember(1, "Block", 6) == null,
+            "Server-authored group slot did not resolve to the native Block offset.");
+        var leader = new ShipActor(1, 0, 1, "Leader", new Position(1000, 20, 3000),
+            new[] { 0f, 0f, .70710677f, .70710677f }, true);
+        Position position = anchor.Project(leader);
+        Assert(Math.Abs(position.X - 1000) < .01f && Math.Abs(position.Y - 120) < .01f &&
+            Math.Abs(position.Z - 3000) < .01f,
+            "Native formation offset did not rotate with the leader's quaternion.");
+        var world = new World();
+        world.Apply(new Frame(0x41, body), 2);
+        Snapshot first = new Snapshot(world, "ready", true);
+        Assert(world.Formation?.LeaderId == 1 && first.Formation?.Offset.X == 100,
+            "Native 0x41 formation anchor was dropped.");
+        byte[] changed = (byte[])body.Clone();
+        Array.Copy(BitConverter.GetBytes(50f), 0, changed, 8, 4);
+        world.Apply(new Frame(0x41, changed), 2);
+        Assert(world.Formation.Offset.X == 50 && first.Formation.Offset.X == 100,
+            "Formation update changed an older immutable snapshot.");
+        byte[] invalid = (byte[])body.Clone();
+        Array.Copy(BitConverter.GetBytes(float.NaN), 0, invalid, 8, 4);
+        Reject(() => FormationAnchor.Decode(invalid, 2));
+        Reject(() => FormationAnchor.Decode(body, 3));
     }
 
     /// <summary>Keep held flight controls reachable after focus and text entry.</summary>
