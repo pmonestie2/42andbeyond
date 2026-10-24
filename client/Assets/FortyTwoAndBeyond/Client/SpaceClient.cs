@@ -564,6 +564,16 @@ namespace FortyTwoAndBeyond.Client
                 worker.Submit(new ClientCommand(CommandKind.ActivateWeapon, (uint)slot));
         }
 
+        /// <summary>Activate a server-supported effect from an installed device mount.</summary>
+        public void ActivateDevice(int slot)
+        {
+            if (Ready && !Incapacitated && snapshot.Station == null &&
+                slot >= 9 && slot < 9 + snapshot.DeviceMounts && slot < snapshot.Mounted.Length &&
+                snapshot.Mounted[slot]?.ActivationLabel.Length > 0 &&
+                snapshot.ActiveDeviceLabel.Length == 0)
+                worker.Submit(new ClientCommand(CommandKind.ActivateDevice, (uint)slot));
+        }
+
         /// <summary>Request activation of the equipped Turbo Weapons device.</summary>
         public void ActivateTurboWeapons()
         {

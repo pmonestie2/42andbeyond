@@ -8,10 +8,10 @@ namespace FortyTwoAndBeyond.Protocol
     public sealed class ItemTemplateInfo
     {
         public readonly uint Id, Type;
-        public readonly string Name;
+        public readonly string Name, ActivationLabel;
         /// <summary>Store a bounded item name and its server item type.</summary>
-        public ItemTemplateInfo(uint id, uint type, string name)
-        { Id = id; Type = type; Name = name; }
+        public ItemTemplateInfo(uint id, uint type, string name, string activationLabel)
+        { Id = id; Type = type; Name = name; ActivationLabel = activationLabel; }
 
         /// <returns>The native item template's ID, type and display name.</returns>
         public static ItemTemplateInfo Decode(byte[] body)
@@ -33,6 +33,7 @@ namespace FortyTwoAndBeyond.Protocol
                 }
                 else { Wire.Require(body, offset, 4); offset += 4; }
             }
+            string activationLabel = "";
             for (int block = 0; block < 2; block++)
             {
                 int effects = checked((int)Wire.U32(body, offset, true)); offset += 4;
@@ -40,7 +41,22 @@ namespace FortyTwoAndBeyond.Protocol
                 for (int i = 0; i < effects; i++)
                 {
                     for (int part = 0; part < 3; part++)
-                    { int length = Wire.U16(body, offset); offset += 2; Wire.Require(body, offset, length); offset += length; }
+                    {
+                        int length = Wire.U16(body, offset); offset += 2;
+                        if (block == 0 && effects == 1 && part == 1)
+                        {
+                            string description = Wire.Text(body, offset, length);
+                            switch (description)
+                            {
+                                case "Turbo Weapons (Activated)": activationLabel = "Turbo Weapons"; break;
+                                case "Scan Boost (Activated)": activationLabel = "Scan Boost"; break;
+                                case "Increase Speed (Activated)": activationLabel = "Increase Speed"; break;
+                                case "Reactor Boost (Activated)": activationLabel = "Reactor Boost"; break;
+                            }
+                        }
+                        else Wire.Require(body, offset, length);
+                        offset += length;
+                    }
                     Wire.Require(body, offset, 4); offset += 4;
                     int values = checked((int)Wire.U32(body, offset, true)); offset += 4;
                     if (values > 16) throw new InvalidDataException("Item effect values exceed limit.");
@@ -51,7 +67,8 @@ namespace FortyTwoAndBeyond.Protocol
             Wire.Require(body, offset, 22); offset += 22;
             int nameLength = Wire.U16(body, offset); offset += 2;
             string fullName = Wire.Text(body, offset, nameLength);
-            return new ItemTemplateInfo(id, type, fullName.Length > 0 ? fullName : name);
+            return new ItemTemplateInfo(id, type, fullName.Length > 0 ? fullName : name,
+                type == 11 ? activationLabel : "");
         }
     }
 
@@ -83,7 +100,7 @@ namespace FortyTwoAndBeyond.Protocol
         public readonly uint Template, Quantity, Type, WeaponState;
         public readonly ulong Price;
         public readonly float Quality, Structure, Range;
-        public readonly string Name, Info;
+        public readonly string Name, Info, ActivationLabel;
         /// <summary>Resolve a worker item against the known server catalog.</summary>
         public ItemView(int slot, ItemState item, IReadOnlyDictionary<uint, ItemTemplateInfo> catalog)
         {
@@ -91,8 +108,8 @@ namespace FortyTwoAndBeyond.Protocol
             Quality = item.Quality; Structure = item.Structure; Range = item.Range;
             WeaponState = item.WeaponState; Price = item.Price; Info = item.Info;
             if (catalog.TryGetValue(item.Template, out ItemTemplateInfo template))
-            { Name = template.Name; Type = template.Type; }
-            else { Name = "Item #" + item.Template; Type = 0; }
+            { Name = template.Name; Type = template.Type; ActivationLabel = template.ActivationLabel; }
+            else { Name = "Item #" + item.Template; Type = 0; ActivationLabel = ""; }
         }
     }
 }

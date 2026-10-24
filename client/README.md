@@ -168,6 +168,9 @@ Select an installed weapon to toggle that hardpoint alone during space combat.
 The Turbo Weapons button and B key activate a matching equipped device. The
 server decides energy cost, firing-rate bonus, and duration; the HUD reflects
 the server's activation and expiry messages.
+Select a supported installed device in Ship Loadout to activate Scan Boost,
+Increase Speed, Reactor Boost, or Turbo Weapons. The active effect label comes
+from the server's acknowledgement and clears when the server ends the effect.
 
 Explorer pilots can click a mineable asteroid or gas cloud, open its prospecting
 window, and choose a server-listed ore slot. The server checks the ship, skill,

@@ -5,7 +5,7 @@ using System.Threading;
 
 namespace FortyTwoAndBeyond.Protocol
 {
-    public enum CommandKind { Thrust, Steer, Warp, Gate, Dock, Launch, EnterStationRoom, OpenNpc, ChooseNpc, BuyVendor, SellVendor, EquipCargo, UnequipMount, StoreCargo, RetrieveVault, OpenProduction, CloseProduction, SelectProductionRecipe, SelectProductionCategory, SetProductionLevels, StartProduction, InsertAnalysisSample, ReturnAnalysisSample, ActivateWeapon, ActivateTurboWeapons, Chat, ToggleWeapons, Formation, SelectTarget, FollowTarget, InvitePlayer, AnswerConfirmation, StopWeapons, OpenLoot, TakeLoot, OpenResource, CloseResource, ProspectResource, ActivateAbility, RequestRescue, ChooseRescue, SelfJumpstart }
+    public enum CommandKind { Thrust, Steer, Warp, Gate, Dock, Launch, EnterStationRoom, OpenNpc, ChooseNpc, BuyVendor, SellVendor, EquipCargo, UnequipMount, StoreCargo, RetrieveVault, OpenProduction, CloseProduction, SelectProductionRecipe, SelectProductionCategory, SetProductionLevels, StartProduction, InsertAnalysisSample, ReturnAnalysisSample, ActivateWeapon, ActivateDevice, ActivateTurboWeapons, Chat, ToggleWeapons, Formation, SelectTarget, FollowTarget, InvitePlayer, AnswerConfirmation, StopWeapons, OpenLoot, TakeLoot, OpenResource, CloseResource, ProspectResource, ActivateAbility, RequestRescue, ChooseRescue, SelfJumpstart }
 
     public readonly struct ClientCommand
     {
@@ -94,6 +94,7 @@ namespace FortyTwoAndBeyond.Protocol
                                 case CommandKind.InsertAnalysisSample: session.InsertAnalysisSample((int)command.Target); break;
                                 case CommandKind.ReturnAnalysisSample: session.ReturnAnalysisSample(); break;
                                 case CommandKind.ActivateWeapon: session.ActivateWeapon((int)command.Target); break;
+                                case CommandKind.ActivateDevice: session.ActivateDevice((int)command.Target); break;
                                 case CommandKind.ActivateTurboWeapons: session.ActivateTurboWeapons(); break;
                                 case CommandKind.Chat: session.Chat(command.Text, (byte)command.Target); break;
                                 case CommandKind.ToggleWeapons: session.ToggleWeapons(command.Target); break;

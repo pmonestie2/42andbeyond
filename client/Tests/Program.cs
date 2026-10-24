@@ -77,6 +77,17 @@ internal static class Program
         world.Apply(new Frame(0x1d, turboEnd), 1);
         Assert(!world.TurboWeaponsActive && turboSnapshot.TurboWeaponsActive,
             "Turbo Weapons expiry changed an earlier immutable display snapshot.");
+        byte[] scanStart = Wire.Body(w => { w.Write((ushort)34); w.Write((byte)0);
+            w.Write(System.Text.Encoding.ASCII.GetBytes("Scan Boost active for 60 seconds.\0")); });
+        world.Apply(new Frame(0x1d, scanStart), 1);
+        Snapshot scanSnapshot = new Snapshot(world, "ready", true);
+        Assert(scanSnapshot.ActiveDeviceLabel == "Scan Boost" && !scanSnapshot.TurboWeaponsActive,
+            "Generic device acknowledgement was not distinguished from Turbo Weapons.");
+        byte[] scanEnd = Wire.Body(w => { w.Write((ushort)18); w.Write((byte)0);
+            w.Write(System.Text.Encoding.ASCII.GetBytes("Scan Boost ended.\0")); });
+        world.Apply(new Frame(0x1d, scanEnd), 1);
+        Assert(world.ActiveDeviceLabel.Length == 0 && scanSnapshot.ActiveDeviceLabel == "Scan Boost",
+            "Generic device expiry changed an earlier display snapshot.");
     }
 
     /// <summary>Check packed station room and NPC placement before interior navigation.</summary>

@@ -331,6 +331,8 @@ namespace FortyTwoAndBeyond.Protocol
 
     public sealed class World
     {
+        private static readonly string[] DeviceEffectLabels =
+            { "Turbo Weapons", "Scan Boost", "Increase Speed", "Reactor Boost" };
         public uint PlayerId { get; private set; }
         private long nextShot, nextDamage;
         public readonly Queue<DamageEvent> Damages = new Queue<DamageEvent>();
@@ -361,7 +363,8 @@ namespace FortyTwoAndBeyond.Protocol
         public ulong Credits { get; private set; }
         public uint[] AvailableAbilities { get; private set; } = Array.Empty<uint>();
         public uint CastingAbilityId { get; private set; } = uint.MaxValue;
-        public bool TurboWeaponsActive { get; private set; }
+        public string ActiveDeviceLabel { get; private set; } = "";
+        public bool TurboWeaponsActive => ActiveDeviceLabel == "Turbo Weapons";
         public long CastEndsAt { get; private set; }
         public Dictionary<uint, long> AbilityCooldownEnds { get; } = new Dictionary<uint, long>();
         public ItemState[] Vendor { get; private set; } = Array.Empty<ItemState>();
@@ -408,6 +411,7 @@ namespace FortyTwoAndBeyond.Protocol
                 case 0x4f:
                     if (b.Length != 6) throw new InvalidDataException("Invalid station identity.");
                     Station = b[4] == 0 ? new StationState(Wire.U32(b, 0)) : null;
+                    if (Station != null) ActiveDeviceLabel = "";
                     Production = new ProductionState();
                     StationAvatars.Clear();
                     Dialogue = null; Vendor = Array.Empty<ItemState>();
@@ -477,10 +481,13 @@ namespace FortyTwoAndBeyond.Protocol
                 case 0x1d:
                     Wire.Require(b, 0, 3);
                     string message = Wire.Text(b, 3, b.Length - 3);
-                    if (message.StartsWith("Turbo Weapons active for ", StringComparison.Ordinal) ||
-                        message == "Turbo Weapons is already active.")
-                        TurboWeaponsActive = true;
-                    else if (message == "Turbo Weapons ended.") TurboWeaponsActive = false;
+                    foreach (string label in DeviceEffectLabels)
+                    {
+                        if (message.StartsWith(label + " active for ", StringComparison.Ordinal) ||
+                            message == label + " is already active.") ActiveDeviceLabel = label;
+                        else if (message == label + " ended." && ActiveDeviceLabel == label)
+                            ActiveDeviceLabel = "";
+                    }
                     Messages.Enqueue(message);
                     if (Station != null && message.StartsWith("Welcome aboard ", StringComparison.Ordinal))
                     {
@@ -659,6 +666,7 @@ namespace FortyTwoAndBeyond.Protocol
         public readonly uint[] AvailableAbilities;
         public readonly uint CastingAbilityId;
         public readonly bool TurboWeaponsActive;
+        public readonly string ActiveDeviceLabel;
         public readonly float CastRemainingSeconds;
         public readonly IReadOnlyDictionary<uint, float> AbilityCooldownSeconds;
         public readonly ItemView[] Vendor;
@@ -697,6 +705,7 @@ namespace FortyTwoAndBeyond.Protocol
             long now = System.Diagnostics.Stopwatch.GetTimestamp();
             CastingAbilityId = world.CastingAbilityId;
             TurboWeaponsActive = world.TurboWeaponsActive;
+            ActiveDeviceLabel = world.ActiveDeviceLabel;
             CastRemainingSeconds = (float)Math.Max(0,
                 (world.CastEndsAt - now) / (double)System.Diagnostics.Stopwatch.Frequency);
             AbilityCooldownSeconds = world.AbilityCooldownEnds.ToDictionary(entry => entry.Key,

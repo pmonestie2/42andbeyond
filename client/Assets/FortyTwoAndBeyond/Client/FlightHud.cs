@@ -1131,10 +1131,20 @@ namespace FortyTwoAndBeyond.Client
                 client.UnequipMount(selectedMount);
             bool weapon = mounted != null && mounted.Type >= 14 && mounted.Type <= 16 &&
                 selectedMount >= 3 && selectedMount < 3 + snapshot.WeaponMounts;
-            GUI.enabled = client.Ready && !client.Incapacitated && snapshot.Station == null && weapon;
+            bool device = mounted != null && mounted.Type == 11 &&
+                mounted.ActivationLabel.Length > 0 && selectedMount >= 9 &&
+                selectedMount < 9 + snapshot.DeviceMounts;
+            GUI.enabled = client.Ready && !client.Incapacitated && snapshot.Station == null &&
+                (weapon || device && snapshot.ActiveDeviceLabel.Length == 0);
             if (GUI.Button(new Rect(detailX, actionY + 27, 282, 37),
-                weapon && (mounted.WeaponState & 1) != 0 ? "STOP SELECTED WEAPON" : "FIRE SELECTED WEAPON", hostileButton))
-                client.ActivateWeapon(selectedMount);
+                weapon ? (mounted.WeaponState & 1) != 0 ? "STOP SELECTED WEAPON" : "FIRE SELECTED WEAPON" :
+                device ? snapshot.ActiveDeviceLabel.Length > 0 ? snapshot.ActiveDeviceLabel.ToUpperInvariant() + " ACTIVE" :
+                    "ACTIVATE " + mounted.ActivationLabel.ToUpperInvariant() : "SELECT WEAPON OR DEVICE",
+                weapon ? hostileButton : primaryButton))
+            {
+                if (weapon) client.ActivateWeapon(selectedMount);
+                else if (device) client.ActivateDevice(selectedMount);
+            }
             GUI.enabled = true;
         }
 

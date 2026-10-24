@@ -359,6 +359,20 @@ namespace FortyTwoAndBeyond.Protocol
                 "Firing weapon slot " + slot;
         }
 
+        /// <summary>Request activation of one installed device; the server decides effect support.</summary>
+        public void ActivateDevice(int slot)
+        {
+            if (!Ready || gate != 0 || World.Station != null || World.Equipment.Hull <= 0 ||
+                slot < 9 || slot >= 9 + World.Equipment.DeviceMounts ||
+                slot >= World.Equipment.Mounted.Length) return;
+            ItemState item = World.Equipment.Mounted[slot];
+            if (item?.Present != true ||
+                !World.ItemCatalog.TryGetValue(item.Template, out ItemTemplateInfo template) ||
+                template.Type != 11 || template.ActivationLabel.Length == 0) return;
+            Send(0x5d, Wire.Body(w => { w.Write(Player); w.Write((byte)2); w.Write((byte)slot); }));
+            Status = "Activating " + template.Name;
+        }
+
         /// <summary>Activate the equipped Turbo Weapons device through native item control.</summary>
         public void ActivateTurboWeapons()
         {
@@ -370,8 +384,7 @@ namespace FortyTwoAndBeyond.Protocol
                 ItemState item = World.Equipment.Mounted[slot];
                 if (item?.Present != true || item.Template != 2363 && item.Template != 2412 &&
                     item.Template != 2265) continue;
-                Send(0x5d, Wire.Body(w => { w.Write(Player); w.Write((byte)2); w.Write((byte)slot); }));
-                Status = "Requesting Turbo Weapons";
+                ActivateDevice(slot);
                 return;
             }
         }
