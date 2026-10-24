@@ -122,7 +122,7 @@ class RestartIdentityTests(unittest.TestCase):
         handle = Mock()
         handle.__int__ = Mock(return_value=123)
         with patch('win32api.OpenProcess',return_value=handle), \
-             patch('local_windows.process_path',side_effect=OSError(5,'exiting process')), \
+             patch('process_info.process_path',side_effect=OSError(5,'exiting process')), \
              patch('win32event.WaitForSingleObject',side_effect=[win32event.WAIT_TIMEOUT,win32event.WAIT_OBJECT_0]):
             self.assertIsNone(process_identity(1234))
         handle.Close.assert_called_once()
@@ -132,7 +132,7 @@ class RestartIdentityTests(unittest.TestCase):
         handle = Mock()
         handle.__int__ = Mock(return_value=123)
         with patch('win32api.OpenProcess',return_value=handle), \
-             patch('local_windows.process_path',side_effect=OSError(5,'query denied')), \
+             patch('process_info.process_path',side_effect=OSError(5,'query denied')), \
              patch('win32event.WaitForSingleObject',return_value=win32event.WAIT_TIMEOUT):
             with self.assertRaises(OSError):
                 process_identity(1234)

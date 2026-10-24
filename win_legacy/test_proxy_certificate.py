@@ -23,10 +23,10 @@ class ProxyCertificateTests(unittest.TestCase):
             certificate, key = root / 'local.net-7.org.cer', root / 'local.net-7.org.pem'
             certificate.write_bytes(b'original certificate')
             key.write_bytes(b'original key')
-            with patch('tools.windows.proxy_certificate.ROOT', root), \
-                 patch('tools.windows.proxy_certificate.openssl_path', return_value=Path('openssl')), \
+            with patch('win_legacy.proxy_certificate.ROOT', root), \
+                 patch('win_legacy.proxy_certificate.openssl_path', return_value=Path('openssl')), \
                  patch.object(LocalProxyCertificate, 'generate', side_effect=generate_fixture), \
-                 patch('tools.windows.proxy_certificate.subprocess.run', return_value=subprocess.CompletedProcess([], 1)), \
+                 patch('win_legacy.proxy_certificate.subprocess.run', return_value=subprocess.CompletedProcess([], 1)), \
                  patch.object(LocalProxyCertificate, 'certutil') as trust:
                 context = LocalProxyCertificate(root / 'net7proxy.exe')
                 with context:
@@ -40,7 +40,7 @@ class ProxyCertificateTests(unittest.TestCase):
                 self.assertIsNotNone(thumbprint)
                 # A subsequent launch finds the same certificate and trust.
                 with patch.object(LocalProxyCertificate, 'reusable', return_value=True), \
-                     patch('tools.windows.proxy_certificate.subprocess.run', return_value=subprocess.CompletedProcess([], 0)):
+                     patch('win_legacy.proxy_certificate.subprocess.run', return_value=subprocess.CompletedProcess([], 0)):
                     with LocalProxyCertificate(root / 'net7proxy.exe') as again:
                         self.assertEqual(again.thumbprint, thumbprint)
                 self.assertEqual(trust.call_count, 1)
@@ -50,10 +50,10 @@ class ProxyCertificateTests(unittest.TestCase):
             root = Path(temporary)
             for suffix in ('cer', 'pem'):
                 (root / f'local.net-7.org.{suffix}').write_bytes(suffix.encode())
-            with patch('tools.windows.proxy_certificate.ROOT', root), \
-                 patch('tools.windows.proxy_certificate.openssl_path', return_value=Path('openssl')), \
+            with patch('win_legacy.proxy_certificate.ROOT', root), \
+                 patch('win_legacy.proxy_certificate.openssl_path', return_value=Path('openssl')), \
                  patch.object(LocalProxyCertificate, 'generate', side_effect=generate_fixture), \
-                 patch('tools.windows.proxy_certificate.subprocess.run', return_value=subprocess.CompletedProcess([], 1)), \
+                 patch('win_legacy.proxy_certificate.subprocess.run', return_value=subprocess.CompletedProcess([], 1)), \
                  patch.object(LocalProxyCertificate, 'certutil', side_effect=RuntimeError('trust failed')):
                 with self.assertRaisesRegex(RuntimeError, 'trust failed'):
                     with LocalProxyCertificate(root / 'net7proxy.exe'):

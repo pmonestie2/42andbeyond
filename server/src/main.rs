@@ -53,7 +53,7 @@ fn main() -> io::Result<()> {
                     .ok_or_else(|| io::Error::other("--character needs a name"))?
             }
             "--help" | "-h" => {
-                println!("beyond-server [--bind 127.0.0.1] [--content data/sector.json] [--state-dir state] [--check] [--create-account NAME --character NAME --class te|tt|ts|jd|js|je|pw|pp|ps]\nConnect the 42 and Beyond client, or use launch_original_client.cmd on Windows. Demo account: local / local.");
+                println!("beyond-server [--bind 127.0.0.1] [--content data/sector.json] [--state-dir state] [--check] [--create-account NAME --character NAME --class te|tt|ts|jd|js|je|pw|pp|ps]\nConnect the 42 and Beyond client, or use win_legacy/launch_original_client.cmd on Windows. Demo account: local / local.");
                 return Ok(());
             }
             _ => return Err(io::Error::other(format!("unknown option {argument}"))),

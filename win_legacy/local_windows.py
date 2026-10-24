@@ -46,7 +46,7 @@ class LocalCertificateDns:
             self.path.write_bytes(self.applied)
             self.flush()
         except PermissionError:
-            raise PermissionError('Run launch_original_client.cmd as administrator so its temporary local certificate DNS entry can be installed') from None
+            raise PermissionError('Run win_legacy/launch_original_client.cmd as administrator so its temporary local certificate DNS entry can be installed') from None
         except BaseException:
             if self.path.read_bytes() == self.applied:
                 self.path.write_bytes(self.original)

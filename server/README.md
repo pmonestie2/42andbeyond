@@ -22,7 +22,7 @@ replacement and requests an owned graceful restart. It preserves session state.
 The root `start_server.cmd` and `restart_server.cmd` wrappers support Windows.
 
 The optional original-client proxy launcher is documented in
-`../tools/windows/README.md`. Server runtime does not require it.
+`../win_legacy/README.md`. Server runtime does not require it.
 
 `RUST_GUIDE.md` explains the Rust implementation. `docs/IMPLEMENTATION.md` and
 `docs/ROADMAP.md` describe current behavior and remaining work. Packet and content

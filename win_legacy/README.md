@@ -3,10 +3,13 @@
 Run these commands from the repository root on Windows with Python 3.11+:
 
 ```powershell
-C:\PYTHON\python.exe -m pip install -r tools/windows/requirements.txt
-C:\PYTHON\python.exe -m tools.windows.start_proxy --server 192.168.47.128 --check
-.\launch_original_client.cmd --server 192.168.47.128 --no-build
+C:\PYTHON\python.exe -m pip install -r win_legacy/requirements.txt
+C:\PYTHON\python.exe -m win_legacy.start_proxy --server 192.168.47.1 --check
+.\win_legacy\launch_original_client.cmd --server 192.168.47.1 --no-build
 ```
+
+The example address is the Mac host on this VMware network. For another setup,
+replace it with the server's private LAN IP and bind the server to that address.
 
 Run the launcher from an elevated console so it can temporarily update the hosts
 file. Supply `--client` and `--proxy` if the installed executable paths differ

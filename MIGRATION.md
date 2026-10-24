@@ -11,7 +11,7 @@ The original workspace remains intact as a migration backup.
 - `enb-protocol` became `protocol`; Python distribution is `beyond-protocol` and
   its import package is `beyond_protocol`.
 - Optional Windows original-client launch, INI, DNS, certificate and owned-process
-  utilities live in `tools/windows`. Multi-instance executable/memory patching
+  utilities live in `win_legacy`. Multi-instance executable/memory patching
   and relays were omitted. Native packet compatibility remains in the server.
 - Build, import, account, restart and disposable test tools were retained.
 - Macro controllers, scripted gameplay, packet-capture automation, the old web

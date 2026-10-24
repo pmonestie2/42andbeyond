@@ -7,7 +7,7 @@ Standalone Unity client and Rust game server.
 | `client/` | Unity game, C# wire protocol, launcher and tests |
 | `server/` | Rust server, game content, importers and tests |
 | `protocol/` | Python protocol utilities used by server integration tests |
-| `tools/windows/` | Optional original-client/Net7Proxy launcher and reversible configuration |
+| `win_legacy/` | Optional original-client/Net7Proxy launcher and reversible configuration |
 | `reference/cpp/` | Pinned archived C++ reference files for reimplementation |
 
 ## Run locally
@@ -35,14 +35,14 @@ On macOS, `client/Play Local.command` builds and launches an owned local setup.
 cargo test --locked --manifest-path server/Cargo.toml
 python3.13 -m unittest discover -s server/tools -p 'test_*.py'
 python3.13 -m unittest discover -s client/Tests -p 'test_*.py'
-python3.13 -m unittest discover -s tools/windows -t . -p 'test_*.py'
+python3.13 -m unittest discover -s win_legacy -t . -p 'test_*.py'
 dotnet run --project client/Tests/ProtocolChecks.csproj
 python3 client/Tests/run_local_smoke.py
 ```
 
 Python protocol smoke tools require Python 3.11+ and
 `python -m pip install -e ./protocol`. Windows launcher dependencies are in
-`tools/windows/requirements.txt`. See that directory's README for launching the
+`win_legacy/requirements.txt`. See that directory's README for launching the
 original client with its proxy configuration.
 
 The migration records source provenance and exclusions in `MIGRATION.md`.
