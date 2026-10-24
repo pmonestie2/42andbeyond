@@ -162,14 +162,18 @@ Select a mob in Contacts or click its ship in space for shield and hull readings
 Hostile contacts have red markers; other NPCs have gold markers. Press F or use
 **Fire weapons** to target and fire; press F again or use **Stop weapons** to stop.
 The server controls firing, hits, damage, movement and death. The client shows
-weapon streaks and hit numbers. The ship loadout panel lists cargo, equipment,
+weapon streaks and hit numbers. The target panel distinguishes armed weapons
+from a shot confirmed by the server, and briefly shows server hit, miss, or
+critical results. Its range, arc, ammo, and cooldown cues are guidance from
+the latest server state; the server decides whether a shot can fire. The ship
+loadout panel lists cargo, equipment,
 weapon and device mounts; select cargo and a mount to equip, or select installed
 gear to remove. The panel checks mount compatibility and cargo space before sending
 native inventory transfers, and shows item condition, range and any server quote.
 Ammo can be loaded through the same server move command; the whole selected cargo
 stack is sent for loading, and the server checks its launcher family. Defeated
 mobs leave server-owned wrecks. Click a wreck to open its fixed loot panel;
-within 2 km, open it and tractor listed items into cargo. The client tracks
+within 6 km, open it; within 2 km, tractor listed items into cargo. The client tracks
 the server's timed tractor packet and blocks repeat collection until completion
 or cancellation. Wreck and prospecting windows share a native interface packet;
 the client keeps their state separate. The radar shows nearby
