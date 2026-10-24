@@ -665,6 +665,9 @@ namespace FortyTwoAndBeyond.Client
             scroll.x = 0;
             scroll = GUILayout.BeginScrollView(scroll);
             MapObject selectedTarget = client.Target;
+            if (GUILayout.Button("FREE FLIGHT\nWARP AHEAD ALONG YOUR HEADING",
+                client.FreeFlight ? selected : button, GUILayout.Width(250), GUILayout.Height(54)))
+                client.SelectFreeFlight();
             foreach (MapObject item in destinations)
             {
                 string kind = item.Kind == 11 ? "GATE" : item.Kind == 12 ? "PORT" : "NAV";

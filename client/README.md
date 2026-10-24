@@ -116,7 +116,10 @@ manually. The VM launcher selects the Windows server explicitly.
 Enter in flight opens the server chat command line. Type `/d_jump BBW` or
 `/d_spawn 46 3` and press Enter to use the server's developer commands.
 
-Press Q with a navigation target to warp there, or with no target to warp ahead.
+Press Q with a navigation target to warp there. Select **Free Flight** in the
+Navigation list, then press Q to warp ahead along the ship's heading. This
+selection stays empty as the sector refreshes; choosing a destination restores
+targeted warp.
 Press Q again while charging or traveling to cancel; the server announces charge,
 travel, and recovery. Warp to a gate first, then travel through it once stopped nearby. The server's
 gate sequence takes approximately 15 seconds. Loss of window focus sends brake

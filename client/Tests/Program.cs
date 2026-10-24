@@ -12,7 +12,7 @@ internal static class Program
     private static void Main(string[] args)
     {
         CheckReassembly(); CheckWorld(); CheckMissionJournal(); CheckMissionDialogue();
-        CheckExperience(); CheckMiningPhases(); CheckLootTractor(); CheckWarpPhases(); CheckWeaponReady();
+        CheckExperience(); CheckMiningPhases(); CheckLootTractor(); CheckWarpPhases(); CheckNavigationSelection(); CheckWeaponReady();
         CheckDamageResults(); CheckCombatEngagement(); CheckContactSelection(); CheckDeviceEffects();
         CheckAmmunitionTransfer(); CheckFlightThrottle();
         CheckStationLayout(); CheckStationWalk(); CheckDemoRoster(); CheckAddress(); PeerChecks.Decode();
@@ -287,6 +287,27 @@ internal static class Program
         byte[] invalid = (byte[])tractor.Clone();
         Array.Copy(BitConverter.GetBytes(600001u), 0, invalid, 23, 4);
         Reject(() => world.Apply(new Frame(0x2014, invalid), 1));
+    }
+
+    /// <summary>Preserve explicit free flight while refreshing sector destinations.</summary>
+    private static void CheckNavigationSelection()
+    {
+        var selection = new NavigationSelection();
+        uint[] visible = { 11, 12 };
+        Assert(selection.Resolve(visible, 11) == 11 && !selection.FreeFlight,
+            "A sector did not choose its nearest initial destination.");
+        selection.ChooseFreeFlight();
+        Assert(selection.Resolve(visible, 11) == 0 && selection.FreeFlight,
+            "A populated sector replaced explicit free flight with an automatic destination.");
+        selection.ChooseTarget(12);
+        Assert(selection.Resolve(visible, 11) == 12 && !selection.FreeFlight,
+            "Choosing a waypoint did not leave free-flight mode.");
+        Assert(selection.Resolve(new uint[] { 11 }, 11) == 11,
+            "A departed waypoint did not fall back to the nearest destination.");
+        selection.ChooseFreeFlight();
+        selection.Reset();
+        Assert(selection.Resolve(visible, 12) == 12 && !selection.FreeFlight,
+            "Free flight leaked into the next sector.");
     }
 
     /// <summary>Keep warp visuals tied to the server's own-ship AUX phase revisions.</summary>
