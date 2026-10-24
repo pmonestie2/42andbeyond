@@ -166,6 +166,59 @@ fn shared_combat_kill_awards_one_durable_combat_xp_receipt() {
 }
 
 #[test]
+fn grouped_nav_explore_xp_replays_failed_recipient_after_restart() {
+    let mut game = game();
+    let root = game.root.clone();
+    let sector = game.initial_sector.clone();
+    let bind = game.bind;
+    let alice = FIRST_PLAYER_ID;
+    let bob = alice + 1;
+    login(&mut game, alice, 22511, "alice");
+    login(&mut game, bob, 22512, "bob");
+    game.groups.invite(alice, bob).unwrap();
+    game.groups.accept(bob).unwrap();
+    let mut nav = game.sessions[&alice].sector.navpoints[0].clone();
+    nav.id = 999_999;
+    nav.name = "Group discovery".into();
+    nav.object_type = 37;
+    nav.navigation_type = 1;
+    nav.signature = 1_000.;
+    nav.radius = 0.;
+    nav.position = [0.; 3];
+    for (id, position) in [(alice, [0.; 3]), (bob, [39_000., 0., 0.])] {
+        let session = game.sessions.get_mut(&id).unwrap();
+        session.sector.navpoints = vec![nav.clone()];
+        session.position = position;
+    }
+    let blocked = root.join("accounts/bob/inventory.json.tmp");
+    fs::create_dir(&blocked).unwrap();
+    game.advance_at(0., crate::resources::unix_ms()).unwrap();
+    assert_eq!(game.sessions[&alice].inventory.explore_xp, 1200);
+    assert_eq!(game.sessions[&bob].inventory.explore_xp, 0);
+    assert_eq!(
+        game.sessions[&alice].inventory.pending_explore_awards.len(),
+        1
+    );
+    drop(game);
+
+    fs::remove_dir(blocked).unwrap();
+    let mut restored = GameState::new(sector, bind, root.clone()).unwrap();
+    restored
+        .advance_at(0., crate::resources::unix_ms())
+        .unwrap();
+    assert_eq!(restored.sessions[&alice].inventory.explore_xp, 1200);
+    assert_eq!(restored.sessions[&bob].inventory.explore_xp, 1200);
+    assert!(restored.sessions[&alice]
+        .inventory
+        .pending_explore_awards
+        .is_empty());
+    restored
+        .advance_at(0., crate::resources::unix_ms())
+        .unwrap();
+    assert_eq!(restored.sessions[&bob].inventory.explore_xp, 1200);
+}
+
+#[test]
 fn group_kill_freezes_two_awards_and_replays_only_failed_recipient() {
     let initial = game();
     let root = initial.root.clone();

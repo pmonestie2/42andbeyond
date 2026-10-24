@@ -90,6 +90,12 @@ pub struct Inventory {
     #[serde(default)]
     pub explored_navs: std::collections::BTreeSet<u32>,
     #[serde(default)]
+    pub explore_award_sequence: u32,
+    #[serde(default)]
+    pub pending_explore_awards: BTreeMap<u32, crate::player_session::exploration::ExploreAward>,
+    #[serde(default)]
+    pub received_explore_awards: std::collections::BTreeSet<u64>,
+    #[serde(default)]
     pub trade_xp: u64,
     /// Legacy sandbox inventories default to three level-50 tracks.
     #[serde(default = "sandbox_xp_start_level")]
@@ -238,6 +244,9 @@ impl Inventory {
             combat_awards: BTreeMap::new(),
             explore_xp: 0,
             explored_navs: std::collections::BTreeSet::new(),
+            explore_award_sequence: 0,
+            pending_explore_awards: BTreeMap::new(),
+            received_explore_awards: std::collections::BTreeSet::new(),
             trade_xp: 0,
             xp_start_level: sandbox_xp_start_level(),
             refine_job: None,
@@ -293,6 +302,15 @@ impl Inventory {
         }
         if self.explored_navs.len() > 10_000 || self.explored_navs.contains(&0) {
             return Err(invalid("Invalid explored navigation history."));
+        }
+        if self.pending_explore_awards.len() > 1_000
+            || self.received_explore_awards.len() > 100_000
+            || self.pending_explore_awards.iter().any(|(sequence, award)| {
+                *sequence == 0 || *sequence > self.explore_award_sequence || !award.valid()
+            })
+            || self.received_explore_awards.contains(&0)
+        {
+            return Err(invalid("Invalid exploration award receipts."));
         }
         if self.combat_awards.len() > 20_000
             || self

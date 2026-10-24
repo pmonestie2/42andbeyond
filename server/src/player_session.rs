@@ -37,7 +37,7 @@ mod combat_experience;
 #[path = "dev_session.rs"]
 mod dev_session;
 #[path = "exploration.rs"]
-mod exploration;
+pub(crate) mod exploration;
 #[path = "follow_service.rs"]
 mod follow_service;
 #[path = "gating_service.rs"]
@@ -117,7 +117,7 @@ pub struct PlayerSession {
     npcs: NpcCatalog,
     factions: crate::factions::FactionCatalog,
     reputation: Arc<crate::factions::FactionReactions>,
-    inventory: Inventory,
+    pub(crate) inventory: Inventory,
     workbench: Option<production_service::WorkbenchWindow>,
     session_epoch: u64,
     workbench_sync: f32,
@@ -181,11 +181,12 @@ pub struct PlayerSession {
     weapon_firing: [bool; 20],
     active_device: Option<session_equipment::ActiveDevice>,
     shield: f32,
-    hull: f32,
+    pub(crate) hull: f32,
     energy: f32,
     skill_catalog: SkillCatalog,
     skills: SkillState,
     group_contacts: Vec<GroupContact>,
+    pub(crate) explore_group_members: Vec<u32>,
     support_actions: Vec<SupportAction>,
     resource_sync: f32,
     last_seen: Instant,
@@ -366,6 +367,7 @@ impl PlayerSession {
             skill_catalog,
             skills: SkillState::default(),
             group_contacts: Vec::new(),
+            explore_group_members: Vec::new(),
             support_actions: Vec::new(),
             resource_sync: 0.,
             last_seen: now,
@@ -2622,6 +2624,40 @@ mod tests {
                 .unwrap();
         assert_eq!(saved, ship.inventory);
         assert!(mine_slot(&mut other, 0).is_err()); // no double award from another client
+    }
+
+    #[test]
+    fn mining_freezes_group_explore_award_with_the_ore_receipt() {
+        let mut ship = mining_ship();
+        ship.explore_group_members = vec![ship.player_id() + 1];
+        mine_slot(&mut ship, 0).unwrap();
+        let cast = ship.mining.clone().unwrap();
+        let base = crate::experience::mining_xp(
+            u32::from(ship.items.get(cast.template).unwrap().level),
+            cast.quantity,
+            50,
+        );
+        for _ in 0..100 {
+            ship.advance_mining(0.25).unwrap();
+        }
+        let award = &ship.inventory.pending_explore_awards[&1];
+        assert_eq!(award.recipients, vec![ship.player_id() + 1]);
+        assert_eq!(
+            award.amount,
+            crate::player_session::exploration::group_explore_amount(base, 2)
+        );
+        assert_eq!(ship.inventory.explore_xp, award.amount);
+        assert_eq!(
+            ship.inventory.harvests[&ship.target].quantities[cast.slot],
+            cast.quantity
+        );
+        let saved: Inventory =
+            serde_json::from_slice(&fs::read(ship.state_dir.join("inventory.json")).unwrap())
+                .unwrap();
+        assert_eq!(
+            saved.pending_explore_awards,
+            ship.inventory.pending_explore_awards
+        );
     }
 
     #[test]

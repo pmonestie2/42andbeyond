@@ -372,10 +372,15 @@ impl PlayerSession {
             cast.quantity,
             explore_level,
         );
-        candidate.explore_xp = candidate
-            .explore_xp
-            .checked_add(xp)
-            .ok_or_else(|| invalid("Exploration XP overflow."))?;
+        let xp = self.record_explore_award(
+            &mut candidate,
+            xp,
+            &format!(
+                "Prospected {} {}",
+                cast.quantity,
+                self.items.get(cast.template)?.name
+            ),
+        )?;
         self.pending.push(self.items.get(cast.template)?.packet());
         self.commit_inventory(candidate)?;
         field.commit_harvest(mutation);

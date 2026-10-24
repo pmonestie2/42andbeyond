@@ -83,8 +83,8 @@ mean the corresponding gameplay system is complete.
   survive restart. Native AUX carries capacities, speed, range and ready state.
   Warp source now uses the archived speed-only 0x3e mask, advancing movement IDs,
   roughly half-second owner updates and immediate full velocity at departure;
-  disposable UDP measurements confirmed the packet sequence. Live deployment
-  awaits a coordinated restart.
+  disposable UDP measurements confirmed the packet sequence; the matching
+  warp checkpoint is deployed on the live Mac server.
 - Station-scoped NPC conversations and vendor services: 305 NPC definitions,
   261 usable SQL talk trees, 269 vendor groups and 8,497 item rows. Native
   dialogue/trade packets, contextual quotes, atomic cargo/credit purchases and
@@ -120,8 +120,11 @@ mean the corresponding gameplay system is complete.
   base XP, with independent receipts and retry after one member's write fails.
   Nav approaches now grant one-time exploration XP using the archived signature
   bands, with durable discovered-nav IDs; mining XP uses the pilot's earned
-  exploration level instead of a fixed sandbox level. Group exploration XP
-  sharing remains open.
+  exploration level instead of a fixed sandbox level. Navigation and mining
+  Explore XP now use the archived group split and size bonus for living members
+  within 40,000 units in the same sector. Each source commit freezes recipient
+  awards in the owner's inventory; recipient receipts survive write failure and
+  restart without duplicate XP.
   Skill-point spending and ordinary level-one character creation remain open.
 - The public mission catalog loads all 364 imported definitions; the runtime
   currently offers seven fully wired NPC missions: Finer Points of Negotiation

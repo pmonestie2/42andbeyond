@@ -480,6 +480,59 @@ impl GameState {
         Ok(())
     }
 
+    /// Returns:
+    ///     Vec<u32>: Living accepted group members within native Explore XP range.
+    fn explore_group_members(&self, owner: u32) -> Vec<u32> {
+        let Some(source) = self.sessions.get(&owner) else {
+            return Vec::new();
+        };
+        if !source.logged_in || source.hull <= 0. || source.sector.station.is_some() {
+            return Vec::new();
+        }
+        self.groups
+            .members(owner)
+            .into_iter()
+            .filter(|member| *member != owner)
+            .filter(|member| {
+                self.sessions.get(member).is_some_and(|session| {
+                    session.logged_in
+                        && session.hull > 0.
+                        && session.sector.id == source.sector.id
+                        && crate::mob::distance(source.position, session.position) < 40_000.
+                })
+            })
+            .collect()
+    }
+
+    /// Replay owner-persisted Explore XP events until every recipient is durable.
+    fn settle_explore_awards(&mut self) -> io::Result<()> {
+        let events: Vec<_> = self
+            .sessions
+            .iter()
+            .flat_map(|(owner, session)| {
+                session
+                    .inventory
+                    .pending_explore_awards
+                    .iter()
+                    .map(|(sequence, award)| (*owner, *sequence, award.clone()))
+            })
+            .collect();
+        for (owner, sequence, award) in events {
+            for recipient in &award.recipients {
+                let session = self
+                    .sessions
+                    .get_mut(recipient)
+                    .ok_or_else(|| invalid("Exploration award recipient no longer exists."))?;
+                session.settle_received_explore_award(owner, sequence, &award)?;
+            }
+            self.sessions
+                .get_mut(&owner)
+                .ok_or_else(|| invalid("Exploration award owner no longer exists."))?
+                .acknowledge_explore_award(sequence)?;
+        }
+        Ok(())
+    }
+
     pub fn advance(&mut self, dt: f32) -> io::Result<()> {
         self.advance_at(dt, crate::resources::unix_ms())
     }
@@ -506,11 +559,19 @@ impl GameState {
             }
         }
         self.update_views();
-        for session in self.sessions.values_mut() {
+        for id in &ids {
+            let recipients = self.explore_group_members(*id);
+            let session = self.sessions.get_mut(id).unwrap();
+            session.explore_group_members = recipients;
             if let Err(error) = session.advance_player(dt) {
                 if first_error.is_none() {
                     first_error = Some(error);
                 }
+            }
+        }
+        if let Err(error) = self.settle_explore_awards() {
+            if first_error.is_none() {
+                first_error = Some(error);
             }
         }
         self.advance_formations();
