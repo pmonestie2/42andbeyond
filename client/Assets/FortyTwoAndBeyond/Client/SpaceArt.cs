@@ -17,6 +17,7 @@ namespace FortyTwoAndBeyond.Client
         private readonly Material corvetteSurface, frigateSurface;
         private readonly Material hull, trim, dark, glass, glow, amber, hostile, crewSignal, mineral, rock, oreRock, field;
         public Material Sky { get; }
+        public Material EffectLine { get; }
 
         /// <summary>Create shared assets once rather than allocating them per object or frame.</summary>
         public SpaceArt()
@@ -41,6 +42,8 @@ namespace FortyTwoAndBeyond.Client
             oreRock.SetFloat("_TextureStrength", .95f);
             field = ShaderMaterial("42 and Beyond/GateField");
             Sky = ShaderMaterial("42 and Beyond/SpaceSky");
+            Shader effectShader = Resources.Load<Shader>("BeamAdditive");
+            if (effectShader != null) { EffectLine = new Material(effectShader); materials.Add(EffectLine); }
             corvetteAsset = Resources.Load<GameObject>("ViktorShips/corvette03");
             frigateAsset = Resources.Load<GameObject>("ViktorShips/frigate03");
             corvetteSurface = ShipSurface("corvette03");
@@ -266,19 +269,24 @@ namespace FortyTwoAndBeyond.Client
         }
 
         /// <returns>Transform: A compact, affiliation-colored scanner marker beneath a visible ship.</returns>
-        public Transform ContactMarker(Transform ship, bool isPlayer, bool isHostile, bool isCrew)
+        public Transform ContactMarker(Transform ship, bool isPlayer, bool isHostile, bool isCrew,
+            bool selected)
         {
-            Transform marker = Root(ship, isCrew ? "Crew scanner outline" :
+            Transform marker = Root(ship, selected ? "Selected target outline" : isCrew ? "Crew scanner outline" :
                 isPlayer ? "Player scanner outline" : "Mob scanner outline");
             marker.localScale = Vector3.one / Mathf.Max(.01f, ship.localScale.x);
-            Material signal = isCrew ? crewSignal : isPlayer ? glow : isHostile ? hostile : amber;
-            Model(marker, ring, signal, Vector3.zero, Vector3.one * (isCrew ? .29f : .22f));
+            Material signal = selected ? amber : isCrew ? crewSignal : isPlayer ? glow :
+                isHostile ? hostile : amber;
+            Model(marker, ring, signal, Vector3.zero, Vector3.one * (selected ? .37f : isCrew ? .29f : .22f));
             for (int side = -1; side <= 1; side += 2)
-                Part(marker, PrimitiveType.Cube, new Vector3(side * .29f, 0, 0),
-                    new Vector3(.08f, .02f, .02f), signal);
+                Part(marker, PrimitiveType.Cube, new Vector3(side * (selected ? .45f : .29f), 0, 0),
+                    new Vector3(selected ? .13f : .08f, .02f, .02f), signal);
             if (isCrew)
                 Part(marker, PrimitiveType.Cube, new Vector3(0, .36f, 0),
                     new Vector3(.18f, .045f, .025f), signal);
+            if (selected)
+                Part(marker, PrimitiveType.Cube, new Vector3(0, -.45f, 0),
+                    new Vector3(.18f, .04f, .025f), signal);
             return marker;
         }
 
