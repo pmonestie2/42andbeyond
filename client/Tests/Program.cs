@@ -217,6 +217,19 @@ internal static class Program
                 10, "Vendor purchase did not update cargo and credits.");
             int cargoSlot = Array.FindIndex(session.World.Equipment.Cargo,
                 item => item?.Present == true && item.Template == template);
+            int vaultSlot = Array.FindIndex(session.World.Equipment.Vault, item => item?.Present != true);
+            Assert(vaultSlot >= 0, "Disposable station vault had no available slot.");
+            session.StoreCargo(cargoSlot);
+            Wait(session, () => session.World.Equipment.Cargo[cargoSlot]?.Present != true &&
+                session.World.Equipment.Vault[vaultSlot]?.Template == template, 10,
+                "Storing purchased cargo did not update both authoritative containers.");
+            session.RetrieveVault(vaultSlot);
+            Wait(session, () => session.World.Equipment.Vault[vaultSlot]?.Present != true &&
+                session.World.Equipment.Cargo.Any(item => item?.Template == template), 10,
+                "Retrieving a vault item did not restore owned cargo.");
+            cargoSlot = Array.FindIndex(session.World.Equipment.Cargo,
+                item => item?.Present == true && item.Template == template);
+            Console.WriteLine("PASS: native station vault storage, retrieval and authoritative AUX snapshots");
             credits = session.World.Credits;
             session.SellVendor(cargoSlot);
             Wait(session, () => session.World.Credits > credits, 10,

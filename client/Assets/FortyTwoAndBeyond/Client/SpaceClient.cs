@@ -25,6 +25,7 @@ namespace FortyTwoAndBeyond.Client
         private MiningHud miningHud;
         private AbilityHud abilityHud;
         private RecoveryHud recoveryHud;
+        private VaultHud vaultHud;
         public bool AbilitiesOpen => abilityHud != null && abilityHud.IsOpen;
         public bool Incapacitated => snapshot != null && snapshot.Station == null &&
             snapshot.MaxHull > 0 && snapshot.Hull <= 0;
@@ -76,6 +77,7 @@ namespace FortyTwoAndBeyond.Client
             art = new SpaceArt(); hud = new FlightHud(this); miningHud = new MiningHud(this, hud);
             abilityHud = new AbilityHud(this, hud);
             recoveryHud = new RecoveryHud(this, hud);
+            vaultHud = new VaultHud(this, hud);
             worldRoot = new GameObject("Server world").transform; worldRoot.SetParent(transform, false);
             remoteShips = new RemoteShips(art, worldRoot);
             ship = art.Ship(transform); combatEffects = new CombatEffects(transform, ship, remoteShips); ship.localScale = Vector3.one * .25f;
@@ -487,6 +489,22 @@ namespace FortyTwoAndBeyond.Client
                 worker.Submit(new ClientCommand(CommandKind.UnequipMount, (uint)mountSlot));
         }
 
+        /// <summary>Store one cargo stack in the server-owned station vault.</summary>
+        public void StoreCargo(int slot)
+        {
+            if (Ready && snapshot.Station != null && slot >= 0 && slot < snapshot.Cargo.Length &&
+                snapshot.Cargo[slot] != null)
+                worker.Submit(new ClientCommand(CommandKind.StoreCargo, (uint)slot));
+        }
+
+        /// <summary>Retrieve one vault stack into available cargo space.</summary>
+        public void RetrieveVault(int slot)
+        {
+            if (Ready && snapshot.Station != null && slot >= 0 && slot < snapshot.Vault.Length &&
+                snapshot.Vault[slot] != null)
+                worker.Submit(new ClientCommand(CommandKind.RetrieveVault, (uint)slot));
+        }
+
         /// <summary>Toggle one mounted weapon in space while preserving the other hardpoints.</summary>
         public void ActivateWeapon(int slot)
         {
@@ -634,6 +652,7 @@ namespace FortyTwoAndBeyond.Client
             try
             {
                 hud.Draw(ref host, ref username, ref password);
+                if (!hud.SettingsOpen && !hud.EquipmentOpen) vaultHud.Draw(snapshot);
                 if (!hud.SettingsOpen && !hud.EquipmentOpen && !AbilitiesOpen && !Incapacitated) miningHud.Draw(snapshot);
                 if (!hud.SettingsOpen && !hud.EquipmentOpen && !Incapacitated) abilityHud.Draw(snapshot);
                 if (!hud.SettingsOpen && Incapacitated) recoveryHud.Draw(snapshot);

@@ -488,6 +488,7 @@ namespace FortyTwoAndBeyond.Protocol
                     {
                         ulong? credits = AuxState.ReadCredits(b);
                         if (credits.HasValue) Credits = credits.Value;
+                        AuxState.ReadVault(b, Equipment);
                         uint[] abilities = AuxState.ReadAvailableAbilities(b);
                         if (abilities != null) AvailableAbilities = abilities;
                         AbilityProgress progress = AuxState.ReadAbilityProgress(b);
@@ -653,7 +654,7 @@ namespace FortyTwoAndBeyond.Protocol
         public readonly bool Ready, HasPosition;
         public readonly float Speed, Energy, Shield, Hull, MaxEnergy, MaxShield, MaxHull;
         public readonly float TargetSpeed, Acceleration, AngularY, AngularZ;
-        public readonly ItemView[] Cargo, Mounted, Ammo;
+        public readonly ItemView[] Cargo, Mounted, Ammo, Vault;
         public readonly CorpseLoot[] Loot;
         public readonly uint OpenLootId;
         public readonly uint WeaponMounts, DeviceMounts, SelectedTargetId;
@@ -695,9 +696,12 @@ namespace FortyTwoAndBeyond.Protocol
             SelectedTargetId = equipment.TargetId;
             WeaponsFiring = equipment.Mounted.Any(item => item != null && (item.WeaponState & 1) != 0);
             Cargo = new ItemView[equipment.Cargo.Length]; Mounted = new ItemView[equipment.Mounted.Length];
+            Vault = new ItemView[equipment.Vault.Length];
             Ammo = new ItemView[equipment.Ammo.Length];
             for (int i = 0; i < Cargo.Length; i++)
                 if (equipment.Cargo[i]?.Present == true) Cargo[i] = new ItemView(i, equipment.Cargo[i], world.ItemCatalog);
+            for (int i = 0; i < Vault.Length; i++)
+                if (equipment.Vault[i]?.Present == true) Vault[i] = new ItemView(i, equipment.Vault[i], world.ItemCatalog);
             for (int i = 0; i < Mounted.Length; i++)
                 if (equipment.Mounted[i]?.Present == true) Mounted[i] = new ItemView(i, equipment.Mounted[i], world.ItemCatalog);
             for (int i = 0; i < Ammo.Length; i++)

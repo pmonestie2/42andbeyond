@@ -70,7 +70,7 @@ namespace FortyTwoAndBeyond.Protocol
     /// <summary>Worker-owned cargo, mount and resource values from authoritative AUX packets.</summary>
     public sealed class EquipmentState
     {
-        public ItemState[] Cargo = new ItemState[40], Mounted = new ItemState[20], Ammo = new ItemState[20];
+        public ItemState[] Cargo = new ItemState[40], Mounted = new ItemState[20], Ammo = new ItemState[20], Vault = new ItemState[96];
         public float Energy = -1, Shield = -1, Hull = -1, MaxEnergy = -1, MaxShield = -1, MaxHull = -1;
         public uint WeaponMounts, DeviceMounts, TargetId;
         public bool Firing;

@@ -5,7 +5,7 @@ using System.Threading;
 
 namespace FortyTwoAndBeyond.Protocol
 {
-    public enum CommandKind { Thrust, Steer, Warp, Gate, Dock, Launch, EnterStationRoom, OpenNpc, ChooseNpc, BuyVendor, SellVendor, EquipCargo, UnequipMount, ActivateWeapon, Chat, ToggleWeapons, Formation, SelectTarget, FollowTarget, InvitePlayer, AnswerConfirmation, StopWeapons, OpenLoot, TakeLoot, OpenResource, CloseResource, ProspectResource, ActivateAbility, RequestRescue, ChooseRescue, SelfJumpstart }
+    public enum CommandKind { Thrust, Steer, Warp, Gate, Dock, Launch, EnterStationRoom, OpenNpc, ChooseNpc, BuyVendor, SellVendor, EquipCargo, UnequipMount, StoreCargo, RetrieveVault, ActivateWeapon, Chat, ToggleWeapons, Formation, SelectTarget, FollowTarget, InvitePlayer, AnswerConfirmation, StopWeapons, OpenLoot, TakeLoot, OpenResource, CloseResource, ProspectResource, ActivateAbility, RequestRescue, ChooseRescue, SelfJumpstart }
 
     public readonly struct ClientCommand
     {
@@ -83,6 +83,8 @@ namespace FortyTwoAndBeyond.Protocol
                                 case CommandKind.SellVendor: session.SellVendor(command.Slot); break;
                                 case CommandKind.EquipCargo: session.EquipCargo((int)command.Target, command.Slot); break;
                                 case CommandKind.UnequipMount: session.UnequipMount((int)command.Target); break;
+                                case CommandKind.StoreCargo: session.StoreCargo((int)command.Target); break;
+                                case CommandKind.RetrieveVault: session.RetrieveVault((int)command.Target); break;
                                 case CommandKind.ActivateWeapon: session.ActivateWeapon((int)command.Target); break;
                                 case CommandKind.Chat: session.Chat(command.Text, (byte)command.Target); break;
                                 case CommandKind.ToggleWeapons: session.ToggleWeapons(command.Target); break;

@@ -243,6 +243,20 @@ namespace FortyTwoAndBeyond.Protocol
             return reader.UInt() | ((ulong)reader.UInt() << 32);
         }
 
+        /// <summary>Apply a global AUX vault snapshot or slot/price revision.</summary>
+        public static void ReadVault(byte[] body, EquipmentState equipment)
+        {
+            var reader = new AuxState(body); Flags fields = reader.Mask(18);
+            if (fields.Present[0]) { reader.UInt(); reader.UInt(); }
+            if (fields.Present[1]) return; // No published server packet uses this earlier field.
+            if (fields.Present[2]) reader.ReadSlots(equipment.Vault, 10);
+            else if (fields.Default[2])
+            {
+                if (reader.Byte() != 5) throw new InvalidDataException("Invalid vault reset.");
+                equipment.Vault = new ItemState[96];
+            }
+        }
+
         /// <returns>uint[]: Ability IDs advertised for this character, or null for another AUX update.</returns>
         public static uint[] ReadAvailableAbilities(byte[] body)
         {

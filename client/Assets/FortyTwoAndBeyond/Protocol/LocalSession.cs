@@ -369,6 +369,28 @@ namespace FortyTwoAndBeyond.Protocol
             }));
         }
 
+        /// <summary>Store a full cargo stack in the first available server vault slot.</summary>
+        public void StoreCargo(int slot)
+        {
+            if (!Ready || World.Station == null || slot < 0 || slot >= World.Equipment.Cargo.Length ||
+                World.Equipment.Cargo[slot]?.Present != true) return;
+            int destination = Array.FindIndex(World.Equipment.Vault, item => item?.Present != true);
+            if (destination < 0) { Status = "Vault is full"; return; }
+            SendInventoryTransfer(1, (uint)slot, 3, (uint)destination, World.Equipment.Cargo[slot].Quantity);
+            Status = "Storing cargo in vault";
+        }
+
+        /// <summary>Return a full vault stack to the first available cargo slot.</summary>
+        public void RetrieveVault(int slot)
+        {
+            if (!Ready || World.Station == null || slot < 0 || slot >= World.Equipment.Vault.Length ||
+                World.Equipment.Vault[slot]?.Present != true) return;
+            int destination = Array.FindIndex(World.Equipment.Cargo, item => item?.Present != true);
+            if (destination < 0) { Status = "Cargo hold is full"; return; }
+            SendInventoryTransfer(3, (uint)slot, 1, (uint)destination, World.Equipment.Vault[slot].Quantity);
+            Status = "Retrieving vault item";
+        }
+
         /// <summary>Select a visible contact for group targeting and combat.</summary>
         public void SelectTarget(uint target)
         {

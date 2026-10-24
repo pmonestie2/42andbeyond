@@ -128,7 +128,8 @@ follows the server-offered dialogue choices. A vendor branch opens its native
 stock and buy/sell panels with server quotes and credit balance. Room movement
 uses the station's advertised room buttons. The avatar enters each selected room
 through native room and pose packets, and the contact list shows NPCs placed in
-that room.
+that room. The **Station Vault** panel stores full cargo stacks and retrieves
+them while docked; the server publishes both container revisions after a move.
 
 ## Players, groups and mobs
 
@@ -207,7 +208,8 @@ and the full original combat and equipment UI remain unfinished.
   Normal play uses the standalone app, without the Editor's extra overhead.
 - The combat and loadout panels cover selection, weapon toggling, health, cargo,
   hardpoints, equip/unequip, and wreck loot. Docking and launch work through the
-  station handoff, room selection and avatar presence, NPC dialogue and vendor trading.
+  station handoff, room selection and avatar presence, NPC dialogue, vendor trading
+  and vault storage.
   The account bridge supplies the toon names and selected server slot.
 
 Physical scenery uses server positions and scale with approximate replacement
