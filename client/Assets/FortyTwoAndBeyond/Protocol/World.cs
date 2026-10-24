@@ -414,6 +414,7 @@ namespace FortyTwoAndBeyond.Protocol
         public Dictionary<uint, ResourceState> Resources { get; } = new Dictionary<uint, ResourceState>();
         public uint ResourceTargetId { get; private set; }
         public bool ResourceWindowOpen { get; private set; }
+        public MiningActivity MiningActivity { get; private set; }
         /// <summary>Track the selected resource while awaiting its native prospecting window.</summary>
         public void SetResourceTarget(uint id) { ResourceTargetId = id; ResourceWindowOpen = false; }
         /// <summary>Track the requested NPC while waiting for its talk tree.</summary>
@@ -448,7 +449,7 @@ namespace FortyTwoAndBeyond.Protocol
                     if (firstEnd < 0 || firstEnd + 1 >= b.Length) throw new InvalidDataException("Missing sector name.");
                     string name = Wire.Text(b, firstEnd + 1, b.Length - firstEnd - 1);
                     if (name.Length == 0) throw new InvalidDataException("Empty sector name.");
-                    if (Sector != name) { Objects.Clear(); Players.Clear(); Mobs.Clear(); StationAvatars.Clear(); Loot.Clear(); Resources.Clear(); ResourceTargetId = 0; ResourceWindowOpen = false; OpenLootId = 0; Shots.Clear(); Damages.Clear(); ClearConfirmation(); nextShot = nextDamage = 0; }
+                    if (Sector != name) { Objects.Clear(); Players.Clear(); Mobs.Clear(); StationAvatars.Clear(); Loot.Clear(); Resources.Clear(); ResourceTargetId = 0; ResourceWindowOpen = false; MiningActivity = null; OpenLootId = 0; Shots.Clear(); Damages.Clear(); ClearConfirmation(); nextShot = nextDamage = 0; }
                     Sector = name;
                     break;
                 case 0x4f:
@@ -458,7 +459,7 @@ namespace FortyTwoAndBeyond.Protocol
                     Production = new ProductionState();
                     StationAvatars.Clear();
                     Dialogue = null; Vendor = Array.Empty<ItemState>();
-                    ResourceTargetId = 0; ResourceWindowOpen = false;
+                    ResourceTargetId = 0; ResourceWindowOpen = false; MiningActivity = null;
                     if (Station != null) Sector = "Station " + Station.Id;
                     break;
                 case 0x7f:
@@ -505,6 +506,19 @@ namespace FortyTwoAndBeyond.Protocol
                     if (!Objects.ContainsKey(item.Id) && Objects.Count >= 10000) throw new InvalidDataException("World object limit exceeded.");
                     Objects[item.Id] = item;
                     break;
+                case 0x2012:
+                    MiningActivity prospect = MiningActivity.FromProspect(b, player);
+                    if (prospect != null) MiningActivity = prospect;
+                    break;
+                case 0x2013:
+                    MiningActivity tractor = MiningActivity.FromTractor(b, player, MiningActivity,
+                        ResourceTargetId);
+                    if (tractor != null) MiningActivity = tractor;
+                    break;
+                case 0x0f:
+                    if (b.Length != 4) throw new InvalidDataException("Invalid effect removal.");
+                    if (MiningActivity?.EffectId == Wire.U32(b, 0)) MiningActivity = null;
+                    break;
                 case 4:
                     Wire.Require(b, 0, 23);
                     uint actorId = Wire.U32(b, 0);
@@ -524,6 +538,10 @@ namespace FortyTwoAndBeyond.Protocol
                 case 0x1d:
                     Wire.Require(b, 0, 3);
                     string message = Wire.Text(b, 3, b.Length - 3);
+                    if (message.StartsWith("Prospected ", StringComparison.Ordinal) ||
+                        message.StartsWith("Prospecting interrupted", StringComparison.Ordinal) ||
+                        message.StartsWith("Reactor depleted while prospecting", StringComparison.Ordinal))
+                        MiningActivity = null;
                     if (Dialogue != null) Dialogue = Dialogue.WithMissionMessage(message);
                     foreach (string label in DeviceEffectLabels)
                     {
@@ -625,6 +643,9 @@ namespace FortyTwoAndBeyond.Protocol
                     break;
                 case 7:
                     if (b.Length != 4) throw new InvalidDataException("Invalid removal.");
+                    if (MiningActivity != null && MiningActivity.ArticleId != 0 &&
+                        MiningActivity.ArticleId == Wire.U32(b, 0))
+                        MiningActivity = null;
                     Objects.Remove(Wire.U32(b, 0));
                     Loot.Remove(Wire.U32(b, 0));
                     Resources.Remove(Wire.U32(b, 0));
@@ -676,7 +697,7 @@ namespace FortyTwoAndBeyond.Protocol
                     if (b.Length != 8 || Wire.U32(b, 4) != 0 || Wire.U32(b, 0) > 1)
                         throw new InvalidDataException("Invalid prospecting window state.");
                     ResourceWindowOpen = Wire.U32(b, 0) == 0;
-                    if (!ResourceWindowOpen) ResourceTargetId = 0;
+                    if (!ResourceWindowOpen) { ResourceTargetId = 0; MiningActivity = null; }
                     break;
             }
         }
@@ -723,6 +744,8 @@ namespace FortyTwoAndBeyond.Protocol
         public readonly ResourceView[] Resources;
         public readonly uint ResourceTargetId;
         public readonly bool ResourceWindowOpen;
+        public readonly MiningActivity MiningActivity;
+        public readonly float MiningProgress, MiningRemainingSeconds;
         public readonly string Invitation;
         public readonly ConfirmationPrompt Confirmation;
         public readonly string[] Messages;
@@ -767,6 +790,10 @@ namespace FortyTwoAndBeyond.Protocol
                 if (world.Vendor[i]?.Present == true) Vendor[i] = new ItemView(i, world.Vendor[i], world.ItemCatalog);
             Resources = world.Resources.Values.Select(state => new ResourceView(state, world.ItemCatalog)).ToArray();
             ResourceTargetId = world.ResourceTargetId; ResourceWindowOpen = world.ResourceWindowOpen;
+            MiningActivity = world.MiningActivity;
+            MiningProgress = MiningActivity?.Progress(now) ?? 0;
+            MiningRemainingSeconds = MiningActivity == null ? 0 :
+                MiningActivity.DurationSeconds * (1 - MiningProgress);
             Invitation = world.Invitation; Confirmation = world.Confirmation; Messages = world.Messages.ToArray();
             OpenLootId = world.OpenLootId;
             Loot = world.Loot.Select(entry => new CorpseLoot(entry.Key, entry.Value, world.ItemCatalog)).ToArray();

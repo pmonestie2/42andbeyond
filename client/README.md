@@ -180,7 +180,9 @@ from the server's acknowledgement and clears when the server ends the effect.
 Explorer pilots can click a mineable asteroid or gas cloud, open its prospecting
 window, and choose a server-listed ore slot. The server checks the ship, skill,
 distance, reactor energy, and shared resource claim before it awards ore to cargo.
-The panel shows the resource level, depletion, and stock from native packets.
+The panel shows the resource level, depletion, stock, and timed Prospect/Tractor
+phases from native packets. It blocks repeat ore clicks until the server reports
+completion or cancellation.
 The Skills button lists abilities advertised by the connected character's native
 RPG packet. Selecting one sends the native activation command, and the panel
 shows the server's combat, trade and explore levels, next-level progress bars,

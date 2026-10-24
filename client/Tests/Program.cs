@@ -12,7 +12,7 @@ internal static class Program
     private static void Main(string[] args)
     {
         CheckReassembly(); CheckWorld(); CheckMissionJournal(); CheckMissionDialogue();
-        CheckExperience(); CheckFlightThrottle();
+        CheckExperience(); CheckMiningPhases(); CheckFlightThrottle();
         CheckStationLayout(); CheckStationWalk(); CheckDemoRoster(); CheckAddress(); PeerChecks.Decode();
         Console.WriteLine("PASS: framing, ordering, fragmentation, duplicates, bounds, world decoding, private addresses");
         if (args.Length == 2 && args[0] == "--server") { PeerChecks.Live(args[1]); CheckServer(args[1]); }
@@ -193,6 +193,50 @@ internal static class Program
         byte[] invalid = (byte[])body.Clone();
         Array.Copy(BitConverter.GetBytes(1.5f), 0, invalid, 25, 4);
         Reject(() => world.Apply(new Frame(0x1b, invalid), 1));
+    }
+
+    /// <summary>Follow authoritative prospect, tractor, and cancellation packets.</summary>
+    private static void CheckMiningPhases()
+    {
+        var world = new World();
+        byte[] prospect = Wire.Body(writer =>
+        { writer.Write(1u); writer.Write(77u); writer.Write(9u); writer.Write(500u); writer.Write(5000u); });
+        world.Apply(new Frame(0x2012, prospect), 1);
+        Snapshot first = new Snapshot(world, "ready", true);
+        Assert(first.MiningActivity?.Phase == MiningPhase.Prospect &&
+            first.MiningActivity.TargetId == 77 && first.MiningActivity.EffectId == 9 &&
+            first.MiningActivity.DurationSeconds == 5 && first.MiningProgress >= 0 &&
+            first.MiningProgress < 1,
+            "Native prospect phase did not establish a bounded progress display.");
+        byte[] other = (byte[])prospect.Clone();
+        Array.Copy(BitConverter.GetBytes(2u), 0, other, 0, 4);
+        world.Apply(new Frame(0x2012, other), 1);
+        Assert(world.MiningActivity.EffectId == 9,
+            "Another pilot's prospect beam replaced the local phase.");
+        byte[] tractor = Wire.Body(writer =>
+        {
+            writer.Write(1u); writer.Write(10u); writer.Write(11u);
+            writer.Write((ushort)233); writer.Write(600u); writer.Write((ushort)3);
+            writer.Write(System.Text.Encoding.ASCII.GetBytes("Ore"));
+            writer.Write(2000u); writer.Write(200f);
+            writer.Write(10f); writer.Write(20f); writer.Write(30f);
+        });
+        world.Apply(new Frame(0x2013, tractor), 1);
+        Assert(world.MiningActivity.Phase == MiningPhase.Tractor &&
+            world.MiningActivity.TargetId == 77 && world.MiningActivity.ArticleId == 10 &&
+            world.MiningActivity.EffectId == 11 && world.MiningActivity.ItemName == "Ore" &&
+            world.MiningActivity.DurationSeconds == 2 && first.MiningActivity.Phase == MiningPhase.Prospect,
+            "Ore tractor transition lost the selected resource or changed an older snapshot.");
+        world.Apply(new Frame(0x0f, BitConverter.GetBytes(9u)), 1);
+        Assert(world.MiningActivity?.EffectId == 11, "An earlier effect removal cancelled tractor progress.");
+        world.Apply(new Frame(7, BitConverter.GetBytes(10u)), 1);
+        Assert(world.MiningActivity == null, "Collected ore left an active tractor display.");
+        world.Apply(new Frame(0x2012, prospect), 1);
+        world.Apply(new Frame(0x0f, BitConverter.GetBytes(9u)), 1);
+        Assert(world.MiningActivity == null, "Server cancellation left prospecting active.");
+        byte[] invalid = (byte[])prospect.Clone();
+        Array.Copy(BitConverter.GetBytes(100001u), 0, invalid, 16, 4);
+        Reject(() => world.Apply(new Frame(0x2012, invalid), 1));
     }
 
     /// <summary>Keep held flight controls reachable after focus and text entry.</summary>

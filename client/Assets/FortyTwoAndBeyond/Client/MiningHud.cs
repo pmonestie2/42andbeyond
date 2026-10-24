@@ -70,6 +70,9 @@ namespace FortyTwoAndBeyond.Client
                     .OrderBy(item => item.Position.Distance(snapshot.Position)).Take(12).ToArray();
                 sector = snapshot.Sector; refreshedAt = Time.unscaledTime + .25f;
             }
+            if (selectedId == 0 && snapshot.MiningActivity != null &&
+                snapshot.Objects.Any(item => item.Id == snapshot.MiningActivity.TargetId && item.Kind == 38))
+                selectedId = snapshot.MiningActivity.TargetId;
             if (selectedId != 0 && !snapshot.Objects.Any(item => item.Id == selectedId && item.Kind == 38))
                 selectedId = 0;
             if (Event.current.type == EventType.Repaint) DrawLabels(snapshot);
@@ -98,7 +101,11 @@ namespace FortyTwoAndBeyond.Client
             }
             if (GUI.Button(new Rect(panel.x + panel.width - 88, panel.y + 7, 76, 28), "CLOSE", flightHud.ButtonStyle))
                 client.CloseResource();
-            GUILayout.BeginArea(new Rect(panel.x + 12, panel.y + 79, panel.width - 24, panel.height - 116));
+            bool mining = snapshot.MiningActivity?.TargetId == selectedId;
+            if (mining) DrawMiningProgress(panel, snapshot);
+            float listTop = mining ? 131 : 79;
+            GUILayout.BeginArea(new Rect(panel.x + 12, panel.y + listTop,
+                panel.width - 24, panel.height - listTop - 37));
             oreScroll = GUILayout.BeginScrollView(oreScroll);
             if (stock == null) GUILayout.Label("Reading resource inventory…", flightHud.SmallStyle);
             else
@@ -106,10 +113,28 @@ namespace FortyTwoAndBeyond.Client
                 ItemView[] items = stock.Items.Where(item => item != null).ToArray();
                 if (items.Length == 0) GUILayout.Label("Resource depleted", flightHud.SmallStyle);
                 foreach (ItemView item in items)
+                {
+                    GUI.enabled = !mining;
                     if (GUILayout.Button($"PROSPECT  {item.Name}  ×{item.Quantity}", flightHud.ButtonStyle, GUILayout.Height(34)))
                         client.ProspectResource(item.Slot);
+                    GUI.enabled = true;
+                }
             }
             GUILayout.EndScrollView(); GUILayout.EndArea();
+        }
+
+        /// <summary>Show the server's timed prospect or tractor phase and its local countdown.</summary>
+        private void DrawMiningProgress(Rect panel, Snapshot snapshot)
+        {
+            MiningActivity activity = snapshot.MiningActivity;
+            string phase = activity.Phase == MiningPhase.Prospect ? "PROSPECTING" : "TRACTORING ORE";
+            GUI.Label(new Rect(panel.x + 12, panel.y + 80, panel.width - 24, 20),
+                $"{phase}   ·   {snapshot.MiningRemainingSeconds:0.0} S", flightHud.BodyStyle);
+            Rect track = new Rect(panel.x + 12, panel.y + 108, panel.width - 24, 8);
+            Fill(track, new Color(.08f, .2f, .25f));
+            Fill(new Rect(track.x, track.y, track.width * Mathf.Clamp01(snapshot.MiningProgress), track.height),
+                activity.Phase == MiningPhase.Prospect ? new Color(.3f, .86f, .8f) :
+                new Color(.98f, .75f, .32f));
         }
 
         /// <summary>Mark a bounded set of nearby mineable objects without covering ship contacts.</summary>
