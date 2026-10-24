@@ -606,6 +606,70 @@ fn text(value: &str) -> Vec<u8> {
     data
 }
 
+/// Returns:
+///     Vec<u8>: Native twelve-slot mission journal AUX record.
+fn mission_journal(inventory: &Inventory) -> Vec<u8> {
+    let catalog = crate::missions::MissionCatalog::load().expect("validated public missions");
+    let active = inventory
+        .missions
+        .active
+        .iter()
+        .enumerate()
+        .map(|(slot, progress)| {
+            let mission = catalog.get(progress.id).expect("validated mission journal");
+            let stages = aux_record(
+                20,
+                &(0..20).collect::<Vec<_>>(),
+                (1..=progress.stage as usize)
+                    .map(|index| {
+                        let stage = &mission.stages[index];
+                        let mut description = stage.description.clone();
+                        if index == progress.stage as usize {
+                            for (objective_index, objective) in stage.completion.iter().enumerate()
+                            {
+                                if objective.kind == 4 {
+                                    let count =
+                                        progress.counts.get(&objective_index).copied().unwrap_or(0);
+                                    description.push_str(&format!(
+                                        " ({count}/{} targets defeated)",
+                                        objective.count
+                                    ));
+                                }
+                            }
+                        }
+                        while description.len() > 511 {
+                            description.pop();
+                        }
+                        (
+                            index - 1,
+                            aux_record(2, &[], BTreeMap::from([(0, text(&description))])),
+                        )
+                    })
+                    .collect(),
+            );
+            let name = &mission.name[..mission.name.len().min(63)];
+            let summary = &mission.summary[..mission.summary.len().min(127)];
+            (
+                slot,
+                aux_record(
+                    19,
+                    &[16],
+                    BTreeMap::from([
+                        (0, (slot as u32).to_le_bytes().to_vec()),
+                        (1, text(name)),
+                        (2, text(summary)),
+                        (13, vec![1]),
+                        (14, (mission.stages.len() as u32).to_le_bytes().to_vec()),
+                        (15, progress.stage.to_le_bytes().to_vec()),
+                        (16, stages),
+                    ]),
+                ),
+            )
+        })
+        .collect();
+    aux_record(12, &(0..12).collect::<Vec<_>>(), active)
+}
+
 fn empty_inventory(size: usize) -> Vec<u8> {
     let item = aux_record(
         10,
@@ -740,6 +804,7 @@ pub fn player_aux(
         (2, instance_inventory(&inventory.vault, 96, 10, items)),
         (6, rpg),
         (8, u32::MAX.to_le_bytes().to_vec()),
+        (9, mission_journal(inventory)),
         (14, text(&sector.name)),
         (15, sector.id.to_le_bytes().to_vec()),
     ]);
@@ -1818,6 +1883,19 @@ pub fn peer_spawn(peer: &crate::peers::PeerSnapshot, tick: u32) -> Vec<Frame> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn mission_aux_record_contains_first_active_stage_and_resets_empty_slots() {
+        let items = ItemCatalog::load().unwrap();
+        let catalog = crate::missions::MissionCatalog::load().unwrap();
+        let mut inventory = Inventory::starter(&items).unwrap();
+        inventory.missions.start(102, 1, &catalog).unwrap();
+        let record = mission_journal(&inventory);
+        assert_eq!(record.len(), 314);
+        assert!(record
+            .windows(b"Basic Shooting Range".len())
+            .any(|window| window == b"Basic Shooting Range"));
+    }
+
     #[test]
     fn station_avatar_packets_use_cpp_room_and_pose_field_order() {
         let pose = crate::peers::StationPose {

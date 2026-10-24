@@ -9,6 +9,10 @@ pub(super) struct NpcInteraction {
     pub(super) npc: u32,
     pub(super) node: u8,
     pub(super) vendor: bool,
+    #[serde(default)]
+    pub(super) mission: Option<u32>,
+    #[serde(default)]
+    pub(super) mission_stage: u32,
 }
 
 impl PlayerSession {
@@ -45,12 +49,29 @@ impl PlayerSession {
             npc.name
         );
         self.close_npc();
+        let catalog = crate::missions::MissionCatalog::load()?;
+        let active = catalog.active_for_npc(identity, &self.inventory.missions);
+        let mission = active
+            .map(|(id, _)| id)
+            .or_else(|| catalog.offer(identity, &self.account.character, &self.inventory));
         self.npc_interaction = Some(NpcInteraction {
             npc: identity,
             node: 1,
             vendor: false,
+            mission,
+            mission_stage: active.map_or(0, |(_, stage)| stage),
         });
         self.show_npc_node(1)
+    }
+
+    /// Returns:
+    ///     TalkNode: Offered mission node or this NPC's ordinary conversation.
+    fn active_npc_node(&self, active: &NpcInteraction, node: u8) -> io::Result<TalkNode> {
+        if let Some(mission) = active.mission {
+            crate::missions::MissionCatalog::load()?.stage_node(mission, active.mission_stage, node)
+        } else {
+            self.npc_node(active.npc, node)
+        }
     }
 
     fn npc_node(&self, identity: u32, node: u8) -> io::Result<TalkNode> {
@@ -117,6 +138,73 @@ impl PlayerSession {
         .replace("@name", &profile.name)
     }
 
+    /// Returns:
+    ///     Inventory: Atomic mission completion and supported public rewards.
+    fn mission_completion_candidate(&self, mission: u32, stage: u32) -> io::Result<Inventory> {
+        let catalog = crate::missions::MissionCatalog::load()?;
+        let definition = catalog.get(mission)?;
+        let final_stage = definition
+            .stages
+            .get(stage as usize)
+            .filter(|_| stage as usize + 1 == definition.stages.len())
+            .ok_or_else(|| invalid("Mission is not at its final stage."))?;
+        if !final_stage.completion.iter().any(|objective| {
+            objective.kind == 1
+                && objective.data == i64::from(self.npc_interaction.as_ref().unwrap().npc)
+        }) {
+            return Err(invalid("Mission final NPC objective is unavailable."));
+        }
+        let mut candidate = self.inventory.clone();
+        candidate.missions.complete(mission, &catalog)?;
+        for reward in &final_stage.rewards {
+            let amount = match &reward.data {
+                crate::missions::MissionRewardData::Number(value) => u64::try_from(*value)
+                    .map_err(|_| invalid("Mission reward amount is negative."))?,
+                crate::missions::MissionRewardData::Script(_) => {
+                    return Err(invalid("Mission script rewards are not supported yet."));
+                }
+            };
+            match reward.kind {
+                1 => {
+                    candidate.credits = candidate
+                        .credits
+                        .checked_add(amount)
+                        .ok_or_else(|| invalid("Mission credit reward overflow."))?;
+                }
+                2 => {
+                    candidate.explore_xp = candidate
+                        .explore_xp
+                        .checked_add(amount)
+                        .ok_or_else(|| invalid("Mission explore reward overflow."))?;
+                }
+                3 => {
+                    candidate.combat_xp = candidate
+                        .combat_xp
+                        .checked_add(amount)
+                        .ok_or_else(|| invalid("Mission combat reward overflow."))?;
+                }
+                4 => {
+                    candidate.trade_xp = candidate
+                        .trade_xp
+                        .checked_add(amount)
+                        .ok_or_else(|| invalid("Mission trade reward overflow."))?;
+                }
+                9 => {
+                    let skill = u32::try_from(amount)
+                        .map_err(|_| invalid("Mission skill reward is invalid."))?;
+                    if self.skill_catalog.level(skill) == 0 {
+                        return Err(invalid(
+                            "Mission rewards a skill unavailable to this class.",
+                        ));
+                    }
+                    candidate.mission_awarded_skills.insert(skill);
+                }
+                _ => return Err(invalid("Mission reward type is not implemented yet.")),
+            }
+        }
+        Ok(candidate)
+    }
+
     fn show_npc_node(&mut self, node: u8) -> io::Result<()> {
         let identity = self
             .npc_interaction
@@ -126,9 +214,52 @@ impl PlayerSession {
         if !self.npc_in_current_room(identity) {
             return Err(invalid("NPC conversation is no longer in your room."));
         }
-        let mut entry = self.npc_node(identity, node)?;
-        if entry.flag > 1 {
+        let active = self.npc_interaction.as_ref().unwrap().clone();
+        let mut entry = self.active_npc_node(&active, node)?;
+        if entry.flag > 1 && !(active.mission.is_some() && matches!(entry.flag, 2 | 5 | 6)) {
             return Err(invalid("This NPC mission action is not implemented yet."));
+        }
+        if entry.flag == 5 {
+            let mission = active.mission.unwrap();
+            let catalog = crate::missions::MissionCatalog::load()?;
+            let destination = catalog
+                .get(mission)?
+                .stages
+                .get(active.mission_stage as usize)
+                .and_then(|stage| stage.nodes.iter().find(|entry| entry.id == node))
+                .map(|entry| entry.destination)
+                .ok_or_else(|| invalid("Mission dialogue destination is unavailable."))?;
+            let destination = u32::try_from(destination)
+                .map_err(|_| invalid("Mission dialogue destination is invalid."))?;
+            let mut candidate = self.inventory.clone();
+            if active.mission_stage == 0 {
+                if destination != 1
+                    || catalog.offer(identity, &self.account.character, &self.inventory)
+                        != Some(mission)
+                {
+                    return Err(invalid("Mission offer is no longer eligible."));
+                }
+                candidate
+                    .missions
+                    .start(mission, crate::resources::unix_ms(), &catalog)?;
+            } else {
+                candidate.missions.advance(mission, destination, &catalog)?;
+            }
+            self.commit_inventory(candidate)?;
+            self.npc_interaction.as_mut().unwrap().mission_stage = destination;
+            self.pending.push(packets::message(&format!(
+                "Mission {}: stage {destination}.",
+                catalog.get(mission)?.name
+            )));
+        } else if entry.flag == 6 {
+            let mission = active.mission.unwrap();
+            let candidate = self.mission_completion_candidate(mission, active.mission_stage)?;
+            self.commit_inventory(candidate)?;
+            self.npc_interaction.as_mut().unwrap().mission = None;
+            self.pending.push(packets::message(&format!(
+                "Mission completed: {}.",
+                crate::missions::MissionCatalog::load()?.get(mission)?.name
+            )));
         }
         // A few public talk trees advertise trade without a vendor group. Keep
         // the conversation usable while making the content gap explicit.
@@ -213,7 +344,7 @@ impl PlayerSession {
         if !self.npc_in_current_room(active.npc) {
             return Err(invalid("NPC conversation is no longer in your room."));
         }
-        let current = self.npc_node(active.npc, active.node)?;
+        let current = self.active_npc_node(active, active.node)?;
         // A modified client cannot jump directly to any trade/mission node.
         if !current.branches.iter().any(|branch| branch.node == choice)
             && !(choice == 0 && (current.branches.is_empty() || active.vendor))
@@ -284,7 +415,7 @@ impl PlayerSession {
     pub(super) fn restore_npc_service(&mut self) -> io::Result<()> {
         if let Some(active) = self.npc_interaction.clone() {
             if !self.npc_in_current_room(active.npc)
-                || self.npc_node(active.npc, active.node).is_err()
+                || self.active_npc_node(&active, active.node).is_err()
             {
                 self.close_npc();
             } else if active.vendor {

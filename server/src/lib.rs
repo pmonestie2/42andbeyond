@@ -17,6 +17,7 @@ pub mod items;
 pub mod logging;
 pub mod loot;
 pub mod loot_world;
+pub mod missions;
 pub mod mob;
 pub mod motion;
 pub mod npcs;

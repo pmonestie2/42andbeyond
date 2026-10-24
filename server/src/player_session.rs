@@ -1176,7 +1176,8 @@ impl PlayerSession {
         let experience_changed = candidate.combat_xp != self.inventory.combat_xp
             || candidate.explore_xp != self.inventory.explore_xp
             || candidate.trade_xp != self.inventory.trade_xp
-            || candidate.xp_start_level != self.inventory.xp_start_level;
+            || candidate.xp_start_level != self.inventory.xp_start_level
+            || candidate.missions != self.inventory.missions;
         // Publish only after durable replacement. A disk failure leaves the
         // authoritative inventory unchanged and sends no success snapshot.
         fs::create_dir_all(&self.state_dir)?;
@@ -2857,6 +2858,137 @@ mod tests {
             position: [0.; 3],
             action: 0x41,
         });
+    }
+
+    #[test]
+    fn earthcorps_npc_mission_acceptance_commits_journal_and_native_aux_once() {
+        let mut ship = session();
+        ship.account.character.race = 0;
+        ship.account.character.profession = 0;
+        ship.inventory.xp_start_level = 0;
+        ship.sector = ship.sectors.sector(10151).unwrap();
+        ship.logged_in = true;
+        enter_npc_room(&mut ship, 46);
+        ship.open_npc(46).unwrap();
+        assert_eq!(ship.npc_interaction.as_ref().unwrap().mission, Some(102));
+        let blocked = ship.state_dir.join("inventory.json.tmp");
+        std::fs::create_dir_all(&ship.state_dir).unwrap();
+        std::fs::create_dir(&blocked).unwrap();
+        assert!(npc_choice(&mut ship, 2).is_err());
+        assert!(ship.inventory.missions.active.is_empty());
+        std::fs::remove_dir(blocked).unwrap();
+        npc_choice(&mut ship, 2).unwrap();
+        assert_eq!(ship.inventory.missions.active[0].id, 102);
+        assert_eq!(ship.inventory.missions.active[0].stage, 1);
+        assert!(ship.pending.iter().any(|frame| {
+            frame.opcode == 0x1b
+                && frame
+                    .body
+                    .windows(b"Basic Shooting Range".len())
+                    .any(|window| window == b"Basic Shooting Range")
+        }));
+        let saved: crate::inventory::Inventory =
+            serde_json::from_slice(&std::fs::read(ship.state_dir.join("inventory.json")).unwrap())
+                .unwrap();
+        assert_eq!(saved.missions, ship.inventory.missions);
+        assert!(npc_choice(&mut ship, 2).is_err());
+        ship.open_npc(46).unwrap();
+        assert_ne!(ship.npc_interaction.as_ref().unwrap().mission, Some(102));
+    }
+
+    #[test]
+    fn mission_mob_kills_share_the_combat_receipt_and_advance_once() {
+        let mut ship = session();
+        ship.logged_in = true;
+        let mut inventory = ship.inventory.clone();
+        inventory
+            .missions
+            .start(102, 1, &crate::missions::MissionCatalog::load().unwrap())
+            .unwrap();
+        ship.commit_inventory(inventory).unwrap();
+        let player = ship.player_id();
+        for generation in 1..=3 {
+            let award = crate::loot_world::KillAward {
+                sector: 1076,
+                death: crate::loot_world::MobDeath {
+                    spawn: 46,
+                    generation,
+                },
+                killer: player,
+                level: 1,
+                amount: Some(100),
+                source_killer: player,
+                template: 1461,
+            };
+            ship.settle_kill_award(&award).unwrap();
+            ship.settle_kill_award(&award).unwrap();
+            assert_eq!(
+                ship.inventory.missions.active[0].stage,
+                if generation == 3 { 2 } else { 1 }
+            );
+        }
+        assert_eq!(ship.inventory.combat_xp, 300);
+        assert!(ship.inventory.missions.active[0].counts.is_empty());
+        let saved: crate::inventory::Inventory =
+            serde_json::from_slice(&std::fs::read(ship.state_dir.join("inventory.json")).unwrap())
+                .unwrap();
+        assert_eq!(saved.missions.active[0].stage, 2);
+    }
+
+    #[test]
+    fn shooting_range_mission_returns_to_npc_and_commits_final_rewards_once() {
+        let mut ship = session();
+        ship.account.character.race = 0;
+        ship.account.character.profession = 0;
+        ship.skill_catalog = SkillCatalog::for_profile(&ship.account.character).unwrap();
+        ship.inventory.xp_start_level = 0;
+        ship.sector = ship.sectors.sector(10151).unwrap();
+        ship.logged_in = true;
+        enter_npc_room(&mut ship, 46);
+        ship.open_npc(46).unwrap();
+        assert_eq!(ship.npc_interaction.as_ref().unwrap().mission, Some(102));
+        npc_choice(&mut ship, 2).unwrap();
+        ship.close_npc();
+        let player = ship.player_id();
+        for generation in 1..=8 {
+            let award = crate::loot_world::KillAward {
+                sector: 1015,
+                death: crate::loot_world::MobDeath {
+                    spawn: 476202,
+                    generation,
+                },
+                killer: player,
+                level: 1,
+                amount: Some(100),
+                source_killer: player,
+                template: 1461,
+            };
+            ship.settle_kill_award(&award).unwrap();
+            if generation == 3 {
+                assert_eq!(ship.inventory.missions.active[0].stage, 2);
+                ship.open_npc(46).unwrap();
+                assert_eq!(ship.npc_interaction.as_ref().unwrap().mission_stage, 2);
+                for choice in [2, 3, 4] {
+                    npc_choice(&mut ship, choice).unwrap();
+                }
+                assert_eq!(ship.inventory.missions.active[0].stage, 3);
+                ship.close_npc();
+            }
+        }
+        assert_eq!(ship.inventory.missions.active[0].stage, 4);
+        ship.open_npc(46).unwrap();
+        assert_eq!(ship.npc_interaction.as_ref().unwrap().mission_stage, 4);
+        npc_choice(&mut ship, 2).unwrap();
+        assert!(ship.inventory.missions.active.is_empty());
+        assert!(ship.inventory.missions.completed.contains(&102));
+        assert!(ship.inventory.mission_awarded_skills.contains(&22));
+        assert_eq!(ship.inventory.combat_xp, 5800);
+        let saved: crate::inventory::Inventory =
+            serde_json::from_slice(&std::fs::read(ship.state_dir.join("inventory.json")).unwrap())
+                .unwrap();
+        assert_eq!(saved.missions, ship.inventory.missions);
+        assert_eq!(saved.combat_xp, 5800);
+        assert!(npc_choice(&mut ship, 2).is_err());
     }
 
     #[test]

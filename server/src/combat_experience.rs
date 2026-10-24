@@ -24,6 +24,7 @@ impl PlayerSession {
             || award.death.generation == 0
             || !(1..=100).contains(&award.level)
             || award.amount.is_some_and(|amount| amount > 8000)
+            || award.source_killer != 0 && award.source_killer & 0xff000000 != 0x40000000
         {
             return Err(invalid("Invalid combat XP award owner or death."));
         }
@@ -46,10 +47,22 @@ impl PlayerSession {
             .checked_add(amount)
             .ok_or_else(|| invalid("Combat XP balance overflow."))?;
         candidate.combat_awards.insert(key, award.death.generation);
+        let mission_advanced = if award.source_killer == award.killer {
+            candidate
+                .missions
+                .credit_kill(award.template, &crate::missions::MissionCatalog::load()?)?
+        } else {
+            None
+        };
         self.commit_inventory(candidate)?;
         if amount > 0 {
             self.pending.push(packets::message(&format!(
                 "Defeated MOB: {amount} Combat experience earned."
+            )));
+        }
+        if let Some((mission, stage)) = mission_advanced {
+            self.pending.push(packets::message(&format!(
+                "Mission {mission} advanced to stage {stage}."
             )));
         }
         crate::server_log!(

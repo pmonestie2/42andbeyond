@@ -62,6 +62,11 @@ pub struct KillAward {
     pub level: u32,
     #[serde(default)]
     pub amount: Option<u64>,
+    /// Optional in pre-mission award files. Only the destroying pilot advances kills.
+    #[serde(default)]
+    pub source_killer: u32,
+    #[serde(default)]
+    pub template: u32,
 }
 
 /// A recipient and frozen XP amount resolved from the group at death capture.
@@ -217,6 +222,7 @@ impl LootWorld {
                     || award.death.spawn == 0
                     || award.death.generation == 0
                     || award.killer & 0xff000000 != 0x40000000
+                    || award.source_killer != 0 && award.source_killer & 0xff000000 != 0x40000000
                     || !(1..=100).contains(&award.level)
                     || award.amount.is_some_and(|amount| amount > 8000)
                     || state
@@ -361,6 +367,8 @@ impl LootWorld {
                 killer: credit.player,
                 level: birth.level,
                 amount: credit.amount,
+                source_killer: birth.killer,
+                template: birth.template,
             }));
     }
     pub fn corpses(&self) -> impl Iterator<Item = &Corpse> {
@@ -782,6 +790,8 @@ mod tests {
         let id = world.spawn(birth(1), &catalog(), &items).unwrap().unwrap();
         assert_eq!(world.spawn(birth(1), &catalog(), &items).unwrap(), Some(id));
         assert_eq!(world.pending_awards(ALICE).len(), 1);
+        assert_eq!(world.pending_awards(ALICE)[0].source_killer, ALICE);
+        assert_eq!(world.pending_awards(ALICE)[0].template, 1);
         let mut restored = LootWorld::load(path.clone(), 1076, &items).unwrap();
         assert_eq!(restored.pending_awards(ALICE), world.pending_awards(ALICE));
         assert_eq!(

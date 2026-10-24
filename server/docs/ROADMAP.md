@@ -115,6 +115,16 @@ mean the corresponding gameplay system is complete.
   player. Accepted in-range group members now receive their own frozen native
   base XP, with independent receipts and retry after one member's write fails.
   Skill-point spending and ordinary level-one character creation remain open.
+- The public mission catalog loads all 364 imported definitions, but offers only
+  the fully wired EarthCorps Basic Shooting Range mission (ID 102) for now.
+  Lieutenant Kyle Raine's native dialogue starts it; the twelve-slot player
+  journal and stage descriptions publish through native AUX. Destroying the
+  specified Trash Collector Bots advances both kill stages with the same durable
+  death receipt as combat XP. Return dialogue commits the next stage and the
+  final combat XP and skill-unlock receipt atomically. The class catalog still
+  grants sandbox skills at their ceiling, so training effects remain future
+  work. Other mission objectives, offers,
+  scripts, item/faction rewards and timed/forfeitable jobs remain pending.
 - Vault transfers require an authoritative station sector. Rejected space
   transfers preserve the inventory and send the current cargo/vault state.
 - Public Turbo Weapons devices now supply a timed self-buff through the same
@@ -166,7 +176,8 @@ mean the corresponding gameplay system is complete.
 5. Native refinery/crafting playtests, additional NPC services, trade progression,
    crafting quality/overrides and original dismantling balance. Refining currently uses
    the archived prototype 200/150 base/negotiated quote; full pricing is pending.
-6. Mission/job content, progression, character creation/classes and faction rules.
+6. Remaining mission/job objectives and NPC offers, progression, character
+   creation/classes and faction rules.
 7. Broader multiplayer: native interior-avatar playtests, group warp, guilds, trading, interest
    management/load tests and durable world state.
 8. Runtime content/database loading, remaining DAT-backed definitions, operational

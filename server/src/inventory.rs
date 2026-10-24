@@ -107,6 +107,10 @@ pub struct Inventory {
     pub loot_receipts: BTreeMap<u64, crate::loot_world::LootReceipt>,
     #[serde(default)]
     pub faction_standings: BTreeMap<u32, f32>,
+    #[serde(default)]
+    pub missions: crate::missions::MissionJournal,
+    #[serde(default)]
+    pub mission_awarded_skills: std::collections::BTreeSet<u32>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -240,6 +244,8 @@ impl Inventory {
             craft_job: None,
             loot_receipts: BTreeMap::new(),
             faction_standings: BTreeMap::new(),
+            missions: crate::missions::MissionJournal::default(),
+            mission_awarded_skills: std::collections::BTreeSet::new(),
         };
         for starting in templates.starting_items()? {
             if starting.slot >= EQUIPMENT_SLOTS || inventory.equipped[starting.slot].is_some() {
@@ -272,6 +278,13 @@ impl Inventory {
     }
 
     pub fn validate(&self, templates: &ItemCatalog) -> io::Result<()> {
+        self.missions
+            .validate(&crate::missions::MissionCatalog::load()?)?;
+        if self.mission_awarded_skills.len() > 64
+            || self.mission_awarded_skills.iter().any(|skill| *skill >= 64)
+        {
+            return Err(invalid("Invalid awarded mission skills."));
+        }
         if self.xp_start_level > crate::experience::MAX_LEVEL {
             return Err(invalid("Invalid XP starting level."));
         }
