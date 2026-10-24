@@ -28,13 +28,14 @@ namespace FortyTwoAndBeyond.Client
         {
             public readonly uint Target;
             public readonly LineRenderer Ring;
+            public readonly LineRenderer[] Sparks;
             public readonly Color Color;
             public readonly bool Critical;
             public readonly float Started;
 
             /// <summary>Track a ring spawned only by a confirmed server damage event.</summary>
-            public Impact(uint target, LineRenderer ring, Color color, bool critical)
-            { Target = target; Ring = ring; Color = color; Critical = critical; Started = Time.unscaledTime; }
+            public Impact(uint target, LineRenderer ring, LineRenderer[] sparks, Color color, bool critical)
+            { Target = target; Ring = ring; Sparks = sparks; Color = color; Critical = critical; Started = Time.unscaledTime; }
         }
 
         private readonly List<Beam> beams = new List<Beam>();
@@ -43,7 +44,8 @@ namespace FortyTwoAndBeyond.Client
         private readonly RemoteShips ships;
         private readonly Material material;
         private Camera effectCamera;
-        private LineRenderer miningHalo, miningCore, miningRing;
+        private float normalFieldOfView = 60f;
+        private LineRenderer miningHalo, miningCore, miningRing, miningArc;
         private MiningActivity miningActivity;
         private Vector3 miningPoint;
         private LineRenderer lootHalo, lootCore, lootFilament, lootRing;
@@ -105,13 +107,21 @@ namespace FortyTwoAndBeyond.Client
                 if (snapshot.WarpPhase != WarpPhase.Idle || !TryPoint(damage.Target, out _) ||
                     damage.Amount <= 0) continue;
                 bool critical = damage.Outcome == DamageOutcome.Critical;
-                Color tint = critical ? new Color(1f, .82f, .32f) :
-                    damage.Target == playerId ? new Color(1f, .42f, .2f) :
-                    new Color(.38f, .9f, 1f);
+                Color tint = DamageColor(damage);
                 LineRenderer ring = Line("Confirmed impact", .035f, tint, 25);
                 if (ring == null) continue;
                 ring.useWorldSpace = false;
-                impacts.Add(new Impact(damage.Target, ring, tint, critical));
+                LineRenderer[] sparks = critical ? new LineRenderer[4] : System.Array.Empty<LineRenderer>();
+                for (int index = 0; index < sparks.Length; index++)
+                {
+                    sparks[index] = Line("Critical impact spark", .055f,
+                        new Color(1f, .87f, .44f), 2);
+                    if (sparks[index] == null) continue;
+                    sparks[index].transform.SetParent(ring.transform, false);
+                    sparks[index].useWorldSpace = false;
+                    sparks[index].enabled = false;
+                }
+                impacts.Add(new Impact(damage.Target, ring, sparks, tint, critical));
                 if (impacts.Count > 24) RemoveImpact(0);
             }
             SetWarpPhase(snapshot.WarpPhase, snapshot.WarpArrived);
@@ -131,7 +141,17 @@ namespace FortyTwoAndBeyond.Client
                 miningHalo = Line("Mining field", .12f, tint, 2);
                 miningCore = Line("Mining focus", .025f, Color.white, 2);
                 miningRing = Line("Ore lock", .035f, tint, 25);
-                if (miningRing != null) miningRing.useWorldSpace = false;
+                if (miningRing != null)
+                {
+                    miningRing.useWorldSpace = false;
+                    miningArc = Line("Ore scan progress", .065f, tint, 33);
+                    if (miningArc != null)
+                    {
+                        miningArc.transform.SetParent(miningRing.transform, false);
+                        miningArc.useWorldSpace = false;
+                        miningArc.enabled = false;
+                    }
+                }
             }
             miningActivity = activity;
             miningPoint = player.position + SpaceClient.Convert(resource.Position) -
@@ -173,8 +193,27 @@ namespace FortyTwoAndBeyond.Client
         private Camera ViewCamera()
         {
             if (effectCamera == null)
+            {
                 effectCamera = Camera.main != null ? Camera.main : Object.FindFirstObjectByType<Camera>();
+                if (effectCamera != null) normalFieldOfView = effectCamera.fieldOfView;
+            }
             return effectCamera;
+        }
+
+        /// <returns>Color: A damage-type tint derived from the server's confirmed result.</returns>
+        private Color DamageColor(DamageEvent damage)
+        {
+            switch (damage.Kind)
+            {
+                case DamageKind.Explosive: return new Color(1f, .7f, .28f);
+                case DamageKind.Plasma: return new Color(1f, .4f, .18f);
+                case DamageKind.Emp: return new Color(.38f, .64f, 1f);
+                case DamageKind.Chemical: return new Color(.45f, 1f, .43f);
+                case DamageKind.Psionic: return new Color(.83f, .47f, 1f);
+                case DamageKind.System: return new Color(.72f, .6f, 1f);
+                default: return damage.Target == playerId ? new Color(1f, .42f, .2f) :
+                    new Color(.38f, .9f, 1f);
+            }
         }
 
         /// <summary>Track moving endpoints and animate the server-confirmed effects.</summary>
@@ -218,6 +257,19 @@ namespace FortyTwoAndBeyond.Client
                 Color color = impact.Color; color.a = (impact.Critical ? 1f : .85f) * (1 - age / .48f);
                 impact.Ring.startColor = impact.Ring.endColor = color;
                 impact.Ring.widthMultiplier = (impact.Critical ? .07f : .04f) * (1 - age / .48f);
+                for (int spark = 0; spark < impact.Sparks.Length; spark++)
+                {
+                    LineRenderer ray = impact.Sparks[spark];
+                    if (ray == null) continue;
+                    float angle = (spark + .5f) * Mathf.PI * .5f;
+                    Vector3 direction = new Vector3(Mathf.Cos(angle), Mathf.Sin(angle), 0);
+                    ray.SetPosition(0, direction * (radius + .08f));
+                    ray.SetPosition(1, direction * (radius + .42f * (1 - age / .48f)));
+                    Color flash = new Color(1f, .87f, .44f, .9f * (1 - age / .48f));
+                    ray.startColor = ray.endColor = flash;
+                    ray.widthMultiplier = .055f * (1 - age / .48f);
+                    ray.enabled = true;
+                }
             }
             if (miningActivity != null && miningHalo != null && miningCore != null && miningRing != null)
             {
@@ -245,6 +297,17 @@ namespace FortyTwoAndBeyond.Client
                 }
                 tint.a = .75f;
                 miningRing.startColor = miningRing.endColor = tint;
+                if (miningArc != null)
+                {
+                    for (int point = 0; point < 33; point++)
+                    {
+                        float angle = -Mathf.PI * .5f + progress * Mathf.PI * 2 * point / 32;
+                        miningArc.SetPosition(point, new Vector3(Mathf.Cos(angle) * (radius + .07f),
+                            Mathf.Sin(angle) * (radius + .07f), 0));
+                    }
+                    miningArc.startColor = miningArc.endColor = tint;
+                    miningArc.enabled = true;
+                }
             }
             TickLoot();
             TickWarp();
@@ -322,9 +385,19 @@ namespace FortyTwoAndBeyond.Client
             if (warpPhase == WarpPhase.Idle) return;
             Camera camera = ViewCamera();
             if (camera == null) return;
+            if (camera.orthographic)
+            {
+                foreach (LineRenderer streak in warpStreaks)
+                    if (streak != null) streak.enabled = false;
+                return;
+            }
             float age = Time.unscaledTime - warpChangedAt;
             float fade = warpPhase == WarpPhase.Charging ? Mathf.Clamp01(age / 1.2f) :
                 warpPhase == WarpPhase.Recovering ? 1 - Mathf.Clamp01(age / 2f) : 1;
+            float targetFieldOfView = warpPhase == WarpPhase.Traveling ? normalFieldOfView + 11f :
+                warpPhase == WarpPhase.Charging ? normalFieldOfView + 4f : normalFieldOfView;
+            camera.fieldOfView = Mathf.Lerp(camera.fieldOfView, targetFieldOfView,
+                1 - Mathf.Exp(-5f * Time.unscaledDeltaTime));
             for (int index = 0; index < warpStreaks.Length; index++)
             {
                 LineRenderer streak = warpStreaks[index];
@@ -351,6 +424,7 @@ namespace FortyTwoAndBeyond.Client
         /// <summary>Remove travel streaks when the server returns to idle or the scene resets.</summary>
         private void ClearWarp()
         {
+            if (effectCamera != null) effectCamera.fieldOfView = normalFieldOfView;
             for (int index = 0; index < warpStreaks.Length; index++)
             {
                 if (warpStreaks[index] != null) Object.Destroy(warpStreaks[index].gameObject);
@@ -364,7 +438,7 @@ namespace FortyTwoAndBeyond.Client
             if (miningHalo != null) Object.Destroy(miningHalo.gameObject);
             if (miningCore != null) Object.Destroy(miningCore.gameObject);
             if (miningRing != null) Object.Destroy(miningRing.gameObject);
-            miningHalo = miningCore = miningRing = null;
+            miningHalo = miningCore = miningRing = miningArc = null;
             miningActivity = null;
         }
 

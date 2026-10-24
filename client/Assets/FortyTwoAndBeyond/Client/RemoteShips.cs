@@ -10,6 +10,8 @@ namespace FortyTwoAndBeyond.Client
         private sealed class View
         {
             public readonly Transform Model;
+            public Transform Marker;
+            public bool Crew;
             public ShipActor State;
             public Vector3 Destination;
             public Vector3 Velocity;
@@ -45,6 +47,7 @@ namespace FortyTwoAndBeyond.Client
 
         private readonly Dictionary<uint, View> ships = new Dictionary<uint, View>();
         private readonly HashSet<uint> visible = new HashSet<uint>();
+        private readonly HashSet<uint> crewIds = new HashSet<uint>();
         private readonly List<uint> removed = new List<uint>();
         private readonly SpaceArt art;
         private readonly Transform parent;
@@ -55,22 +58,33 @@ namespace FortyTwoAndBeyond.Client
         { this.art = art; this.parent = parent; }
 
         /// <summary>Reconcile server visibility without recreating ships on movement packets.</summary>
-        public void Apply(ShipActor[] players)
+        public void Apply(ShipActor[] players, GroupState group)
         {
             visible.Clear();
+            crewIds.Clear();
+            if (group != null)
+                foreach (GroupMember member in group.Members) crewIds.Add(member.Id);
             foreach (ShipActor player in players)
             {
                 if (!player.HasPosition) continue;
+                bool crew = player.IsPlayer && crewIds.Contains(player.Id);
                 visible.Add(player.Id);
                 if (!ships.TryGetValue(player.Id, out View view))
                 {
                     Transform model = player.IsPlayer ? art.Ship(parent) : art.Mob(parent);
                     model.localScale = Vector3.one * .25f * Mathf.Clamp(player.Scale, .05f, 100);
-                    art.ContactMarker(model, player.IsPlayer, player.Hostile);
                     view = new View(model, player);
+                    view.Marker = art.ContactMarker(model, player.IsPlayer, player.Hostile, crew);
+                    view.Crew = crew;
                     ships.Add(player.Id, view);
                 }
                 else if (!ReferenceEquals(view.State, player)) view.Apply(player);
+                if (view.Crew != crew)
+                {
+                    if (view.Marker != null) Object.Destroy(view.Marker.gameObject);
+                    view.Marker = art.ContactMarker(view.Model, player.IsPlayer, player.Hostile, crew);
+                    view.Crew = crew;
+                }
                 view.Model.name = player.Name;
             }
             removed.Clear();
@@ -109,7 +123,7 @@ namespace FortyTwoAndBeyond.Client
         public void Clear()
         {
             foreach (View view in ships.Values) Object.Destroy(view.Model.gameObject);
-            ships.Clear(); visible.Clear(); removed.Clear();
+            ships.Clear(); visible.Clear(); crewIds.Clear(); removed.Clear();
         }
     }
 }

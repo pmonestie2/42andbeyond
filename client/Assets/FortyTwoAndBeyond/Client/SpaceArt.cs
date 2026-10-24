@@ -15,7 +15,7 @@ namespace FortyTwoAndBeyond.Client
         private readonly Mesh ring, shipHull;
         private readonly GameObject corvetteAsset, frigateAsset;
         private readonly Material corvetteSurface, frigateSurface;
-        private readonly Material hull, trim, dark, glass, glow, amber, hostile, mineral, rock, oreRock, field;
+        private readonly Material hull, trim, dark, glass, glow, amber, hostile, crewSignal, mineral, rock, oreRock, field;
         public Material Sky { get; }
 
         /// <summary>Create shared assets once rather than allocating them per object or frame.</summary>
@@ -32,10 +32,11 @@ namespace FortyTwoAndBeyond.Client
             glow = Surface(new Color(.05f, .6f, .85f), .2f, .5f, new Color(.1f, 1.4f, 2.1f));
             amber = Surface(new Color(.8f, .35f, .06f), .4f, .3f, new Color(1.3f, .35f, .04f));
             hostile = Surface(new Color(.7f, .045f, .035f), .25f, .5f, new Color(1.9f, .08f, .03f));
+            crewSignal = Surface(new Color(.08f, .7f, .36f), .2f, .45f, new Color(.12f, 1.5f, .6f));
             mineral = Surface(new Color(.04f, .62f, .72f), .35f, .65f, new Color(.08f, 1.15f, 1.4f));
             rock = Surface(new Color(.24f, .21f, .19f), .08f, .12f);
             rock.SetFloat("_Grain", 1);
-            oreRock = Surface(new Color(.56f, .61f, .64f), .15f, .18f);
+            oreRock = Surface(new Color(.36f, .41f, .46f), .08f, .12f);
             oreRock.SetTexture("_DetailTex", LoadDetail("OreRock"));
             oreRock.SetFloat("_TextureStrength", .95f);
             field = ShaderMaterial("42 and Beyond/GateField");
@@ -264,16 +265,21 @@ namespace FortyTwoAndBeyond.Client
             return root;
         }
 
-        /// <summary>Add a compact scanner outline without obscuring nearby ships.</summary>
-        public void ContactMarker(Transform ship, bool isPlayer, bool isHostile)
+        /// <returns>Transform: A compact, affiliation-colored scanner marker beneath a visible ship.</returns>
+        public Transform ContactMarker(Transform ship, bool isPlayer, bool isHostile, bool isCrew)
         {
-            Transform marker = Root(ship, isPlayer ? "Player scanner outline" : "Mob scanner outline");
+            Transform marker = Root(ship, isCrew ? "Crew scanner outline" :
+                isPlayer ? "Player scanner outline" : "Mob scanner outline");
             marker.localScale = Vector3.one / Mathf.Max(.01f, ship.localScale.x);
-            Material signal = isPlayer ? glow : isHostile ? hostile : amber;
-            Model(marker, ring, signal, Vector3.zero, Vector3.one * .22f);
+            Material signal = isCrew ? crewSignal : isPlayer ? glow : isHostile ? hostile : amber;
+            Model(marker, ring, signal, Vector3.zero, Vector3.one * (isCrew ? .29f : .22f));
             for (int side = -1; side <= 1; side += 2)
                 Part(marker, PrimitiveType.Cube, new Vector3(side * .29f, 0, 0),
                     new Vector3(.08f, .02f, .02f), signal);
+            if (isCrew)
+                Part(marker, PrimitiveType.Cube, new Vector3(0, .36f, 0),
+                    new Vector3(.18f, .045f, .025f), signal);
+            return marker;
         }
 
         /// <returns>A solid replacement model for a server object, or null for invisible boundary markers.</returns>
@@ -284,7 +290,7 @@ namespace FortyTwoAndBeyond.Client
             if (item.Kind == 11) Gate(root);
             else if (item.Kind == 12) Station(root);
             else if (item.Kind == 25) { Wreck(root); root.localScale *= .015f; }
-            else if (item.Kind == 38) ResourceRock(root, item.Id);
+            else if (item.Kind == 38) { ResourceRock(root, item.Id); root.localScale *= .72f; }
             else if (item.Asset == 412 || item.Asset == 377) { Station(root); root.localScale *= .03f; }
             else if (item.Asset == 127) { Beacon(root); root.localScale *= .2f; }
             else
@@ -331,6 +337,15 @@ namespace FortyTwoAndBeyond.Client
                         new Vector3(.17f, .42f + i * .035f, .17f), mineral);
                     crystal.localRotation = Quaternion.Euler(i * 31, i * 67, 24 + i * 9);
                 }
+            }
+            for (int fragment = 0; fragment < 3; fragment++)
+            {
+                float angle = (fragment * 117 + id % 47) * Mathf.Deg2Rad;
+                Vector3 offset = new Vector3(Mathf.Cos(angle) * 1.9f,
+                    Mathf.Sin(angle * 1.4f) * .7f, Mathf.Sin(angle) * 1.7f);
+                Transform chip = Model(root, rocks[(int)((id + (uint)fragment + 3) % (uint)rocks.Length)],
+                    oreRock, offset, Vector3.one * (.35f + fragment * .08f));
+                chip.localRotation = Quaternion.Euler(fragment * 26, fragment * 71, fragment * 39);
             }
         }
 
@@ -408,11 +423,19 @@ namespace FortyTwoAndBeyond.Client
                 {
                     float latitude = y * Mathf.PI / rows, longitude = x * Mathf.PI * 2 / columns;
                     Vector3 direction = new Vector3(Mathf.Sin(latitude) * Mathf.Cos(longitude), Mathf.Cos(latitude), Mathf.Sin(latitude) * Mathf.Sin(longitude));
-                    float radius = .8f + .2f * Mathf.PerlinNoise(direction.x * 3 + seed, direction.y * 3 + direction.z * 2 + seed);
+                    float large = Mathf.PerlinNoise(direction.x * 2.3f + seed, direction.z * 2.3f + seed);
+                    float detail = Mathf.PerlinNoise(direction.y * 7.1f + seed * .17f,
+                        direction.x * 6.7f + direction.z * 2.2f + seed * .29f);
+                    float radius = .65f + .34f * large + .13f * detail;
                     vertices[y * (columns + 1) + x] = direction * radius;
                     if (y < rows && x < columns) { int a = y * (columns + 1) + x, b = a + columns + 1; triangles.AddRange(new[] { a, a + 1, b, a + 1, b + 1, b }); }
                 }
-            var mesh = new Mesh { name = "Asteroid " + seed, vertices = vertices, triangles = triangles.ToArray() }; mesh.RecalculateNormals(); mesh.RecalculateBounds(); return mesh;
+            var facets = new Vector3[triangles.Count];
+            var facetIndices = new int[triangles.Count];
+            for (int index = 0; index < triangles.Count; index++)
+            { facets[index] = vertices[triangles[index]]; facetIndices[index] = index; }
+            var mesh = new Mesh { name = "Asteroid " + seed, vertices = facets, triangles = facetIndices };
+            mesh.RecalculateNormals(); mesh.RecalculateBounds(); return mesh;
         }
 
         /// <returns>A torus oriented around local Z.</returns>
