@@ -34,6 +34,7 @@ pub mod player_session;
 pub mod power_down;
 pub mod production;
 pub mod protocol;
+pub mod psionic_shield;
 pub mod rally;
 pub mod reactor_optimization;
 pub mod refining;

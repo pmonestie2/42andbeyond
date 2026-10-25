@@ -78,6 +78,10 @@ pub(super) struct Checkpoint {
     #[serde(default)]
     shield_charging_revision: u64,
     #[serde(default)]
+    psionic_shield_buff: Option<crate::psionic_shield::PsionicShieldBuff>,
+    #[serde(default)]
+    psionic_shield_revision: u64,
+    #[serde(default)]
     combat_trance: combat_trance::CombatTrance,
     #[serde(default)]
     player_firing: bool,
@@ -153,6 +157,7 @@ impl PlayerSession {
         saved.energy = plan.energy;
         saved.motion = plan.motion.clone();
         saved.warp = plan.warp.clone();
+        saved.psionic_shield_buff = plan.psionic_after.clone();
         if plan.warp_event.is_some() {
             saved.warp_effects.clear();
         }
@@ -211,6 +216,13 @@ impl PlayerSession {
             || saved.shield_charging_buff.as_ref().is_some_and(|buff| {
                 buff.revision > saved.shield_charging_revision
                     || crate::shield_charging::tier(buff.ability, buff.trained_rank).is_none()
+            })
+            || saved.psionic_shield_buff.as_ref().is_some_and(|buff| {
+                buff.revision > saved.psionic_shield_revision
+                    || !crate::psionic_shield::tier(buff.ability, buff.trained_rank)
+                        .is_some_and(|tier| buff.remaining <= tier.capacity(buff.trained_rank))
+                    || !buff.remaining.is_finite()
+                    || buff.remaining <= 0.
             })
             || saved
                 .peer_buffs
@@ -280,6 +292,11 @@ impl PlayerSession {
                 .pending_shield_charging
                 .as_ref()
                 .is_some_and(|charging| !charging.valid())
+            || saved
+                .skills
+                .pending_psionic_shield
+                .as_ref()
+                .is_some_and(|barrier| !barrier.valid())
             || saved
                 .skills
                 .pending_shield_sap
@@ -375,6 +392,10 @@ impl PlayerSession {
             .shield_charging_buff
             .filter(|buff| buff.valid(unix_ms(), self.session_epoch));
         self.shield_charging_revision = saved.shield_charging_revision;
+        self.psionic_shield_buff = saved
+            .psionic_shield_buff
+            .filter(|buff| buff.valid(unix_ms(), self.session_epoch));
+        self.psionic_shield_revision = saved.psionic_shield_revision;
         self.combat_trance = saved.combat_trance;
         let trance_was_active = self.combat_trance.active;
         self.combat_trance.reconcile_replacement(
@@ -523,6 +544,7 @@ impl PlayerSession {
         self.publish_rally_resume();
         self.publish_reactor_optimization_resume();
         self.publish_shield_charging_resume();
+        self.publish_psionic_shield_resume();
         self.publish_skill_status_resume();
         self.publish_combat_trance_resume();
         for expired in expired_peer_buffs {
@@ -632,6 +654,8 @@ impl PlayerSession {
             reactor_optimization_revision: self.reactor_optimization_revision,
             shield_charging_buff: self.shield_charging_buff.clone(),
             shield_charging_revision: self.shield_charging_revision,
+            psionic_shield_buff: self.psionic_shield_buff.clone(),
+            psionic_shield_revision: self.psionic_shield_revision,
             combat_trance: self.combat_trance.clone(),
             player_firing: self.player_firing,
             following: self.following,

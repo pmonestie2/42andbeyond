@@ -46,6 +46,8 @@ pub(super) struct DamagePlan {
     pub(super) motion: Motion,
     pub(super) warp: Warp,
     pub(super) warp_event: Option<WarpEvent>,
+    pub(super) psionic_after: Option<crate::psionic_shield::PsionicShieldBuff>,
+    pub(super) psionic_absorbed: f32,
     wear: Option<EquipmentWear>,
 }
 
@@ -74,6 +76,14 @@ impl PlayerSession {
                     (energy + (reduced * 0.05).min(10.)).min(self.equipment.ship.energy_capacity);
             }
         }
+        let interception = crate::psionic_shield::intercept(
+            self.psionic_shield_buff.as_ref(),
+            reduced,
+            crate::resources::unix_ms(),
+            self.session_epoch,
+        )
+        .ok_or_else(|| invalid("Invalid Psionic Shield damage interception."))?;
+        reduced = interception.passed;
         let profile = &self.account.character;
         let damage_control = if profile.profession == 0 && matches!(profile.race, 0 | 2) {
             damage_control_fraction(self.skill_catalog.level(17))
@@ -128,6 +138,8 @@ impl PlayerSession {
             motion,
             warp,
             warp_event,
+            psionic_after: interception.remaining_buff,
+            psionic_absorbed: interception.absorbed,
             wear,
         })
     }
@@ -159,6 +171,7 @@ impl PlayerSession {
                 "Incoming damage is waiting for pending durable state.",
             ));
         }
+        self.advance_psionic_shield_buff()?;
         let kind = DamageType::from_index(hit.damage_type)?;
         let plan = self.plan_mob_damage(hit, kind)?;
         let receipt = MobDamageReceipt {
@@ -176,12 +189,30 @@ impl PlayerSession {
             None
         };
         self.checkpoint_mob_damage(&plan, &receipt)?;
+        let prior_psionic = self.psionic_shield_buff.clone();
         self.mob_damage_receipts.push(receipt.clone());
         self.shield = plan.result.shield;
         self.hull = plan.result.hull;
         self.energy = plan.energy;
         self.warp = plan.warp;
         self.motion = plan.motion;
+        self.psionic_shield_buff = plan.psionic_after;
+        if let Some(prior) = prior_psionic.filter(|_| self.psionic_shield_buff.is_none()) {
+            self.refresh_equipment()?;
+            self.pending.push(packets::remove_effect(prior.effect));
+            self.pending.push(packets::ship_active_buff_slot(
+                self.player_id(),
+                crate::psionic_shield::BUFF_SLOT,
+                "",
+                0,
+            ));
+            self.message("Psionic Shield depleted.");
+        } else if plan.psionic_absorbed > 0. {
+            self.message(&format!(
+                "Psionic Shield absorbed {:.0} damage.",
+                plan.psionic_absorbed
+            ));
+        }
         self.settle_mob_equipment_wear(&receipt)?;
         if let Some(cast) = self.mining.take() {
             field
@@ -405,6 +436,72 @@ mod tests {
         ship.receive_mob_hit(&hit(&ship, 42)).unwrap();
         assert_eq!(ship.inventory.equipped, initial);
         assert!(ship.inventory.applied_equipment_wear.is_empty());
+    }
+
+    /// A barrier and the ship's HP share the NPC-shot receipt across restart.
+    #[test]
+    fn psionic_barrier_intercepts_once_and_replays_spent_balance() {
+        let mut ship = ship();
+        let now = crate::resources::unix_ms();
+        ship.psionic_shield_buff = Some(crate::psionic_shield::PsionicShieldBuff {
+            revision: 1,
+            source: ship.player_id(),
+            target_epoch: ship.session_epoch,
+            ability: 69,
+            trained_rank: 3,
+            effect: 91,
+            expires_at_ms: now + crate::psionic_shield::DURATION_MS,
+            remaining: 15.,
+        });
+        ship.psionic_shield_revision = 1;
+        ship.refresh_equipment().unwrap();
+        ship.checkpoint_session(true).unwrap();
+        ship.publish_psionic_shield_resume();
+        assert!(ship.pending.iter().any(|packet| {
+            packet.opcode == 9
+                && packet.body.get(5..7)
+                    == Some(&crate::psionic_shield::VISUAL_DESCRIPTOR.to_le_bytes())
+        }));
+        let first = hit(&ship, 61);
+        let blocked = ship.state_dir.join("session.local.json.next");
+        fs::create_dir(&blocked).unwrap();
+        assert!(ship.receive_mob_hit(&first).is_err());
+        assert_eq!(ship.shield, 45.);
+        assert_eq!(ship.psionic_shield_buff.as_ref().unwrap().remaining, 15.);
+        fs::remove_dir(&blocked).unwrap();
+        ship.receive_mob_hit(&first).unwrap();
+        assert_eq!(ship.shield, 45.);
+        assert_eq!(ship.psionic_shield_buff.as_ref().unwrap().remaining, 5.);
+        let mut restored =
+            PlayerSession::new(ship.sector.clone(), ship.bind, ship.state_dir.clone()).unwrap();
+        assert_eq!(restored.shield, 45.);
+        assert_eq!(restored.psionic_shield_buff.as_ref().unwrap().remaining, 5.);
+        assert!(restored.pending.iter().any(|packet| {
+            packet.opcode == 9
+                && packet.body.get(5..7)
+                    == Some(&crate::psionic_shield::VISUAL_DESCRIPTOR.to_le_bytes())
+        }));
+        let original_packets = restored.pending.len();
+        restored.receive_mob_hit(&first).unwrap();
+        assert_eq!(restored.pending.len(), original_packets);
+        assert_eq!(restored.psionic_shield_buff.as_ref().unwrap().remaining, 5.);
+        let second = hit(&restored, 62);
+        restored.receive_mob_hit(&second).unwrap();
+        assert!(restored.psionic_shield_buff.is_none());
+        assert_eq!(restored.shield, 40.);
+        assert!(restored.pending.contains(&packets::remove_effect(91)));
+        assert!(restored.pending.contains(&packets::ship_active_buff_slot(
+            restored.player_id(),
+            crate::psionic_shield::BUFF_SLOT,
+            "",
+            0,
+        )));
+        let mut again =
+            PlayerSession::new(ship.sector.clone(), ship.bind, ship.state_dir.clone()).unwrap();
+        assert!(again.psionic_shield_buff.is_none());
+        assert_eq!(again.shield, 40.);
+        again.receive_mob_hit(&second).unwrap();
+        assert_eq!(again.shield, 40.);
     }
 
     #[test]

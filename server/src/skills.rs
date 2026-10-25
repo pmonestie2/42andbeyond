@@ -36,6 +36,7 @@ pub enum AbilityKind {
     Rally,
     ReactorOptimization,
     ShieldCharging,
+    PsionicShield,
     ShieldSap,
     Summon,
     PowerDown,
@@ -525,6 +526,8 @@ pub struct SkillState {
         Option<crate::reactor_optimization::PendingReactorOptimization>,
     #[serde(default)]
     pub pending_shield_charging: Option<crate::shield_charging::PendingShieldCharging>,
+    #[serde(default)]
+    pub pending_psionic_shield: Option<crate::psionic_shield::PendingPsionicShield>,
     #[serde(default)]
     pub equipment_repair: Option<crate::equipment_repair::ActiveEquipmentRepair>,
     #[serde(default)]

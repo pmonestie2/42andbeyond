@@ -1034,6 +1034,116 @@ fn shield_charging_selected_peer_is_durable_and_idempotent() {
     fs::remove_dir_all(root).unwrap();
 }
 
+/// A selected Defender barrier settles energy and recipient status once.
+#[test]
+fn psionic_shield_selected_peer_survives_torn_checkpoint_and_restart() {
+    let root = std::env::temp_dir().join(format!("enb-psionic-game-{}", rand::random::<u64>()));
+    let accounts = AccountDirectory::new(&root);
+    let caster_account = accounts
+        .create_class(
+            "defender".into(),
+            "example",
+            "Defender".into(),
+            crate::classes::CharacterClass::parse("jd").unwrap(),
+        )
+        .unwrap();
+    let caster = caster_account.account.character.game_id;
+    let recipient = accounts
+        .create("recipient".into(), "example", "Recipient".into())
+        .unwrap()
+        .account
+        .character
+        .game_id;
+    let mut inventory = crate::inventory::Inventory::starter_for(
+        &caster_account.account.character,
+        &crate::items::ItemCatalog::load().unwrap(),
+    )
+    .unwrap();
+    inventory.equipped[1] = Some(crate::inventory::ItemInstance::stock(3340, 1));
+    fs::write(
+        caster_account.directory.join("inventory.json"),
+        serde_json::to_vec(&inventory).unwrap(),
+    )
+    .unwrap();
+    let sector: Sector = serde_json::from_str(include_str!("../data/sector.json")).unwrap();
+    let bind = Ipv4Addr::new(127, 0, 0, 2);
+    let mut game = GameState::new(sector.clone(), bind, root.clone()).unwrap();
+    login(&mut game, caster, 23501, "defender");
+    login(&mut game, recipient, 23502, "recipient");
+    game.sessions.get_mut(&caster).unwrap().position = [0.; 3];
+    game.sessions.get_mut(&recipient).unwrap().position = [4_500., 0., 0.];
+    game.update_views();
+    let recipient_energy = game.sessions[&recipient].energy_balance().0;
+    activate(&mut game, recipient, caster, 80);
+    assert_eq!(
+        game.sessions[&recipient].energy_balance().0,
+        recipient_energy
+    );
+    let initial_energy = game.sessions[&caster].energy_balance().0;
+    activate(&mut game, caster, recipient, 80);
+    assert_eq!(game.sessions[&caster].energy_balance().0, initial_energy);
+    game.sessions.get_mut(&recipient).unwrap().position = [2_000., 0., 0.];
+    game.update_views();
+    let old_deflect = game.sessions[&recipient]
+        .peer_snapshot()
+        .unwrap()
+        .stats
+        .deflects[8];
+    activate(&mut game, caster, recipient, 80);
+    assert_eq!(
+        game.sessions[&caster].energy_balance().0,
+        initial_energy - 300.
+    );
+    game.sessions
+        .get_mut(&recipient)
+        .unwrap()
+        .checkpoint_session(true)
+        .unwrap();
+    let torn = root.join("accounts/recipient/session.local.json.tmp");
+    fs::create_dir(&torn).unwrap();
+    advance(&mut game, 2.1);
+    assert_eq!(game.energy_ledger.revision(), 1);
+    let ledger_buff = game.energy_ledger.psionic_shield_buff(recipient).unwrap();
+    assert_eq!(ledger_buff.remaining, 10_080.);
+    let effect = ledger_buff.effect;
+    assert_eq!(game.sessions[&recipient].psionic_shield_balance(), None);
+    fs::remove_dir(&torn).unwrap();
+    let charged = game.energy_ledger.balance(caster).unwrap().energy;
+    let expected_epoch = game.sessions[&recipient].energy_transfer_epoch();
+    assert_eq!(ledger_buff.target_epoch, expected_epoch);
+    drop(game);
+    let mut restored = GameState::new(sector, bind, root.clone()).unwrap();
+    assert_eq!(restored.sessions[&caster].energy_balance().0, charged);
+    assert_eq!(
+        restored.sessions[&recipient].energy_transfer_epoch(),
+        expected_epoch
+    );
+    assert_eq!(
+        restored.sessions[&recipient].psionic_shield_balance(),
+        Some(10_080.)
+    );
+    assert_eq!(
+        restored
+            .energy_ledger
+            .psionic_shield_buff(recipient)
+            .unwrap()
+            .effect,
+        effect
+    );
+    assert_eq!(
+        restored.sessions[&recipient]
+            .peer_snapshot()
+            .unwrap()
+            .stats
+            .deflects[8],
+        (old_deflect + 30.).min(50.)
+    );
+    restored.deliver_psionic_shields().unwrap();
+    assert_eq!(restored.energy_ledger.revision(), 1);
+    drop(restored);
+    fs::remove_dir_all(root).unwrap();
+}
+
 /// Group Sapping Sphere drains two MOBs once and heals only frozen nearby crew.
 #[test]
 fn shield_sap_area_and_group_awards_survive_torn_recipient_restart() {

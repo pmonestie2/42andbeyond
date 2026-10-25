@@ -78,6 +78,8 @@ mod peer_buff_service;
 mod power_down_service;
 #[path = "production_service.rs"]
 mod production_service;
+#[path = "psionic_shield_service.rs"]
+mod psionic_shield_service;
 #[path = "rally_service.rs"]
 mod rally_service;
 #[path = "reactor_optimization_service.rs"]
@@ -237,6 +239,8 @@ pub struct PlayerSession {
     reactor_optimization_revision: u64,
     shield_charging_buff: Option<crate::shield_charging::ShieldChargingBuff>,
     shield_charging_revision: u64,
+    psionic_shield_buff: Option<crate::psionic_shield::PsionicShieldBuff>,
+    psionic_shield_revision: u64,
     combat_trance: combat_trance::CombatTrance,
     shield: f32,
     pub(crate) hull: f32,
@@ -442,6 +446,8 @@ impl PlayerSession {
             reactor_optimization_revision: 0,
             shield_charging_buff: None,
             shield_charging_revision: 0,
+            psionic_shield_buff: None,
+            psionic_shield_revision: 0,
             combat_trance: combat_trance::CombatTrance::default(),
             shield: stats.shield_capacity,
             hull: stats.hull_capacity,
@@ -1368,6 +1374,15 @@ impl PlayerSession {
                 &mut equipment.ship.deflects,
             );
         }
+        if self
+            .psionic_shield_buff
+            .as_ref()
+            .is_some_and(|buff| buff.valid(crate::resources::unix_ms(), self.session_epoch))
+        {
+            equipment.ship.deflects[8] = (equipment.ship.deflects[8]
+                + crate::psionic_shield::PSIONIC_DEFLECT_BONUS)
+                .min(50.);
+        }
         let prices = self.vendor_prices(&candidate)?;
         let reputation = if candidate.faction_standings == self.inventory.faction_standings
             && self.reputation.class_faction == self.account.character.class().faction()
@@ -1709,6 +1724,8 @@ impl PlayerSession {
         self.reactor_optimization_revision = 0;
         self.shield_charging_buff = None;
         self.shield_charging_revision = 0;
+        self.psionic_shield_buff = None;
+        self.psionic_shield_revision = 0;
         self.combat_trance = combat_trance::CombatTrance::default();
         self.refresh_equipment()?;
         self.forget_session()?;

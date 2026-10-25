@@ -4,6 +4,7 @@
 use crate::inventory::{ItemInstance, EQUIPMENT_SLOTS};
 use crate::peer_buffs::PeerBuff;
 use crate::protocol::invalid;
+use crate::psionic_shield::PsionicShieldBuff;
 use crate::rally::RallyBuff;
 use crate::reactor_optimization::ReactorOptimizationBuff;
 use crate::shield_charging::ShieldChargingBuff;
@@ -96,6 +97,10 @@ struct LedgerData {
     #[serde(default)]
     last_shield_charging: BTreeMap<u32, TransferSequence>,
     #[serde(default)]
+    psionic_shield_buffs: BTreeMap<u32, PsionicShieldBuff>,
+    #[serde(default)]
+    last_psionic_shield: BTreeMap<u32, TransferSequence>,
+    #[serde(default)]
     last_shield_sap: BTreeMap<u32, TransferSequence>,
 }
 
@@ -129,6 +134,8 @@ impl EnergyLedger {
                 last_reactor_optimization: BTreeMap::new(),
                 shield_charging_buffs: BTreeMap::new(),
                 last_shield_charging: BTreeMap::new(),
+                psionic_shield_buffs: BTreeMap::new(),
+                last_psionic_shield: BTreeMap::new(),
                 last_shield_sap: BTreeMap::new(),
             }
         };
@@ -226,6 +233,10 @@ impl EnergyLedger {
                 .iter()
                 .any(|(source, last)| *source == 0 || last.epoch == 0 || last.sequence == 0)
             || data
+                .last_psionic_shield
+                .iter()
+                .any(|(source, last)| *source == 0 || last.epoch == 0 || last.sequence == 0)
+            || data
                 .last_shield_sap
                 .iter()
                 .any(|(source, last)| *source == 0 || last.epoch == 0 || last.sequence == 0)
@@ -250,6 +261,19 @@ impl EnergyLedger {
                     || buff.target_epoch == 0
                     || crate::shield_charging::tier(buff.ability, buff.trained_rank).is_none()
                     || buff.expires_at_ms == 0
+            })
+            || data.psionic_shield_buffs.iter().any(|(target, buff)| {
+                let capacity = crate::psionic_shield::tier(buff.ability, buff.trained_rank)
+                    .map(|tier| tier.capacity(buff.trained_rank));
+                *target == 0
+                    || buff.revision == 0
+                    || buff.revision > data.revision
+                    || buff.source == 0
+                    || buff.target_epoch == 0
+                    || buff.effect == 0
+                    || buff.expires_at_ms == 0
+                    || !buff.remaining.is_finite()
+                    || !capacity.is_some_and(|limit| buff.remaining > 0. && buff.remaining <= limit)
             })
         {
             return Err(invalid("Invalid targeted energy transfer ledger."));
@@ -803,6 +827,86 @@ impl EnergyLedger {
             .path
             .parent()
             .ok_or_else(|| invalid("Shield Charging ledger has no directory."))?;
+        fs::create_dir_all(directory)?;
+        let temporary = self.path.with_extension("json.tmp");
+        let mut file = File::create(&temporary)?;
+        file.write_all(&serde_json::to_vec_pretty(&next)?)?;
+        file.sync_all()?;
+        fs::rename(temporary, &self.path)?;
+        self.data = next;
+        Ok(self.data.revision)
+    }
+
+    /// Returns:
+    ///     Option<&PsionicShieldBuff>: Last committed selected-pilot barrier.
+    pub fn psionic_shield_buff(&self, target: u32) -> Option<&PsionicShieldBuff> {
+        self.data.psionic_shield_buffs.get(&target)
+    }
+
+    /// Returns:
+    ///     bool: Whether one charged cast was already settled in the ledger.
+    pub fn psionic_shield_seen(&self, source: u32, epoch: u64, effect: u32) -> bool {
+        self.data
+            .last_psionic_shield
+            .get(&source)
+            .is_some_and(|last| last.epoch == epoch && effect <= last.sequence)
+    }
+
+    /// Atomically commit caster energy and a new recipient absorption budget.
+    ///
+    /// Returns:
+    ///     u64: Shared durable world revision of the completed cast.
+    pub fn cast_psionic_shield(
+        &mut self,
+        source: u32,
+        epoch: u64,
+        effect: u32,
+        source_energy: f32,
+        target: u32,
+        mut buff: PsionicShieldBuff,
+    ) -> io::Result<u64> {
+        let capacity = crate::psionic_shield::tier(buff.ability, buff.trained_rank)
+            .map(|tier| tier.capacity(buff.trained_rank));
+        if source == 0
+            || epoch == 0
+            || effect == 0
+            || self.psionic_shield_seen(source, epoch, effect)
+            || target == 0
+            || buff.source != source
+            || buff.target_epoch == 0
+            || buff.effect != effect
+            || buff.expires_at_ms == 0
+            || !capacity.is_some_and(|limit| buff.remaining == limit)
+            || !source_energy.is_finite()
+            || !(0. ..=1_000_000_000.).contains(&source_energy)
+        {
+            return Err(invalid("Invalid or repeated Psionic Shield cast."));
+        }
+        let mut next = self.data.clone();
+        next.revision = next
+            .revision
+            .checked_add(1)
+            .ok_or_else(|| invalid("Psionic Shield revision exhausted."))?;
+        next.balances.insert(
+            source,
+            EnergyBalance {
+                revision: next.revision,
+                energy: source_energy,
+            },
+        );
+        buff.revision = next.revision;
+        next.psionic_shield_buffs.insert(target, buff);
+        next.last_psionic_shield.insert(
+            source,
+            TransferSequence {
+                epoch,
+                sequence: effect,
+            },
+        );
+        let directory = self
+            .path
+            .parent()
+            .ok_or_else(|| invalid("Psionic Shield ledger has no directory."))?;
         fs::create_dir_all(directory)?;
         let temporary = self.path.with_extension("json.tmp");
         let mut file = File::create(&temporary)?;

@@ -27,6 +27,8 @@ mod actions;
 mod call_forward_game;
 #[path = "dev_commands.rs"]
 mod dev_commands;
+#[path = "psionic_shield_game.rs"]
+mod psionic_shield_game;
 #[path = "shield_sap_game.rs"]
 mod shield_sap_game;
 #[path = "summon_game.rs"]
@@ -207,6 +209,14 @@ impl GameState {
                     "Player Shield Charging revision exceeds the durable ledger.",
                 ));
             }
+            if session.psionic_shield_revision() > self.energy_ledger.revision()
+                || session.psionic_shield_revision() > 0
+                    && self.energy_ledger.psionic_shield_buff(id).is_none()
+            {
+                return Err(invalid(
+                    "Player Psionic Shield revision exceeds the durable ledger.",
+                ));
+            }
             if let Some(balance) = self.energy_ledger.balance(id) {
                 session.apply_energy_balance(balance)?;
             }
@@ -239,6 +249,9 @@ impl GameState {
             }
             if let Some(buff) = self.energy_ledger.shield_charging_buff(id) {
                 session.apply_shield_charging_buff(buff.clone())?;
+            }
+            if let Some(buff) = self.energy_ledger.psionic_shield_buff(id) {
+                session.apply_psionic_shield_buff(buff.clone())?;
             }
             for (&peer, at) in &self.registrations {
                 if at.elapsed() < Duration::from_secs(600) {
@@ -679,6 +692,7 @@ impl GameState {
         self.deliver_rallies()?;
         self.deliver_reactor_optimizations()?;
         self.deliver_shield_chargings()?;
+        self.deliver_psionic_shields()?;
         self.deliver_shield_saps()?;
         self.deliver_support()?;
         for id in &ids {

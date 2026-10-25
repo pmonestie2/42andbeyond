@@ -417,6 +417,15 @@ impl PlayerSession {
                 &mut self.equipment.ship.deflects,
             );
         }
+        if self
+            .psionic_shield_buff
+            .as_ref()
+            .is_some_and(|buff| buff.valid(crate::resources::unix_ms(), self.session_epoch))
+        {
+            self.equipment.ship.deflects[8] = (self.equipment.ship.deflects[8]
+                + crate::psionic_shield::PSIONIC_DEFLECT_BONUS)
+                .min(50.);
+        }
         self.reputation = self.factions.reactions(
             self.account.character.class(),
             &self.inventory.faction_standings,
