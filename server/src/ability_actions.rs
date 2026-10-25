@@ -30,6 +30,7 @@ impl PlayerSession {
         let durable_optimization = ability.kind == AbilityKind::ReactorOptimization;
         let durable_shield_charging = ability.kind == AbilityKind::ShieldCharging;
         let durable_psionic_shield = ability.kind == AbilityKind::PsionicShield;
+        let durable_inversion = ability.kind == AbilityKind::ShieldInversion;
         let durable_sap = ability.kind == AbilityKind::ShieldSap;
         let durable_gravity = ability.kind == AbilityKind::GravityLink;
         let durable_menace = ability.kind == AbilityKind::Menace;
@@ -79,6 +80,9 @@ impl PlayerSession {
         if durable_sap && self.skills.pending_shield_sap.is_some() {
             return Err(invalid("Previous Shield Sap is still settling."));
         }
+        if durable_inversion && self.skills.active_inversion.is_some() {
+            return Err(invalid("Shield Inversion is already active."));
+        }
         let self_jumpstart = ability.kind == AbilityKind::Jumpstart
             && (requested_target == self.player_id() || requested_target == u32::MAX);
         if self.hull <= 0. && !self_jumpstart {
@@ -94,6 +98,9 @@ impl PlayerSession {
         }
         if durable_sap && self.mining.is_some() {
             return Err(invalid("Stop prospecting before using Shield Sap."));
+        }
+        if durable_inversion && self.mining.is_some() {
+            return Err(invalid("Stop prospecting before using Shield Inversion."));
         }
         if self
             .skills
@@ -124,6 +131,11 @@ impl PlayerSession {
         {
             return Err(invalid("Shield Sap rank is not trained."));
         }
+        if durable_inversion
+            && crate::shield_inversion::tier(ability.id, self.skill_catalog.level(52)).is_none()
+        {
+            return Err(invalid("Shield Inversion rank is not trained."));
+        }
         if durable_menace && crate::menace::tier(ability.id, self.skill_catalog.level(33)).is_none()
         {
             return Err(invalid("Menace rank is not trained."));
@@ -134,6 +146,11 @@ impl PlayerSession {
         }
         let sap_generation = if durable_sap {
             Some(self.shield_sap_target_generation(target)?)
+        } else {
+            None
+        };
+        let inversion_generation = if durable_inversion {
+            Some(self.inversion_target_generation(target)?)
         } else {
             None
         };
@@ -229,6 +246,7 @@ impl PlayerSession {
             AbilityKind::ReactorOptimization => 0,
             AbilityKind::ShieldCharging => 0,
             AbilityKind::PsionicShield => 0,
+            AbilityKind::ShieldInversion => 0,
             AbilityKind::GravityLink => 0,
             AbilityKind::Menace => 0,
             AbilityKind::Enrage => 0,
@@ -279,6 +297,7 @@ impl PlayerSession {
             enrage_generation,
             summon_generation,
             sap_generation,
+            inversion_generation,
         });
         if durable_repair
             || durable_rally
@@ -289,6 +308,7 @@ impl PlayerSession {
             || durable_shield_charging
             || durable_psionic_shield
             || durable_sap
+            || durable_inversion
         {
             if let Err(error) = self.checkpoint_session(true) {
                 self.energy += energy;
@@ -462,6 +482,7 @@ impl PlayerSession {
                     | AbilityKind::ShieldSap
                     | AbilityKind::Menace
                     | AbilityKind::Enrage
+                    | AbilityKind::ShieldInversion
             );
         if enemy {
             let index = self
@@ -483,11 +504,18 @@ impl PlayerSession {
                         .ok_or_else(|| invalid("Enrage rank is not trained."))?
                         .range
                 }
+                AbilityKind::ShieldInversion => {
+                    crate::shield_inversion::tier(ability.id, self.skill_catalog.level(52))
+                        .ok_or_else(|| invalid("Shield Inversion rank is not trained."))?
+                        .range
+                }
                 _ => ability.range as f32,
             };
             if !self.mob_visible_in_scan(index as usize, mob)
-                || matches!(ability.kind, AbilityKind::Menace | AbilityKind::Enrage)
-                    && self.mob_relationship(mob) != 0
+                || matches!(
+                    ability.kind,
+                    AbilityKind::Menace | AbilityKind::Enrage | AbilityKind::ShieldInversion
+                ) && self.mob_relationship(mob) != 0
                 || distance(self.position, mob.position) > range
             {
                 return Err(invalid("The target is dead or out of ability range."));
@@ -628,6 +656,8 @@ impl PlayerSession {
                     || self.sector.station.is_some()
                     || self.mining.is_some()
                     || !self.logged_in);
+            let invalid_inversion = definition.kind == AbilityKind::ShieldInversion
+                && (!self.inversion_available() || self.mining.is_some());
             let invalid_summon = definition.kind == AbilityKind::Summon
                 && (self.warp.active()
                     || self.gate_transit.is_some()
@@ -641,6 +671,7 @@ impl PlayerSession {
                 || invalid_menace
                 || invalid_enrage
                 || invalid_sap
+                || invalid_inversion
                 || invalid_summon
                 || definition.kind == AbilityKind::Cloak
                     && definition.rank < 5
@@ -653,6 +684,7 @@ impl PlayerSession {
                         | AbilityKind::Menace
                         | AbilityKind::Enrage
                         | AbilityKind::PsionicShield
+                        | AbilityKind::ShieldInversion
                 ) {
                     if let Err(error) = self.checkpoint_session(true) {
                         self.skills.cast = Some(cast);
@@ -764,6 +796,40 @@ impl PlayerSession {
                     } else {
                         "Enrage target was lost or resisted."
                     });
+                    return Ok(());
+                }
+                if ability.kind == AbilityKind::ShieldInversion {
+                    let previous_cooldown = self.skills.cooldowns.insert(ability.skill, cooldown);
+                    let started = match self.start_shield_inversion(&ability, &cast) {
+                        Ok(started) => started,
+                        Err(error) => {
+                            if let Some(previous) = previous_cooldown {
+                                self.skills.cooldowns.insert(ability.skill, previous);
+                            } else {
+                                self.skills.cooldowns.remove(&ability.skill);
+                            }
+                            self.skills.cast = Some(cast);
+                            return Err(error);
+                        }
+                    };
+                    if !started {
+                        if let Err(error) = self.checkpoint_session(true) {
+                            if let Some(previous) = previous_cooldown {
+                                self.skills.cooldowns.insert(ability.skill, previous);
+                            } else {
+                                self.skills.cooldowns.remove(&ability.skill);
+                            }
+                            self.skills.cast = Some(cast);
+                            return Err(error);
+                        }
+                        self.message("Shield Inversion target was lost before completion.");
+                    }
+                    self.pending.push(packets::ability_progress(None, 0, 0));
+                    self.pending.push(packets::skill_cooldown(
+                        ability.skill,
+                        self.tick_ms(),
+                        (cooldown * 1000.) as u32,
+                    ));
                     return Ok(());
                 }
                 self.remove_effect(cast.effect);
@@ -1112,6 +1178,11 @@ impl PlayerSession {
             }
             AbilityKind::Enrage => {
                 return Err(invalid("Enrage settles through its durable MOB cast."));
+            }
+            AbilityKind::ShieldInversion => {
+                return Err(invalid(
+                    "Shield Inversion settles through timed combat pulses.",
+                ));
             }
             AbilityKind::EquipmentRepair => {
                 return Err(invalid("Repair Equipment has no charged cast."));

@@ -43,6 +43,7 @@ pub mod sector_combat;
 pub mod sectors;
 pub mod server;
 pub mod shield_charging;
+pub mod shield_inversion;
 pub mod shield_sap;
 pub mod skills;
 pub mod summon;

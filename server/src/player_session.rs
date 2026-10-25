@@ -104,6 +104,8 @@ mod session_resources;
 mod session_tick;
 #[path = "shield_charging_service.rs"]
 mod shield_charging_service;
+#[path = "shield_inversion_service.rs"]
+mod shield_inversion_service;
 #[path = "shield_recharge.rs"]
 mod shield_recharge;
 #[path = "shield_sap_service.rs"]

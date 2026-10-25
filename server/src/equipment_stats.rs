@@ -35,6 +35,7 @@ pub struct ShipStats {
     pub recharge_shields_skill: f32,
     pub hull_patch_skill: f32,
     pub gravity_link_skill: f32,
+    pub shield_inversion_duration_bonus: f32,
     pub tractor_speed: f32,
     pub tractor_range: f32,
     pub deflects: [f32; 9],
@@ -326,6 +327,7 @@ impl EquipmentStats {
             } else {
                 0.
             },
+            shield_inversion_duration_bonus: modifiers.apply("STAT_SHIELD_INVERSION_DURATION", 0.),
             tractor_speed: modifiers.apply("STAT_TRACTORBEAM", 200.).max(1.),
             // Long Tractor Beam has a catalog range modifier. The archived
             // fixed range ignored it; retain the current 2 km base.
@@ -457,6 +459,30 @@ impl EquipmentStats {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Public Nightstick gear extends Shield Inversion by its equipped seconds.
+    #[test]
+    fn shield_inversion_duration_uses_equipped_item_modifier() {
+        let catalog = ItemCatalog::load().unwrap();
+        let mut profile = crate::account::Account::create("pilot".into(), "pass", "Pilot".into())
+            .unwrap()
+            .character;
+        let class = crate::classes::CharacterClass::parse("pw").unwrap();
+        profile.race = class.race();
+        profile.profession = class.profession();
+        let skills = SkillCatalog::for_profile(&profile).unwrap();
+        let mut inventory = Inventory::starter_for(&profile, &catalog).unwrap();
+        let base = EquipmentStats::derive(&inventory, &catalog, &skills).unwrap();
+        inventory.equipped[3] = Some(crate::inventory::ItemInstance::stock(846, 1));
+        let geared = EquipmentStats::derive(&inventory, &catalog, &skills).unwrap();
+        assert!(
+            geared.ship.shield_inversion_duration_bonus > base.ship.shield_inversion_duration_bonus
+        );
+        assert_eq!(
+            crate::shield_inversion::duration_ms(geared.ship.shield_inversion_duration_bonus),
+            17_700
+        );
+    }
 
     /// Public Gravity Link gear raises the effective formula rank without unlocking tiers.
     #[test]

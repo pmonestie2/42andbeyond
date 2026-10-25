@@ -9,6 +9,8 @@ use std::collections::BTreeMap;
 use std::io;
 use std::path::PathBuf;
 use std::time::Instant;
+#[path = "shield_inversion_combat.rs"]
+mod inversion;
 #[path = "shield_sap_combat.rs"]
 mod sap;
 #[path = "combat_storage.rs"]
@@ -27,6 +29,7 @@ pub struct SectorCombat {
     reports: Vec<crate::projectiles::DamageReport>,
     accepted: BTreeMap<u32, u64>,
     sap_receipts: BTreeMap<u32, crate::shield_sap::SapReceipt>,
+    inversion_receipts: BTreeMap<u32, crate::shield_inversion::InversionReceipt>,
     path: Option<PathBuf>,
     sector: u32,
     next_developer_spawn: u32,
@@ -48,6 +51,7 @@ impl SectorCombat {
             reports: Vec::new(),
             accepted: BTreeMap::new(),
             sap_receipts: BTreeMap::new(),
+            inversion_receipts: BTreeMap::new(),
             path: None,
             sector: 0,
             next_developer_spawn: storage::DEVELOPER_SOURCE_BASE,

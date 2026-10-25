@@ -29,6 +29,8 @@ mod call_forward_game;
 mod dev_commands;
 #[path = "psionic_shield_game.rs"]
 mod psionic_shield_game;
+#[path = "shield_inversion_game.rs"]
+mod shield_inversion_game;
 #[path = "shield_sap_game.rs"]
 mod shield_sap_game;
 #[path = "summon_game.rs"]
@@ -694,6 +696,7 @@ impl GameState {
         self.deliver_shield_chargings()?;
         self.deliver_psionic_shields()?;
         self.deliver_shield_saps()?;
+        self.deliver_shield_inversions(now_ms)?;
         self.deliver_support()?;
         for id in &ids {
             self.attach_session(*id)?;

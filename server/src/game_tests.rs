@@ -37,6 +37,74 @@ pub(super) fn game() -> GameState {
     .unwrap()
 }
 
+/// A Progen timed cast spends shields only when its durable MOB pulse lands.
+#[test]
+fn warrior_shield_inversion_pulses_and_survives_world_restart() {
+    let root = std::env::temp_dir().join(format!("enb-inversion-game-{}", rand::random::<u64>()));
+    let accounts = AccountDirectory::new(&root);
+    let warrior = accounts
+        .create_class(
+            "alice".into(),
+            "example",
+            "Alice".into(),
+            crate::classes::CharacterClass::parse("pw").unwrap(),
+        )
+        .unwrap();
+    let alice = warrior.account.character.game_id;
+    let sector: Sector = serde_json::from_str(include_str!("../data/sector.json")).unwrap();
+    let bind = Ipv4Addr::new(127, 0, 0, 2);
+    let mut game = GameState::new(sector.clone(), bind, root.clone()).unwrap();
+    login(&mut game, alice, 23401, "alice");
+    game.sessions.get_mut(&alice).unwrap().position = [15_000., 15_000., 0.];
+    {
+        let mut combat = lock_combat(&game.sessions[&alice].combat).unwrap();
+        combat.actors[0].definition.aggressive = false;
+        combat.actors[0].definition.faction = 0;
+    }
+    game.advance_at(0.1, 0).unwrap();
+    activate(&mut game, alice, MOB_ID, 111);
+    game.advance_at(2.1, 0).unwrap();
+    let active = game.sessions[&alice].active_inversion().unwrap();
+    assert_eq!(active.target, MOB_ID);
+    let before_shield = game.sessions[&alice].shield_balance().0;
+    let before_mob = {
+        let combat = lock_combat(&game.sessions[&alice].combat).unwrap();
+        combat.actors[0].health + combat.actors[0].shield
+    };
+    game.advance_at(0.1, active.next_pulse_ms).unwrap();
+    let spent = crate::shield_inversion::tier(111, active.trained_rank)
+        .unwrap()
+        .drain_per_second
+        .min(before_shield);
+    assert_eq!(
+        game.sessions[&alice].shield_balance().0,
+        before_shield - spent
+    );
+    let after_mob = {
+        let combat = lock_combat(&game.sessions[&alice].combat).unwrap();
+        combat.actors[0].health + combat.actors[0].shield
+    };
+    assert!(after_mob < before_mob);
+    drop(game);
+    let resumed = GameState::new(sector, bind, root).unwrap();
+    assert_eq!(
+        resumed.sessions[&alice].shield_balance().0,
+        before_shield - spent
+    );
+    assert_eq!(
+        resumed.sessions[&alice]
+            .active_inversion()
+            .unwrap()
+            .pulse_index,
+        1
+    );
+    let restored_mob = lock_combat(&resumed.sessions[&alice].combat).unwrap();
+    assert_eq!(
+        restored_mob.actors[0].health + restored_mob.actors[0].shield,
+        after_mob
+    );
+}
+
 /// Summon moves a hostile, then one grouped pilot and finally journals port return.
 #[test]
 fn defender_summon_enemy_friend_and_registered_port_survive_restart() {

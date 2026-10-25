@@ -260,6 +260,10 @@ impl PlayerSession {
             || !saved.energy.is_finite()
             || saved.mining.as_ref().is_some_and(|cast| !cast.valid())
             || saved.skills.cast.as_ref().is_some_and(|cast| !cast.valid())
+            || saved
+                .skills
+                .active_inversion
+                .is_some_and(|inversion| !inversion.valid() || inversion.source != self.player_id())
             || saved.skills.power_down_ability.is_some_and(|ability| {
                 crate::power_down::tier(ability, self.skill_catalog.level(37)).is_none()
                     || saved.motion.speed.abs() >= 1.

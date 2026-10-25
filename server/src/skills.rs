@@ -37,6 +37,7 @@ pub enum AbilityKind {
     ReactorOptimization,
     ShieldCharging,
     PsionicShield,
+    ShieldInversion,
     ShieldSap,
     Summon,
     PowerDown,
@@ -397,6 +398,8 @@ pub struct Cast {
     pub summon_generation: Option<u64>,
     #[serde(default)]
     pub sap_generation: Option<u64>,
+    #[serde(default)]
+    pub inversion_generation: Option<u64>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -494,6 +497,9 @@ impl Cast {
             && self.sap_generation.is_none_or(|generation| {
                 matches!(self.ability, 54 | 55 | 98 | 112 | 114) && generation < 1_000_000_000
             })
+            && self.inversion_generation.is_none_or(|generation| {
+                matches!(self.ability, 105 | 107 | 110 | 111 | 113) && generation < 1_000_000_000
+            })
     }
 }
 
@@ -528,6 +534,8 @@ pub struct SkillState {
     pub pending_shield_charging: Option<crate::shield_charging::PendingShieldCharging>,
     #[serde(default)]
     pub pending_psionic_shield: Option<crate::psionic_shield::PendingPsionicShield>,
+    #[serde(default)]
+    pub active_inversion: Option<crate::shield_inversion::ActiveShieldInversion>,
     #[serde(default)]
     pub equipment_repair: Option<crate::equipment_repair::ActiveEquipmentRepair>,
     #[serde(default)]

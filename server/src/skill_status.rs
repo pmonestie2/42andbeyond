@@ -5,6 +5,7 @@ use super::*;
 pub(super) const CLOAK_SLOT: usize = 6;
 pub(super) const ENVIRONMENT_SLOT: usize = 7;
 pub(super) const COMBAT_CLOAK_SLOT: usize = 8;
+pub(super) const SHIELD_INVERSION_SLOT: usize = 15;
 
 impl PlayerSession {
     /// Publish current cloak status; replay its existing visual after replacement.
@@ -82,5 +83,6 @@ impl PlayerSession {
         self.publish_combat_cloak_status();
         self.publish_equipment_repair_resume();
         self.publish_power_down_resume();
+        self.publish_inversion_resume();
     }
 }
