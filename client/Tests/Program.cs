@@ -16,14 +16,16 @@ internal static class Program
         CheckDamageResults(); CheckCombatEngagement(); CheckAttackerSelection(); CheckShotPresentation(); CheckContactSelection(); CheckTargetVerbs(); CheckDeviceEffects();
         CheckNativeDeviceBuff(); CheckPeerScanBuff(); CheckConcurrentRecipientBuffs(); CheckSupportObjectEffects(); CheckShipDefense();
         CheckAmmunitionTransfer(); CheckVaultStackPlacement(); CheckEquippedEffects(); CheckFlightThrottle(); CheckFormationAnchor();
-        CheckAbilityTargets();
+        CheckAbilityTargets(); CheckSkillTraining();
         CheckStationLayout(); CheckStationWalk(); CheckDemoRoster(); CheckAddress(); PeerChecks.Decode();
         Console.WriteLine("PASS: framing, ordering, fragmentation, duplicates, bounds, world decoding, private addresses");
         if (args.Length == 2 && args[0] == "--server") { PeerChecks.Live(args[1]); CheckServer(args[1]); }
         else if (args.Length == 2 && args[0] == "--recharge-server") RechargeAbilityChecks.Live(args[1]);
         else if (args.Length == 2 && args[0] == "--support-server") SupportAbilityChecks.Live(args[1]);
         else if (args.Length == 2 && args[0] == "--enemy-ability-server") EnemyAbilityChecks.Live(args[1]);
-        else if (args.Length != 0) throw new ArgumentException("Usage: ProtocolChecks [--server PRIVATE_IP|--recharge-server PRIVATE_IP|--support-server PRIVATE_IP|--enemy-ability-server PRIVATE_IP]");
+        else if (args.Length == 2 && args[0] == "--skill-server") SkillTrainingChecks.Live(args[1], false);
+        else if (args.Length == 2 && args[0] == "--skill-resume-server") SkillTrainingChecks.Live(args[1], true);
+        else if (args.Length != 0) throw new ArgumentException("Usage: ProtocolChecks [--server PRIVATE_IP|--recharge-server PRIVATE_IP|--support-server PRIVATE_IP|--enemy-ability-server PRIVATE_IP|--skill-server PRIVATE_IP|--skill-resume-server PRIVATE_IP]");
     }
 
     /// <summary>Keep server-selected support abilities distinct from self and combat casts.</summary>
@@ -42,6 +44,25 @@ internal static class Program
                 "Enemy ability lost its selected-MOB requirement.");
         Assert(!AbilityTargets.Enemy(32) && !AbilityTargets.Enemy(125),
             "Support ability was classified as hostile targeting.");
+    }
+
+    /// <summary>Decode server-encoded 0x57 before/after AUX without mutating prior snapshots.</summary>
+    private static void CheckSkillTraining()
+    {
+        var world = new World();
+        world.Apply(new Frame(0x1b, FixtureBytes("je-beam-training-before.hex")), 0x40000001);
+        Snapshot before = new Snapshot(world, "ready", true);
+        SkillRank first = before.Skills.FirstOrDefault(skill => skill.Id == 1);
+        Assert(first != null && first.Rank == 1 && first.Cost == 1 && first.CanTrain &&
+            before.Experience?.AvailableSkillPoints == 1,
+            "Native JE Beam rank or spendable point was not decoded.");
+        world.Apply(new Frame(0x1b, FixtureBytes("je-beam-training-after.hex")), 0x40000001);
+        Snapshot after = new Snapshot(world, "ready", true);
+        Assert(after.Skills.First(skill => skill.Id == 1).Rank == 2 &&
+            after.Experience?.AvailableSkillPoints == 0 &&
+            before.Skills.First(skill => skill.Id == 1).Rank == 1 &&
+            before.Experience.AvailableSkillPoints == 1,
+            "Training AUX lost rank/point update or changed an earlier immutable snapshot.");
     }
 
     /// <summary>Fail with a useful behavior description.</summary>

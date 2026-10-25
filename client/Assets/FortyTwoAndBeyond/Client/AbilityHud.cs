@@ -34,9 +34,11 @@ namespace FortyTwoAndBeyond.Client
         private readonly SpaceClient client;
         private readonly FlightHud flightHud;
         private readonly AbilityDefinition[] catalog;
+        private readonly Dictionary<uint, string> skillNames = new Dictionary<uint, string>();
         private readonly int[] slots = { -1, -1, -1, -1, -1, -1 };
         private Vector2 scroll;
         private bool open;
+        private bool trainingTab;
         private int assigningSlot = -1;
         private uint slotOwner;
         private uint pendingSupportTarget;
@@ -58,6 +60,14 @@ namespace FortyTwoAndBeyond.Client
                     if (fields.Length == 10) entries.Add(new AbilityDefinition(fields));
                 }
             catalog = entries.ToArray();
+            TextAsset skills = Resources.Load<TextAsset>("SkillCatalog");
+            if (skills != null)
+                foreach (string row in skills.text.Split('\n'))
+                {
+                    string[] fields = row.TrimEnd('\r').Split('\t');
+                    if (fields.Length == 2 && uint.TryParse(fields[0], out uint id))
+                        skillNames[id] = fields[1];
+                }
         }
 
         /// <returns>bool: Whether pointer input belongs to the ability button or open panel.</returns>
@@ -87,7 +97,7 @@ namespace FortyTwoAndBeyond.Client
         private void LoadSlots(uint playerId)
         {
             if (slotOwner == playerId) return;
-            slotOwner = playerId; assigningSlot = -1; pendingSupportTarget = 0;
+            slotOwner = playerId; assigningSlot = -1; pendingSupportTarget = 0; trainingTab = false;
             for (int i = 0; i < slots.Length; i++)
                 slots[i] = PlayerPrefs.GetInt($"42andBeyond.ability.{playerId}.{i}", -1);
         }
@@ -238,6 +248,36 @@ namespace FortyTwoAndBeyond.Client
             GUI.color = previous;
         }
 
+        /// <summary>Show native trained ranks and one-rank-at-a-time purchase controls.</summary>
+        private void DrawTraining(Snapshot snapshot, Rect panel)
+        {
+            GUILayout.BeginArea(new Rect(panel.x + 18, panel.y + 300,
+                panel.width - 36, panel.height - 349));
+            scroll = GUILayout.BeginScrollView(scroll);
+            if (snapshot.Skills.Length == 0)
+                GUILayout.Label("Waiting for server skill ranks…", flightHud.SmallStyle);
+            foreach (SkillRank skill in snapshot.Skills.OrderBy(entry =>
+                skillNames.TryGetValue(entry.Id, out string name) ? name : entry.Id.ToString()))
+            {
+                string name = skillNames.TryGetValue(skill.Id, out string known) ? known :
+                    "Skill " + skill.Id;
+                GUILayout.BeginHorizontal(GUILayout.Height(52));
+                GUILayout.BeginVertical(GUILayout.Width(318));
+                GUILayout.Label(name, flightHud.BodyStyle);
+                GUILayout.Label($"RANK {skill.Rank}/{skill.Maximum}  ·  " +
+                    (skill.CanTrain ? $"NEXT {skill.Cost} POINTS" : skill.GateReason()),
+                    flightHud.SmallStyle);
+                GUILayout.EndVertical();
+                GUI.enabled = skill.CanTrain && snapshot.Experience != null &&
+                    snapshot.Experience.AvailableSkillPoints >= skill.Cost;
+                if (GUILayout.Button("TRAIN", flightHud.ButtonStyle, GUILayout.Width(110),
+                    GUILayout.Height(34))) client.TrainSkill(skill.Id);
+                GUI.enabled = true;
+                GUILayout.EndHorizontal();
+            }
+            GUILayout.EndScrollView(); GUILayout.EndArea();
+        }
+
         /// <summary>Show only abilities that this character received in native RPG packets.</summary>
         public void Draw(Snapshot snapshot)
         {
@@ -247,7 +287,8 @@ namespace FortyTwoAndBeyond.Client
                 open = !open;
             if (!open) { Quickbar(snapshot); return; }
             Rect panel = PanelRect(); flightHud.Panel(panel);
-            GUI.Label(new Rect(panel.x + 18, panel.y + 15, 380, 28), "CLASS ABILITIES", flightHud.BodyStyle);
+            GUI.Label(new Rect(panel.x + 18, panel.y + 15, 380, 28),
+                trainingTab ? "CLASS SKILLS" : "CLASS ABILITIES", flightHud.BodyStyle);
             if (GUI.Button(new Rect(panel.xMax - 48, panel.y + 12, 30, 28), "×", flightHud.ButtonStyle))
             { open = false; return; }
             GUI.Label(new Rect(panel.x + 18, panel.y + 42, panel.width - 36, 20),
@@ -263,10 +304,24 @@ namespace FortyTwoAndBeyond.Client
                     label, flightHud.ButtonStyle)) assigningSlot = i;
             }
             DrawExperience(panel, snapshot.Experience);
+            if (GUI.Button(new Rect(panel.x + 18, panel.y + 265, 132, 29), "ABILITIES",
+                flightHud.ButtonStyle)) { trainingTab = false; scroll = Vector2.zero; }
+            if (GUI.Button(new Rect(panel.x + 158, panel.y + 265, 132, 29), "TRAINING",
+                flightHud.ButtonStyle)) { trainingTab = true; scroll = Vector2.zero; }
+            if (trainingTab)
+            {
+                GUI.Label(new Rect(panel.x + 18, panel.y + 209, panel.width - 36, 35),
+                    "Train one rank at a time. The server sets costs and requirements.",
+                    flightHud.SmallStyle);
+                DrawTraining(snapshot, panel);
+                GUI.Label(new Rect(panel.x + 18, panel.yMax - 43, panel.width - 36, 35),
+                    client.Status, flightHud.SmallStyle);
+                return;
+            }
             SupportTargetBar(snapshot, panel);
             AbilityDefinition[] available = catalog.Where(item => item.id >= 0 && snapshot.AvailableAbilities.Contains((uint)item.id))
                 .OrderBy(item => item.name).ToArray();
-            GUILayout.BeginArea(new Rect(panel.x + 18, panel.y + 266, panel.width - 36, panel.height - 315));
+            GUILayout.BeginArea(new Rect(panel.x + 18, panel.y + 300, panel.width - 36, panel.height - 349));
             scroll = GUILayout.BeginScrollView(scroll);
             if (available.Length == 0)
                 GUILayout.Label("Waiting for class abilities from the server…", flightHud.SmallStyle);

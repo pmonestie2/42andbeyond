@@ -1,0 +1,54 @@
+0	Afterburn
+1	Beam Weapon
+2	Befriend
+3	Biorepression
+4	Build Components
+5	Build Devices
+6	Build Engines
+8	Build Reactors
+9	Build Shields
+10	Build Weapons
+11	Call Forward
+12	Cloak
+13	Combat Trance
+14	Compulsory Contemplation
+15	Create Wormhole
+16	Critical Targeting
+17	Damage Control
+18	Device Tech
+19	Energy Leech
+20	Engine Tech
+22	Enrage
+23	Environment Shield
+24	Fold Space
+25	Gravity Link
+26	Hacking
+27	Hull Patch
+29	Jenquai Culture
+30	Jenquai Lore
+31	Jumpstart
+33	Menace
+34	Missile Weapon
+35	Navigate
+36	Negotiate
+37	Power Down
+38	Progen Culture
+39	Progen Lore
+40	Projectile Weapon
+41	Prospect
+42	Psionic Shield
+43	Reactor Optimization
+44	Rally
+45	Reactor Tech
+46	Recharge Shields
+47	Repair Equipment
+48	Repulsor Field
+49	Scan
+50	Self Destruct
+51	Shield Charging
+52	Shield Inversion
+53	Shield Leech
+54	Shield Sap
+55	Shield Tech
+56	Summon
+57	Terran Culture

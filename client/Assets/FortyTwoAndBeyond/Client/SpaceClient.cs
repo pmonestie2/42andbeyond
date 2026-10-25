@@ -885,6 +885,15 @@ namespace FortyTwoAndBeyond.Client
             worker.Submit(new ClientCommand(CommandKind.ActivateAbilityFor, recipient, slot: (int)id));
         }
 
+        /// <summary>Ask the server to spend earned points on one advertised skill rank.</summary>
+        public void TrainSkill(uint id)
+        {
+            if (!Ready || snapshot.Experience == null || snapshot.Experience.AvailableSkillPoints == 0 ||
+                !snapshot.Skills.Any(skill => skill.Id == id && skill.CanTrain &&
+                    skill.Cost <= snapshot.Experience.AvailableSkillPoints)) return;
+            worker.Submit(new ClientCommand(CommandKind.TrainSkill, id));
+        }
+
         /// <summary>Ask the server for choices after the ship is incapacitated.</summary>
         public void RequestRescue()
         { if (Ready && Incapacitated) worker.Submit(new ClientCommand(CommandKind.RequestRescue)); }

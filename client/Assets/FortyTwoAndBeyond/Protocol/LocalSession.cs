@@ -30,6 +30,8 @@ namespace FortyTwoAndBeyond.Protocol
         private double pendingAbilityAt;
         private uint requestedTarget;
         private double requestedTargetAt;
+        private int pendingSkillId = -1;
+        private double pendingSkillAt;
         private double combatTargetAt, followTargetAt, pendingLootAt, pendingResourceAt, selfJumpstartAt, rescueRequestAt;
         private bool gateActivated, gateCamera, gateFinished, dockRequested, lootRequested, selfJumpstartPending, rescuePending, disposed, failed;
         private byte[] handoff;
@@ -182,6 +184,7 @@ namespace FortyTwoAndBeyond.Protocol
             pendingDeviceSlot = -1; pendingDeviceTemplate = 0;
             pendingAbilityTarget = pendingAbilityId = 0;
             requestedTarget = 0;
+            pendingSkillId = -1;
             selfJumpstartPending = rescuePending = false; handoff = null;
             byte[] body = Wire.Body(w =>
             {
@@ -772,6 +775,19 @@ namespace FortyTwoAndBeyond.Protocol
                  World.Group.Members.Any(member => member.Id == target));
         }
 
+        /// <summary>Request one durable skill rank and await its authoritative RPG refresh.</summary>
+        public void TrainSkill(uint id)
+        {
+            if (!Ready || pendingSkillId >= 0 || id > ushort.MaxValue ||
+                World.Experience == null || World.Experience.AvailableSkillPoints == 0) return;
+            SkillRank skill = World.Skills.FirstOrDefault(entry => entry.Id == id);
+            if (skill?.CanTrain != true || World.Experience.AvailableSkillPoints < skill.Cost) return;
+            Send(0x57, Wire.Body(w =>
+            { w.Write(Player); w.Write(World.Experience.AvailableSkillPoints); w.Write((ushort)id); }));
+            pendingSkillId = (int)id; pendingSkillAt = clock.Elapsed.TotalSeconds;
+            Status = "Training skill " + id;
+        }
+
         /// <summary>Ask rescue control for the native incapacitation choices.</summary>
         public void RequestRescue()
         {
@@ -827,7 +843,10 @@ namespace FortyTwoAndBeyond.Protocol
         private void Apply(Frame frame)
         {
             bool wasLootWindow = World.OpenLootId != 0;
+            SkillRank[] previousSkills = World.Skills;
             World.Apply(frame, Player); byte[] b = frame.Body;
+            if (pendingSkillId >= 0 && !ReferenceEquals(previousSkills, World.Skills))
+                pendingSkillId = -1;
             switch (frame.Opcode)
             {
                 case 0x2020: if (b.Length == 4) Send(0x2021, b); break;
@@ -980,6 +999,8 @@ namespace FortyTwoAndBeyond.Protocol
                 { pendingAbilityTarget = pendingAbilityId = 0;
                   Status = "Ability target did not acknowledge; cast cancelled"; }
                 if (requestedTarget != 0 && now - requestedTargetAt > 5) requestedTarget = 0;
+                if (pendingSkillId >= 0 && now - pendingSkillAt > 5)
+                { pendingSkillId = -1; Status = "Skill training did not confirm; check the server result"; }
                 if (gate != 0)
                 {
                     double elapsed = now - gateAt;

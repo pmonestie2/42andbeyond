@@ -5,7 +5,7 @@ using System.Threading;
 
 namespace FortyTwoAndBeyond.Protocol
 {
-    public enum CommandKind { Thrust, Steer, Warp, Gate, Dock, Launch, EnterStationRoom, StationPose, OpenNpc, ChooseNpc, BuyVendor, SellVendor, EquipCargo, UnequipMount, StoreCargo, RetrieveVault, OpenProduction, CloseProduction, SelectProductionRecipe, SelectProductionCategory, SetProductionLevels, StartProduction, InsertAnalysisSample, ReturnAnalysisSample, ActivateWeapon, ActivateDevice, ActivateDeviceFor, ActivateTurboWeapons, Chat, ToggleWeapons, Formation, SelectTarget, FollowTarget, InvitePlayer, AnswerConfirmation, StopWeapons, OpenLoot, CloseLoot, TakeLoot, OpenResource, CloseResource, ProspectResource, ActivateAbility, ActivateAbilityFor, RequestRescue, ChooseRescue, SelfJumpstart }
+    public enum CommandKind { Thrust, Steer, Warp, Gate, Dock, Launch, EnterStationRoom, StationPose, OpenNpc, ChooseNpc, BuyVendor, SellVendor, EquipCargo, UnequipMount, StoreCargo, RetrieveVault, OpenProduction, CloseProduction, SelectProductionRecipe, SelectProductionCategory, SetProductionLevels, StartProduction, InsertAnalysisSample, ReturnAnalysisSample, ActivateWeapon, ActivateDevice, ActivateDeviceFor, ActivateTurboWeapons, Chat, ToggleWeapons, Formation, SelectTarget, FollowTarget, InvitePlayer, AnswerConfirmation, StopWeapons, OpenLoot, CloseLoot, TakeLoot, OpenResource, CloseResource, ProspectResource, ActivateAbility, ActivateAbilityFor, TrainSkill, RequestRescue, ChooseRescue, SelfJumpstart }
 
     public readonly struct ClientCommand
     {
@@ -124,6 +124,7 @@ namespace FortyTwoAndBeyond.Protocol
                                 case CommandKind.ProspectResource: session.ProspectResource(command.Slot); break;
                                 case CommandKind.ActivateAbility: session.ActivateAbility(command.Target); break;
                                 case CommandKind.ActivateAbilityFor: session.ActivateAbilityFor((uint)command.Slot, command.Target); break;
+                                case CommandKind.TrainSkill: session.TrainSkill(command.Target); break;
                                 case CommandKind.RequestRescue: session.RequestRescue(); break;
                                 case CommandKind.ChooseRescue: session.ChooseRescue((byte)command.Target); break;
                                 case CommandKind.SelfJumpstart: session.SelfJumpstart(); break;

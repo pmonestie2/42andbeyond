@@ -520,6 +520,7 @@ namespace FortyTwoAndBeyond.Protocol
         public ReputationState Reputation { get; private set; }
         public ReputationChange RecentReputationChange { get; private set; }
         public ExperienceState Experience { get; private set; }
+        public SkillRank[] Skills { get; private set; } = Array.Empty<SkillRank>();
         public uint[] AvailableAbilities { get; private set; } = Array.Empty<uint>();
         public uint CastingAbilityId { get; private set; } = uint.MaxValue;
         public string ActiveDeviceLabel { get; private set; } = "";
@@ -841,6 +842,8 @@ namespace FortyTwoAndBeyond.Protocol
                         }
                         ExperienceState experience = AuxState.ReadExperience(b, Experience);
                         if (experience != null) Experience = experience;
+                        SkillRank[] skills = AuxState.ReadSkillRanks(b);
+                        if (skills != null) Skills = skills;
                         uint[] abilities = AuxState.ReadAvailableAbilities(b);
                         if (abilities != null) AvailableAbilities = abilities;
                         AbilityProgress progress = AuxState.ReadAbilityProgress(b);
@@ -1046,6 +1049,7 @@ namespace FortyTwoAndBeyond.Protocol
         public readonly ReputationState Reputation;
         public readonly ReputationChange RecentReputationChange;
         public readonly ExperienceState Experience;
+        public readonly SkillRank[] Skills;
         public readonly uint[] AvailableAbilities;
         public readonly uint CastingAbilityId;
         public readonly bool TurboWeaponsActive;
@@ -1105,6 +1109,7 @@ namespace FortyTwoAndBeyond.Protocol
             Reputation = world.Reputation;
             RecentReputationChange = world.RecentReputationChange;
             Experience = world.Experience;
+            Skills = (SkillRank[])world.Skills.Clone();
             Vendor = new ItemView[world.Vendor.Length];
             AvailableAbilities = (uint[])world.AvailableAbilities.Clone();
             long now = System.Diagnostics.Stopwatch.GetTimestamp();
