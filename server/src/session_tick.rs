@@ -282,6 +282,7 @@ impl PlayerSession {
 
     pub(crate) fn publish_mobs(&mut self) -> io::Result<()> {
         if !self.logged_in || self.sector.station.is_some() {
+            self.mob_menace_visuals.clear();
             return Ok(());
         }
         let broadcast = self.last_broadcast.elapsed() >= Duration::from_millis(200);
@@ -321,6 +322,25 @@ impl PlayerSession {
                     self.stop_following();
                     self.pending
                         .push(packets::ship_target(self.player_id(), u32::MAX));
+                }
+            }
+            let object_id = MOB_ID + index as u32;
+            let visual = visible
+                .then(|| mob.active_menace())
+                .flatten()
+                .and_then(|fear| {
+                    crate::menace::tier(fear.ability, fear.trained_rank)
+                        .and_then(|tier| tier.verified_effect.map(|asset| (fear.effect, asset)))
+                });
+            if self.mob_menace_visuals.get(&object_id).copied() != visual.map(|(effect, _)| effect)
+            {
+                if let Some(previous) = self.mob_menace_visuals.remove(&object_id) {
+                    self.pending.push(packets::remove_effect(previous));
+                }
+                if let Some((effect, asset)) = visual {
+                    self.mob_menace_visuals.insert(object_id, effect);
+                    self.pending
+                        .push(packets::object_effect(object_id, effect, asset, tick));
                 }
             }
             self.mob_visible[index] = visible;

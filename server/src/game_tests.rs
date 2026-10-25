@@ -1278,6 +1278,202 @@ fn gravity_link_area_and_single_target_persist_with_typed_damage() {
     fs::remove_dir_all(root).unwrap();
 }
 
+/// Two pilots see one persistent fear: area tiers affect only nearby MOBs,
+/// and a failed world write cannot consume the cast or reroll its recipients.
+#[test]
+fn menace_area_flee_and_visual_replay_survive_world_retry_and_restart() {
+    let root = std::env::temp_dir().join(format!("enb-menace-{}", rand::random::<u64>()));
+    let accounts = AccountDirectory::new(&root);
+    let sentinel = accounts
+        .create_class(
+            "sentinel".into(),
+            "example",
+            "Sentinel".into(),
+            crate::classes::CharacterClass::parse("ps").unwrap(),
+        )
+        .unwrap()
+        .account
+        .character
+        .game_id;
+    let privateer = accounts
+        .create_class(
+            "privateer".into(),
+            "example",
+            "Privateer".into(),
+            crate::classes::CharacterClass::parse("pp").unwrap(),
+        )
+        .unwrap()
+        .account
+        .character
+        .game_id;
+    let mut sector: Sector = serde_json::from_str(include_str!("../data/sector.json")).unwrap();
+    let mut first = sector.mobs[0].clone();
+    first.source_id = 910_001;
+    first.level = 1;
+    first.spawn = [1_000., 0., 0.];
+    first.aggressive = false;
+    let mut second = first.clone();
+    second.source_id = 910_002;
+    second.spawn = [1_800., 0., 0.];
+    let mut distant = first.clone();
+    distant.source_id = 910_003;
+    distant.spawn = [5_500., 0., 0.];
+    let mut friendly = first.clone();
+    friendly.source_id = 910_004;
+    friendly.spawn = [1_400., 0., 0.];
+    friendly.faction = crate::classes::CharacterClass::parse("ps")
+        .unwrap()
+        .faction();
+    sector.mobs = vec![first, second, distant, friendly];
+    let bind = Ipv4Addr::new(127, 0, 0, 2);
+    let mut game = GameState::new(sector.clone(), bind, root.clone()).unwrap();
+    login(&mut game, sentinel, 23501, "sentinel");
+    login(&mut game, privateer, 23502, "privateer");
+    game.update_views();
+    let energy = game.sessions[&sentinel].energy_balance().0;
+    activate(&mut game, sentinel, MOB_ID, 18);
+    assert_eq!(game.sessions[&sentinel].energy_balance().0, energy - 120.);
+    let torn_world = root.join("combat/1076.json.next");
+    fs::create_dir(&torn_world).unwrap();
+    game.advance(1.6).unwrap();
+    assert!(lock_combat(game.combats.get(&sector.id).unwrap())
+        .unwrap()
+        .actors[0]
+        .menace
+        .is_empty());
+    fs::remove_dir(torn_world).unwrap();
+    advance(&mut game, 0.1);
+    {
+        let world = lock_combat(game.combats.get(&sector.id).unwrap()).unwrap();
+        assert_eq!(world.actors[0].menace.len(), 1);
+        assert_eq!(world.actors[1].menace.len(), 1);
+        assert!(world.actors[2].menace.is_empty());
+        assert!(world.actors[3].menace.is_empty());
+        assert_eq!(world.actors[0].state, crate::mob::MobState::Fleeing);
+    }
+    let first_effect = lock_combat(game.combats.get(&sector.id).unwrap())
+        .unwrap()
+        .actors[0]
+        .menace[0]
+        .effect;
+    advance(&mut game, 0.5);
+    assert_eq!(
+        lock_combat(game.combats.get(&sector.id).unwrap())
+            .unwrap()
+            .actors[0]
+            .menace[0]
+            .effect,
+        first_effect
+    );
+    let before_privateer = game.sessions[&privateer].energy_balance().0;
+    activate(&mut game, privateer, MOB_ID, 18); // PP has only five ranks.
+    assert_eq!(
+        game.sessions[&privateer].energy_balance().0,
+        before_privateer
+    );
+    drop(game);
+    let mut restored = GameState::new(sector.clone(), bind, root.clone()).unwrap();
+    {
+        let world = lock_combat(restored.combats.get(&1076).unwrap()).unwrap();
+        assert_eq!(world.actors[0].menace[0].effect, first_effect);
+        assert_eq!(world.actors[1].menace.len(), 1);
+        assert!(world.actors[2].menace.is_empty());
+        assert!(world.actors[3].menace.is_empty());
+    }
+    login(&mut restored, privateer, 23503, "privateer");
+    restored.sessions.get_mut(&privateer).unwrap().position = [3_000., 0., 0.];
+    restored.update_views();
+    activate(&mut restored, privateer, MOB_ID + 2, 64);
+    advance(&mut restored, 1.6);
+    let visual_seen = restored.take_outgoing().into_iter().any(|outbound| {
+        let Ok(packet) = Datagram::decode(&outbound.data) else {
+            return false;
+        };
+        let mut remaining = packet.body.as_slice();
+        while remaining.len() >= 4 {
+            let length = u16::from_le_bytes([remaining[0], remaining[1]]) as usize;
+            if length < 4 || length > remaining.len() {
+                break;
+            }
+            if let Ok(frame) = Frame::decode(&remaining[..length]) {
+                if frame.opcode == 9
+                    && u32::from_le_bytes(frame.body[1..5].try_into().unwrap()) == MOB_ID + 2
+                    && u16::from_le_bytes(frame.body[5..7].try_into().unwrap()) == 198
+                {
+                    return true;
+                }
+            }
+            remaining = &remaining[length..];
+        }
+        false
+    });
+    assert!(visual_seen);
+    let visual_id = lock_combat(restored.combats.get(&1076).unwrap())
+        .unwrap()
+        .actors[2]
+        .menace[0]
+        .effect;
+    restored
+        .sessions
+        .get_mut(&privateer)
+        .unwrap()
+        .checkpoint_session(true)
+        .unwrap();
+    drop(restored);
+    let mut resumed = GameState::new(sector, bind, root.clone()).unwrap();
+    login(&mut resumed, privateer, 23504, "privateer");
+    advance(&mut resumed, 0.1);
+    assert!(resumed.take_outgoing().into_iter().any(|outbound| {
+        let Ok(packet) = Datagram::decode(&outbound.data) else {
+            return false;
+        };
+        let mut remaining = packet.body.as_slice();
+        while remaining.len() >= 4 {
+            let length = u16::from_le_bytes([remaining[0], remaining[1]]) as usize;
+            if length < 4 || length > remaining.len() {
+                break;
+            }
+            if let Ok(frame) = Frame::decode(&remaining[..length]) {
+                if frame.opcode == 9
+                    && u32::from_le_bytes(frame.body[1..5].try_into().unwrap()) == MOB_ID + 2
+                    && u16::from_le_bytes(frame.body[5..7].try_into().unwrap()) == 198
+                {
+                    return true;
+                }
+            }
+            remaining = &remaining[length..];
+        }
+        false
+    }));
+    {
+        let mut world = lock_combat(resumed.combats.get(&1076).unwrap()).unwrap();
+        world.actors[2].menace[0].deadline_ms = crate::resources::unix_ms() - 1;
+    }
+    advance(&mut resumed, 0.1);
+    assert!(resumed.take_outgoing().into_iter().any(|outbound| {
+        let Ok(packet) = Datagram::decode(&outbound.data) else {
+            return false;
+        };
+        let mut remaining = packet.body.as_slice();
+        while remaining.len() >= 4 {
+            let length = u16::from_le_bytes([remaining[0], remaining[1]]) as usize;
+            if length < 4 || length > remaining.len() {
+                break;
+            }
+            if let Ok(frame) = Frame::decode(&remaining[..length]) {
+                if frame.opcode == 0x0f
+                    && u32::from_le_bytes(frame.body[..4].try_into().unwrap()) == visual_id
+                {
+                    return true;
+                }
+            }
+            remaining = &remaining[length..];
+        }
+        false
+    }));
+    fs::remove_dir_all(root).unwrap();
+}
+
 /// A selected ally's mounted item and the caster's reactor settle once across two failures.
 #[test]
 fn equipment_repair_toggle_is_atomic_and_replays_without_free_ally_structure() {

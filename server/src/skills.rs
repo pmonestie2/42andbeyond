@@ -31,6 +31,7 @@ pub enum AbilityKind {
     HullPatch,
     EquipmentRepair,
     GravityLink,
+    Menace,
     Rally,
     ReactorOptimization,
     ShieldCharging,
@@ -387,6 +388,8 @@ pub struct Cast {
     #[serde(default)]
     pub gravity_generation: Option<u64>,
     #[serde(default)]
+    pub menace_generation: Option<u64>,
+    #[serde(default)]
     pub sap_generation: Option<u64>,
 }
 
@@ -472,6 +475,9 @@ impl Cast {
             })
             && self.gravity_generation.is_none_or(|generation| {
                 matches!(self.ability, 10 | 12 | 47 | 59 | 73) && generation < 1_000_000_000
+            })
+            && self.menace_generation.is_none_or(|generation| {
+                matches!(self.ability, 11 | 18 | 64 | 99 | 127) && generation < 1_000_000_000
             })
             && self.sap_generation.is_none_or(|generation| {
                 matches!(self.ability, 54 | 55 | 98 | 112 | 114) && generation < 1_000_000_000

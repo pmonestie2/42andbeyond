@@ -60,6 +60,8 @@ mod harvest_visuals;
 mod hull_repair;
 #[path = "looting.rs"]
 mod looting;
+#[path = "menace_service.rs"]
+mod menace_service;
 #[path = "mining.rs"]
 mod mining;
 #[path = "mob_damage.rs"]
@@ -219,6 +221,7 @@ pub struct PlayerSession {
     mob_states: Vec<MobState>,
     mob_visible: Vec<bool>,
     mob_relationships: Vec<Option<u32>>,
+    mob_menace_visuals: HashMap<u32, u32>,
     player_firing: bool,
     weapon_cooldowns: [f32; 20],
     weapon_firing: [bool; 20],
@@ -422,6 +425,7 @@ impl PlayerSession {
             mob_states,
             mob_visible,
             mob_relationships,
+            mob_menace_visuals: HashMap::new(),
             player_firing: false,
             weapon_cooldowns: [0.; 20],
             weapon_firing: [false; 20],

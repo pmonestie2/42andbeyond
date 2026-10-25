@@ -8,6 +8,9 @@ use crate::motion::Motion;
 #[path = "mob_faction_tests.rs"]
 mod faction_tests;
 #[cfg(test)]
+#[path = "menace_mob_tests.rs"]
+mod menace_tests;
+#[cfg(test)]
 #[path = "mob_radius_tests.rs"]
 mod radius_tests;
 use serde::{Deserialize, Serialize};
@@ -125,6 +128,7 @@ pub enum MobState {
     Chasing,
     Attacking,
     Dead,
+    Fleeing,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -159,6 +163,8 @@ pub struct Mob {
     pub disabled_seconds: f32,
     #[serde(default)]
     pub gravity: Vec<crate::gravity_link::GravityDebuff>,
+    #[serde(default)]
+    pub menace: Vec<crate::menace::MenaceFear>,
     #[serde(default)]
     pub death_generation: u64,
     #[serde(default)]
@@ -217,9 +223,12 @@ impl Mob {
     /// Returns:
     ///     Option<u32>: Pilot this living MOB currently pursues or attacks.
     pub fn targeted_player(&self) -> Option<u32> {
-        (self.state != MobState::Dead)
-            .then(|| self.aggro.targeted_player())
-            .flatten()
+        (self.state != MobState::Dead
+            && !self
+                .active_menace()
+                .is_some_and(|fear| fear.suppress_weapons()))
+        .then(|| self.aggro.targeted_player())
+        .flatten()
     }
     pub fn new(definition: MobDefinition) -> Self {
         let combat = MobStats::derive(&definition);
@@ -240,6 +249,7 @@ impl Mob {
             max_shield: combat.shield,
             disabled_seconds: 0.,
             gravity: Vec::new(),
+            menace: Vec::new(),
             death_generation: 0,
             killer: None,
             cooldown: 0.,
@@ -267,9 +277,15 @@ impl Mob {
         if saved.gravity.len() > 16 || saved.gravity.iter().any(|effect| !effect.valid()) {
             return Err(crate::protocol::invalid("Invalid MOB Gravity Link state."));
         }
+        if saved.menace.len() > 16 || saved.menace.iter().any(|fear| !fear.valid()) {
+            return Err(crate::protocol::invalid("Invalid MOB Menace state."));
+        }
         saved
             .gravity
             .retain(|effect| effect.active(crate::resources::unix_ms()));
+        saved
+            .menace
+            .retain(|fear| fear.active(crate::resources::unix_ms(), saved.death_generation));
         saved.validate_motion()?;
         // Older simulation ticks let an elapsed respawn countdown run just
         // below zero before setting Idle. Those are valid expired timers, not
@@ -353,6 +369,7 @@ impl Mob {
             self.roaming.reset_interest();
             self.unowned_provoked = false;
             self.gravity.clear();
+            self.menace.clear();
         }
     }
     pub fn damage_by(&mut self, damage: f32, player: u32) {
@@ -412,6 +429,48 @@ impl Mob {
             return false;
         }
         self.gravity.push(effect);
+        true
+    }
+    /// Returns:
+    ///     Option<&MenaceFear>: Strongest current fear on this MOB generation.
+    pub fn active_menace(&self) -> Option<&crate::menace::MenaceFear> {
+        let now = crate::resources::unix_ms();
+        self.menace
+            .iter()
+            .filter(|fear| fear.active(now, self.death_generation))
+            .max_by_key(|fear| {
+                (
+                    crate::menace::tier(fear.ability, fear.trained_rank)
+                        .map_or(0, |tier| tier.rank),
+                    fear.deadline_ms,
+                )
+            })
+    }
+
+    /// Returns:
+    ///     bool: Whether a new fear receipt was added exactly once.
+    pub fn apply_menace(&mut self, fear: crate::menace::MenaceFear) -> bool {
+        if self.state == MobState::Dead
+            || !fear.valid()
+            || fear.mob_generation != self.death_generation
+            || !fear.active(crate::resources::unix_ms(), self.death_generation)
+        {
+            return false;
+        }
+        if self.menace.iter().any(|existing| {
+            existing.source == fear.source
+                && existing.source_epoch == fear.source_epoch
+                && existing.effect == fear.effect
+        }) {
+            return false;
+        }
+        self.menace
+            .retain(|existing| existing.active(crate::resources::unix_ms(), self.death_generation));
+        if self.menace.len() == 16 {
+            return false;
+        }
+        self.menace.push(fear);
+        self.state = MobState::Fleeing;
         true
     }
     /// A durable corpse birth can be newer than the transport checkpoint.
@@ -563,6 +622,9 @@ impl Mob {
             0.
         };
         self.state != MobState::Dead
+            && !self
+                .active_menace()
+                .is_some_and(|fear| fear.suppress_weapons())
             && self.disabled_seconds <= 0.
             && self.cooldown <= dt
             && players.iter().any(|player| {
@@ -584,7 +646,11 @@ impl Mob {
         self.tick_idle(dt, &[])
     }
     pub fn tick_idle(&mut self, dt: f32, players: &[PlayerThreat]) -> f32 {
-        if self.state != MobState::Dead && self.disabled_seconds <= 0. && self.native_roaming() {
+        if self.state != MobState::Dead
+            && self.active_menace().is_none()
+            && self.disabled_seconds <= 0.
+            && self.native_roaming()
+        {
             self.state = MobState::Idle;
             self.cooldown = (self.cooldown - dt).max(0.);
             self.advance_roaming(dt, players);
@@ -652,9 +718,24 @@ impl Mob {
                 self.roaming.reset_interest();
                 self.killer = None;
                 self.gravity.clear();
+                self.menace.clear();
                 self.state = MobState::Idle;
             }
             return 0.;
+        }
+        if let Some(fear) = self.active_menace().cloned() {
+            self.state = MobState::Fleeing;
+            self.cooldown = (self.cooldown - dt).max(0.);
+            let speed = 150. * self.gravity_speed_fraction();
+            self.position = fear.flee_position(self.position, speed, dt);
+            return if visible
+                && !fear.suppress_weapons()
+                && self.range_to(player) <= self.combat.range
+            {
+                self.fire_if_ready()
+            } else {
+                0.
+            };
         }
         if !visible || self.disabled_seconds > 0. {
             let disabled = self.disabled_seconds > 0.;
@@ -714,6 +795,12 @@ impl Mob {
             return 0.;
         }
         self.state = MobState::Attacking;
+        self.fire_if_ready()
+    }
+
+    /// Returns:
+    ///     f32: One admitted weapon launch's damage, or zero while cooling.
+    fn fire_if_ready(&mut self) -> f32 {
         if self.cooldown == 0. {
             self.cooldown = self.combat.reload;
             let fraction = if self.combat.variance {
