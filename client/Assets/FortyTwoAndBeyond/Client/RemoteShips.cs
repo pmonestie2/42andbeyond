@@ -15,7 +15,8 @@ namespace FortyTwoAndBeyond.Client
             public readonly Vector3[] TrailPoints = new Vector3[12];
             public int TrailCount;
             public float LastTrailSample;
-            public bool Crew, Selected;
+            public bool Crew, Selected, Formed;
+            public Vector3 FormationOffset;
             public ShipActor State;
             public Vector3 Destination;
             public Vector3 Velocity;
@@ -52,6 +53,7 @@ namespace FortyTwoAndBeyond.Client
         private readonly Dictionary<uint, View> ships = new Dictionary<uint, View>();
         private readonly HashSet<uint> visible = new HashSet<uint>();
         private readonly HashSet<uint> crewIds = new HashSet<uint>();
+        private readonly HashSet<uint> formedIds = new HashSet<uint>();
         private readonly List<uint> removed = new List<uint>();
         private readonly SpaceArt art;
         private readonly Transform parent;
@@ -63,21 +65,30 @@ namespace FortyTwoAndBeyond.Client
         { this.art = art; this.parent = parent; }
 
         /// <summary>Reconcile server visibility without recreating ships on movement packets.</summary>
-        public void Apply(ShipActor[] players, GroupState group, uint selectedTargetId)
+        public void Apply(ShipActor[] players, GroupState group, uint selectedTargetId,
+            Position ownPosition)
         {
             visible.Clear();
             crewIds.Clear();
+            formedIds.Clear();
             if (group != null)
-                foreach (GroupMember member in group.Members) crewIds.Add(member.Id);
+                foreach (GroupMember member in group.Members)
+                {
+                    crewIds.Add(member.Id);
+                    if (group.Formed && member.Formed) formedIds.Add(member.Id);
+                }
+            Vector3 ownAuthoritative = SpaceClient.Convert(ownPosition);
             foreach (ShipActor player in players)
             {
                 if (!player.HasPosition) continue;
                 bool crew = player.IsPlayer && crewIds.Contains(player.Id);
+                bool formed = crew && formedIds.Contains(player.Id);
                 bool selected = player.Id == selectedTargetId;
                 visible.Add(player.Id);
                 if (!ships.TryGetValue(player.Id, out View view))
                 {
-                    Transform model = player.IsPlayer ? art.Ship(parent) : art.Mob(parent, player.Hostile);
+                    Transform model = player.IsPlayer ? art.Ship(parent) :
+                        art.Mob(parent, player.Asset, player.Hostile);
                     model.localScale = Vector3.one * .25f * Mathf.Clamp(player.Scale, .05f, 100);
                     view = new View(model, player);
                     view.Marker = art.ContactMarker(model, player.IsPlayer, player.Hostile, crew, selected);
@@ -86,6 +97,13 @@ namespace FortyTwoAndBeyond.Client
                     ships.Add(player.Id, view);
                 }
                 else if (!ReferenceEquals(view.State, player)) view.Apply(player);
+                if (view.Formed != formed)
+                {
+                    view.TrailCount = 0;
+                    if (view.Trail != null) view.Trail.enabled = false;
+                }
+                view.Formed = formed;
+                if (formed) view.FormationOffset = SpaceClient.Convert(player.Position) - ownAuthoritative;
                 if (view.Crew != crew || view.Selected != selected)
                 {
                     if (view.Marker != null) Object.Destroy(view.Marker.gameObject);
@@ -132,7 +150,7 @@ namespace FortyTwoAndBeyond.Client
             LineRenderer trail = view.Trail;
             if (trail == null) return;
             bool visibleTrail = view.Selected || view.Crew || view.State.Hostile;
-            if (!visibleTrail) { trail.enabled = false; view.TrailCount = 0; return; }
+            if (!visibleTrail || view.Formed) { trail.enabled = false; view.TrailCount = 0; return; }
             Vector3 current = view.Model.localPosition;
             if (view.TrailCount > 0 &&
                 Vector3.Distance(current, view.TrailPoints[view.TrailCount - 1]) > 20f)
@@ -175,8 +193,9 @@ namespace FortyTwoAndBeyond.Client
                 float age = Time.unscaledTime - view.PoseAt;
                 Vector3 predicted = view.Destination +
                     (age < .35f ? view.Velocity * Mathf.Min(age, .25f) : Vector3.zero);
-                model.localPosition = Vector3.Distance(model.localPosition, predicted) > 300
-                    ? predicted : Vector3.Lerp(model.localPosition, predicted, blend);
+                model.localPosition = view.Formed ? -parent.position + view.FormationOffset :
+                    Vector3.Distance(model.localPosition, predicted) > 300 ?
+                    predicted : Vector3.Lerp(model.localPosition, predicted, blend);
                 model.localRotation = Quaternion.Slerp(model.localRotation, view.Orientation, blend);
                 if (view.Marker != null && markerCamera != null)
                 {
@@ -205,7 +224,7 @@ namespace FortyTwoAndBeyond.Client
                 if (view.Trail != null) Object.Destroy(view.Trail.gameObject);
                 Object.Destroy(view.Model.gameObject);
             }
-            ships.Clear(); visible.Clear(); crewIds.Clear(); removed.Clear();
+            ships.Clear(); visible.Clear(); crewIds.Clear(); formedIds.Clear(); removed.Clear();
         }
     }
 }

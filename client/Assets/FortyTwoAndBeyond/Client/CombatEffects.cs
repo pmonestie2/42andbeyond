@@ -49,6 +49,7 @@ namespace FortyTwoAndBeyond.Client
         private readonly Dictionary<uint, float> reportedShields = new Dictionary<uint, float>();
         private readonly Transform parent, player;
         private readonly RemoteShips ships;
+        private readonly ShipLoadoutVisuals loadout;
         private readonly Material material, impactMaterial;
         private Camera effectCamera;
         private float normalFieldOfView = 60f;
@@ -73,6 +74,7 @@ namespace FortyTwoAndBeyond.Client
         public CombatEffects(Transform parent, Transform player, RemoteShips ships)
         {
             this.parent = parent; this.player = player; this.ships = ships;
+            loadout = new ShipLoadoutVisuals(player);
             Shader shader = Resources.Load<Shader>("BeamAdditive");
             if (shader != null)
             {
@@ -101,6 +103,7 @@ namespace FortyTwoAndBeyond.Client
         public void Apply(Snapshot snapshot)
         {
             playerId = snapshot.PlayerId;
+            loadout.Apply(snapshot);
             SetDeviceBuff(snapshot.DeviceBuff, snapshot.Station != null);
             foreach (ShotEvent shot in snapshot.Shots)
             {
@@ -583,6 +586,7 @@ namespace FortyTwoAndBeyond.Client
             ClearDeviceBuff();
             ClearWarp(); warpPhase = WarpPhase.Idle; warpArrived = false;
             reportedShields.Clear();
+            loadout.Reset();
             lastShotSequence = lastDamageSequence = 0; playerId = 0;
         }
 
@@ -592,6 +596,7 @@ namespace FortyTwoAndBeyond.Client
             Clear();
             if (material != null) Object.Destroy(material);
             if (impactMaterial != null) Object.Destroy(impactMaterial);
+            loadout.Dispose();
         }
     }
 }

@@ -13,8 +13,10 @@ namespace FortyTwoAndBeyond.Client
         private readonly List<Mesh> meshes = new List<Mesh>();
         private readonly Mesh[] rocks = new Mesh[8];
         private readonly Mesh ring, shipHull;
-        private readonly GameObject corvetteAsset, frigateAsset;
-        private readonly Material corvetteSurface, frigateSurface, hostileFrigateSurface;
+        private readonly GameObject corvetteAsset, frigateAsset, destroyerAsset, cruiserAsset, carrierAsset;
+        private readonly Material corvetteSurface, frigateSurface, destroyerSurface, cruiserSurface, carrierSurface;
+        private readonly Material hostileFrigateSurface, hostileDestroyerSurface, hostileCruiserSurface,
+            hostileCarrierSurface;
         private readonly Material hull, trim, dark, glass, glow, amber, hostile, crewSignal, mineral, rock, oreRock, field;
         public Material Sky { get; }
         public Material EffectLine { get; }
@@ -46,14 +48,18 @@ namespace FortyTwoAndBeyond.Client
             if (effectShader != null) { EffectLine = new Material(effectShader); materials.Add(EffectLine); }
             corvetteAsset = Resources.Load<GameObject>("ViktorShips/corvette03");
             frigateAsset = Resources.Load<GameObject>("ViktorShips/frigate03");
+            destroyerAsset = Resources.Load<GameObject>("ViktorShips/destroyer03");
+            cruiserAsset = Resources.Load<GameObject>("ViktorShips/cruiser03");
+            carrierAsset = Resources.Load<GameObject>("ViktorShips/carrier03");
             corvetteSurface = ShipSurface("corvette03");
             frigateSurface = ShipSurface("frigate03");
-            if (frigateSurface != null)
-            {
-                hostileFrigateSurface = new Material(frigateSurface);
-                hostileFrigateSurface.SetColor("_Color", new Color(.94f, .65f, .6f));
-                materials.Add(hostileFrigateSurface);
-            }
+            destroyerSurface = ShipSurface("destroyer03");
+            cruiserSurface = ShipSurface("cruiser03");
+            carrierSurface = ShipSurface("carrier03");
+            hostileFrigateSurface = HostileSurface(frigateSurface);
+            hostileDestroyerSurface = HostileSurface(destroyerSurface);
+            hostileCruiserSurface = HostileSurface(cruiserSurface);
+            hostileCarrierSurface = HostileSurface(carrierSurface);
             ring = Torus(1, .12f, 48, 8); meshes.Add(ring);
             shipHull = Hull(); meshes.Add(shipHull);
             for (int i = 0; i < rocks.Length; i++) { rocks[i] = Asteroid(i + 17); meshes.Add(rocks[i]); }
@@ -130,6 +136,16 @@ namespace FortyTwoAndBeyond.Client
             if (normal != null) surface.SetTexture("_BumpMap", normal);
             if (specular != null) surface.SetTexture("_SpecGlossMap", specular);
             if (emission != null) surface.SetTexture("_EmissionMap", emission);
+            return surface;
+        }
+
+        /// <returns>Material: A warmer tint of a textured hull, or null without its source.</returns>
+        private Material HostileSurface(Material source)
+        {
+            if (source == null) return null;
+            var surface = new Material(source);
+            surface.SetColor("_Color", new Color(.94f, .65f, .6f));
+            materials.Add(surface);
             return surface;
         }
 
@@ -256,11 +272,29 @@ namespace FortyTwoAndBeyond.Client
         }
 
         /// <returns>A distinct procedural NPC craft using shared rendering assets.</returns>
-        public Transform Mob(Transform parent, bool isHostile)
+        public Transform Mob(Transform parent, ushort nativeAsset, bool isHostile)
         {
             Transform root = Root(parent, "Server mob");
-            Material surface = isHostile ? hostileFrigateSurface ?? frigateSurface : frigateSurface;
-            if (Imported(root, frigateAsset, "Viktor Hahn frigate", Vector3.one * 1.5f, surface) != null)
+            GameObject asset = frigateAsset;
+            Material surface = isHostile ? hostileFrigateSurface : frigateSurface;
+            float size = 1.5f;
+            string modelName = "Viktor Hahn frigate";
+            if (nativeAsset == 1022 || nativeAsset == 1023)
+            {
+                asset = destroyerAsset; surface = isHostile ? hostileDestroyerSurface : destroyerSurface;
+                size = .55f; modelName = "Viktor Hahn destroyer";
+            }
+            else if (nativeAsset == 384)
+            {
+                asset = cruiserAsset; surface = isHostile ? hostileCruiserSurface : cruiserSurface;
+                size = .38f; modelName = "Viktor Hahn cruiser";
+            }
+            else if (nativeAsset >= 1030 && nativeAsset <= 1049)
+            {
+                asset = carrierAsset; surface = isHostile ? hostileCarrierSurface : carrierSurface;
+                size = .45f; modelName = "Viktor Hahn carrier";
+            }
+            if (Imported(root, asset, modelName, Vector3.one * size, surface) != null)
             {
                 return root;
             }
