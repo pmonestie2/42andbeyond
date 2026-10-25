@@ -11,6 +11,7 @@
   <ItemGroup>
     <Compile Include="Program.cs" />
     <Compile Include="PeerChecks.cs" />
+    <None Include="Fixtures/*.hex" CopyToOutputDirectory="PreserveNewest" />
     <Compile Include="../Assets/FortyTwoAndBeyond/Client/FlightThrottle.cs" Link="FlightThrottle.cs" />
     <Compile Include="../Assets/FortyTwoAndBeyond/Client/StationWalkState.cs" Link="StationWalkState.cs" />
     <ProjectReference Include="FortyTwoAndBeyond.Protocol.csproj" />

@@ -590,11 +590,11 @@ impl PlayerSession {
                 });
                 return Ok(());
             }
-            if crate::peer_buffs::scan_offer(template).is_some()
+            if crate::peer_buffs::friendly_offer(template).is_some()
                 && self.target != self.player_id()
                 && self.peer_ids.contains(&self.target)
             {
-                self.client_events.push(ClientEvent::PeerScanBoost {
+                self.client_events.push(ClientEvent::PeerDeviceBuff {
                     target: self.target,
                     slot: slot as u8,
                     epoch: self.session_epoch,

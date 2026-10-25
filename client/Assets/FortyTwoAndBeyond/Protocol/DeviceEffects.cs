@@ -47,8 +47,8 @@ namespace FortyTwoAndBeyond.Protocol
         { return label == "Reroute Shield Energy" || label == "Transfer Reactor Energy"; }
 
         /// <returns>bool: Whether activation needs an acknowledged visible pilot target.</returns>
-        public static bool RequiresPeer(string label)
-        { return label == "Transfer Reactor Energy"; }
+        public static bool RequiresPeer(string label, bool targetsPeer = false)
+        { return label == "Transfer Reactor Energy" || label == "Scan Boost" && targetsPeer; }
 
         /// <returns>bool: Whether the catalog effect may be activated from this unlocked mount.</returns>
         public static bool MountedSlot(string label, uint type, int slot, uint deviceMounts)
@@ -59,6 +59,7 @@ namespace FortyTwoAndBeyond.Protocol
                 (type == 2 && slot == 0 || type == 6 && slot == 2)) return true;
             return type == 7 && slot == 1 &&
                 (label == "Impulse Turbo" || label == "Increase Maneuverability" ||
+                    label == "Scan Boost" ||
                     label == "Reroute Shield Energy");
         }
     }

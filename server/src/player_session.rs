@@ -2614,7 +2614,9 @@ mod tests {
             source: ship.player_id() + 1,
             target_epoch: ship.session_epoch,
             template: 1813,
+            effect: crate::peer_buffs::FriendlyEffect::ScanBoost,
             value: 25.,
+            operation: 2,
             expires_at_ms: crate::resources::unix_ms() + 10_000,
         };
         let effect_id = buff.visual_id(ship.player_id());
@@ -2639,6 +2641,71 @@ mod tests {
             .pending
             .iter()
             .any(|frame| { frame.opcode == 0x0f && frame.body == effect_id.to_le_bytes() }));
+    }
+
+    #[test]
+    fn received_recharge_buffs_change_regeneration_and_clear_on_expiry() {
+        for (template, kind, value, operation, buff_name) in [
+            (
+                1805,
+                crate::peer_buffs::FriendlyEffect::RechargeShields,
+                10.,
+                2,
+                "Regenerate Shield",
+            ),
+            (
+                2172,
+                crate::peer_buffs::FriendlyEffect::RechargeReactor,
+                30.,
+                2,
+                "Regenerate Energy",
+            ),
+        ] {
+            let mut ship = session();
+            ship.logged_in = true;
+            let base = ship.equipment.ship;
+            let buff = crate::peer_buffs::PeerBuff {
+                revision: 1,
+                source: ship.player_id() + 1,
+                target_epoch: ship.session_epoch,
+                template,
+                effect: kind,
+                value,
+                operation,
+                expires_at_ms: crate::resources::unix_ms() + 10_000,
+            };
+            let visual_id = buff.visual_id(ship.player_id());
+            ship.apply_peer_buff(buff).unwrap();
+            assert!(ship.pending.iter().any(|frame| frame.opcode == 9));
+            assert!(ship.pending.iter().any(|frame| frame.opcode == 0x1b
+                && frame
+                    .body
+                    .windows(buff_name.len())
+                    .any(|bytes| bytes == buff_name.as_bytes())));
+            ship.energy = 0.;
+            ship.shield = 0.;
+            ship.advance_ship_resources(1.);
+            match kind {
+                crate::peer_buffs::FriendlyEffect::RechargeShields => {
+                    assert!(ship.equipment.ship.shield_recharge > base.shield_recharge);
+                    assert_eq!(ship.shield, ship.equipment.ship.shield_recharge);
+                }
+                crate::peer_buffs::FriendlyEffect::RechargeReactor => {
+                    assert!(ship.equipment.ship.energy_recharge > base.energy_recharge);
+                    assert_eq!(ship.energy, ship.equipment.ship.energy_recharge);
+                }
+                _ => unreachable!(),
+            }
+            ship.peer_buff.as_mut().unwrap().expires_at_ms = crate::resources::unix_ms() - 1;
+            ship.advance_peer_buff().unwrap();
+            assert!(ship.peer_buff.is_none());
+            assert_eq!(ship.equipment.ship.energy_recharge, base.energy_recharge);
+            assert_eq!(ship.equipment.ship.shield_recharge, base.shield_recharge);
+            assert!(ship
+                .pending
+                .iter()
+                .any(|frame| frame.opcode == 0x0f && frame.body == visual_id.to_le_bytes()));
+        }
     }
 
     #[test]

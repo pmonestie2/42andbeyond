@@ -521,7 +521,9 @@ namespace FortyTwoAndBeyond.Protocol
         public string ActiveDeviceLabel { get; private set; } = "";
         public long ActiveDeviceEndsAt { get; private set; }
         public TimedDeviceBuff ActiveBuff { get; private set; } = TimedDeviceBuff.Empty;
+        public TimedDeviceBuff PeerBuff { get; private set; } = TimedDeviceBuff.Empty;
         private bool awaitingDeviceVisual;
+        private bool awaitingPeerVisual;
         public bool TurboWeaponsActive => ActiveDeviceLabel == "Turbo Weapons";
         public long CastEndsAt { get; private set; }
         public Dictionary<uint, long> AbilityCooldownEnds { get; } = new Dictionary<uint, long>();
@@ -615,7 +617,7 @@ namespace FortyTwoAndBeyond.Protocol
                 case 0x4f:
                     if (b.Length != 6) throw new InvalidDataException("Invalid station identity.");
                     Station = b[4] == 0 ? new StationState(Wire.U32(b, 0)) : null;
-                    if (Station != null) { ActiveDeviceLabel = ""; ActiveDeviceEndsAt = 0; ActiveBuff = TimedDeviceBuff.Empty; awaitingDeviceVisual = false; Formation = null; ObjectEffects.Clear(); }
+                    if (Station != null) { ActiveDeviceLabel = ""; ActiveDeviceEndsAt = 0; ActiveBuff = TimedDeviceBuff.Empty; PeerBuff = TimedDeviceBuff.Empty; awaitingDeviceVisual = false; awaitingPeerVisual = false; Formation = null; ObjectEffects.Clear(); }
                     Production = new ProductionState();
                     StationAvatars.Clear();
                     Dialogue = null; Vendor = Array.Empty<ItemState>();
@@ -696,10 +698,17 @@ namespace FortyTwoAndBeyond.Protocol
                         if (ObjectEffects.Count >= 256) ObjectEffects.Clear();
                         ObjectEffects[((ulong)objectEffect.OwnerId << 32) | objectEffect.EffectId] = objectEffect;
                     }
-                    if (awaitingDeviceVisual && objectEffect?.OwnerId == player && ActiveBuff.Active)
+                    if (awaitingDeviceVisual && objectEffect?.OwnerId == player && ActiveBuff.Active &&
+                        !(awaitingPeerVisual && objectEffect.Descriptor == 462))
                     {
                         ActiveBuff = ActiveBuff.WithVisual(objectEffect.EffectId, objectEffect.Descriptor);
                         awaitingDeviceVisual = false;
+                    }
+                    if (awaitingPeerVisual && objectEffect?.OwnerId == player && PeerBuff.Active &&
+                        objectEffect.Descriptor == 462)
+                    {
+                        PeerBuff = PeerBuff.WithVisual(objectEffect.EffectId, objectEffect.Descriptor);
+                        awaitingPeerVisual = false;
                     }
                     break;
                 case 0x0f:
@@ -711,6 +720,8 @@ namespace FortyTwoAndBeyond.Protocol
                     if (LootActivity?.EffectId == Wire.U32(b, 0)) LootActivity = null;
                     if (ActiveBuff.VisualDescriptor != 0 && ActiveBuff.VisualEffectId == Wire.U32(b, 0))
                         ActiveBuff = ActiveBuff.WithVisual(0, 0);
+                    if (PeerBuff.VisualDescriptor != 0 && PeerBuff.VisualEffectId == removedEffect)
+                        PeerBuff = PeerBuff.WithVisual(0, 0);
                     break;
                 case 4:
                     Wire.Require(b, 0, 23);
@@ -816,7 +827,8 @@ namespace FortyTwoAndBeyond.Protocol
                     }
                     else if (Wire.U32(b, 0) == player)
                     {
-                        WarpState warp = AuxState.ReadOwn(b, Equipment, out TimedDeviceBuff buff);
+                        WarpState warp = AuxState.ReadOwn(b, Equipment,
+                            out TimedDeviceBuff buff, out TimedDeviceBuff peerBuff);
                         if (warp != null) Warp = warp;
                         if (buff != null)
                         {
@@ -824,6 +836,11 @@ namespace FortyTwoAndBeyond.Protocol
                             awaitingDeviceVisual = buff.Active;
                             ActiveDeviceLabel = buff.Active ? buff.Name : "";
                             if (!buff.Active) ActiveDeviceEndsAt = 0;
+                        }
+                        if (peerBuff != null)
+                        {
+                            PeerBuff = peerBuff;
+                            awaitingPeerVisual = peerBuff.Active;
                         }
                     }
                     else if (Station != null && Production.LabId != 0 &&
@@ -990,6 +1007,7 @@ namespace FortyTwoAndBeyond.Protocol
         public readonly bool TurboWeaponsActive;
         public readonly string ActiveDeviceLabel;
         public readonly DeviceBuffView DeviceBuff;
+        public readonly DeviceBuffView PeerBuff;
         public readonly float ActiveDeviceRemainingSeconds;
         public readonly float CastRemainingSeconds;
         public readonly IReadOnlyDictionary<uint, float> AbilityCooldownSeconds;
@@ -1039,6 +1057,8 @@ namespace FortyTwoAndBeyond.Protocol
             AvailableAbilities = (uint[])world.AvailableAbilities.Clone();
             long now = System.Diagnostics.Stopwatch.GetTimestamp();
             DeviceBuff = world.ActiveBuff.Active ? new DeviceBuffView(world.ActiveBuff,
+                world.EstimatedServerTick(now)) : null;
+            PeerBuff = world.PeerBuff.Active ? new DeviceBuffView(world.PeerBuff,
                 world.EstimatedServerTick(now)) : null;
             CastingAbilityId = world.CastingAbilityId;
             TurboWeaponsActive = world.TurboWeaponsActive;

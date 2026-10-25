@@ -37,7 +37,9 @@ def main() -> None:
         loadout = json.loads((server_root / 'data' / 'sandbox_loadout.json').read_text())
         for equipment in (loadout['equipment'], loadout['by_class']['je']):
             for item in equipment:
-                if item['slot'] == 13:
+                if item['slot'] == 12:
+                    item['template'] = 1813  # Peer-targeted Scan Boost for group support.
+                elif item['slot'] == 13:
                     item['template'] = 2412  # A timed Turbo Weapons buff spends reactor energy.
                 elif item['slot'] == 14:
                     item['template'] = 2495  # Transfer Reactor Energy to the other JE pilot.

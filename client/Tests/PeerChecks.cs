@@ -229,6 +229,21 @@ internal static class PeerChecks
                 visitor.AnswerConfirmation(true);
                 Wait(observer, visitor, () => observer.World.Group.IsLeader && observer.World.Group.Members.Any(m => m.Id == peerId) &&
                     visitor.World.Group.Members.Any(m => m.Id == observer.Player), "Group roster did not converge.");
+                Require(visitor.World.Equipment.Mounted[12]?.Template == 1813 &&
+                    visitor.World.ItemCatalog.TryGetValue(1813, out ItemTemplateInfo scanTemplate) &&
+                    scanTemplate.TargetsPeer && scanTemplate.ActivationLabel == "Scan Boost",
+                    "Disposable peer Scan Boost metadata was not decoded as a targeted device.");
+                visitor.SelectTarget(observer.Player);
+                Wait(observer, visitor, () => visitor.World.Equipment.TargetId == observer.Player,
+                    "Scan Boost recipient was not acknowledged by the server.");
+                visitor.ActivateDevice(12);
+                Wait(observer, visitor, () => visitor.World.Messages.Any(message =>
+                    message == "Scan Boost sent.") && observer.World.PeerBuff.Name == "Increase Scan Range" &&
+                    observer.World.PeerBuff.VisualDescriptor == 462,
+                    "Group recipient did not receive native Scan Boost buff and visual.");
+                Require(new Snapshot(observer.World, "ready", true).PeerBuff?.VisualActive == true,
+                    "Peer Scan Boost visual was missing from the recipient's immutable snapshot.");
+                Console.WriteLine("PASS: selected crew Scan Boost, recipient slot-one buff and native visual");
                 Wait(observer, visitor, () => (!observer.World.AbilityCooldownEnds.TryGetValue(23,
                     out long readyAt) || readyAt <= Stopwatch.GetTimestamp()) &&
                     observer.World.Position.Distance(visitor.World.Position) < 3000,

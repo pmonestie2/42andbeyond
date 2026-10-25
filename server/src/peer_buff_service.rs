@@ -1,6 +1,6 @@
-//! Recipient-owned targeted Scan Boost presentation and stat reconciliation.
+//! Recipient-owned targeted friendly-device presentation and stat reconciliation.
 use super::*;
-use crate::peer_buffs::{scan_offer, PeerBuff, ScanOffer};
+use crate::peer_buffs::{friendly_offer, FriendlyOffer, PeerBuff};
 
 impl PlayerSession {
     /// Returns:
@@ -10,8 +10,8 @@ impl PlayerSession {
     }
 
     /// Returns:
-    ///     ScanOffer: Selected visible peer, legal mount and available energy.
-    pub(crate) fn peer_scan_offer(&self, target: u32, slot: u8) -> io::Result<ScanOffer> {
+    ///     FriendlyOffer: Selected visible peer, legal mount and available energy.
+    pub(crate) fn peer_friendly_offer(&self, target: u32, slot: u8) -> io::Result<FriendlyOffer> {
         if !self.logged_in
             || self.hull <= 0.
             || self.sector.station.is_some()
@@ -21,38 +21,40 @@ impl PlayerSession {
             || !self.peer_ids.contains(&target)
             || !(9..20).contains(&usize::from(slot))
         {
-            return Err(invalid("Select a visible friendly ship before Scan Boost."));
+            return Err(invalid(
+                "Select a visible friendly ship before activating this device.",
+            ));
         }
         let item = self.inventory.equipped[usize::from(slot)]
             .as_ref()
-            .ok_or_else(|| invalid("No equipped Scan Boost device in this mount."))?;
+            .ok_or_else(|| invalid("No equipped friendly device in this mount."))?;
         if item.structure <= 0. {
-            return Err(invalid("Damaged Scan Boost device cannot be activated."));
+            return Err(invalid("Damaged friendly device cannot be activated."));
         }
-        let offer = scan_offer(self.items.get(item.template)?)
-            .ok_or_else(|| invalid("This device cannot boost another ship's scan range."))?;
+        let offer = friendly_offer(self.items.get(item.template)?)
+            .ok_or_else(|| invalid("This device has no supported friendly effect."))?;
         if self.energy < offer.cost {
-            return Err(invalid("Insufficient reactor energy for Scan Boost."));
+            return Err(invalid("Insufficient reactor energy for friendly device."));
         }
         Ok(offer)
     }
 
     /// Returns:
-    ///     u32: Public item template mounted for this Scan Boost request.
+    ///     u32: Public item template mounted for this friendly device request.
     /// Raises:
     ///     io::Error: The requested device mount is empty or invalid.
-    pub(crate) fn peer_scan_template(&self, slot: u8) -> io::Result<u32> {
+    pub(crate) fn peer_friendly_template(&self, slot: u8) -> io::Result<u32> {
         self.inventory
             .equipped
             .get(usize::from(slot))
             .and_then(Option::as_ref)
             .map(|item| item.template)
-            .ok_or_else(|| invalid("No equipped Scan Boost device in this mount."))
+            .ok_or_else(|| invalid("No equipped friendly device in this mount."))
     }
 
     /// Returns:
     ///     bool: Whether a new targeted buff can occupy the recipient's slot.
-    pub(crate) fn peer_scan_available(&self) -> bool {
+    pub(crate) fn peer_buff_available(&self) -> bool {
         self.logged_in
             && self.hull > 0.
             && self.sector.station.is_none()
@@ -101,7 +103,7 @@ impl PlayerSession {
             &effect.buff_name,
             self.tick_ms().wrapping_add(remaining as u32),
         ));
-        if let Some(visual) = scan_offer(template)
+        if let Some(visual) = friendly_offer(template)
             .map(|offer| offer.visual)
             .filter(|id| *id != 0)
         {
@@ -113,7 +115,8 @@ impl PlayerSession {
             ));
         }
         self.pending.push(packets::message(&format!(
-            "Scan Boost received for {} seconds.",
+            "{} received for {} seconds.",
+            buff.effect.label(),
             remaining.div_ceil(1000)
         )));
     }
@@ -126,7 +129,7 @@ impl PlayerSession {
             .items
             .get(buff.template)
             .ok()
-            .and_then(scan_offer)
+            .and_then(friendly_offer)
             .is_some_and(|offer| offer.visual != 0)
         {
             self.pending
@@ -145,7 +148,8 @@ impl PlayerSession {
             let checkpoint = self.checkpoint_session(true);
             self.refresh_equipment()?;
             self.remove_peer_buff_presentation(&old);
-            self.pending.push(packets::message("Scan Boost ended."));
+            self.pending
+                .push(packets::message(&format!("{} ended.", old.effect.label())));
             checkpoint?;
         }
         Ok(())

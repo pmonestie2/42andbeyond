@@ -14,7 +14,7 @@ internal static class Program
         CheckReassembly(); CheckWorld(); CheckMissionJournal(); CheckMissionDialogue();
         CheckExperience(); CheckMiningPhases(); CheckLootTractor(); CheckWarpPhases(); CheckNavigationSelection(); CheckWarpTargets(); CheckWeaponReady();
         CheckDamageResults(); CheckCombatEngagement(); CheckContactSelection(); CheckTargetVerbs(); CheckDeviceEffects();
-        CheckNativeDeviceBuff(); CheckSupportObjectEffects();
+        CheckNativeDeviceBuff(); CheckPeerScanBuff(); CheckSupportObjectEffects();
         CheckAmmunitionTransfer(); CheckFlightThrottle(); CheckFormationAnchor();
         CheckStationLayout(); CheckStationWalk(); CheckDemoRoster(); CheckAddress(); PeerChecks.Decode();
         Console.WriteLine("PASS: framing, ordering, fragmentation, duplicates, bounds, world decoding, private addresses");
@@ -601,6 +601,46 @@ internal static class Program
         Reject(() => NativeObjectEffect.Decode(bytes("03060000405c028e920930ca05")));
     }
 
+    /// <summary>Decode peer Scan Boost slot one and its independent native visual lifecycle.</summary>
+    private static void CheckPeerScanBuff()
+    {
+        byte[] bytes(string hex) => Enumerable.Range(0, hex.Length / 2)
+            .Select(index => Convert.ToByte(hex.Substring(index * 2, 2), 16)).ToArray();
+        const uint player = 0x40000002;
+        const string activeAux =
+            "020000402800010200000000400000220000d2001300496e637265617365205363616e2052616e67650088130000";
+        const string clearAux = "020000401500010200000000400000220000d20000000000000000";
+        const string visual = "0302000040ce010300a01c88130000";
+        var world = new World();
+        world.Apply(new Frame(0x1b, bytes(activeAux)), player);
+        Assert(world.PeerBuff.Name == "Increase Scan Range" && world.PeerBuff.RemovalTick == 5000 &&
+            !world.ActiveBuff.Active, "Peer Scan Boost must occupy buff slot one independently.");
+        world.Apply(new Frame(0x09, bytes(visual)), player);
+        Snapshot first = new Snapshot(world, "ready", true);
+        Assert(first.PeerBuff != null && first.PeerBuff.VisualActive &&
+            first.PeerBuff.VisualDescriptor == 462 && first.PeerBuff.VisualEffectId == 0x1ca00003 &&
+            first.DeviceBuff == null, "Recipient ObjectEffect462 was not matched to buff slot one.");
+        world.Apply(new Frame(0x1b, bytes(clearAux)), player);
+        world.Apply(new Frame(0x0f, bytes("0300a01c")), player);
+        Assert(new Snapshot(world, "ready", true).PeerBuff == null && first.PeerBuff.VisualActive,
+            "Peer buff expiry must clear current state without mutating prior snapshots.");
+        world.Apply(new Frame(0x1b, bytes(activeAux)), player);
+        world.Apply(new Frame(0x09, bytes(visual)), player);
+        Assert(new Snapshot(world, "ready", true).PeerBuff?.VisualEffectId == 0x1ca00003,
+            "Server replay did not restore the recipient Scan Boost visual.");
+        var combined = new World();
+        combined.Apply(new Frame(0x1b, bytes(
+            "020000402200010200000000400000120000d2000d00547572626f20576561706f6e7300da2c0000")), player);
+        combined.Apply(new Frame(0x1b, bytes(activeAux)), player);
+        combined.Apply(new Frame(0x09, bytes(visual)), player);
+        Assert(combined.ActiveBuff.VisualDescriptor == 0 && combined.PeerBuff.VisualDescriptor == 462,
+            "A recipient visual was incorrectly assigned to the sender's own active buff.");
+        combined.Apply(new Frame(0x09, bytes("03020000405c028e920930ca050000")), player);
+        Assert(new Snapshot(combined, "ready", true).DeviceBuff?.VisualDescriptor == 604 &&
+            new Snapshot(combined, "ready", true).PeerBuff?.VisualDescriptor == 462,
+            "Concurrent native self and peer buff visuals did not remain independent.");
+    }
+
     /// <summary>Retain server-created support visuals until their native removal packet.</summary>
     private static void CheckSupportObjectEffects()
     {
@@ -662,6 +702,14 @@ internal static class Program
         Assert(template.Id == 1810 && template.Type == 11 &&
             template.ActivationLabel == "Recharge Reactor",
             "Native recharge device metadata was not exposed to the equipped-device control.");
+        ItemTemplateInfo peerScan = ItemTemplateInfo.Decode(FixtureBytes("item1813.hex"));
+        ItemTemplateInfo reactor = ItemTemplateInfo.Decode(FixtureBytes("item3337.hex"));
+        Assert(peerScan.Id == 1813 && peerScan.Type == 11 && peerScan.TargetsPeer &&
+            peerScan.ActivationLabel == "Scan Boost" &&
+            DeviceEffects.RequiresPeer(peerScan.ActivationLabel, peerScan.TargetsPeer) &&
+            reactor.Id == 3337 && reactor.Type == 7 && !reactor.TargetsPeer &&
+            reactor.ActivationLabel == "Reroute Shield Energy",
+            "Native catalog flags or core effects were lost during item metadata decoding.");
         var world = new World();
         Action<string> notice = message =>
         {
@@ -697,6 +745,17 @@ internal static class Program
         notice("Recharge Reactor active for seconds.");
         Assert(world.ActiveDeviceLabel == "",
             "Malformed active-device duration created a false effect state.");
+    }
+
+    /// <summary>
+    /// Returns:
+    ///     byte[]: An exact server-encoded item metadata body from the protocol fixtures.
+    /// </summary>
+    private static byte[] FixtureBytes(string name)
+    {
+        string hex = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", name)).Trim();
+        return Enumerable.Range(0, hex.Length / 2)
+            .Select(index => Convert.ToByte(hex.Substring(index * 2, 2), 16)).ToArray();
     }
 
     /// <summary>Move a full ammunition stack while installing single equipment items.</summary>

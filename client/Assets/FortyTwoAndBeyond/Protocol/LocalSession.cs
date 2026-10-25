@@ -386,15 +386,19 @@ namespace FortyTwoAndBeyond.Protocol
                 !World.ItemCatalog.TryGetValue(item.Template, out ItemTemplateInfo template) ||
                 !DeviceEffects.MountedSlot(template.ActivationLabel, template.Type, slot,
                     World.Equipment.DeviceMounts) ||
-                !DeviceEffects.IsInstant(template.ActivationLabel) && World.ActiveDeviceLabel.Length > 0)
+                !DeviceEffects.IsInstant(template.ActivationLabel) && !template.TargetsPeer &&
+                    World.ActiveDeviceLabel.Length > 0)
                 return;
             ShipActor peer = null;
-            if (DeviceEffects.RequiresPeer(template.ActivationLabel) &&
-                (!World.Players.TryGetValue(World.Equipment.TargetId, out peer) || !peer.HasPosition))
-            { Status = "Select a nearby pilot before transferring reactor energy"; return; }
+            bool needsPeer = DeviceEffects.RequiresPeer(template.ActivationLabel, template.TargetsPeer);
+            if (needsPeer &&
+                (!World.Players.TryGetValue(World.Equipment.TargetId, out peer) || !peer.HasPosition ||
+                    template.TargetsPeer && !World.Group.Members.Any(member => member.Id == peer.Id)))
+            { Status = template.TargetsPeer ? "Select a visible crew pilot for Scan Boost" :
+                "Select a nearby pilot before transferring reactor energy"; return; }
             Send(0x5d, Wire.Body(w => { w.Write(Player); w.Write((byte)2); w.Write((byte)slot); }));
-            Status = DeviceEffects.RequiresPeer(template.ActivationLabel) ?
-                "Transferring reactor energy to " + peer.Name : "Activating " + template.Name;
+            Status = template.TargetsPeer ? "Sending Scan Boost to " + peer.Name :
+                needsPeer ? "Transferring reactor energy to " + peer.Name : "Activating " + template.Name;
         }
 
         /// <summary>Activate the equipped Turbo Weapons device through native item control.</summary>

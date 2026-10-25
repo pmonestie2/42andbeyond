@@ -30,7 +30,7 @@ pub enum ClientEvent {
         epoch: u64,
         sequence: u32,
     },
-    PeerScanBoost {
+    PeerDeviceBuff {
         target: u32,
         slot: u8,
         epoch: u64,

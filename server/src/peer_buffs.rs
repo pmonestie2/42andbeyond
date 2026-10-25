@@ -1,25 +1,62 @@
-//! One catalog-backed targeted friendly buff with an atomic sender-energy
-//! receipt. Broader simultaneous status stacking remains a separate system.
+//! Catalog-backed targeted friendly buffs with atomic sender-energy receipts.
+//! Broader simultaneous status stacking remains a separate system.
 use crate::items::{ItemCatalog, ItemTemplate, Modifier};
 use serde::{Deserialize, Serialize};
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum FriendlyEffect {
+    #[default]
+    ScanBoost,
+    RechargeShields,
+    RechargeReactor,
+}
+
+impl FriendlyEffect {
+    /// Returns:
+    ///     &str: Recipient-facing native effect label.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::ScanBoost => "Scan Boost",
+            Self::RechargeShields => "Recharge Shields",
+            Self::RechargeReactor => "Recharge Reactor",
+        }
+    }
+
+    /// Returns:
+    ///     &str: Authoritative ship stat changed by this effect.
+    pub fn stat(self) -> &'static str {
+        match self {
+            Self::ScanBoost => "STAT_SCAN_RANGE",
+            Self::RechargeShields => "STAT_SHIELD_RECHARGE",
+            Self::RechargeReactor => "STAT_ENERGY_RECHARGE",
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
-pub struct ScanOffer {
+pub struct FriendlyOffer {
+    pub effect: FriendlyEffect,
     pub cost: f32,
     pub range: f32,
     pub value: f32,
+    pub operation: u32,
     pub duration_ms: u64,
     pub visual: u16,
 }
 
 /// Returns:
-///     Option<ScanOffer>: Bounded targeted-friendly scan effect from public data.
-pub fn scan_offer(template: &ItemTemplate) -> Option<ScanOffer> {
+///     Option<FriendlyOffer>: Bounded targeted-friendly catalog effect.
+pub fn friendly_offer(template: &ItemTemplate) -> Option<FriendlyOffer> {
     let effect = template.activated.first()?;
+    let (kind, flag, maximum) = match effect.description.as_str() {
+        "Scan Boost (Activated)" => (FriendlyEffect::ScanBoost, 16, 100.),
+        "Recharge Shields (Activated)" => (FriendlyEffect::RechargeShields, 64, 1000.),
+        "Recharge Reactor (Activated)" => (FriendlyEffect::RechargeReactor, 64, 1000.),
+        _ => return None,
+    };
     if template.item_type != 11
         || template.activated.len() != 1
-        || effect.description != "Scan Boost (Activated)"
-        || effect.flag1 != 16
+        || effect.flag1 != flag
         || effect.flag2 != 1
         || effect.modifiers.len() != 2
         || !template.activation.energy.is_finite()
@@ -29,27 +66,31 @@ pub fn scan_offer(template: &ItemTemplate) -> Option<ScanOffer> {
     {
         return None;
     }
-    let scan = effect
+    let stat = effect
         .modifiers
         .iter()
-        .find(|modifier| modifier.stat == "STAT_SCAN_RANGE")?;
+        .find(|modifier| modifier.stat == kind.stat())?;
     let timer = effect
         .modifiers
         .iter()
         .find(|modifier| modifier.stat == "NO_STAT")?;
-    if scan.operation != 2
-        || !scan.value.is_finite()
-        || !(0. ..=100.).contains(&scan.value)
+    if !(match kind {
+        FriendlyEffect::ScanBoost | FriendlyEffect::RechargeShields => stat.operation == 2,
+        FriendlyEffect::RechargeReactor => matches!(stat.operation, 1 | 2),
+    }) || !stat.value.is_finite()
+        || !(0. ..=maximum).contains(&stat.value)
         || timer.operation != 5
         || !timer.value.is_finite()
         || !(1. ..=3600.).contains(&timer.value)
     {
         return None;
     }
-    Some(ScanOffer {
+    Some(FriendlyOffer {
+        effect: kind,
         cost: template.activation.energy,
         range: template.activation.range,
-        value: scan.value,
+        value: stat.value,
+        operation: stat.operation,
         duration_ms: (timer.value * 1000.) as u64,
         visual: u16::try_from(effect.visual).ok()?,
     })
@@ -61,7 +102,11 @@ pub struct PeerBuff {
     pub source: u32,
     pub target_epoch: u64,
     pub template: u32,
+    #[serde(default)]
+    pub effect: FriendlyEffect,
     pub value: f32,
+    #[serde(default)]
+    pub operation: u32,
     pub expires_at_ms: u64,
 }
 
@@ -77,20 +122,32 @@ impl PeerBuff {
             && items
                 .get(self.template)
                 .ok()
-                .and_then(scan_offer)
+                .and_then(friendly_offer)
                 .is_some_and(|offer| {
-                    (offer.value - self.value).abs() < 0.001
+                    offer.effect == self.effect
+                        && offer.operation == self.effective_operation()
+                        && (offer.value - self.value).abs() < 0.001
                         && self.expires_at_ms <= now_ms.saturating_add(offer.duration_ms)
                 })
     }
 
     /// Returns:
-    ///     Modifier: Frozen scan-range effect applied to the recipient.
+    ///     Modifier: Frozen catalog effect applied to the recipient.
     pub fn modifier(&self) -> Modifier {
         Modifier {
-            stat: "STAT_SCAN_RANGE".into(),
-            operation: 2,
+            stat: self.effect.stat().into(),
+            operation: self.effective_operation(),
             value: self.value,
+        }
+    }
+
+    /// Returns:
+    ///     u32: Stored operation or the old Scan Boost checkpoint default.
+    fn effective_operation(&self) -> u32 {
+        if self.operation == 0 && self.effect == FriendlyEffect::ScanBoost {
+            2
+        } else {
+            self.operation
         }
     }
 
@@ -106,12 +163,39 @@ mod tests {
     use super::*;
 
     #[test]
-    fn public_scan_devices_have_one_targeted_friendly_rule() {
+    fn public_friendly_devices_have_bounded_recharge_and_scan_rules() {
         let items = ItemCatalog::load().unwrap();
         for id in [1813, 1828, 1864, 2500] {
-            let offer = scan_offer(items.get(id).unwrap()).unwrap();
+            let offer = friendly_offer(items.get(id).unwrap()).unwrap();
             assert!(offer.range > 0. && offer.duration_ms > 0);
+            assert_eq!(offer.effect, FriendlyEffect::ScanBoost);
         }
-        assert!(scan_offer(items.get(2412).unwrap()).is_none());
+        for (id, kind) in [
+            (1805, FriendlyEffect::RechargeShields),
+            (1810, FriendlyEffect::RechargeReactor),
+        ] {
+            let offer = friendly_offer(items.get(id).unwrap()).unwrap();
+            assert_eq!(offer.effect, kind);
+            assert!(offer.duration_ms > 0);
+        }
+        assert!(friendly_offer(items.get(2412).unwrap()).is_none());
+    }
+
+    #[test]
+    fn old_scan_checkpoint_without_effect_kind_remains_valid() {
+        let items = ItemCatalog::load().unwrap();
+        let now = crate::resources::unix_ms();
+        let old = serde_json::json!({
+            "revision": 1,
+            "source": 0x40000001u32,
+            "target_epoch": 7,
+            "template": 1813,
+            "value": 25.0,
+            "expires_at_ms": now + 10_000,
+        });
+        let buff: PeerBuff = serde_json::from_value(old).unwrap();
+        assert!(buff.valid(&items, now, 7));
+        assert_eq!(buff.effect, FriendlyEffect::ScanBoost);
+        assert_eq!(buff.modifier().operation, 2);
     }
 }

@@ -9,9 +9,11 @@ namespace FortyTwoAndBeyond.Protocol
     {
         public readonly uint Id, Type;
         public readonly string Name, ActivationLabel;
+        public readonly bool TargetsPeer;
         /// <summary>Store a bounded item name and its server item type.</summary>
-        public ItemTemplateInfo(uint id, uint type, string name, string activationLabel)
-        { Id = id; Type = type; Name = name; ActivationLabel = activationLabel; }
+        public ItemTemplateInfo(uint id, uint type, string name, string activationLabel,
+            bool targetsPeer = false)
+        { Id = id; Type = type; Name = name; ActivationLabel = activationLabel; TargetsPeer = targetsPeer; }
 
         /// <returns>The native item template's ID, type and display name.</returns>
         public static ItemTemplateInfo Decode(byte[] body)
@@ -34,6 +36,7 @@ namespace FortyTwoAndBeyond.Protocol
                 else { Wire.Require(body, offset, 4); offset += 4; }
             }
             string activationLabel = "";
+            bool targetsPeer = false;
             for (int block = 0; block < 2; block++)
             {
                 int effects = checked((int)Wire.U32(body, offset, true)); offset += 4;
@@ -54,7 +57,12 @@ namespace FortyTwoAndBeyond.Protocol
                     Wire.Require(body, offset, 4); offset += 4;
                     int values = checked((int)Wire.U32(body, offset, true)); offset += 4;
                     if (values > 16) throw new InvalidDataException("Item effect values exceed limit.");
-                    Wire.Require(body, offset, values * 4 + 8); offset += values * 4 + 8;
+                    Wire.Require(body, offset, values * 4 + 8); offset += values * 4;
+                    uint flag1 = Wire.U32(body, offset), flag2 = Wire.U32(body, offset + 4);
+                    offset += 8;
+                    if (block == 0 && effects == 1 && type == 11 &&
+                        activationLabel == "Scan Boost")
+                        targetsPeer = flag1 == 16 && flag2 == 1;
                 }
                 if (effects > 0) { Wire.Require(body, offset, 16); offset += 16; }
             }
@@ -62,7 +70,7 @@ namespace FortyTwoAndBeyond.Protocol
             int nameLength = Wire.U16(body, offset); offset += 2;
             string fullName = Wire.Text(body, offset, nameLength);
             return new ItemTemplateInfo(id, type, fullName.Length > 0 ? fullName : name,
-                type == 11 ? activationLabel : "");
+                activationLabel, targetsPeer);
         }
     }
 
@@ -102,6 +110,7 @@ namespace FortyTwoAndBeyond.Protocol
         public readonly float Quality, Structure, Range;
         public readonly float CooldownSeconds;
         public readonly string Name, Info, ActivationLabel;
+        public readonly bool TargetsPeer;
         public bool Cooling => Type >= 14 && Type <= 16 && (WeaponState & 0x80) != 0;
         public bool OutOfAmmo => (Type == 15 || Type == 16) && (WeaponState & 8) != 0;
         /// <summary>Resolve a worker item against the known server catalog.</summary>
@@ -113,8 +122,8 @@ namespace FortyTwoAndBeyond.Protocol
             WeaponState = item.WeaponState; ReadyTick = item.ReadyTick;
             Price = item.Price; Info = item.Info;
             if (catalog.TryGetValue(item.Template, out ItemTemplateInfo template))
-            { Name = template.Name; Type = template.Type; ActivationLabel = template.ActivationLabel; }
-            else { Name = "Item #" + item.Template; Type = 0; ActivationLabel = ""; }
+            { Name = template.Name; Type = template.Type; ActivationLabel = template.ActivationLabel; TargetsPeer = template.TargetsPeer; }
+            else { Name = "Item #" + item.Template; Type = 0; ActivationLabel = ""; TargetsPeer = false; }
             if (Cooling && ReadyTick != 0 && estimatedServerTick.HasValue)
             {
                 int remainingMs = unchecked((int)(ReadyTick - estimatedServerTick.Value));

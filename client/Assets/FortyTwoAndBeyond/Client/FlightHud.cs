@@ -1238,7 +1238,7 @@ namespace FortyTwoAndBeyond.Client
         private void ShipVitals(Snapshot snapshot)
         {
             bool deviceActive = snapshot.DeviceBuff != null || !string.IsNullOrEmpty(snapshot.ActiveDeviceLabel);
-            float height = deviceActive ? 167 : 132;
+            float height = 132 + (deviceActive ? 35 : 0) + (snapshot.PeerBuff != null ? 35 : 0);
             Rect panel = new Rect(375, CanvasHeight - 135 - height, 290, height);
             Panel(panel);
             GUI.Label(new Rect(panel.x + 13, panel.y + 8, 264, 20), "SHIP SYSTEMS", section);
@@ -1260,14 +1260,23 @@ namespace FortyTwoAndBeyond.Client
                 float remaining = snapshot.DeviceBuff?.RemainingSeconds ?? snapshot.ActiveDeviceRemainingSeconds;
                 if (remaining < 0 && snapshot.ActiveDeviceRemainingSeconds > 0)
                     remaining = snapshot.ActiveDeviceRemainingSeconds;
-                Fill(new Rect(panel.x + 12, panel.y + 135, 266, 26), new Color(.05f, .16f, .2f));
-                Fill(new Rect(panel.x + 17, panel.y + 139, 18, 18), gold);
-                Fill(new Rect(panel.x + 22, panel.y + 143, 8, 10), new Color(.07f, .14f, .19f));
-                GUI.Label(new Rect(panel.x + 42, panel.y + 138, 175, 21),
-                    name.ToUpperInvariant(), small);
-                GUI.Label(new Rect(panel.x + 218, panel.y + 138, 57, 21),
-                    remaining < 0 ? "SYNC" : $"{Mathf.CeilToInt(remaining)}s", small);
+                DrawBuffRow(panel, 135, name, remaining, gold);
             }
+            if (snapshot.PeerBuff != null)
+                DrawBuffRow(panel, deviceActive ? 170 : 135, snapshot.PeerBuff.Name,
+                    snapshot.PeerBuff.RemainingSeconds, cyan);
+        }
+
+        /// <summary>Show one authoritative timed buff with its wrapping server-clock countdown.</summary>
+        private void DrawBuffRow(Rect panel, float y, string name, float remaining, Color accent)
+        {
+            Fill(new Rect(panel.x + 12, panel.y + y, 266, 26), new Color(.05f, .16f, .2f));
+            Fill(new Rect(panel.x + 17, panel.y + y + 4, 18, 18), accent);
+            Fill(new Rect(panel.x + 22, panel.y + y + 8, 8, 10), new Color(.07f, .14f, .19f));
+            GUI.Label(new Rect(panel.x + 42, panel.y + y + 3, 175, 21),
+                name.ToUpperInvariant(), small);
+            GUI.Label(new Rect(panel.x + 218, panel.y + y + 3, 57, 21),
+                remaining < 0 ? "SYNC" : $"{Mathf.CeilToInt(remaining)}s", small);
         }
 
         /// <summary>Manage invitations and formation separately from tactical contacts.</summary>
@@ -1375,15 +1384,19 @@ namespace FortyTwoAndBeyond.Client
                 selectedMount >= 3 && selectedMount < 3 + snapshot.WeaponMounts;
             bool device = mounted != null && DeviceEffects.MountedSlot(mounted.ActivationLabel,
                 mounted.Type, selectedMount, snapshot.DeviceMounts);
-            bool transfer = device && DeviceEffects.RequiresPeer(mounted.ActivationLabel);
-            ShipActor recipient = transfer ? snapshot.Players.FirstOrDefault(actor =>
-                actor.Id == snapshot.SelectedTargetId && actor.HasPosition) : null;
+            bool targetedScan = device && mounted.TargetsPeer;
+            bool needsPeer = device && DeviceEffects.RequiresPeer(mounted.ActivationLabel,
+                mounted.TargetsPeer);
+            ShipActor recipient = needsPeer ? snapshot.Players.FirstOrDefault(actor =>
+                actor.Id == snapshot.SelectedTargetId && actor.HasPosition &&
+                (!targetedScan || snapshot.Group.Members.Any(member => member.Id == actor.Id))) : null;
             GUI.enabled = client.Ready && !client.Incapacitated && snapshot.Station == null &&
                 (weapon || device && (DeviceEffects.IsInstant(mounted.ActivationLabel) ||
-                    snapshot.ActiveDeviceLabel.Length == 0) && (!transfer || recipient != null));
+                    targetedScan || snapshot.ActiveDeviceLabel.Length == 0) && (!needsPeer || recipient != null));
             if (GUI.Button(new Rect(detailX, actionY + 23, 265, 43),
                 weapon ? (mounted.WeaponState & 1) != 0 ? "STOP SELECTED WEAPON" : "FIRE SELECTED WEAPON" :
-                transfer ? recipient == null ? "SELECT A PILOT FIRST" : "TRANSFER TO " + recipient.Name.ToUpperInvariant() :
+                needsPeer ? recipient == null ? targetedScan ? "SELECT CREW PILOT" : "SELECT A PILOT FIRST" :
+                    (targetedScan ? "BOOST " : "TRANSFER TO ") + recipient.Name.ToUpperInvariant() :
                 device ? !DeviceEffects.IsInstant(mounted.ActivationLabel) && snapshot.ActiveDeviceLabel.Length > 0 ?
                     snapshot.ActiveDeviceLabel.ToUpperInvariant() + " ACTIVE" :
                     mounted.ActivationLabel.Length > 20 ? "ACTIVATE SELECTED EFFECT" :
@@ -1521,21 +1534,24 @@ namespace FortyTwoAndBeyond.Client
             if (item.Price > 0) GUI.Label(new Rect(x, y + 244, width, 20),
                 "VALUE  " + item.Price.ToString("N0") + " CREDITS", small);
             GUI.Label(new Rect(x, y + 270, width, 20), "STACK  ×" + item.Quantity, small);
-            bool transfer = item == mount && DeviceEffects.RequiresPeer(item.ActivationLabel);
-            if (!transfer && !string.IsNullOrWhiteSpace(item.Info) && item.Info.Count(char.IsLetter) >= 3 && !item.Info.Contains("^"))
+            bool needsPeer = item == mount && DeviceEffects.RequiresPeer(item.ActivationLabel,
+                item.TargetsPeer);
+            if (!needsPeer && !string.IsNullOrWhiteSpace(item.Info) && item.Info.Count(char.IsLetter) >= 3 && !item.Info.Contains("^"))
                 GUI.Label(new Rect(x, y + 298, width, rect.height - 312), item.Info, small);
-            if (transfer) DrawTransferRecipient(snapshot, rect);
+            if (needsPeer) DrawDeviceRecipient(snapshot, rect, item.TargetsPeer);
         }
 
         /// <summary>Choose a visible pilot while keeping the loadout panel open.</summary>
-        private void DrawTransferRecipient(Snapshot snapshot, Rect rect)
+        private void DrawDeviceRecipient(Snapshot snapshot, Rect rect, bool crewOnly)
         {
-            ShipActor[] pilots = snapshot.Players.Where(actor => actor.HasPosition)
+            ShipActor[] pilots = snapshot.Players.Where(actor => actor.HasPosition &&
+                    (!crewOnly || snapshot.Group.Members.Any(member => member.Id == actor.Id)))
                 .OrderBy(actor => actor.Position.Distance(snapshot.Position)).ToArray();
             ShipActor chosen = pilots.FirstOrDefault(actor => actor.Id == snapshot.SelectedTargetId);
             float x = rect.x + 13, width = rect.width - 26;
             GUI.Label(new Rect(x, rect.yMax - 85, width, 19),
-                chosen == null ? "SELECT A PILOT TO RECEIVE ENERGY" :
+                chosen == null ? crewOnly ? "SELECT CREW PILOT FOR SCAN BOOST" :
+                    "SELECT A PILOT TO RECEIVE ENERGY" :
                 $"{chosen.Position.Distance(snapshot.Position) / 1000:0.0} KM  ·  SERVER CHECKS", small);
             bool enabled = GUI.enabled;
             GUI.enabled = enabled && pilots.Length > 0;

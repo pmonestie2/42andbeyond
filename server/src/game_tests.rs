@@ -311,7 +311,7 @@ fn grouped_scan_boost_replays_both_sides_after_stale_checkpoints() {
     )
     .unwrap();
     let before_energy = game.sessions[&alice].energy_balance().0;
-    let cost = crate::peer_buffs::scan_offer(
+    let cost = crate::peer_buffs::friendly_offer(
         crate::items::ItemCatalog::load()
             .unwrap()
             .get(1813)
@@ -328,7 +328,7 @@ fn grouped_scan_boost_replays_both_sides_after_stale_checkpoints() {
     assert!(game
         .handle_event(
             alice,
-            ClientEvent::PeerScanBoost {
+            ClientEvent::PeerDeviceBuff {
                 target: bob,
                 slot: 9,
                 epoch,
@@ -342,7 +342,7 @@ fn grouped_scan_boost_replays_both_sides_after_stale_checkpoints() {
     assert!(game
         .handle_event(
             alice,
-            ClientEvent::PeerScanBoost {
+            ClientEvent::PeerDeviceBuff {
                 target: bob,
                 slot: 9,
                 epoch,
@@ -356,7 +356,7 @@ fn grouped_scan_boost_replays_both_sides_after_stale_checkpoints() {
     assert!(game
         .handle_event(
             alice,
-            ClientEvent::PeerScanBoost {
+            ClientEvent::PeerDeviceBuff {
                 target: bob,
                 slot: 9,
                 epoch,
@@ -405,7 +405,7 @@ fn grouped_scan_boost_replays_both_sides_after_stale_checkpoints() {
     assert!(game.energy_ledger.peer_buff(bob).is_some());
     game.handle_event(
         alice,
-        ClientEvent::PeerScanBoost {
+        ClientEvent::PeerDeviceBuff {
             target: bob,
             slot: 9,
             epoch,
@@ -456,6 +456,121 @@ fn grouped_scan_boost_replays_both_sides_after_stale_checkpoints() {
     )
     .unwrap();
     assert!(GameState::new(sector, bind, root).is_err());
+}
+
+/// Both public recharge families spend caster energy and survive stale checkpoints.
+#[test]
+fn grouped_recharge_devices_restore_recipient_stats_and_sender_energy() {
+    for (template, stat) in [(1805, "shield"), (2172, "reactor")] {
+        let initial = game();
+        let root = initial.root.clone();
+        let sector = initial.initial_sector.clone();
+        let bind = initial.bind;
+        drop(initial);
+        if stat == "shield" {
+            let account_path = root.join("account.local.json");
+            let mut account: serde_json::Value =
+                serde_json::from_slice(&fs::read(&account_path).unwrap()).unwrap();
+            account["character"]["race"] = serde_json::json!(2);
+            fs::write(account_path, serde_json::to_vec(&account).unwrap()).unwrap();
+        }
+        let path = root.join("inventory.json");
+        let mut inventory: crate::inventory::Inventory = if stat == "shield" {
+            let account = crate::account::Account::load(&root).unwrap();
+            crate::inventory::Inventory::starter_for(
+                &account.character,
+                &crate::items::ItemCatalog::load().unwrap(),
+            )
+            .unwrap()
+        } else {
+            serde_json::from_slice(&fs::read(&path).unwrap()).unwrap()
+        };
+        inventory.equipped[9] = Some(crate::inventory::ItemInstance::stock(template, 1));
+        fs::write(&path, serde_json::to_vec(&inventory).unwrap()).unwrap();
+
+        let alice = FIRST_PLAYER_ID;
+        let bob = alice + 1;
+        let mut game = GameState::new(sector.clone(), bind, root.clone()).unwrap();
+        login(&mut game, alice, 22761, "alice");
+        login(&mut game, bob, 22762, "bob");
+        game.groups.invite(alice, bob).unwrap();
+        game.groups.accept(bob).unwrap();
+        game.advance(0.1).unwrap();
+        game.handle_input(
+            alice,
+            0x17,
+            &[alice.to_le_bytes(), bob.to_le_bytes()].concat(),
+        )
+        .unwrap();
+        let before = game.sessions[&bob].peer_snapshot().unwrap().stats;
+        let before_energy = game.sessions[&alice].energy_balance().0;
+        let catalog = crate::items::ItemCatalog::load().unwrap();
+        let offer = crate::peer_buffs::friendly_offer(catalog.get(template).unwrap()).unwrap();
+        let epoch = game.sessions[&alice].energy_transfer_epoch();
+        game.handle_udp(
+            SECTOR_PORT,
+            "127.0.0.1:22761".parse().unwrap(),
+            Datagram {
+                opcode: 0x5d,
+                player: alice,
+                sequence: 2,
+                body: [alice.to_le_bytes().as_slice(), &[2, 9]].concat(),
+            },
+        )
+        .unwrap();
+        game.advance_at(0., crate::resources::unix_ms()).unwrap();
+        assert_eq!(game.energy_ledger.revision(), 1);
+        assert_eq!(
+            game.sessions[&alice].energy_balance().0,
+            before_energy - offer.cost
+        );
+        let after = game.sessions[&bob].peer_snapshot().unwrap().stats;
+        match stat {
+            "shield" => assert!(after.shield_recharge > before.shield_recharge),
+            "reactor" => assert!(after.energy_recharge > before.energy_recharge),
+            _ => unreachable!(),
+        }
+        let recipient_buff = game.energy_ledger.peer_buff(bob).unwrap();
+        assert_eq!(recipient_buff.effect, offer.effect);
+        assert_eq!(recipient_buff.operation, offer.operation);
+        for (directory, sender) in [(&root, true), (&root.join("accounts/bob"), false)] {
+            let checkpoint = directory.join("session.local.json");
+            let mut saved: serde_json::Value =
+                serde_json::from_slice(&fs::read(&checkpoint).unwrap()).unwrap();
+            if sender {
+                saved["energy"] = serde_json::json!(before_energy);
+                saved["energy_revision"] = serde_json::json!(0);
+            } else {
+                saved["peer_buff"] = serde_json::Value::Null;
+                saved["peer_buff_revision"] = serde_json::json!(0);
+            }
+            fs::write(checkpoint, serde_json::to_vec(&saved).unwrap()).unwrap();
+        }
+        drop(game);
+        let mut restored = GameState::new(sector, bind, root).unwrap();
+        assert_eq!(
+            restored.sessions[&alice].energy_balance().0,
+            before_energy - offer.cost
+        );
+        let replayed = restored.sessions[&bob].peer_snapshot().unwrap().stats;
+        match stat {
+            "shield" => assert_eq!(replayed.shield_recharge, after.shield_recharge),
+            "reactor" => assert_eq!(replayed.energy_recharge, after.energy_recharge),
+            _ => unreachable!(),
+        }
+        restored
+            .handle_event(
+                alice,
+                ClientEvent::PeerDeviceBuff {
+                    target: bob,
+                    slot: 9,
+                    epoch,
+                    sequence: 2,
+                },
+            )
+            .unwrap();
+        assert_eq!(restored.energy_ledger.revision(), 1);
+    }
 }
 
 #[test]

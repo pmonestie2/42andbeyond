@@ -750,7 +750,8 @@ namespace FortyTwoAndBeyond.Client
                 snapshot.WarpPhase != WarpPhase.Charging && snapshot.WarpPhase != WarpPhase.Traveling &&
                 item != null && DeviceEffects.MountedSlot(item.ActivationLabel, item.Type, slot,
                     snapshot.DeviceMounts) &&
-                (DeviceEffects.IsInstant(item.ActivationLabel) || snapshot.ActiveDeviceLabel.Length == 0))
+                (DeviceEffects.IsInstant(item.ActivationLabel) || item.TargetsPeer ||
+                    snapshot.ActiveDeviceLabel.Length == 0))
                 worker.Submit(new ClientCommand(CommandKind.ActivateDevice, (uint)slot));
         }
 

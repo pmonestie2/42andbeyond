@@ -210,6 +210,10 @@ Increase Maneuverability, or instant Reroute Shield Energy from their shield,
 reactor, or engine mount. The loadout's Transfer Reactor Energy control cycles
 visible pilots as recipients, waits for server target selection, and sends the
 equipped device action; the server checks range and both reactor balances.
+Peer-targeted Scan Boost devices use the same recipient control, restricted to
+visible crew pilots. The server marks the recipient's separate Scan Boost buff
+slot and visual; the ship systems panel shows its own timer alongside any active
+self buff. Self Scan Boost reactor effects remain separate catalog actions.
 Instant transfers and reroutes remain usable while a timed device buff is active.
 The active effect label and displayed remaining time
 come from the server's native buff slot and removal tick when available. A
