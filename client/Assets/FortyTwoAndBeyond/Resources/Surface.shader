@@ -9,6 +9,7 @@ Shader "42 and Beyond/Surface"
         _Panels ("Hull plating", Range(0,1)) = 0
         _DetailTex ("Surface detail", 2D) = "white" {}
         _TextureStrength ("Texture strength", Range(0,1)) = 0
+        _DetailGain ("Texture exposure", Range(0.1,4)) = 3.5
     }
     SubShader {
         Tags { "RenderType"="Opaque" }
@@ -17,7 +18,7 @@ Shader "42 and Beyond/Surface"
         #pragma target 3.0
         fixed4 _Color, _EmissionColor;
         sampler2D _DetailTex;
-        half _Metallic, _Glossiness, _Grain, _Panels, _TextureStrength;
+        half _Metallic, _Glossiness, _Grain, _Panels, _TextureStrength, _DetailGain;
         struct Input { float3 localPosition; float3 localNormal; };
         void vert(inout appdata_full v, out Input o) {
             UNITY_INITIALIZE_OUTPUT(Input,o); o.localPosition=v.vertex.xyz; o.localNormal=v.normal;
@@ -33,7 +34,7 @@ Shader "42 and Beyond/Surface"
                 tex2D(_DetailTex,i.localPosition.xz*.8).rgb*blend.y+
                 tex2D(_DetailTex,i.localPosition.xy*.8).rgb*blend.z;
             o.Albedo=_Color.rgb*(1+_Grain*n*.25)*(1-_Panels*seam*.3)*lerp(1,panelTint,_Panels)*
-                lerp(1,saturate(detail*3.5),_TextureStrength);
+                lerp(1,saturate(detail*_DetailGain),_TextureStrength);
             o.Metallic=_Metallic; o.Smoothness=_Glossiness; o.Emission=_EmissionColor.rgb; o.Alpha=1;
         }
         ENDCG

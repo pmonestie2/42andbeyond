@@ -37,13 +37,19 @@ namespace FortyTwoAndBeyond.Client
             hostile = Surface(new Color(.7f, .045f, .035f), .25f, .5f, new Color(1.9f, .08f, .03f));
             crewSignal = Surface(new Color(.08f, .7f, .36f), .2f, .45f, new Color(.12f, 1.5f, .6f));
             mineral = Surface(new Color(.04f, .62f, .72f), .35f, .65f, new Color(.08f, 1.15f, 1.4f));
-            rock = Surface(new Color(.24f, .21f, .19f), .08f, .12f);
-            rock.SetFloat("_Grain", 1);
-            oreRock = Surface(new Color(.36f, .41f, .46f), .08f, .12f);
-            oreRock.SetTexture("_DetailTex", LoadDetail("OreRock"));
-            oreRock.SetFloat("_TextureStrength", .95f);
+            Texture2D oreDetail = LoadDetail("OreRock");
+            rock = Surface(new Color(.48f, .42f, .37f), .04f, .08f);
+            rock.SetTexture("_DetailTex", oreDetail);
+            rock.SetFloat("_TextureStrength", .7f);
+            rock.SetFloat("_DetailGain", 1.4f);
+            rock.SetFloat("_Grain", .3f);
+            oreRock = Surface(new Color(.82f, .86f, .9f), .07f, .09f);
+            oreRock.SetTexture("_DetailTex", oreDetail);
+            oreRock.SetFloat("_TextureStrength", 1f);
+            oreRock.SetFloat("_DetailGain", 1.35f);
             field = ShaderMaterial("42 and Beyond/GateField");
             Sky = ShaderMaterial("42 and Beyond/SpaceSky");
+            Sky.SetTexture("_NebulaTex", LoadDetail("SpaceNebula"));
             Shader effectShader = Resources.Load<Shader>("BeamAdditive");
             if (effectShader != null) { EffectLine = new Material(effectShader); materials.Add(EffectLine); }
             corvetteAsset = Resources.Load<GameObject>("ViktorShips/corvette03");
@@ -455,7 +461,7 @@ namespace FortyTwoAndBeyond.Client
                 planetMaterial.SetFloat("_UseTexture", 1f);
             }
             Transform planet = Part(root, PrimitiveType.Sphere, new Vector3(6500, -2000, 16000),
-                Vector3.one * 6800, planetMaterial);
+                Vector3.one * 4400, planetMaterial);
             planet.localRotation = Quaternion.Euler(0, 0, -18);
             Material ringMaterial = ShaderMaterial("42 and Beyond/PlanetRings");
             Mesh belt = Annulus(1.25f, 2.15f, 160); meshes.Add(belt);

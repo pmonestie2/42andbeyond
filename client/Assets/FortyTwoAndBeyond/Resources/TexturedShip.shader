@@ -19,9 +19,11 @@ Shader "42 and Beyond/TexturedShip"
             fixed4 diffuse = tex2D(_MainTex, i.uv_MainTex);
             o.Albedo = diffuse.rgb * _Color.rgb;
             o.Normal = UnpackNormal(tex2D(_BumpMap, i.uv_MainTex));
-            o.Specular = tex2D(_SpecGlossMap, i.uv_MainTex).rgb * .3;
-            o.Smoothness = .28;
-            o.Emission = tex2D(_EmissionMap, i.uv_MainTex).rgb * .75;
+            fixed3 finish = tex2D(_SpecGlossMap, i.uv_MainTex).rgb;
+            half reflectance = dot(finish, half3(.299, .587, .114));
+            o.Specular = finish * .52;
+            o.Smoothness = .16 + reflectance * .45;
+            o.Emission = tex2D(_EmissionMap, i.uv_MainTex).rgb * .9;
             o.Alpha = 1;
         }
         ENDCG

@@ -53,7 +53,8 @@ namespace FortyTwoAndBeyond.Client
         private readonly Material material, impactMaterial;
         private Camera effectCamera;
         private float normalFieldOfView = 60f;
-        private LineRenderer miningHalo, miningCore, miningContact;
+        private LineRenderer miningHalo, miningCore, miningContact, miningScanOrbit;
+        private readonly LineRenderer[] miningPackets = new LineRenderer[4];
         private MiningActivity miningActivity;
         private Vector3 miningPoint;
         private LineRenderer lootHalo, lootCore, lootFilament, lootRing;
@@ -175,6 +176,9 @@ namespace FortyTwoAndBeyond.Client
                 miningHalo = Line("Mining field", .12f, tint, 2);
                 miningCore = Line("Mining focus", .025f, Color.white, 2);
                 miningContact = Line("Ore contact", .035f, tint, 5);
+                miningScanOrbit = Line("Ore scan orbit", .025f, tint, 33);
+                for (int index = 0; index < miningPackets.Length; index++)
+                    miningPackets[index] = Line("Ore transfer pulse", .035f, tint, 2);
             }
             miningActivity = activity;
             miningPoint = player.position + SpaceClient.Convert(resource.Position) -
@@ -328,6 +332,7 @@ namespace FortyTwoAndBeyond.Client
             if (miningActivity != null && miningHalo != null && miningCore != null && miningContact != null)
             {
                 float pulse = .65f + .35f * Mathf.Sin(Time.unscaledTime * 18);
+                float progress = miningActivity.Progress(Stopwatch.GetTimestamp());
                 Vector3 origin = player.position + player.forward * .3f;
                 Vector3 oreSurface = miningPoint + (origin - miningPoint).normalized * .65f;
                 miningHalo.SetPosition(0, origin); miningHalo.SetPosition(1, oreSurface);
@@ -350,6 +355,36 @@ namespace FortyTwoAndBeyond.Client
                 miningContact.SetPosition(4, oreSurface + right * contactRadius);
                 tint.a = .8f * pulse;
                 miningContact.startColor = miningContact.endColor = tint;
+                if (miningScanOrbit != null)
+                {
+                    miningScanOrbit.enabled = miningActivity.Phase == MiningPhase.Prospect;
+                    if (miningScanOrbit.enabled)
+                    {
+                        float radius = .23f + progress * .35f;
+                        for (int point = 0; point < 33; point++)
+                        {
+                            float angle = point * Mathf.PI * 2 / 32 + Time.unscaledTime * 1.7f;
+                            miningScanOrbit.SetPosition(point, oreSurface + right * Mathf.Cos(angle) * radius +
+                                up * Mathf.Sin(angle) * radius * .55f);
+                        }
+                        Color scan = tint; scan.a = .32f * (1f - progress * .5f);
+                        miningScanOrbit.startColor = miningScanOrbit.endColor = scan;
+                    }
+                }
+                for (int index = 0; index < miningPackets.Length; index++)
+                {
+                    LineRenderer packet = miningPackets[index];
+                    if (packet == null) continue;
+                    float along = Mathf.Repeat(Time.unscaledTime * .65f + index * .25f, 1f);
+                    if (miningActivity.Phase == MiningPhase.Tractor) along = 1f - along;
+                    Vector3 center = Vector3.Lerp(origin, oreSurface, along);
+                    Vector3 travel = (oreSurface - origin).normalized * .045f;
+                    packet.SetPosition(0, center - travel);
+                    packet.SetPosition(1, center + travel);
+                    Color signal = tint; signal.a = .38f + .32f * pulse;
+                    packet.startColor = packet.endColor = signal;
+                    packet.enabled = true;
+                }
             }
             TickLoot();
             TickWarp();
@@ -548,10 +583,12 @@ namespace FortyTwoAndBeyond.Client
         /// <summary>Remove the prospecting and tractor visuals when the native phase ends.</summary>
         private void ClearMining()
         {
-            if (miningHalo != null) Object.Destroy(miningHalo.gameObject);
-            if (miningCore != null) Object.Destroy(miningCore.gameObject);
-            if (miningContact != null) Object.Destroy(miningContact.gameObject);
-            miningHalo = miningCore = miningContact = null;
+            foreach (LineRenderer line in new[] { miningHalo, miningCore, miningContact, miningScanOrbit })
+                if (line != null) Object.Destroy(line.gameObject);
+            foreach (LineRenderer packet in miningPackets)
+                if (packet != null) Object.Destroy(packet.gameObject);
+            System.Array.Clear(miningPackets, 0, miningPackets.Length);
+            miningHalo = miningCore = miningContact = miningScanOrbit = null;
             miningActivity = null;
         }
 

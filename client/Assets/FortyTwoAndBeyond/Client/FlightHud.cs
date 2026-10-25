@@ -14,14 +14,14 @@ namespace FortyTwoAndBeyond.Client
         private readonly EquipmentIcons icons;
         private static readonly Vector2[] LabelOffsets = { new Vector2(12, -48), new Vector2(12, 12),
             new Vector2(-184, -48), new Vector2(-184, 12) };
-        private static readonly Vector2[] ContactLabelOffsets = { new Vector2(23, -58), new Vector2(23, 20),
-            new Vector2(-273, -58), new Vector2(-273, 20) };
+        private static readonly Vector2[] ContactLabelOffsets = { new Vector2(-290, -68),
+            new Vector2(-290, 24), new Vector2(40, -68), new Vector2(40, 24) };
         public float Scale => Mathf.Max(.01f, Mathf.Min(1f, Screen.width / 1280f, Screen.height / 760f));
         private float CanvasWidth => Screen.width / Scale;
         private float CanvasHeight => Screen.height / Scale;
         private readonly Color cyan = new Color(.3f, .85f, 1), white = new Color(.86f, .93f, 1), muted = new Color(.46f, .62f, .72f), gold = new Color(1, .72f, .3f), crewColor = new Color(.39f, 1f, .68f);
         private GUIStyle heading, body, wrappedBody, small, section, button, selected, playerButton, hostileButton, damageStyle, input, primaryButton, equipmentRow, equipmentText, equipmentMeta;
-        private Texture2D buttonTexture, selectedTexture, panelTexture, radarTexture, weaveTexture, frameTexture, legacyCornerTexture;
+        private Texture2D buttonTexture, selectedTexture, panelTexture, radarTexture, weaveTexture, frameTexture;
         internal GUIStyle BodyStyle => body;
         internal GUIStyle SmallStyle => small;
         internal GUIStyle SectionStyle => section;
@@ -183,13 +183,15 @@ namespace FortyTwoAndBeyond.Client
             section = new GUIStyle(GUI.skin.label) { fontSize = 15, fontStyle = FontStyle.Bold }; section.normal.textColor = cyan;
             damageStyle = new GUIStyle(GUI.skin.label) { fontSize = 20, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
             damageStyle.normal.textColor = gold;
-            panelTexture = SurfaceTexture(new Color(.02f, .055f, .085f, .98f), new Color(.004f, .014f, .03f, .98f), 64, 64);
+            panelTexture = SurfaceTexture(new Color(.028f, .045f, .065f, .92f),
+                new Color(.006f, .014f, .027f, .94f), 64, 64);
             weaveTexture = Resources.Load<Texture2D>("HudWeave");
             frameTexture = Resources.Load<Texture2D>("HudFrame");
-            legacyCornerTexture = Resources.Load<Texture2D>("LegacyHud01");
             if (weaveTexture != null) weaveTexture.wrapMode = TextureWrapMode.Repeat;
-            buttonTexture = SurfaceTexture(new Color(.065f, .17f, .23f, 1), new Color(.018f, .052f, .085f, 1), 32, 32);
-            selectedTexture = SurfaceTexture(new Color(.15f, .38f, .45f, 1), new Color(.045f, .15f, .22f, 1), 32, 32);
+            buttonTexture = SurfaceTexture(new Color(.055f, .1f, .13f, .96f),
+                new Color(.018f, .038f, .059f, .98f), 32, 32);
+            selectedTexture = SurfaceTexture(new Color(.09f, .23f, .29f, .98f),
+                new Color(.035f, .1f, .15f, .98f), 32, 32);
             radarTexture = RadarTexture();
             button = new GUIStyle(GUI.skin.button) { fontSize = 15, fontStyle = FontStyle.Bold, wordWrap = true,
                 alignment = TextAnchor.MiddleLeft, padding = new RectOffset(10, 8, 4, 4) };
@@ -234,33 +236,28 @@ namespace FortyTwoAndBeyond.Client
         private static void Fill(Rect rect, Color color)
         { Color previous = GUI.color; GUI.color = color; GUI.DrawTexture(rect, Texture2D.whiteTexture); GUI.color = previous; }
 
-        /// <summary>Draw a woven instrument panel with bright, restrained frame corners.</summary>
+        /// <summary>Draw a dark glass instrument panel with subtle depth and a short accent rule.</summary>
         internal void Panel(Rect rect)
         {
+            Fill(new Rect(rect.x + 5, rect.y + 7, rect.width, rect.height),
+                new Color(0, 0, 0, .22f));
             GUI.DrawTexture(rect, panelTexture);
             if (weaveTexture != null)
             {
                 Color previous = GUI.color;
-                GUI.color = new Color(.56f, .78f, 1f, .36f);
+                GUI.color = new Color(.46f, .7f, .85f, .12f);
                 GUI.DrawTextureWithTexCoords(rect, weaveTexture,
                     new Rect(0, 0, rect.width / 270f, rect.height / 270f));
                 GUI.color = previous;
             }
-            Fill(new Rect(rect.x, rect.y, rect.width, 2), new Color(.24f, .66f, .78f, .85f));
-            Fill(new Rect(rect.x, rect.y + 2, rect.width, 10), new Color(.025f, .13f, .2f, .7f));
-            Fill(new Rect(rect.x, rect.y + rect.height - 2, rect.width, 2), new Color(.1f, .35f, .5f, .8f));
-            Fill(new Rect(rect.x, rect.y + 14, 1, rect.height - 28), new Color(.08f, .31f, .43f, .48f));
-            Fill(new Rect(rect.x + rect.width - 1, rect.y + 14, 1, rect.height - 28), new Color(.08f, .31f, .43f, .48f));
-            Fill(new Rect(rect.x, rect.y, 3, 22), cyan);
-            Fill(new Rect(rect.x + rect.width - 3, rect.y + rect.height - 22, 3, 22), cyan);
-            Fill(new Rect(rect.x + rect.width - 22, rect.y + rect.height - 3, 22, 3), cyan);
-            if (legacyCornerTexture != null)
-            {
-                Color previous = GUI.color;
-                GUI.color = new Color(.34f, .85f, 1f, .3f);
-                GUI.DrawTexture(new Rect(rect.xMax - 30, rect.y + 6, 22, 22), legacyCornerTexture);
-                GUI.color = previous;
-            }
+            Fill(new Rect(rect.x, rect.y, rect.width, 1), new Color(.38f, .65f, .76f, .5f));
+            Fill(new Rect(rect.x, rect.y + rect.height - 1, rect.width, 1),
+                new Color(.16f, .32f, .4f, .3f));
+            Fill(new Rect(rect.x, rect.y + 1, 1, rect.height - 2), new Color(.26f, .47f, .58f, .28f));
+            Fill(new Rect(rect.x + rect.width - 1, rect.y + 1, 1, rect.height - 2),
+                new Color(.26f, .47f, .58f, .28f));
+            Fill(new Rect(rect.x + 14, rect.y, Mathf.Min(54, rect.width - 28), 2),
+                new Color(.3f, .78f, .9f, .75f));
         }
 
         /// <summary>Draw a shield, energy or hull gauge over a dim track.</summary>
@@ -1064,7 +1061,7 @@ namespace FortyTwoAndBeyond.Client
                 if (label.width == 0) continue;
                 occupied.Add(label);
                 float labelX = label.x, labelY = label.y;
-                Fill(new Rect(labelX, labelY, 250, active ? 58 : 41), new Color(.005f, .018f, .032f, .88f));
+                Fill(new Rect(labelX, labelY, 250, active ? 58 : 41), new Color(.004f, .012f, .024f, .94f));
                 Fill(new Rect(labelX, labelY, 3, active ? 58 : 41), color);
                 GUI.Label(new Rect(labelX + 9, labelY + 3, 237, 19), player.Name, body);
                 GUI.Label(new Rect(labelX + 9, labelY + 22, 237, 17),
@@ -1345,7 +1342,9 @@ namespace FortyTwoAndBeyond.Client
         /// <summary>Draw cargo, hardpoints and a large item inspection bay.</summary>
         private void Equipment(Snapshot snapshot)
         {
-            Rect rect = EquipmentRect(); Panel(rect);
+            Rect rect = EquipmentRect();
+            Fill(rect, new Color(.002f, .008f, .016f, .98f));
+            Panel(rect);
             float left = rect.x + 20, top = rect.y + 15;
             GUI.Label(new Rect(left, top, 570, 32), "SHIP LOADOUT", heading);
             if (GUI.Button(new Rect(rect.xMax - 48, top, 28, 28), "×", button)) equipmentOpen = false;

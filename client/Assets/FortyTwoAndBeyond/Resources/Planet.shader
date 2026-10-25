@@ -42,9 +42,10 @@ Shader "42 and Beyond/Planet"
                     float storm=1-smoothstep(.14,.28,length(float2(p.x-.28,p.y-.12)));
                     color=lerp(color,cream*1.12,storm*(.35+.65*wisps));
                 }
-                float light=saturate(dot(n,normalize(float3(-.65,.34,-.8))));
-                float rim=pow(1-saturate(dot(n,normalize(i.view))),3);
-                return float4(color*(.035+light*.96)+rim*float3(.12,.2,.26)*(.4+light*.6),1);
+                float facing=saturate(dot(n,normalize(i.view)));
+                float light=max(saturate(dot(n,normalize(float3(-.65,.34,-.8)))),facing*.32);
+                float rim=pow(1-facing,3);
+                return float4(color*(.12+light*.82)+rim*float3(.12,.2,.26)*(.4+light*.6),1);
             }
             ENDCG
         }

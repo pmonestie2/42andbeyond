@@ -108,7 +108,7 @@ namespace FortyTwoAndBeyond.Editor
             }
             if (stage == 5 && EditorApplication.timeSinceStartup >= nextAt)
             {
-                client.CloseResource(); client.WarpSelected();
+                client.CloseResource(); client.SelectFreeFlight(); client.WarpSelected();
                 stage = 6; return;
             }
             if (stage == 6)
