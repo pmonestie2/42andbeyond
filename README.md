@@ -12,7 +12,7 @@ A quick demo here: https://www.youtube.com/watch?v=TjWSGhOvHgU
 | `server/` | Rust server, game content, importers and tests |
 | `protocol/` | Python protocol utilities used by server integration tests |
 | `win_legacy/` | Optional original-client/Net7Proxy launcher and reversible configuration |
-| `reference/cpp/` | Pinned archived C++ reference files for reimplementation |
+| `reference/` | Manifest and notes for the optional, locally downloaded C++ reference |
 
 
 ## Run locally

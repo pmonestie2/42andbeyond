@@ -18,6 +18,8 @@ __pycache__/
 /server/target/
 /server/state/
 /server/logs/
+# Pinned upstream C++ reference is downloaded locally when needed.
+/reference/cpp/
 *.local.json
 # Optional, privately extracted original-client HUD tile (never redistribute).
 /client/Assets/FortyTwoAndBeyond/Resources/LegacyHud01.dds

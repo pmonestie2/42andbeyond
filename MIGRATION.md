@@ -17,8 +17,9 @@ The original workspace remains intact as a migration backup.
 - Macro controllers, scripted gameplay, packet-capture automation, the old web
   client, agent coordination server, caches, build outputs, private account state,
   raw captures and Unity recovery files were not copied.
-- The archived C++ reference set is restored under `reference/cpp`, verified by
-  Git blob hashes against `reference/manifest.json`.
+- The archived C++ reference set can be restored locally under `reference/cpp`
+  with `python3 server/tools/fetch_reference.py`, verified by Git blob hashes
+  against `reference/manifest.json`. It is not checked into this repository.
 
 This is an independent Git repository with its public remote at
 https://github.com/pmonestie2/42andbeyond.
