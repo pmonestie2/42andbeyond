@@ -34,6 +34,7 @@ pub enum AbilityKind {
     Enrage,
     GravityLink,
     Hacking,
+    Befriend,
     Menace,
     Rally,
     ReactorOptimization,
@@ -399,6 +400,8 @@ pub struct Cast {
     #[serde(default)]
     pub hacking_generation: Option<u64>,
     #[serde(default)]
+    pub befriend_generation: Option<u64>,
+    #[serde(default)]
     pub enrage_generation: Option<u64>,
     #[serde(default)]
     pub summon_generation: Option<u64>,
@@ -498,6 +501,9 @@ impl Cast {
             })
             && self.hacking_generation.is_none_or(|generation| {
                 matches!(self.ability, 13 | 16 | 57 | 58 | 76) && generation < 1_000_000_000
+            })
+            && self.befriend_generation.is_none_or(|generation| {
+                matches!(self.ability, 15 | 20 | 43 | 63 | 115) && generation < 1_000_000_000
             })
             && self.enrage_generation.is_none_or(|generation| {
                 matches!(self.ability, 6 | 7 | 27 | 41 | 42) && generation < 1_000_000_000

@@ -292,6 +292,7 @@ impl PlayerSession {
         if !self.logged_in || self.sector.station.is_some() {
             self.mob_menace_visuals.clear();
             self.mob_hacking_visuals.clear();
+            self.mob_befriend_visuals.clear();
             self.mob_enrage_visuals.clear();
             return Ok(());
         }
@@ -367,6 +368,24 @@ impl PlayerSession {
                         object_id,
                         effect,
                         crate::hacking::VISUAL_DESCRIPTOR,
+                        tick,
+                    ));
+                }
+            }
+            let befriend_visual = visible
+                .then(|| mob.active_befriend_visual())
+                .flatten()
+                .map(|effect| effect.visual_id(object_id));
+            if self.mob_befriend_visuals.get(&object_id).copied() != befriend_visual {
+                if let Some(previous) = self.mob_befriend_visuals.remove(&object_id) {
+                    self.pending.push(packets::remove_effect(previous));
+                }
+                if let Some(effect) = befriend_visual {
+                    self.mob_befriend_visuals.insert(object_id, effect);
+                    self.pending.push(packets::object_effect(
+                        object_id,
+                        effect,
+                        crate::befriend::VISUAL_DESCRIPTOR,
                         tick,
                     ));
                 }

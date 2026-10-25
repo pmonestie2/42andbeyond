@@ -77,7 +77,9 @@ impl Mob {
         }
         let mut contacts: Vec<&PlayerThreat> = players
             .iter()
-            .filter(|player| self.sensors.contains(player))
+            .filter(|player| {
+                self.sensors.contains(player) && !self.befriended(player.id, player.session_epoch)
+            })
             .collect();
         // Game sessions originate in a HashMap. Stable ordering preserves the
         // saved stream across process replacement and recipient enumeration.

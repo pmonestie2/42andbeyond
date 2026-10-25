@@ -14,6 +14,9 @@ impl PlayerSession {
         }
     }
     pub(super) fn mob_relationship(&self, mob: &Mob) -> u32 {
+        if mob.befriended(self.player_id(), self.session_epoch) {
+            return 2;
+        }
         self.reputation
             .relationship(mob.definition.faction, mob.targets(self.player_id()))
     }

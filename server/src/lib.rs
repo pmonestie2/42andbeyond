@@ -1,6 +1,7 @@
 pub mod account;
 pub mod accounts;
 pub mod asset_geometry;
+pub mod befriend;
 pub mod call_forward;
 pub mod content;
 pub mod crafting;

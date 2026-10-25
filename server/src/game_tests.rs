@@ -3886,6 +3886,150 @@ fn repulsor_selected_peer_is_durable_and_class_slots_do_not_collide() {
     fs::remove_dir_all(root).unwrap();
 }
 
+/// A Tradesman's area reaction is persisted before success and replays after restart.
+#[test]
+fn tradesman_befriend_area_is_durable_and_replays_native_visual() {
+    let root = std::env::temp_dir().join(format!("enb-befriend-{}", rand::random::<u64>()));
+    let accounts = AccountDirectory::new(&root);
+    let trader = accounts
+        .create_class(
+            "trader".into(),
+            "example",
+            "Trader".into(),
+            crate::classes::CharacterClass::parse("tt").unwrap(),
+        )
+        .unwrap();
+    let trader_id = trader.account.character.game_id;
+    let outsider = accounts
+        .create_class(
+            "outsider".into(),
+            "example",
+            "Outsider".into(),
+            crate::classes::CharacterClass::parse("te").unwrap(),
+        )
+        .unwrap()
+        .account
+        .character
+        .game_id;
+    let catalog = crate::items::ItemCatalog::load().unwrap();
+    let mut inventory =
+        crate::inventory::Inventory::starter_for(&trader.account.character, &catalog).unwrap();
+    inventory.equipped[1] = Some(crate::inventory::ItemInstance::stock(3335, 1));
+    fs::write(
+        trader.directory.join("inventory.json"),
+        serde_json::to_vec(&inventory).unwrap(),
+    )
+    .unwrap();
+    let mut sector: Sector = serde_json::from_str(include_str!("../data/sector.json")).unwrap();
+    let mut first = sector.mobs[0].clone();
+    first.source_id = 933_001;
+    first.level = 1;
+    first.spawn = [1_000., 0., 0.];
+    first.aggressive = true;
+    let mut second = first.clone();
+    second.source_id = 933_002;
+    second.spawn = [1_500., 0., 0.];
+    let mut far = first.clone();
+    far.source_id = 933_003;
+    far.spawn = [5_000., 0., 0.];
+    sector.mobs = vec![first, second, far];
+    let bind = Ipv4Addr::new(127, 0, 0, 2);
+    let mut game = GameState::new(sector.clone(), bind, root.clone()).unwrap();
+    login(&mut game, trader_id, 24701, "trader");
+    login(&mut game, outsider, 24702, "outsider");
+    game.sessions.get_mut(&trader_id).unwrap().position = [0.; 3];
+    game.sessions.get_mut(&outsider).unwrap().position = [0.; 3];
+    game.update_views();
+    let outsider_energy = game.sessions[&outsider].energy_balance().0;
+    activate(&mut game, outsider, MOB_ID, 15);
+    assert_eq!(game.sessions[&outsider].energy_balance().0, outsider_energy);
+    let trader_energy = game.sessions[&trader_id].energy_balance().0;
+    activate(&mut game, trader_id, MOB_ID, 15);
+    assert_eq!(
+        game.sessions[&trader_id].energy_balance().0,
+        trader_energy - 90.
+    );
+    let blocked = root.join("combat/1076.json.next");
+    fs::create_dir(&blocked).unwrap();
+    game.advance(1.6).unwrap();
+    assert!(lock_combat(game.combats.get(&sector.id).unwrap())
+        .unwrap()
+        .actors[0]
+        .befriend
+        .is_empty());
+    fs::remove_dir(blocked).unwrap();
+    advance(&mut game, 0.1);
+    let effect = {
+        let world = lock_combat(game.combats.get(&sector.id).unwrap()).unwrap();
+        assert!(!world.actors[0].befriend.is_empty());
+        assert!(!world.actors[1].befriend.is_empty());
+        assert!(world.actors[2].befriend.is_empty());
+        world.actors[0].befriend[0].effect
+    };
+    drop(game);
+    let mut restored = GameState::new(sector, bind, root.clone()).unwrap();
+    restored.sessions.get_mut(&outsider).unwrap().position = [0.; 3];
+    restored.update_views();
+    restored.advance(0.1).unwrap();
+    let visual_seen = restored.take_outgoing().into_iter().any(|outbound| {
+        let Ok(packet) = Datagram::decode(&outbound.data) else {
+            return false;
+        };
+        let mut remaining = packet.body.as_slice();
+        while remaining.len() >= 4 {
+            let length = u16::from_le_bytes([remaining[0], remaining[1]]) as usize;
+            if length < 4 || length > remaining.len() {
+                break;
+            }
+            if let Ok(frame) = Frame::decode(&remaining[..length]) {
+                if frame.opcode == 9
+                    && frame.body.len() >= 7
+                    && u16::from_le_bytes(frame.body[5..7].try_into().unwrap())
+                        == crate::befriend::VISUAL_DESCRIPTOR
+                {
+                    return true;
+                }
+            }
+            remaining = &remaining[length..];
+        }
+        false
+    });
+    assert!(
+        visual_seen,
+        "verified Befriend visual replays after world restart"
+    );
+    let visual = {
+        let mut world = lock_combat(restored.combats.get(&1076).unwrap()).unwrap();
+        assert_eq!(world.actors[0].befriend[0].effect, effect);
+        let visual = world.actors[0].befriend[0].visual_id(MOB_ID);
+        world.actors[0].befriend[0].deadline_ms = crate::resources::unix_ms() - 1;
+        world.persist().unwrap();
+        visual
+    };
+    restored.advance(0.1).unwrap();
+    let removed = restored.take_outgoing().into_iter().any(|outbound| {
+        let Ok(packet) = Datagram::decode(&outbound.data) else {
+            return false;
+        };
+        let mut remaining = packet.body.as_slice();
+        while remaining.len() >= 4 {
+            let length = u16::from_le_bytes([remaining[0], remaining[1]]) as usize;
+            if length < 4 || length > remaining.len() {
+                break;
+            }
+            if let Ok(frame) = Frame::decode(&remaining[..length]) {
+                if frame == packets::remove_effect(visual) {
+                    return true;
+                }
+            }
+            remaining = &remaining[length..];
+        }
+        false
+    });
+    assert!(removed, "expired Befriend visual must be removed");
+    fs::remove_dir_all(root).unwrap();
+}
+
 /// A Terran area hack persists MOB subsystem effects before acknowledging the cast.
 #[test]
 fn terran_hacking_area_is_generation_pinned_and_restart_safe() {

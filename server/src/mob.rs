@@ -17,6 +17,11 @@ mod menace_tests;
 #[path = "mob_radius_tests.rs"]
 mod radius_tests;
 use serde::{Deserialize, Serialize};
+#[path = "befriend_mob.rs"]
+mod befriend_mob;
+#[cfg(test)]
+#[path = "befriend_mob_tests.rs"]
+mod befriend_tests;
 #[path = "enrage_mob.rs"]
 mod enrage_mob;
 #[path = "hacking_mob.rs"]
@@ -179,6 +184,8 @@ pub struct Mob {
     #[serde(default)]
     pub hacks: Vec<crate::hacking::HackEffect>,
     #[serde(default)]
+    pub befriend: Vec<crate::befriend::BefriendEffect>,
+    #[serde(default)]
     pub death_generation: u64,
     #[serde(default)]
     pub killer: Option<u32>,
@@ -266,6 +273,7 @@ impl Mob {
             enrage: Vec::new(),
             menace: Vec::new(),
             hacks: Vec::new(),
+            befriend: Vec::new(),
             death_generation: 0,
             killer: None,
             cooldown: 0.,
@@ -299,6 +307,12 @@ impl Mob {
         if saved.menace.len() > 16 || saved.menace.iter().any(|fear| !fear.valid()) {
             return Err(crate::protocol::invalid("Invalid MOB Menace state."));
         }
+        if saved.befriend.len() > 16 || saved.befriend.iter().any(|effect| !effect.valid()) {
+            return Err(crate::protocol::invalid("Invalid MOB Befriend state."));
+        }
+        saved
+            .befriend
+            .retain(|effect| effect.active(crate::resources::unix_ms(), saved.death_generation));
         if saved.hacks.len() > 16 || saved.hacks.iter().any(|effect| !effect.valid()) {
             return Err(crate::protocol::invalid("Invalid MOB Hacking state."));
         }
@@ -415,9 +429,13 @@ impl Mob {
             self.enrage.clear();
             self.menace.clear();
             self.hacks.clear();
+            self.befriend.clear();
         }
     }
     pub fn damage_by(&mut self, damage: f32, player: u32) {
+        if damage.is_finite() && damage > 0. {
+            self.befriend.retain(|effect| effect.source != player);
+        }
         let alive = self.state != MobState::Dead;
         if alive {
             self.aggro.add(player, damage);
@@ -440,7 +458,12 @@ impl Mob {
         } else {
             0.
         };
-        let adjusted = damage * (1. + bonus);
+        let psionic = if damage_type == 8 {
+            self.psionic_vulnerability()
+        } else {
+            0.
+        };
+        let adjusted = damage * (1. + bonus + psionic);
         self.damage_by(adjusted, player);
         adjusted
     }
@@ -591,8 +614,22 @@ impl Mob {
             self.aggro.remove(player);
         }
         self.check_warning_shots(dt, players);
+        let now = crate::resources::unix_ms();
+        let friends: Vec<(u32, u64)> = self
+            .befriend
+            .iter()
+            .filter(|effect| effect.active(now, self.death_generation))
+            .map(|effect| (effect.source, effect.source_epoch))
+            .collect();
+        let calm = self.calm_fraction();
+        let calm_range = (2500. + 150. * self.definition.level as f32) * calm;
+        let mob_position = self.position;
+        let mob_radius = self.definition.radius;
         let eligible = |player: &PlayerThreat| {
             player.id != 0
+                && !friends.contains(&(player.id, player.session_epoch))
+                && (calm >= 1.
+                    || (distance(mob_position, player.position) - mob_radius).max(0.) <= calm_range)
                 && player.visible
                 && player.position.iter().all(|value| value.is_finite())
                 && self.sensors.contains(player)
@@ -821,6 +858,7 @@ impl Mob {
                 self.enrage.clear();
                 self.menace.clear();
                 self.hacks.clear();
+                self.befriend.clear();
                 self.state = MobState::Idle;
             }
             return 0.;

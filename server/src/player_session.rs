@@ -34,6 +34,8 @@ use std::sync::{Arc, Mutex};
 mod ability_actions;
 #[path = "attacker_feedback.rs"]
 mod attacker_feedback;
+#[path = "befriend_service.rs"]
+mod befriend_service;
 #[path = "call_forward_service.rs"]
 mod call_forward_service;
 #[path = "combat_experience.rs"]
@@ -237,6 +239,7 @@ pub struct PlayerSession {
     mob_relationships: Vec<Option<u32>>,
     mob_menace_visuals: HashMap<u32, u32>,
     mob_hacking_visuals: HashMap<u32, u32>,
+    mob_befriend_visuals: HashMap<u32, u32>,
     mob_enrage_visuals: HashMap<u32, u32>,
     player_firing: bool,
     weapon_cooldowns: [f32; 20],
@@ -447,6 +450,7 @@ impl PlayerSession {
             mob_relationships,
             mob_menace_visuals: HashMap::new(),
             mob_hacking_visuals: HashMap::new(),
+            mob_befriend_visuals: HashMap::new(),
             mob_enrage_visuals: HashMap::new(),
             player_firing: false,
             weapon_cooldowns: [0.; 20],

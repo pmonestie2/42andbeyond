@@ -223,6 +223,7 @@ impl PlayerSession {
         self.mob_relationships = vec![None; self.sector.mobs.len()];
         self.mob_menace_visuals.clear();
         self.mob_hacking_visuals.clear();
+        self.mob_befriend_visuals.clear();
         self.mob_enrage_visuals.clear();
         self.logged_in = false;
         self.gate_transit = None;
