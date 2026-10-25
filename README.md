@@ -4,7 +4,7 @@ Standalone Unity client and Rust game server - Still work in progress but the se
 
 Why: I wanted to explore making a new client - For that you need a server to play with - the Net7 server being close source (I really wonder why) I remade a server.
 
-A quick demo here: https://www.youtube.com/watch?v=TjWSGhOvHgU
+A quick demo here: https://www.youtube.com/watch?v=uojjHsr-D48
 
 | Directory | Purpose |
 | --- | --- |
