@@ -608,10 +608,29 @@ internal static class Program
         {
             "Recharge Reactor", "Recharge Shields", "Deflect Impact", "Deflect Explosive",
             "Deflect Plasma", "Deflect Energy", "Deflect EMP", "Deflect Chemical", "Resist Psionic",
-            "Turbo Warp", "Improved Beam Handling", "Improved Projectile Handling", "Shunt to Reactor"
+            "Turbo Warp", "Improved Beam Handling", "Improved Projectile Handling", "Shunt to Reactor",
+            "Increase Maneuverability", "Maximize Shields"
         })
             Assert(DeviceEffects.LabelFor(description + " (Activated)") == description,
                 "A server-supported active device is missing from the catalog allowlist.");
+        Assert(DeviceEffects.LabelFor("Turbo (Activated)") == "Impulse Turbo" &&
+            DeviceEffects.LabelFor("Reroute Shield Energy (Instant)") == "Reroute Shield Energy" &&
+            DeviceEffects.LabelFor("Transfer Reactor Energy (Instant)") == "Transfer Reactor Energy",
+            "Native instant and impulse catalog descriptions lost their UI labels.");
+        Assert(DeviceEffects.MountedSlot("Transfer Reactor Energy", 11, 14, 6) &&
+            DeviceEffects.MountedSlot("Reroute Shield Energy", 7, 1, 6) &&
+            DeviceEffects.MountedSlot("Increase Maneuverability", 2, 0, 6) &&
+            DeviceEffects.MountedSlot("Increase Maneuverability", 6, 2, 6) &&
+            DeviceEffects.MountedSlot("Impulse Turbo", 7, 1, 6) &&
+            !DeviceEffects.MountedSlot("Turbo Weapons", 7, 1, 6) &&
+            !DeviceEffects.MountedSlot("Transfer Reactor Energy", 11, 15, 6),
+            "Activation mount rules diverged from server-supported core and device slots.");
+        Assert(DeviceEffects.IsInstant("Reroute Shield Energy") &&
+            DeviceEffects.IsInstant("Transfer Reactor Energy") &&
+            DeviceEffects.RequiresPeer("Transfer Reactor Energy") &&
+            !DeviceEffects.RequiresPeer("Reroute Shield Energy") &&
+            !DeviceEffects.IsInstant("Turbo Weapons"),
+            "Instant and selected-peer effects need distinct control gates.");
         Assert(DeviceEffects.LabelFor("Unknown (Activated)") == "",
             "An unsupported device was offered as activatable.");
         const string fixture =
@@ -651,6 +670,11 @@ internal static class Program
         Assert(world.ActiveDeviceLabel == "Shunt to Reactor" && world.ActiveDeviceEndsAt != 0,
             "Shunt activation notice did not establish an active timer.");
         notice("Shunt to Reactor ended.");
+        notice("Impulse Turbo active for 10 seconds.");
+        Assert(world.ActiveDeviceLabel == "Impulse Turbo", "Impulse Turbo notice did not publish a timer.");
+        notice("Impulse Turbo ended.");
+        notice("Transfer Reactor Energy completed.");
+        Assert(world.ActiveDeviceLabel == "", "Instant peer support falsely published a timed buff.");
         notice("Recharge Reactor active for seconds.");
         Assert(world.ActiveDeviceLabel == "",
             "Malformed active-device duration created a false effect state.");

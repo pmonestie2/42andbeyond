@@ -205,7 +205,13 @@ the server's activation and expiry messages.
 Select a supported installed device in Ship Loadout to activate Scan Boost,
 Increase Speed, Reactor Boost, Turbo Weapons, Turbo Warp, Improved Beam Handling,
 Improved Projectile Handling, Shunt to Reactor, Recharge Reactor, Recharge Shields,
-or a typed Deflect device. The active effect label and displayed remaining time
+Maximize Shields, or a typed Deflect device. Supported core items can also activate Impulse Turbo,
+Increase Maneuverability, or instant Reroute Shield Energy from their shield,
+reactor, or engine mount. The loadout's Transfer Reactor Energy control cycles
+visible pilots as recipients, waits for server target selection, and sends the
+equipped device action; the server checks range and both reactor balances.
+Instant transfers and reroutes remain usable while a timed device buff is active.
+The active effect label and displayed remaining time
 come from the server's native buff slot and removal tick when available. A
 matching native ObjectEffect lights a ship-local field, and effect removal clears
 it. The server publishes resource and combat changes and announces when the

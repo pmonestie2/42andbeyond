@@ -205,6 +205,13 @@ namespace FortyTwoAndBeyond.Client
             Snapshot next = worker?.Latest;
             if (next != null && !ReferenceEquals(next, snapshot))
             {
+                bool travelEnded = snapshot != null &&
+                    ((snapshot.WarpPhase == WarpPhase.Charging ||
+                      snapshot.WarpPhase == WarpPhase.Traveling) &&
+                     (next.WarpPhase == WarpPhase.Recovering || next.WarpPhase == WarpPhase.Idle) ||
+                     snapshot.Speed > 1000f && next.Speed < 100f);
+                bool positionChanged = next.HasPosition && snapshot?.HasPosition == true &&
+                    next.Position.Distance(snapshot.Position) > 1f;
                 bool poseChanged = next.HasPosition && (snapshot == null || !snapshot.HasPosition ||
                     next.Position.Distance(snapshot.Position) > .001f || next.Speed != snapshot.Speed ||
                     next.AngularY != snapshot.AngularY || next.AngularZ != snapshot.AngularZ ||
@@ -219,10 +226,12 @@ namespace FortyTwoAndBeyond.Client
                     navigationSelection.TargetId == pendingNavigationTarget)
                 { SelectWorldObject(pendingNavigationTarget); pendingNavigationTarget = 0; }
                 ApplyStationAvatars(next);
-                remoteShips.Apply(next.Players.Concat(next.Mobs).ToArray(), next.Group, next.SelectedTargetId);
+                remoteShips.Apply(next.Players.Concat(next.Mobs).ToArray(), next.Group,
+                    next.SelectedTargetId, next.Position);
                 combatEffects.Apply(next);
                 if (poseChanged) authoritativePoseAt = Time.unscaledTime;
                 if (!positioned && next.HasPosition) { renderedPosition = Convert(next.Position); positioned = true; }
+                else if (travelEnded && positionChanged) renderedPosition = Convert(next.Position);
             }
             if (!Ready || !Application.isFocused)
             { flightThrottle.Reset(); StopStationWalk(); return; }
@@ -431,7 +440,11 @@ namespace FortyTwoAndBeyond.Client
             if (snapshot != null && !docked)
             {
                 bool formed = snapshot.Formation != null && snapshot.Group.Formed;
-                float age = Mathf.Clamp(Time.unscaledTime - authoritativePoseAt, 0, .25f);
+                bool fastTravel = snapshot.WarpPhase == WarpPhase.Charging ||
+                    snapshot.WarpPhase == WarpPhase.Traveling || snapshot.Speed > 1000f;
+                float horizon = fastTravel ? .7f : .35f;
+                float poseAge = Mathf.Max(0, Time.unscaledTime - authoritativePoseAt);
+                float age = Mathf.Min(poseAge, horizon);
                 Quaternion projectedRotation = formed ? ConvertRotation(snapshot.Orientation) :
                     ProjectRotation(snapshot, age);
                 ship.rotation = Quaternion.Slerp(ship.rotation, projectedRotation, blend);
@@ -442,11 +455,14 @@ namespace FortyTwoAndBeyond.Client
                 float distance = snapshot.Speed * ramp +
                     .5f * direction * snapshot.Acceleration * ramp * ramp + currentSpeed * (age - ramp);
                 Vector3 velocity = ship.forward * (currentSpeed * MetersToWorld);
-                Vector3 predicted = formed ? Convert(snapshot.Position) : Convert(snapshot.Position) +
+                Vector3 predicted = Convert(snapshot.Position) +
                     projectedRotation * Vector3.forward * (distance * MetersToWorld);
-                if (!formed) renderedPosition += velocity * delta;
+                if (poseAge < horizon) renderedPosition += velocity * delta;
                 renderedPosition = Vector3.Distance(renderedPosition, predicted) > 50
-                    ? predicted : Vector3.Lerp(renderedPosition, predicted, 1 - Mathf.Exp(-10 * delta));
+                    ? predicted : Vector3.MoveTowards(renderedPosition,
+                        Vector3.Lerp(renderedPosition, predicted,
+                            1 - Mathf.Exp(-(fastTravel ? 6f : 10f) * delta)),
+                        (fastTravel ? 14f : 30f) * delta);
             }
             worldRoot.position = -renderedPosition;
             worldRoot.gameObject.SetActive(!docked);
@@ -720,14 +736,16 @@ namespace FortyTwoAndBeyond.Client
                 worker.Submit(new ClientCommand(CommandKind.ActivateWeapon, (uint)slot));
         }
 
-        /// <summary>Activate a server-supported effect from an installed device mount.</summary>
+        /// <summary>Activate a server-supported effect from an installed core or device mount.</summary>
         public void ActivateDevice(int slot)
         {
+            ItemView item = snapshot != null && slot >= 0 && slot < snapshot.Mounted.Length ?
+                snapshot.Mounted[slot] : null;
             if (Ready && !Incapacitated && snapshot.Station == null &&
                 snapshot.WarpPhase != WarpPhase.Charging && snapshot.WarpPhase != WarpPhase.Traveling &&
-                slot >= 9 && slot < 9 + snapshot.DeviceMounts && slot < snapshot.Mounted.Length &&
-                snapshot.Mounted[slot]?.ActivationLabel.Length > 0 &&
-                snapshot.ActiveDeviceLabel.Length == 0)
+                item != null && DeviceEffects.MountedSlot(item.ActivationLabel, item.Type, slot,
+                    snapshot.DeviceMounts) &&
+                (DeviceEffects.IsInstant(item.ActivationLabel) || snapshot.ActiveDeviceLabel.Length == 0))
                 worker.Submit(new ClientCommand(CommandKind.ActivateDevice, (uint)slot));
         }
 

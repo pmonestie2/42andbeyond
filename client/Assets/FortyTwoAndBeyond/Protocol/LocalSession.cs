@@ -375,20 +375,26 @@ namespace FortyTwoAndBeyond.Protocol
                 "Firing weapon slot " + slot;
         }
 
-        /// <summary>Request activation of one installed device; the server decides effect support.</summary>
+        /// <summary>Request activation of a supported mounted effect; the server decides eligibility.</summary>
         public void ActivateDevice(int slot)
         {
             if (!Ready || gate != 0 || World.Station != null || World.Equipment.Hull <= 0 ||
                 World.Warp.Phase == WarpPhase.Charging || World.Warp.Phase == WarpPhase.Traveling ||
-                World.ActiveDeviceLabel.Length > 0 ||
-                slot < 9 || slot >= 9 + World.Equipment.DeviceMounts ||
-                slot >= World.Equipment.Mounted.Length) return;
+                slot < 0 || slot >= World.Equipment.Mounted.Length) return;
             ItemState item = World.Equipment.Mounted[slot];
             if (item?.Present != true ||
                 !World.ItemCatalog.TryGetValue(item.Template, out ItemTemplateInfo template) ||
-                template.Type != 11 || template.ActivationLabel.Length == 0) return;
+                !DeviceEffects.MountedSlot(template.ActivationLabel, template.Type, slot,
+                    World.Equipment.DeviceMounts) ||
+                !DeviceEffects.IsInstant(template.ActivationLabel) && World.ActiveDeviceLabel.Length > 0)
+                return;
+            ShipActor peer = null;
+            if (DeviceEffects.RequiresPeer(template.ActivationLabel) &&
+                (!World.Players.TryGetValue(World.Equipment.TargetId, out peer) || !peer.HasPosition))
+            { Status = "Select a nearby pilot before transferring reactor energy"; return; }
             Send(0x5d, Wire.Body(w => { w.Write(Player); w.Write((byte)2); w.Write((byte)slot); }));
-            Status = "Activating " + template.Name;
+            Status = DeviceEffects.RequiresPeer(template.ActivationLabel) ?
+                "Transferring reactor energy to " + peer.Name : "Activating " + template.Name;
         }
 
         /// <summary>Activate the equipped Turbo Weapons device through native item control.</summary>

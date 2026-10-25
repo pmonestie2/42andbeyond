@@ -1374,14 +1374,20 @@ namespace FortyTwoAndBeyond.Client
                 client.UnequipMount(selectedMount);
             bool weapon = mounted != null && mounted.Type >= 14 && mounted.Type <= 16 &&
                 selectedMount >= 3 && selectedMount < 3 + snapshot.WeaponMounts;
-            bool device = mounted != null && mounted.Type == 11 &&
-                mounted.ActivationLabel.Length > 0 && selectedMount >= 9 &&
-                selectedMount < 9 + snapshot.DeviceMounts;
+            bool device = mounted != null && DeviceEffects.MountedSlot(mounted.ActivationLabel,
+                mounted.Type, selectedMount, snapshot.DeviceMounts);
+            bool transfer = device && DeviceEffects.RequiresPeer(mounted.ActivationLabel);
+            ShipActor recipient = transfer ? snapshot.Players.FirstOrDefault(actor =>
+                actor.Id == snapshot.SelectedTargetId && actor.HasPosition) : null;
             GUI.enabled = client.Ready && !client.Incapacitated && snapshot.Station == null &&
-                (weapon || device && snapshot.ActiveDeviceLabel.Length == 0);
+                (weapon || device && (DeviceEffects.IsInstant(mounted.ActivationLabel) ||
+                    snapshot.ActiveDeviceLabel.Length == 0) && (!transfer || recipient != null));
             if (GUI.Button(new Rect(detailX, actionY + 23, 265, 43),
                 weapon ? (mounted.WeaponState & 1) != 0 ? "STOP SELECTED WEAPON" : "FIRE SELECTED WEAPON" :
-                device ? snapshot.ActiveDeviceLabel.Length > 0 ? snapshot.ActiveDeviceLabel.ToUpperInvariant() + " ACTIVE" :
+                transfer ? recipient == null ? "SELECT A PILOT FIRST" : "TRANSFER TO " + recipient.Name.ToUpperInvariant() :
+                device ? !DeviceEffects.IsInstant(mounted.ActivationLabel) && snapshot.ActiveDeviceLabel.Length > 0 ?
+                    snapshot.ActiveDeviceLabel.ToUpperInvariant() + " ACTIVE" :
+                    mounted.ActivationLabel.Length > 20 ? "ACTIVATE SELECTED EFFECT" :
                     "ACTIVATE " + mounted.ActivationLabel.ToUpperInvariant() : "SELECT WEAPON OR DEVICE",
                 weapon ? hostileButton : primaryButton))
             {
@@ -1502,7 +1508,8 @@ namespace FortyTwoAndBeyond.Client
                 return;
             }
             GUI.DrawTexture(new Rect(x, y + 41, 40, 40), icons.ForType(item.Type));
-            GUI.Label(new Rect(x + 49, y + 36, width - 49, 48), item.Name.ToUpperInvariant(), wrappedBody);
+            GUI.Label(new Rect(x + 49, y + 36, width - 49, 48), item.Name.ToUpperInvariant(),
+                item.Name.Length > 16 ? equipmentText : wrappedBody);
             GUI.Label(new Rect(x, y + 88, width, 20), ItemCategory(item.Type) + "   ·   TEMPLATE " + item.Template, small);
             GUI.Label(new Rect(x, y + 118, width, 18),
                 "QUALITY  " + (Mathf.Clamp01(item.Quality) * 100).ToString("0") + "%", small);
@@ -1515,8 +1522,31 @@ namespace FortyTwoAndBeyond.Client
             if (item.Price > 0) GUI.Label(new Rect(x, y + 244, width, 20),
                 "VALUE  " + item.Price.ToString("N0") + " CREDITS", small);
             GUI.Label(new Rect(x, y + 270, width, 20), "STACK  ×" + item.Quantity, small);
-            if (!string.IsNullOrWhiteSpace(item.Info) && item.Info.Count(char.IsLetter) >= 3 && !item.Info.Contains("^"))
+            bool transfer = item == mount && DeviceEffects.RequiresPeer(item.ActivationLabel);
+            if (!transfer && !string.IsNullOrWhiteSpace(item.Info) && item.Info.Count(char.IsLetter) >= 3 && !item.Info.Contains("^"))
                 GUI.Label(new Rect(x, y + 298, width, rect.height - 312), item.Info, small);
+            if (transfer) DrawTransferRecipient(snapshot, rect);
+        }
+
+        /// <summary>Choose a visible pilot while keeping the loadout panel open.</summary>
+        private void DrawTransferRecipient(Snapshot snapshot, Rect rect)
+        {
+            ShipActor[] pilots = snapshot.Players.Where(actor => actor.HasPosition)
+                .OrderBy(actor => actor.Position.Distance(snapshot.Position)).ToArray();
+            ShipActor chosen = pilots.FirstOrDefault(actor => actor.Id == snapshot.SelectedTargetId);
+            float x = rect.x + 13, width = rect.width - 26;
+            GUI.Label(new Rect(x, rect.yMax - 85, width, 19),
+                chosen == null ? "SELECT A PILOT TO RECEIVE ENERGY" :
+                $"{chosen.Position.Distance(snapshot.Position) / 1000:0.0} KM  ·  SERVER CHECKS", small);
+            bool enabled = GUI.enabled;
+            GUI.enabled = enabled && pilots.Length > 0;
+            if (GUI.Button(new Rect(x, rect.yMax - 60, width, 34),
+                chosen == null ? "CHOOSE VISIBLE PILOT" : "RECIPIENT: " + chosen.Name, button))
+            {
+                int index = Array.FindIndex(pilots, actor => actor.Id == snapshot.SelectedTargetId);
+                client.SelectContact(pilots[(index + 1) % pilots.Length].Id);
+            }
+            GUI.enabled = enabled;
         }
 
         /// <summary>Check the item category against the unlocked ship hardpoint.</summary>

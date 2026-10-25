@@ -34,7 +34,14 @@ def main() -> None:
                 str(executable), '--state-dir', str(state), '--create-account', account,
                 '--character', character,
             ], input=password + '\n', text=True, check=True)
-        (state / 'sandbox_loadout.json').write_bytes((server_root / 'data' / 'sandbox_loadout.json').read_bytes())
+        loadout = json.loads((server_root / 'data' / 'sandbox_loadout.json').read_text())
+        for equipment in (loadout['equipment'], loadout['by_class']['je']):
+            for item in equipment:
+                if item['slot'] == 13:
+                    item['template'] = 2412  # A timed Turbo Weapons buff spends reactor energy.
+                elif item['slot'] == 14:
+                    item['template'] = 2495  # Transfer Reactor Energy to the other JE pilot.
+        (state / 'sandbox_loadout.json').write_text(json.dumps(loadout))
         sector = json.loads((server_root / 'data' / 'sector.json').read_text())
         resource_sector = json.loads((server_root / 'data' / 'asteroid_belt_alpha.json').read_text())
         resource = next(node for node in resource_sector['resources'] if node['level'] == 1 and node['ore_items'])

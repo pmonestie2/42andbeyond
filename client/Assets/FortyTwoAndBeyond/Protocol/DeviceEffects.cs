@@ -17,6 +17,11 @@ namespace FortyTwoAndBeyond.Protocol
             ["Improved Beam Handling (Activated)"] = "Improved Beam Handling",
             ["Improved Projectile Handling (Activated)"] = "Improved Projectile Handling",
             ["Shunt to Reactor (Activated)"] = "Shunt to Reactor",
+            ["Turbo (Activated)"] = "Impulse Turbo",
+            ["Increase Maneuverability (Activated)"] = "Increase Maneuverability",
+            ["Maximize Shields (Activated)"] = "Maximize Shields",
+            ["Reroute Shield Energy (Instant)"] = "Reroute Shield Energy",
+            ["Transfer Reactor Energy (Instant)"] = "Transfer Reactor Energy",
             ["Recharge Reactor (Activated)"] = "Recharge Reactor",
             ["Recharge Shields (Activated)"] = "Recharge Shields",
             ["Deflect Impact (Activated)"] = "Deflect Impact",
@@ -36,5 +41,25 @@ namespace FortyTwoAndBeyond.Protocol
         /// </summary>
         public static string LabelFor(string description)
         { return Names.TryGetValue(description, out string label) ? label : ""; }
+
+        /// <returns>bool: Whether activation completes immediately without a timed buff.</returns>
+        public static bool IsInstant(string label)
+        { return label == "Reroute Shield Energy" || label == "Transfer Reactor Energy"; }
+
+        /// <returns>bool: Whether activation needs an acknowledged visible pilot target.</returns>
+        public static bool RequiresPeer(string label)
+        { return label == "Transfer Reactor Energy"; }
+
+        /// <returns>bool: Whether the catalog effect may be activated from this unlocked mount.</returns>
+        public static bool MountedSlot(string label, uint type, int slot, uint deviceMounts)
+        {
+            if (label.Length == 0) return false;
+            if (type == 11) return slot >= 9 && slot < 9 + deviceMounts && slot < 20;
+            if (label == "Increase Maneuverability" &&
+                (type == 2 && slot == 0 || type == 6 && slot == 2)) return true;
+            return type == 7 && slot == 1 &&
+                (label == "Impulse Turbo" || label == "Increase Maneuverability" ||
+                    label == "Reroute Shield Energy");
+        }
     }
 }

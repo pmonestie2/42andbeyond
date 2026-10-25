@@ -139,6 +139,35 @@ internal static class PeerChecks
                 Wait(observer, visitor, () => observer.Ready && visitor.Ready &&
                     observer.World.Players.TryGetValue(peerId, out ShipActor p) && p.HasPosition && p.Name == "Visitor" &&
                     visitor.World.Players.ContainsKey(observer.Player), "Mutual player visibility did not arrive.");
+                Require(observer.World.Equipment.Mounted[13]?.Template == 2412 &&
+                    visitor.World.Equipment.Mounted[14]?.Template == 2495,
+                    "Disposable support devices were not equipped in the expected mounts.");
+                visitor.SelectTarget(observer.Player);
+                Wait(observer, visitor, () => visitor.World.Equipment.TargetId == observer.Player,
+                    "Selected recipient did not receive native target acknowledgment.");
+                visitor.ActivateDevice(13);
+                Wait(observer, visitor, () => visitor.World.ActiveDeviceLabel == "Turbo Weapons",
+                    "Sender timed effect did not activate before instant support.");
+                observer.ActivateDevice(13);
+                Wait(observer, visitor, () => observer.World.ActiveDeviceLabel == "Turbo Weapons" &&
+                    observer.World.Equipment.Energy < .99f,
+                    "Timed device did not make room in the recipient reactor.");
+                float recipientEnergy = observer.World.Equipment.Energy;
+                float senderEnergy = visitor.World.Equipment.Energy;
+                visitor.ActivateDevice(14);
+                Wait(observer, visitor, () => visitor.World.Messages.Any(message =>
+                    message == "Transfer Reactor Energy completed.") &&
+                    observer.World.Messages.Any(message =>
+                        message == "Reactor energy received from a nearby pilot."),
+                    "Native selected-peer energy transfer was not acknowledged by both pilots.");
+                Require(visitor.World.Equipment.Energy < senderEnergy - .005f &&
+                    observer.World.Equipment.Energy >= recipientEnergy,
+                    $"Native transfer reactor fraction mismatch: sender {senderEnergy:0.000} -> " +
+                    $"{visitor.World.Equipment.Energy:0.000}; recipient {recipientEnergy:0.000} -> " +
+                    $"{observer.World.Equipment.Energy:0.000}.");
+                Require(visitor.World.ActiveDeviceLabel == "Turbo Weapons",
+                    "Instant peer support unexpectedly cleared the sender's timed buff.");
+                Console.WriteLine("PASS: selected-peer reactor transfer during a timed device buff");
                 uint starterWeapon = observer.World.Equipment.Mounted[3].Template;
                 observer.UnequipMount(3);
                 Wait(observer, null, () => observer.World.Equipment.Mounted[3]?.Present != true &&
