@@ -1265,8 +1265,24 @@ namespace FortyTwoAndBeyond.Client
                     string.Join("\n", snapshot.Messages.Reverse().Take(5).Reverse()), small);
             else
                 GUI.Label(new Rect(panel.x + 107, panel.y + 10, 211, 24),
-                    new GUIContent((snapshot.Messages.LastOrDefault() ?? "No recent messages").Split('\n')[0],
+                    new GUIContent(FitCommsPreview((snapshot.Messages.LastOrDefault() ??
+                        "No recent messages").Split('\n')[0], 211),
                         "Click COMMS to read the last five server messages"), commsPreview);
+        }
+
+        /// <returns>string: A single-line message that ends visibly when the preview is narrower.</returns>
+        private string FitCommsPreview(string message, float width)
+        {
+            if (commsPreview.CalcSize(new GUIContent(message)).x <= width) return message;
+            int low = 0, high = message.Length;
+            while (low < high)
+            {
+                int middle = (low + high + 1) / 2;
+                if (commsPreview.CalcSize(new GUIContent(message.Substring(0, middle) + "…")).x <= width)
+                    low = middle;
+                else high = middle - 1;
+            }
+            return message.Substring(0, low).TrimEnd() + "…";
         }
 
         /// <summary>Draw scanner contacts grouped by threat and affiliation.</summary>
@@ -1337,7 +1353,9 @@ namespace FortyTwoAndBeyond.Client
                 (snapshot.ShieldBuff != null ? 1 : 0) + (snapshot.ReactorBuff != null ? 1 : 0) +
                 (snapshot.SignatureBuff != null ? 1 : 0);
             float height = 87 + ((buffCount + 1) / 2) * 30;
-            Rect panel = new Rect(365, CanvasHeight - 125 - height, 420, height);
+            bool miningPanel = snapshot.ResourceWindowOpen || snapshot.MiningActivity != null;
+            float x = miningPanel ? 24 : 365;
+            Rect panel = new Rect(x, CanvasHeight - (miningPanel ? 241 : 125) - height, 420, height);
             FlightPanel(panel);
             GUI.Label(new Rect(panel.x + 13, panel.y + 7, 300, 20), "SHIP SYSTEMS", section);
             float energy = Mathf.Clamp01(snapshot.Energy);

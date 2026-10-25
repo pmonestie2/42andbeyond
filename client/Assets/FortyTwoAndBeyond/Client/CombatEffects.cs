@@ -70,6 +70,10 @@ namespace FortyTwoAndBeyond.Client
         private LootActivity lootActivity;
         private Vector3 lootPoint;
         private readonly LineRenderer[] warpStreaks = new LineRenderer[28];
+        private readonly LineRenderer[] driveHalos = new LineRenderer[2];
+        private readonly LineRenderer[] driveCores = new LineRenderer[2];
+        private readonly LineRenderer[] driveFins = new LineRenderer[2];
+        private float driveSpeed;
         private LineRenderer deviceHalo, deviceTrace;
         private uint deviceEffectId;
         private ushort deviceDescriptor;
@@ -96,6 +100,22 @@ namespace FortyTwoAndBeyond.Client
                 material = new Material(shader);
                 impactMaterial = new Material(shader);
                 impactMaterial.SetInt("_ZTest", 8);
+                for (int side = 0; side < 2; side++)
+                {
+                    driveHalos[side] = Line("Ion drive plasma", .18f,
+                        new Color(.24f, .72f, 1f, .3f), 4);
+                    driveCores[side] = Line("Ion drive core", .045f,
+                        new Color(.67f, .94f, 1f, .8f), 4);
+                    driveFins[side] = Line("Warp drive shear", .03f,
+                        new Color(.48f, .7f, 1f, .38f), 3);
+                    foreach (LineRenderer line in new[] { driveHalos[side], driveCores[side], driveFins[side] })
+                    {
+                        if (line == null) continue;
+                        line.widthCurve = new AnimationCurve(new Keyframe(0, .2f),
+                            new Keyframe(.28f, 1f), new Keyframe(1, 0f));
+                        line.enabled = false;
+                    }
+                }
             }
         }
 
@@ -118,6 +138,7 @@ namespace FortyTwoAndBeyond.Client
         public void Apply(Snapshot snapshot)
         {
             playerId = snapshot.PlayerId;
+            driveSpeed = Mathf.Abs(snapshot.Speed);
             loadout.Apply(snapshot);
             SetDeviceBuff(snapshot.DeviceBuff, snapshot.Station != null);
             SetPeerBuff(snapshot.PeerBuff, snapshot.Station != null);
@@ -392,6 +413,7 @@ namespace FortyTwoAndBeyond.Client
             TickMiningVisual(tractorVisual);
             TickLoot();
             TickWarp();
+            TickDrive();
             TickDeviceBuff();
             TickPeerBuff();
             TickResourceBuffs();
@@ -420,7 +442,7 @@ namespace FortyTwoAndBeyond.Client
                 Camera camera = ViewCamera();
                 Vector3 right = camera != null ? camera.transform.right : Vector3.right;
                 Vector3 up = camera != null ? camera.transform.up : Vector3.up;
-                float contactRadius = .12f;
+                float contactRadius = activity.Phase == MiningPhase.Prospect ? .35f : .27f;
                 visual.Contact.SetPosition(0, oreSurface + right * contactRadius);
                 visual.Contact.SetPosition(1, oreSurface + up * contactRadius);
                 visual.Contact.SetPosition(2, oreSurface - right * contactRadius);
@@ -429,12 +451,13 @@ namespace FortyTwoAndBeyond.Client
                 visual.Contact.enabled = true;
                 tint.a = .8f * pulse;
                 visual.Contact.startColor = visual.Contact.endColor = tint;
+                visual.Contact.widthMultiplier = .035f + .015f * pulse;
                 if (visual.Orbit != null)
                 {
                     visual.Orbit.enabled = activity.Phase == MiningPhase.Prospect;
                     if (visual.Orbit.enabled)
                     {
-                        float radius = .23f + progress * .35f;
+                        float radius = .42f + progress * .45f;
                         for (int point = 0; point < 33; point++)
                         {
                             float angle = point * Mathf.PI * 2 / 32 + Time.unscaledTime * 1.7f;
@@ -742,6 +765,54 @@ namespace FortyTwoAndBeyond.Client
             }
         }
 
+        /// <summary>Draw tapered engine wakes from authoritative speed and warp phase.</summary>
+        private void TickDrive()
+        {
+            bool active = driveSpeed > 12f || warpPhase == WarpPhase.Charging ||
+                warpPhase == WarpPhase.Traveling || warpPhase == WarpPhase.Recovering;
+            float speed = Mathf.Clamp01(driveSpeed / 220f);
+            float warp = warpPhase == WarpPhase.Traveling ? 1f :
+                warpPhase == WarpPhase.Charging ? .48f :
+                warpPhase == WarpPhase.Recovering ? .32f : 0f;
+            float pulse = .9f + .1f * Mathf.Sin(Time.unscaledTime * (warp > 0 ? 19f : 9f));
+            float length = (.22f + speed * .18f + warp * .48f) * pulse;
+            for (int side = 0; side < 2; side++)
+            {
+                LineRenderer halo = driveHalos[side], core = driveCores[side], fin = driveFins[side];
+                if (halo == null || core == null || fin == null) continue;
+                halo.enabled = core.enabled = active;
+                fin.enabled = active && warp > 0;
+                if (!active) continue;
+                float across = side == 0 ? -.38f : .38f;
+                Vector3 nozzle = player.TransformPoint(new Vector3(across, .04f, -2.48f));
+                Vector3 rear = -player.forward;
+                Vector3 drift = player.right * ((side == 0 ? -1f : 1f) * .06f);
+                for (int point = 0; point < 4; point++)
+                {
+                    float along = point / 3f;
+                    Vector3 position = nozzle + rear * (length * along) + drift * along;
+                    halo.SetPosition(point, position);
+                    core.SetPosition(point, position);
+                }
+                Color plume = warp > 0 ? new Color(.43f, .62f, 1f, .13f + warp * .12f) :
+                    new Color(.24f, .78f, 1f, .16f + speed * .09f);
+                halo.startColor = plume; plume.a *= .15f; halo.endColor = plume;
+                Color light = warp > 0 ? new Color(.76f, .84f, 1f, .56f) :
+                    new Color(.7f, .95f, 1f, .48f);
+                core.startColor = light; light.a = .03f; core.endColor = light;
+                halo.widthMultiplier = .075f + warp * .045f;
+                core.widthMultiplier = .018f + warp * .008f;
+                if (!fin.enabled) continue;
+                Vector3 tip = nozzle + rear * (length * 1.2f) + drift * 3f;
+                fin.SetPosition(0, nozzle + player.up * .07f);
+                fin.SetPosition(1, nozzle + rear * (length * .45f) + drift * 1.5f);
+                fin.SetPosition(2, tip);
+                Color shear = new Color(.47f, .77f, 1f, .12f * warp);
+                fin.startColor = shear; shear.a = 0; fin.endColor = shear;
+                fin.widthMultiplier = .018f + warp * .014f;
+            }
+        }
+
         /// <summary>Remove travel streaks when the server returns to idle or the scene resets.</summary>
         private void ClearWarp()
         {
@@ -805,6 +876,10 @@ namespace FortyTwoAndBeyond.Client
             ClearResourceBuff(0);
             ClearResourceBuff(1);
             ClearWarp(); warpPhase = WarpPhase.Idle; warpArrived = false;
+            driveSpeed = 0;
+            for (int side = 0; side < 2; side++)
+                foreach (LineRenderer line in new[] { driveHalos[side], driveCores[side], driveFins[side] })
+                    if (line != null) line.enabled = false;
             reportedShields.Clear();
             loadout.Reset();
             lastShotSequence = lastDamageSequence = 0; playerId = 0;
@@ -814,6 +889,9 @@ namespace FortyTwoAndBeyond.Client
         public void Dispose()
         {
             Clear();
+            for (int side = 0; side < 2; side++)
+                foreach (LineRenderer line in new[] { driveHalos[side], driveCores[side], driveFins[side] })
+                    if (line != null) Object.Destroy(line.gameObject);
             if (material != null) Object.Destroy(material);
             if (impactMaterial != null) Object.Destroy(impactMaterial);
             loadout.Dispose();
