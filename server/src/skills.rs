@@ -27,6 +27,7 @@ pub enum AbilityKind {
     Fold,
     Jumpstart,
     Leech,
+    EnergyLeech,
     RechargeShields,
     HullPatch,
     EquipmentRepair,
@@ -404,6 +405,8 @@ pub struct Cast {
     #[serde(default)]
     pub sap_generation: Option<u64>,
     #[serde(default)]
+    pub leech_generation: Option<u64>,
+    #[serde(default)]
     pub inversion_generation: Option<u64>,
 }
 
@@ -505,6 +508,9 @@ impl Cast {
             && self.sap_generation.is_none_or(|generation| {
                 matches!(self.ability, 54 | 55 | 98 | 112 | 114) && generation < 1_000_000_000
             })
+            && self.leech_generation.is_none_or(|generation| {
+                matches!(self.ability, 38 | 39 | 40 | 92 | 93) && generation < 1_000_000_000
+            })
             && self.inversion_generation.is_none_or(|generation| {
                 matches!(self.ability, 105 | 107 | 110 | 111 | 113) && generation < 1_000_000_000
             })
@@ -535,6 +541,8 @@ pub struct SkillState {
     pub pending_rally: Option<crate::rally::PendingRally>,
     #[serde(default)]
     pub pending_shield_sap: Option<crate::shield_sap::PendingShieldSap>,
+    #[serde(default)]
+    pub pending_energy_leech: Option<crate::energy_leech::PendingEnergyLeech>,
     #[serde(default)]
     pub pending_reactor_optimization:
         Option<crate::reactor_optimization::PendingReactorOptimization>,

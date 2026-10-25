@@ -14,6 +14,8 @@ use std::collections::BTreeMap;
 use std::fs::{self, File};
 use std::io::{self, Write};
 use std::path::PathBuf;
+#[path = "energy_leech_ledger.rs"]
+mod energy_leech_ledger;
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct EnergyBalance {
@@ -107,6 +109,8 @@ struct LedgerData {
     last_repulsor_field: BTreeMap<u32, TransferSequence>,
     #[serde(default)]
     last_shield_sap: BTreeMap<u32, TransferSequence>,
+    #[serde(default)]
+    last_energy_leech: BTreeMap<u32, TransferSequence>,
 }
 
 pub struct EnergyLedger {
@@ -144,6 +148,7 @@ impl EnergyLedger {
                 repulsor_field_buffs: BTreeMap::new(),
                 last_repulsor_field: BTreeMap::new(),
                 last_shield_sap: BTreeMap::new(),
+                last_energy_leech: BTreeMap::new(),
             }
         };
         if data.version != 1
@@ -249,6 +254,10 @@ impl EnergyLedger {
                 .any(|(source, last)| *source == 0 || last.epoch == 0 || last.sequence == 0)
             || data
                 .last_shield_sap
+                .iter()
+                .any(|(source, last)| *source == 0 || last.epoch == 0 || last.sequence == 0)
+            || data
+                .last_energy_leech
                 .iter()
                 .any(|(source, last)| *source == 0 || last.epoch == 0 || last.sequence == 0)
             || data

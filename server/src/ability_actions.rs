@@ -34,6 +34,7 @@ impl PlayerSession {
         let durable_blast = ability.kind == AbilityKind::SelfDestruct;
         let durable_inversion = ability.kind == AbilityKind::ShieldInversion;
         let durable_sap = ability.kind == AbilityKind::ShieldSap;
+        let durable_leech = ability.kind == AbilityKind::EnergyLeech;
         let durable_gravity = ability.kind == AbilityKind::GravityLink;
         let durable_menace = ability.kind == AbilityKind::Menace;
         let durable_hacking = ability.kind == AbilityKind::Hacking;
@@ -89,6 +90,9 @@ impl PlayerSession {
         if durable_sap && self.skills.pending_shield_sap.is_some() {
             return Err(invalid("Previous Shield Sap is still settling."));
         }
+        if durable_leech && self.skills.pending_energy_leech.is_some() {
+            return Err(invalid("Previous Energy Leech is still settling."));
+        }
         if durable_inversion && self.skills.active_inversion.is_some() {
             return Err(invalid("Shield Inversion is already active."));
         }
@@ -110,6 +114,9 @@ impl PlayerSession {
         }
         if durable_sap && self.mining.is_some() {
             return Err(invalid("Stop prospecting before using Shield Sap."));
+        }
+        if durable_leech && self.mining.is_some() {
+            return Err(invalid("Stop prospecting before using Energy Leech."));
         }
         if durable_inversion && self.mining.is_some() {
             return Err(invalid("Stop prospecting before using Shield Inversion."));
@@ -151,6 +158,16 @@ impl PlayerSession {
         {
             return Err(invalid("Shield Sap rank is not trained."));
         }
+        if durable_leech
+            && crate::energy_leech::tier(
+                ability.id,
+                self.skill_catalog.level(19),
+                self.account.character.class().code(),
+            )
+            .is_none()
+        {
+            return Err(invalid("Energy Leech rank is not trained."));
+        }
         if durable_inversion
             && crate::shield_inversion::tier(ability.id, self.skill_catalog.level(52)).is_none()
         {
@@ -181,6 +198,11 @@ impl PlayerSession {
         }
         let sap_generation = if durable_sap {
             Some(self.shield_sap_target_generation(target)?)
+        } else {
+            None
+        };
+        let leech_generation = if durable_leech {
+            Some(self.energy_leech_target_generation(target)?)
         } else {
             None
         };
@@ -280,6 +302,7 @@ impl PlayerSession {
                 }
             }
             AbilityKind::Leech => 1059,
+            AbilityKind::EnergyLeech => 0,
             AbilityKind::RechargeShields => 733,
             AbilityKind::HullPatch => 733,
             AbilityKind::Rally => 0,
@@ -341,6 +364,7 @@ impl PlayerSession {
             enrage_generation,
             summon_generation,
             sap_generation,
+            leech_generation,
             inversion_generation,
         });
         if durable_repair
@@ -354,6 +378,7 @@ impl PlayerSession {
             || durable_psionic_shield
             || durable_repulsor
             || durable_sap
+            || durable_leech
             || durable_inversion
             || durable_blast
         {
@@ -560,6 +585,7 @@ impl PlayerSession {
                 ability.kind,
                 AbilityKind::GravityLink
                     | AbilityKind::ShieldSap
+                    | AbilityKind::EnergyLeech
                     | AbilityKind::Menace
                     | AbilityKind::Hacking
                     | AbilityKind::Enrage
@@ -584,6 +610,15 @@ impl PlayerSession {
                     .ok_or_else(|| invalid("Hacking rank is not trained."))?
                     .range
                 }
+                AbilityKind::EnergyLeech => {
+                    crate::energy_leech::tier(
+                        ability.id,
+                        self.skill_catalog.level(19),
+                        self.account.character.class().code(),
+                    )
+                    .ok_or_else(|| invalid("Energy Leech rank is not trained."))?
+                    .range
+                }
                 AbilityKind::Menace => {
                     crate::menace::tier(ability.id, self.skill_catalog.level(33))
                         .ok_or_else(|| invalid("Menace rank is not trained."))?
@@ -606,6 +641,7 @@ impl PlayerSession {
                     ability.kind,
                     AbilityKind::Menace
                         | AbilityKind::Hacking
+                        | AbilityKind::EnergyLeech
                         | AbilityKind::Enrage
                         | AbilityKind::ShieldInversion
                 ) && self.mob_relationship(mob) != 0
@@ -756,6 +792,12 @@ impl PlayerSession {
                     || self.sector.station.is_some()
                     || self.mining.is_some()
                     || !self.logged_in);
+            let invalid_leech = definition.kind == AbilityKind::EnergyLeech
+                && (self.warp.active()
+                    || self.gate_transit.is_some()
+                    || self.sector.station.is_some()
+                    || self.mining.is_some()
+                    || !self.logged_in);
             let invalid_inversion = definition.kind == AbilityKind::ShieldInversion
                 && (!self.inversion_available() || self.mining.is_some());
             let invalid_blast = definition.kind == AbilityKind::SelfDestruct
@@ -778,6 +820,7 @@ impl PlayerSession {
                 || invalid_hacking
                 || invalid_enrage
                 || invalid_sap
+                || invalid_leech
                 || invalid_inversion
                 || invalid_blast
                 || invalid_summon
@@ -789,6 +832,7 @@ impl PlayerSession {
                     definition.kind,
                     AbilityKind::GravityLink
                         | AbilityKind::ShieldSap
+                        | AbilityKind::EnergyLeech
                         | AbilityKind::Menace
                         | AbilityKind::Hacking
                         | AbilityKind::Enrage
@@ -977,6 +1021,25 @@ impl PlayerSession {
                 if ability.kind == AbilityKind::SelfDestruct {
                     let previous_cooldown = self.skills.cooldowns.insert(ability.skill, cooldown);
                     if let Err(error) = self.prepare_self_destruct(&ability, &cast) {
+                        if let Some(previous) = previous_cooldown {
+                            self.skills.cooldowns.insert(ability.skill, previous);
+                        } else {
+                            self.skills.cooldowns.remove(&ability.skill);
+                        }
+                        self.skills.cast = Some(cast);
+                        return Err(error);
+                    }
+                    self.pending.push(packets::ability_progress(None, 0, 0));
+                    self.pending.push(packets::skill_cooldown(
+                        ability.skill,
+                        self.tick_ms(),
+                        (cooldown * 1000.) as u32,
+                    ));
+                    return Ok(());
+                }
+                if ability.kind == AbilityKind::EnergyLeech {
+                    let previous_cooldown = self.skills.cooldowns.insert(ability.skill, cooldown);
+                    if let Err(error) = self.prepare_energy_leech(&ability, &cast) {
                         if let Some(previous) = previous_cooldown {
                             self.skills.cooldowns.insert(ability.skill, previous);
                         } else {
@@ -1241,6 +1304,11 @@ impl PlayerSession {
                         amount: total * 0.5,
                     });
                 }
+            }
+            AbilityKind::EnergyLeech => {
+                return Err(invalid(
+                    "Energy Leech settles through its durable MOB drain.",
+                ));
             }
             AbilityKind::Wormhole => {
                 let destination = ability.destination.unwrap();

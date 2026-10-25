@@ -27,6 +27,8 @@ mod actions;
 mod call_forward_game;
 #[path = "dev_commands.rs"]
 mod dev_commands;
+#[path = "energy_leech_game.rs"]
+mod energy_leech_game;
 #[path = "psionic_shield_game.rs"]
 mod psionic_shield_game;
 #[path = "repulsor_field_game.rs"]
@@ -712,6 +714,7 @@ impl GameState {
         self.deliver_psionic_shields()?;
         self.deliver_repulsor_fields()?;
         self.deliver_shield_saps()?;
+        self.deliver_energy_leeches()?;
         self.deliver_self_destructs()?;
         self.deliver_shield_inversions(now_ms)?;
         self.deliver_support()?;

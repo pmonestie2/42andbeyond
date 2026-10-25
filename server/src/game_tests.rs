@@ -37,6 +37,137 @@ pub(super) fn game() -> GameState {
     .unwrap()
 }
 
+/// A world drain survives a torn group ledger and transfers power only once.
+#[test]
+fn defender_energy_leech_drains_reactor_and_replays_group_award() {
+    let root = std::env::temp_dir().join(format!("enb-energy-leech-{}", rand::random::<u64>()));
+    let accounts = AccountDirectory::new(&root);
+    let defender = accounts
+        .create_class(
+            "defender".into(),
+            "example",
+            "Defender".into(),
+            crate::classes::CharacterClass::parse("jd").unwrap(),
+        )
+        .unwrap()
+        .account
+        .character
+        .game_id;
+    let ally = accounts
+        .create_class(
+            "ally".into(),
+            "example",
+            "Ally".into(),
+            crate::classes::CharacterClass::parse("je").unwrap(),
+        )
+        .unwrap()
+        .account
+        .character
+        .game_id;
+    let catalog = crate::items::ItemCatalog::load().unwrap();
+    for stored in accounts.load().unwrap() {
+        let mut inventory =
+            crate::inventory::Inventory::starter_for(&stored.account.character, &catalog).unwrap();
+        inventory.equipped[1].as_mut().unwrap().template = 3340;
+        fs::write(
+            stored.directory.join("inventory.json"),
+            serde_json::to_vec(&inventory).unwrap(),
+        )
+        .unwrap();
+    }
+    let mut sector: Sector = serde_json::from_str(include_str!("../data/sector.json")).unwrap();
+    sector.mobs[0].spawn = [900., 0., 0.];
+    sector.mobs[0].aggressive = false;
+    let mut second = sector.mobs[0].clone();
+    second.source_id += 1;
+    second.spawn = [1_100., 0., 0.];
+    sector.mobs.push(second);
+    let bind = Ipv4Addr::new(127, 0, 0, 2);
+    let mut game = GameState::new(sector.clone(), bind, root.clone()).unwrap();
+    login(&mut game, defender, 23691, "defender");
+    login(&mut game, ally, 23692, "ally");
+    game.groups.invite(defender, ally).unwrap();
+    game.groups.accept(ally).unwrap();
+    game.sessions.get_mut(&defender).unwrap().position = [0., 0., 0.];
+    game.sessions.get_mut(&ally).unwrap().position = [0., 100., 0.];
+    game.sessions
+        .get_mut(&ally)
+        .unwrap()
+        .set_energy_for_test(0.);
+    game.update_views();
+    let before = lock_combat(&game.sessions[&defender].combat)
+        .unwrap()
+        .actors
+        .iter()
+        .map(|mob| mob.reactor_balance())
+        .collect::<Vec<_>>();
+    activate(&mut game, defender, MOB_ID, 93);
+    game.sessions
+        .get_mut(&defender)
+        .unwrap()
+        .advance_player(2.1)
+        .unwrap();
+    let pending = game.sessions[&defender].pending_energy_leech().unwrap();
+    let epoch = game.sessions[&defender].energy_transfer_epoch();
+    let world_poison = root.join("combat/1076.json.next");
+    fs::create_dir(&world_poison).unwrap();
+    assert!(game.deliver_energy_leeches().is_err());
+    assert!(lock_combat(&game.sessions[&defender].combat)
+        .unwrap()
+        .energy_leech_receipt(defender, epoch, pending.effect)
+        .is_none());
+    assert_eq!(
+        lock_combat(&game.sessions[&defender].combat)
+            .unwrap()
+            .actors
+            .iter()
+            .map(|mob| mob.reactor_balance())
+            .collect::<Vec<_>>(),
+        before
+    );
+    fs::remove_dir(&world_poison).unwrap();
+    let poison = root.join("energy_transfers.local.json.tmp");
+    fs::create_dir(&poison).unwrap();
+    assert!(game.deliver_energy_leeches().is_err());
+    let drained = lock_combat(&game.sessions[&defender].combat)
+        .unwrap()
+        .actors
+        .iter()
+        .map(|mob| mob.reactor_balance())
+        .collect::<Vec<_>>();
+    assert!(drained
+        .iter()
+        .zip(&before)
+        .all(|(after, before)| after < before));
+    let receipt = lock_combat(&game.sessions[&defender].combat)
+        .unwrap()
+        .energy_leech_receipt(defender, epoch, pending.effect)
+        .unwrap();
+    assert_eq!(receipt.drains.len(), 2);
+    assert_eq!(receipt.recipients, vec![defender, ally]);
+    fs::remove_dir(&poison).unwrap();
+    drop(game);
+    let mut resumed = GameState::new(sector, bind, root.clone()).unwrap();
+    resumed.deliver_energy_leeches().unwrap();
+    assert!(resumed.sessions[&ally].energy_balance().0 > 0.);
+    assert!(resumed.sessions[&defender].pending_energy_leech().is_none());
+    let revision = resumed.energy_ledger.revision();
+    resumed.deliver_energy_leeches().unwrap();
+    assert_eq!(resumed.energy_ledger.revision(), revision);
+    let restored = lock_combat(&resumed.sessions[&defender].combat).unwrap();
+    assert_eq!(
+        restored
+            .actors
+            .iter()
+            .map(|mob| mob.reactor_balance())
+            .collect::<Vec<_>>(),
+        drained
+    );
+    drop(restored);
+    drop(resumed);
+    fs::remove_dir_all(root).unwrap();
+}
+
 /// A committed blast survives a failed account checkpoint without striking twice.
 #[test]
 fn warrior_self_destruct_replays_one_blast_and_recovers_resources() {

@@ -167,6 +167,8 @@ pub struct Mob {
     #[serde(default)]
     pub max_shield: f32,
     #[serde(default)]
+    pub reactor_energy: Option<f32>,
+    #[serde(default)]
     pub disabled_seconds: f32,
     #[serde(default)]
     pub gravity: Vec<crate::gravity_link::GravityDebuff>,
@@ -258,6 +260,7 @@ impl Mob {
             random_state,
             shield: combat.shield,
             max_shield: combat.shield,
+            reactor_energy: Some(crate::mob_energy::capacity(combat.dps)),
             disabled_seconds: 0.,
             gravity: Vec::new(),
             enrage: Vec::new(),
@@ -330,6 +333,9 @@ impl Mob {
         ]
         .iter()
         .any(|value| !value.is_finite() || *value < 0.)
+            || saved.reactor_energy.is_some_and(|energy| {
+                !energy.is_finite() || !(0. ..=crate::mob_energy::MAX_CAPACITY).contains(&energy)
+            })
             || saved
                 .position
                 .iter()
@@ -358,6 +364,12 @@ impl Mob {
         };
         saved.max_health = self.max_health;
         saved.max_shield = self.max_shield;
+        saved.reactor_energy = Some(
+            saved
+                .reactor_energy
+                .unwrap_or_else(|| self.reactor_capacity())
+                .min(self.reactor_capacity()),
+        );
         saved.combat = self.combat;
         saved.cooldown = saved.cooldown.min(self.combat.reload);
         if saved.random_state == 0 {
@@ -641,6 +653,41 @@ impl Mob {
     pub(crate) fn shot_cooldown(&self) -> f32 {
         self.cooldown
     }
+    /// Returns:
+    ///     f32: Local reactor capacity for this MOB's authoritative weapon.
+    pub fn reactor_capacity(&self) -> f32 {
+        crate::mob_energy::capacity(self.combat.dps)
+    }
+
+    /// Returns:
+    ///     f32: Current reactor power, including a full legacy checkpoint.
+    pub fn reactor_balance(&self) -> f32 {
+        self.reactor_energy
+            .unwrap_or_else(|| self.reactor_capacity())
+    }
+
+    /// Returns:
+    ///     f32: Power actually removed by a hostile Energy Leech cast.
+    pub fn drain_reactor_by(&mut self, amount: f32) -> f32 {
+        if self.state == MobState::Dead || !amount.is_finite() || amount <= 0. {
+            return 0.;
+        }
+        let drained = amount.min(self.reactor_balance());
+        self.reactor_energy = Some(self.reactor_balance() - drained);
+        drained
+    }
+
+    /// Recharge the durable reactor during one active simulation step.
+    fn recharge_reactor(&mut self, dt: f32) {
+        if self.state != MobState::Dead {
+            self.reactor_energy = Some(crate::mob_energy::recharge(
+                self.reactor_balance(),
+                self.reactor_capacity(),
+                self.combat.reload,
+                dt,
+            ));
+        }
+    }
     /// Native FireWeapon decreases this victim's hate by truncated damage/10.
     /// Called on the authoritative simulation only, before the tick is saved.
     pub fn tick_target(&mut self, dt: f32, player: &PlayerThreat) -> f32 {
@@ -670,6 +717,12 @@ impl Mob {
             && !self.hacked_weapon()
             && !self.hacked_system(crate::hacking::ShipSystem::Reactor)
             && self.cooldown <= dt
+            && crate::mob_energy::recharge(
+                self.reactor_balance(),
+                self.reactor_capacity(),
+                self.combat.reload,
+                dt,
+            ) >= crate::mob_energy::shot_cost(self.reactor_capacity())
             && players.iter().any(|player| {
                 player.visible
                     && self.range_to(player.position) <= self.combat.range + movement_margin
@@ -695,6 +748,7 @@ impl Mob {
             && self.disabled_seconds <= 0.
             && self.native_roaming()
         {
+            self.recharge_reactor(dt);
             self.state = MobState::Idle;
             self.cooldown = (self.cooldown - dt).max(0.);
             self.advance_roaming(dt, players);
@@ -719,6 +773,7 @@ impl Mob {
         visible: bool,
         mode: TargetingMode,
     ) -> f32 {
+        self.recharge_reactor(dt);
         let before = self.position;
         let previous_motion = self.motion.clone();
         let was_dead = self.state == MobState::Dead;
@@ -753,6 +808,7 @@ impl Mob {
             if self.respawn_remaining <= 0. {
                 self.health = self.max_health;
                 self.shield = self.max_shield;
+                self.reactor_energy = Some(self.reactor_capacity());
                 self.position = self.definition.spawn;
                 self.provoked = false;
                 self.unowned_provoked = false;
@@ -869,6 +925,12 @@ impl Mob {
             && !self.hacked_weapon()
             && !self.hacked_system(crate::hacking::ShipSystem::Reactor)
         {
+            let Some(remaining) =
+                crate::mob_energy::spend_shot(self.reactor_balance(), self.reactor_capacity())
+            else {
+                return 0.;
+            };
+            self.reactor_energy = Some(remaining);
             self.cooldown = self.combat.reload;
             let accuracy = self.enrage_accuracy_multiplier();
             if accuracy < 1.
@@ -946,6 +1008,35 @@ mod tests {
             stealth: None,
             factions: crate::factions::FactionReactions::neutral(),
         }
+    }
+
+    /// Drained reactor power delays a real weapon launch and survives snapshots.
+    #[test]
+    fn reactor_drain_delays_fire_and_legacy_snapshot_starts_full() {
+        let mut mob = Mob::new(definition());
+        let capacity = mob.reactor_capacity();
+        assert_eq!(mob.drain_reactor_by(capacity * 0.45), capacity * 0.45);
+        assert_eq!(mob.fire_if_ready(), 0.);
+        let saved = serde_json::to_value(&mob).unwrap();
+        let mut restored = Mob::new(definition());
+        restored
+            .restore_from(serde_json::from_value(saved.clone()).unwrap())
+            .unwrap();
+        assert_eq!(restored.reactor_balance(), capacity * 0.55);
+        restored.recharge_reactor(1.);
+        assert!(restored.fire_if_ready() > 0.);
+        let mut legacy = saved.clone();
+        legacy.as_object_mut().unwrap().remove("reactor_energy");
+        let mut upgraded = Mob::new(definition());
+        upgraded
+            .restore_from(serde_json::from_value(legacy).unwrap())
+            .unwrap();
+        assert_eq!(upgraded.reactor_balance(), capacity);
+        let mut corrupt = saved;
+        corrupt["reactor_energy"] = serde_json::json!(-1.);
+        assert!(Mob::new(definition())
+            .restore_from(serde_json::from_value(corrupt).unwrap())
+            .is_err());
     }
 
     /// Gravity changes actual pursuit displacement, typed damage and expiry.

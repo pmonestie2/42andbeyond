@@ -42,6 +42,8 @@ mod combat_experience;
 mod combat_trance;
 #[path = "dev_session.rs"]
 mod dev_session;
+#[path = "energy_leech_service.rs"]
+mod energy_leech_service;
 #[path = "energy_transfer.rs"]
 mod energy_transfer;
 #[path = "enrage_service.rs"]

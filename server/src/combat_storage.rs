@@ -26,6 +26,8 @@ struct SavedCombat {
     #[serde(default)]
     inversion_receipts: BTreeMap<u32, crate::shield_inversion::InversionReceipt>,
     #[serde(default)]
+    energy_leech_receipts: BTreeMap<u32, crate::energy_leech::LeechReceipt>,
+    #[serde(default)]
     self_destruct_receipts: BTreeMap<u32, crate::self_destruct::BlastReceipt>,
     #[serde(default = "initial_developer_source")]
     next_developer_spawn: u32,
@@ -52,12 +54,16 @@ impl SectorCombat {
                     || saved.accepted.len() > 65535
                     || saved.sap_receipts.len() > 65535
                     || saved.inversion_receipts.len() > 65535
+                    || saved.energy_leech_receipts.len() > 65535
                     || saved.self_destruct_receipts.len() > 65535
                     || saved
                         .sap_receipts
                         .iter()
                         .any(|(source, receipt)| *source < 0x4000_0001 || !receipt.valid())
                     || saved.inversion_receipts.iter().any(|(source, receipt)| {
+                        !receipt.valid() || receipt.sector != sector || *source != receipt.source
+                    })
+                    || saved.energy_leech_receipts.iter().any(|(source, receipt)| {
                         !receipt.valid() || receipt.sector != sector || *source != receipt.source
                     })
                     || saved
@@ -110,6 +116,7 @@ impl SectorCombat {
                 world.npc_sequence = saved.npc_sequence;
                 world.sap_receipts = saved.sap_receipts;
                 world.inversion_receipts = saved.inversion_receipts;
+                world.energy_leech_receipts = saved.energy_leech_receipts;
                 world.self_destruct_receipts = saved.self_destruct_receipts;
                 world.npc_shots = saved.npc_shots;
                 for actor in &world.actors {
@@ -358,6 +365,7 @@ impl SectorCombat {
                     accepted: self.accepted.clone(),
                     sap_receipts: self.sap_receipts.clone(),
                     inversion_receipts: self.inversion_receipts.clone(),
+                    energy_leech_receipts: self.energy_leech_receipts.clone(),
                     self_destruct_receipts: self.self_destruct_receipts.clone(),
                     next_developer_spawn: self.next_developer_spawn,
                     npc_shots: self.npc_shots.clone(),

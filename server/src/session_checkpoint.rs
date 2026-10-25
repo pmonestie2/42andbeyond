@@ -329,6 +329,11 @@ impl PlayerSession {
                 .is_some_and(|sap| !sap.valid())
             || saved
                 .skills
+                .pending_energy_leech
+                .as_ref()
+                .is_some_and(|leech| !leech.valid())
+            || saved
+                .skills
                 .equipment_repair
                 .as_ref()
                 .is_some_and(|repair| !repair.valid(self.skill_catalog.level(47)))
