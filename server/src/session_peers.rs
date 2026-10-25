@@ -18,7 +18,13 @@ impl PlayerSession {
     }
     pub(crate) fn release_formation(&mut self) {
         if self.formation_leader.take().is_some() {
-            self.motion.stop();
+            if self.warp.active() {
+                let event = self.warp.finish(FinishReason::Cancelled, &mut self.motion);
+                self.emit_warp_event(event);
+            } else {
+                self.motion.stop();
+            }
+            self.warp.speed = self.equipment.ship.warp_speed;
             self.queue([packets::player_movement(
                 self.player_id(),
                 self.position,
@@ -26,6 +32,69 @@ impl PlayerSession {
                 &self.motion,
             )]);
         }
+    }
+    /// Returns:
+    ///     f32: This ship's equipped warp speed before a group cap is applied.
+    pub(crate) fn formation_warp_speed(&self) -> f32 {
+        self.equipment.ship.warp_speed
+    }
+    /// Returns:
+    ///     Warp: Frozen leader drive phase and route for formed followers.
+    pub(crate) fn formation_warp(&self) -> Warp {
+        self.warp.clone()
+    }
+    /// Cap the leader and formed members at their slowest working drive.
+    pub(crate) fn set_formation_warp_speed(&mut self, speed: f32) {
+        self.warp.speed = speed;
+    }
+    /// Mirror the leader's native warp lifecycle for this formed ship.
+    pub(crate) fn sync_formation_warp(
+        &mut self,
+        leader: &PeerSnapshot,
+        warp: &Warp,
+    ) -> io::Result<()> {
+        if self.warp.phase == WarpPhase::Idle && warp.active() {
+            if self.energy <= 0.
+                || self.equipment.ship.warp_speed <= 0.
+                || self.skills.cast.is_some()
+            {
+                return Err(invalid("Formed ship cannot engage its warp drive."));
+            }
+            self.cancel_mining("Formation warp started.")?;
+            self.cancel_looting("Formation warp started.")?;
+            self.stop_following();
+            if self.skills.cloak_rank > 0 && self.skills.cloak_rank < 6 {
+                self.stop_cloak();
+            }
+        }
+        self.formation_leader = Some(leader.profile.game_id);
+        let events = self.warp.follow_leader(warp, &mut self.motion);
+        if !self.warp.active() {
+            self.warp.speed = self.equipment.ship.warp_speed;
+        }
+        if !events.is_empty() {
+            for event in events {
+                self.emit_warp_event(event);
+            }
+            if let Err(error) = self.checkpoint_session(true) {
+                crate::server_error!(
+                    "Formation warp checkpoint retry for {}: {error}",
+                    self.account.character.name
+                );
+            }
+        }
+        Ok(())
+    }
+    /// Returns:
+    ///     bool: Whether this formed ship can remain with its current leader.
+    pub(crate) fn can_follow_formation(&self, leader_warping: bool) -> bool {
+        self.logged_in
+            && self.sector.station.is_none()
+            && self.hull > 0.
+            && self.gate_transit.is_none()
+            && !(leader_warping && self.warp.phase == WarpPhase::Recovering)
+            && !(leader_warping && self.energy <= 0.)
+            && !(leader_warping && self.equipment.ship.warp_speed <= 0.)
     }
     pub(crate) fn follow_formation(&mut self, leader: &PeerSnapshot, offset: [f32; 3]) {
         // The native client consumes a leader-relative offset (opcode 0x41).

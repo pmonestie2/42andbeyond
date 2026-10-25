@@ -37,7 +37,7 @@ pub struct Waypoint {
     pub stand_off: f32,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum FinishReason {
     Arrived,
     Cancelled,
@@ -64,6 +64,8 @@ pub struct Warp {
     index: u32,
     remaining: f32,
     free_flight: bool,
+    #[serde(default)]
+    last_finish_reason: Option<FinishReason>,
 }
 
 impl Default for Warp {
@@ -76,6 +78,7 @@ impl Default for Warp {
             index: 0,
             remaining: 0.,
             free_flight: false,
+            last_finish_reason: None,
         }
     }
 }
@@ -127,6 +130,7 @@ impl Warp {
         self.index = 0;
         self.remaining = CHARGE_SECONDS;
         self.phase = WarpPhase::Charging;
+        self.last_finish_reason = None;
         Ok(WarpEvent::Charging)
     }
     pub fn finish(&mut self, reason: FinishReason, motion: &mut Motion) -> WarpEvent {
@@ -134,6 +138,7 @@ impl Warp {
         self.waypoints.clear();
         self.phase = WarpPhase::Recovering;
         self.remaining = self.recovery_seconds;
+        self.last_finish_reason = Some(reason);
         WarpEvent::Finished(reason)
     }
     pub fn reset(&mut self, motion: &mut Motion) {
@@ -143,6 +148,54 @@ impl Warp {
         self.speed = speed;
         self.recovery_seconds = recovery;
         motion.stop();
+    }
+    /// Mirror a formed leader's drive while preserving this ship's own effects.
+    ///
+    /// Returns:
+    ///     Vec<WarpEvent>: Native phase and waypoint changes for this follower.
+    pub fn follow_leader(&mut self, leader: &Self, motion: &mut Motion) -> Vec<WarpEvent> {
+        let previous = self.phase;
+        let previous_index = self.index;
+        let mut events = Vec::new();
+        match (previous, leader.phase) {
+            (WarpPhase::Idle, WarpPhase::Charging) => events.push(WarpEvent::Charging),
+            (WarpPhase::Idle, WarpPhase::Traveling) => {
+                events.push(WarpEvent::Charging);
+                events.push(WarpEvent::Departed);
+            }
+            (WarpPhase::Charging, WarpPhase::Traveling) => events.push(WarpEvent::Departed),
+            (
+                WarpPhase::Charging | WarpPhase::Traveling,
+                WarpPhase::Recovering | WarpPhase::Idle,
+            ) => {
+                events.push(WarpEvent::Finished(
+                    leader.last_finish_reason.unwrap_or(FinishReason::Cancelled),
+                ));
+                if leader.phase == WarpPhase::Idle {
+                    events.push(WarpEvent::Ready);
+                }
+            }
+            (WarpPhase::Recovering, WarpPhase::Idle) => events.push(WarpEvent::Ready),
+            _ => {}
+        }
+        if leader.phase == WarpPhase::Traveling
+            && (previous != WarpPhase::Traveling || leader.index != previous_index)
+        {
+            if let Some(point) = leader.waypoints.front() {
+                events.push(WarpEvent::Waypoint {
+                    index: leader.index,
+                    target: point.id,
+                });
+            }
+        }
+        *self = leader.clone();
+        if leader.phase == WarpPhase::Traveling {
+            motion.speed = leader.speed;
+            motion.set_speed = leader.speed;
+        } else if !leader.active() {
+            motion.stop();
+        }
+        events
     }
     pub fn advance(
         &mut self,

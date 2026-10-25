@@ -433,8 +433,9 @@ impl GameState {
     }
 
     pub(super) fn advance_formations(&mut self) {
-        // Formed ships retain their relative offsets while the leader warps.
-        // A sector transfer, incapacitation or logout releases them.
+        // The original group handler starts the drive on every formed ship.
+        // Keep native follower phases and relative positions synchronized with
+        // the leader, including on the first tick after a short replacement.
         let mut following = std::collections::HashSet::new();
         for group in self.groups.formation_groups() {
             let leader = self
@@ -442,6 +443,38 @@ impl GameState {
                 .get(&group.leader)
                 .filter(|session| session.can_lead_formation())
                 .and_then(|session| session.peer_snapshot());
+            let leader_warping = self
+                .sessions
+                .get(&group.leader)
+                .is_some_and(|session| session.formation_warp().active());
+            let mut group_speed = self
+                .sessions
+                .get(&group.leader)
+                .map_or(0., |session| session.formation_warp_speed());
+            if leader_warping {
+                for member in group
+                    .formed
+                    .iter()
+                    .copied()
+                    .filter(|id| *id != group.leader)
+                {
+                    if self.sessions.get(&member).is_some_and(|session| {
+                        leader.as_ref().is_some_and(|leader| {
+                            session.can_follow_formation(true) && session.sector.id == leader.sector
+                        })
+                    }) {
+                        group_speed =
+                            group_speed.min(self.sessions[&member].formation_warp_speed());
+                    }
+                }
+            }
+            if let Some(session) = self.sessions.get_mut(&group.leader) {
+                session.set_formation_warp_speed(group_speed);
+            }
+            let leader_warp = self
+                .sessions
+                .get(&group.leader)
+                .map(|session| session.formation_warp());
             for member in group
                 .formed
                 .iter()
@@ -450,17 +483,25 @@ impl GameState {
             {
                 let eligible = leader.as_ref().is_some_and(|leader| {
                     self.sessions.get(&member).is_some_and(|session| {
-                        session.can_form_up() && session.sector.id == leader.sector
+                        session.can_follow_formation(leader_warping)
+                            && session.sector.id == leader.sector
                     })
                 });
                 if eligible {
                     let index = group.members.iter().position(|id| *id == member).unwrap();
                     let offset = crate::groups::formation_offset(group.formation, index);
-                    self.sessions
-                        .get_mut(&member)
-                        .unwrap()
-                        .follow_formation(leader.as_ref().unwrap(), offset);
-                    following.insert(member);
+                    let session = self.sessions.get_mut(&member).unwrap();
+                    if let Err(error) = session.sync_formation_warp(
+                        leader.as_ref().unwrap(),
+                        leader_warp.as_ref().unwrap(),
+                    ) {
+                        session.message(&error.to_string());
+                        self.groups.leave_formation(member);
+                        self.groups_dirty = true;
+                    } else {
+                        session.follow_formation(leader.as_ref().unwrap(), offset);
+                        following.insert(member);
+                    }
                 } else {
                     self.groups.leave_formation(member);
                     self.groups_dirty = true;

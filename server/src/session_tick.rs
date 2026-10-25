@@ -81,13 +81,17 @@ impl PlayerSession {
         } // wormhole cast handed off
         let previous = self.position;
         let was_warping = self.warp.active();
-        for event in self.warp.advance(
-            &mut self.position,
-            &mut self.motion,
-            &self.sector.bounds,
-            dt,
-        )? {
-            self.emit_warp_event(event);
+        // A formed follower uses the leader's phase and route. The coordinator
+        // mirrors it after the leader advances and sets our relative position.
+        if self.formation_leader.is_none() {
+            for event in self.warp.advance(
+                &mut self.position,
+                &mut self.motion,
+                &self.sector.bounds,
+                dt,
+            )? {
+                self.emit_warp_event(event);
+            }
         }
         if self.warp.active() {
             self.warp_movement_elapsed += dt;

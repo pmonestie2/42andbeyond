@@ -572,6 +572,7 @@ impl GameState {
                 }
             }
         }
+        self.advance_formations();
         self.update_views();
         for id in &ids {
             let recipients = self.explore_group_members(*id);

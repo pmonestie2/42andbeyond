@@ -5,6 +5,7 @@ use crate::account::FIRST_PLAYER_ID;
 use crate::mob::distance;
 use crate::protocol::SECTOR_PORT;
 use crate::sector_combat::MOB_ID;
+use crate::warp::WarpPhase;
 use std::fs;
 
 pub(super) fn game() -> GameState {
@@ -990,6 +991,172 @@ fn formed_group_keeps_relative_position_through_leader_warp() {
     game.handle_input(leader, 0x9b, &route).unwrap();
     advance(&mut game, 0.1);
     assert!(game
+        .groups
+        .group(follower)
+        .unwrap()
+        .formed
+        .contains(&follower));
+}
+
+/// Formed pilots share native warp phases, the slowest drive, and recovery.
+#[test]
+fn formed_group_warp_survives_replacement_and_cancels_on_leader_loss() {
+    let initial = game();
+    let root = initial.root.clone();
+    let sector = initial.initial_sector.clone();
+    let bind = initial.bind;
+    drop(initial);
+    let inventory_path = root.join("inventory.json");
+    let mut inventory: crate::inventory::Inventory =
+        serde_json::from_slice(&fs::read(&inventory_path).unwrap()).unwrap();
+    inventory.equipped[2].as_mut().unwrap().template = 2510; // Faster Waking Blue Tail.
+    fs::write(&inventory_path, serde_json::to_vec(&inventory).unwrap()).unwrap();
+
+    let mut game = GameState::new(sector.clone(), bind, root.clone()).unwrap();
+    let leader = FIRST_PLAYER_ID;
+    let follower = leader + 1;
+    login(&mut game, leader, 22511, "alice");
+    login(&mut game, follower, 22512, "bob");
+    let group_speed = game.sessions[&follower].formation_warp_speed();
+    assert!(game.sessions[&leader].formation_warp_speed() > group_speed);
+    game.groups.invite(leader, follower).unwrap();
+    game.groups.accept(follower).unwrap();
+    game.handle_event(
+        leader,
+        ClientEvent::Formation {
+            action: 5,
+            target: 0,
+        },
+    )
+    .unwrap();
+    game.sessions.get_mut(&follower).unwrap().position = [100., 0., 0.];
+    game.handle_event(
+        follower,
+        ClientEvent::Formation {
+            action: 7,
+            target: 0,
+        },
+    )
+    .unwrap();
+    advance(&mut game, 0.1);
+    let route = [
+        (leader & 0xffffff).to_le_bytes().as_slice(),
+        &1u16.to_le_bytes(),
+        &100000u32.to_le_bytes(),
+    ]
+    .concat();
+    game.handle_input(leader, 0x9b, &route).unwrap();
+    advance(&mut game, 0.1);
+    assert_eq!(
+        game.sessions[&leader].formation_warp().phase,
+        WarpPhase::Charging
+    );
+    assert_eq!(
+        game.sessions[&follower].formation_warp().phase,
+        WarpPhase::Charging
+    );
+    assert_eq!(game.sessions[&leader].formation_warp().speed, group_speed);
+    assert_eq!(game.sessions[&follower].formation_warp().speed, group_speed);
+    advance(&mut game, 2.1);
+    assert_eq!(
+        game.sessions[&leader].formation_warp().phase,
+        WarpPhase::Traveling
+    );
+    assert_eq!(
+        game.sessions[&follower].formation_warp().phase,
+        WarpPhase::Traveling
+    );
+    game.save().unwrap();
+    drop(game);
+
+    let mut replacement = GameState::new(sector, bind, root).unwrap();
+    advance(&mut replacement, 0.5);
+    assert_eq!(
+        replacement.sessions[&leader].formation_warp().speed,
+        group_speed
+    );
+    assert_eq!(
+        replacement.sessions[&follower].formation_warp().phase,
+        WarpPhase::Traveling
+    );
+    let lead = replacement.sessions[&leader].peer_snapshot().unwrap();
+    let wing = replacement.sessions[&follower].peer_snapshot().unwrap();
+    let offset = lead.motion.rotate(crate::groups::formation_offset(5, 1));
+    assert!(
+        distance(
+            wing.position,
+            std::array::from_fn(|i| lead.position[i] + offset[i])
+        ) < 1.
+    );
+    replacement.handle_input(leader, 0x9b, &route).unwrap();
+    advance(&mut replacement, 0.1);
+    assert_eq!(
+        replacement.sessions[&leader].formation_warp().phase,
+        WarpPhase::Recovering
+    );
+    assert_eq!(
+        replacement.sessions[&follower].formation_warp().phase,
+        WarpPhase::Recovering
+    );
+    assert!(replacement
+        .groups
+        .group(follower)
+        .unwrap()
+        .formed
+        .contains(&follower));
+    advance(&mut replacement, 2.1);
+    assert_eq!(
+        replacement.sessions[&leader].formation_warp().phase,
+        WarpPhase::Idle
+    );
+    assert_eq!(
+        replacement.sessions[&follower].formation_warp().phase,
+        WarpPhase::Idle
+    );
+    assert_eq!(
+        replacement.sessions[&leader].formation_warp().speed,
+        replacement.sessions[&leader].formation_warp_speed()
+    );
+    assert_eq!(
+        replacement.sessions[&follower].formation_warp().speed,
+        group_speed
+    );
+
+    replacement.handle_input(leader, 0x9b, &route).unwrap();
+    advance(&mut replacement, 0.1);
+    replacement.sessions.get_mut(&leader).unwrap().hull = 0.;
+    advance(&mut replacement, 0.1);
+    assert!(!replacement
+        .groups
+        .group(follower)
+        .unwrap()
+        .formed
+        .contains(&follower));
+    assert_eq!(
+        replacement.sessions[&follower].formation_warp().phase,
+        WarpPhase::Recovering
+    );
+
+    replacement.sessions.get_mut(&leader).unwrap().hull = 100.;
+    advance(&mut replacement, 2.1);
+    replacement
+        .handle_event(
+            follower,
+            ClientEvent::Formation {
+                action: 7,
+                target: 0,
+            },
+        )
+        .unwrap();
+    assert!(replacement
+        .groups
+        .group(follower)
+        .unwrap()
+        .formed
+        .contains(&follower));
+    replacement.sessions.get_mut(&leader).unwrap().sector.id = 1071;
+    advance(&mut replacement, 0.1);
+    assert!(!replacement
         .groups
         .group(follower)
         .unwrap()

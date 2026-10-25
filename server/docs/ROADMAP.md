@@ -36,6 +36,11 @@ mean the corresponding gameplay system is complete.
   credit collection are verified; native item pickup still needs a playtest.
 - Shared sector combat and peer visibility; six-player groups, support abilities,
   formations and chat. Simulation advances once per sector, not once per viewer.
+- Formed ships now share the leader's charge, travel and recovery phases, use the
+  slowest equipped group warp drive, publish their own native warp state/effects,
+  and retain the leader-relative 0x41 offset. Cancellation and leader loss release
+  follower drives; formed travel survives short server replacement. Disposable
+  two-client protocol and replacement tests pass; native graphical playtest is pending.
 - Archived MobDPS/MobDAC level interpolation, species hull/shield split and first
   public weapon selection. SQL shield/damage/range modifiers are retained and
   honored (the archived handler omitted them). Three-roll damage dispersion has
@@ -233,7 +238,7 @@ mean the corresponding gameplay system is complete.
    the archived prototype 200/150 base/negotiated quote; full pricing is pending.
 6. Remaining mission/job objectives and NPC offers, progression, character
    creation/classes and faction rules.
-7. Broader multiplayer: native interior-avatar playtests, group warp, guilds, trading, interest
+7. Broader multiplayer: native interior-avatar and group-warp playtests, guilds, trading, interest
    management/load tests and durable world state.
 8. Runtime content/database loading, remaining DAT-backed definitions, operational
    tooling, migration/recovery, and Linux/macOS builds and playtests.
