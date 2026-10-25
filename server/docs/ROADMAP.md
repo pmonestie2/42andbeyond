@@ -184,8 +184,15 @@ mean the corresponding gameplay system is complete.
   mounts, cargo capacity, appearance tier and warp power. Legacy 22-slot
   inventories migrate to the 40-slot wire layout without moving owned items;
   prior sandbox pilots retain their stage-six gear. Stage capacity and the hull
-  stage publish through ship inventory and player RPG AUX. Skill-point spending
-  and ordinary level-one character creation remain open.
+  stage publish through ship inventory and player RPG AUX. Explicit
+  `--native-progression` account creation now starts at level zero with stage-zero
+  hull and the archived free rank-one core skills. Native 0x57 purchases use
+  earned-minus-spent skill points, class ceilings, XML track/level schemes and
+  quest unlocks. Ranks, spent points and derived gear/combat stats commit in one
+  inventory replacement and republish native player/ship AUX. Existing sandbox
+  and demo pilots retain their maxed skills. Twenty public class-skill pairs
+  lack an archived XML rule and remain upgrade-gated; ordinary in-client
+  character creation and skill training UI verification remain open.
 - The public mission catalog loads all 364 imported definitions; the runtime
   currently offers fifteen wired NPC missions: Finer Points of Negotiation
   (3), Reactor Leak (5), Supply Run (6), Defense of the Sharim (81), Going for

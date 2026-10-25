@@ -21,6 +21,11 @@ username. Rerunning the command preserves their inventory and credits. See
 `target/debug/beyond-server` is the executable (`.exe` on Windows). It accepts
 `--bind`, `--content`, `--state-dir`, `--check`, and `--create-account`; run
 `--help` for details. Default state is `server/state`, outside version control.
+Add `--native-progression` to `--create-account NAME --character NAME --class je`
+to create a level-zero pilot with stage-zero hull and rank-one core skills.
+Existing sandbox and demo accounts keep their maxed training; this option never
+converts an existing character. Native skill upgrades use packet 0x57 and save
+their ranks and spent points with the character inventory.
 Server stdout/stderr messages use UTC timestamps in square brackets.
 Use a private LAN bind address when connecting from another machine or Net7Proxy.
 

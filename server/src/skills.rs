@@ -4,6 +4,7 @@ use crate::protocol::invalid;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::io;
+use std::sync::OnceLock;
 #[path = "jumpstart_rules.rs"]
 mod jumpstart_rules;
 pub use jumpstart_rules::JumpstartPlan;
@@ -55,6 +56,164 @@ pub struct SkillCatalog {
     pub abilities: Vec<AbilityDefinition>,
 }
 
+#[derive(Clone, Debug, Deserialize)]
+pub struct SkillRule {
+    pub class_index: usize,
+    pub skill: u32,
+    pub track: String,
+    pub scheme: String,
+    pub quested: bool,
+    pub learn_level: u32,
+}
+
+const LEVEL_GATES: [[i32; 9]; 5] = [
+    [0, 0, 6, 12, 18, 24, 30, 36, 42],
+    [0, 7, 14, 21, 28, 35, 42, 49, -1],
+    [0, 0, 20, 40, 60, 80, 100, 120, 140],
+    [0, 0, 30, 50, 70, 90, 110, 130, -1],
+    [0, 0, 5, 15, 25, 35, 45, -1, -1],
+];
+
+impl SkillRule {
+    /// Returns:
+    ///     Option<SkillRule>: Archived requirement for this class skill, if present.
+    pub fn for_skill(class_index: usize, skill: u32) -> io::Result<Option<Self>> {
+        static RULES: OnceLock<Vec<SkillRule>> = OnceLock::new();
+        let rules = RULES.get_or_init(|| {
+            serde_json::from_str(include_str!("../data/skill_rules.json"))
+                .expect("validated built-in archived skill rules")
+        });
+        Ok(rules
+            .iter()
+            .find(|rule| rule.class_index == class_index && rule.skill == skill)
+            .cloned())
+    }
+
+    /// Returns:
+    ///     Option<u32>: Required track level for the next rank, or None if prohibited.
+    pub fn required_level(&self, current_rank: u32) -> Option<u32> {
+        let scheme = match self.scheme.as_str() {
+            "PW" => 0,
+            "SW" => 1,
+            "PT" => 2,
+            "ST" => 3,
+            "NON" => 4,
+            _ => return None,
+        };
+        let required = *LEVEL_GATES[scheme].get(current_rank as usize)?;
+        (required >= 0).then_some((required as u32).max(self.learn_level))
+    }
+
+    /// Returns:
+    ///     Option<u32>: The pilot's level on this rule's required XP track.
+    pub fn track_level(&self, inventory: &crate::inventory::Inventory) -> io::Result<Option<u32>> {
+        let combat = crate::experience::track(inventory.xp_start_level, inventory.combat_xp)?.level;
+        let trade = crate::experience::track(inventory.xp_start_level, inventory.trade_xp)?.level;
+        let explore =
+            crate::experience::track(inventory.xp_start_level, inventory.explore_xp)?.level;
+        Ok(match self.track.as_str() {
+            "combat" => Some(combat),
+            "trade" => Some(trade),
+            "explore" => Some(explore),
+            "total" => Some(combat.saturating_add(trade).saturating_add(explore)),
+            _ => None,
+        })
+    }
+
+    /// Returns:
+    ///     [u32; 4]: Native upgrade status, requirement and point cost fields.
+    pub fn availability(
+        &self,
+        inventory: &crate::inventory::Inventory,
+        current: u32,
+        maximum: u32,
+    ) -> io::Result<[u32; 4]> {
+        if current >= maximum {
+            return Ok([4, 0x40, 0, 0]);
+        }
+        if self.quested && current == 0 && !inventory.mission_awarded_skills.contains(&self.skill) {
+            return Ok([3, 0, 0, 0]);
+        }
+        let Some(required) = self.required_level(current) else {
+            return Ok([4, 0x04, 0, current.max(1)]);
+        };
+        let below_level = self
+            .track_level(inventory)?
+            .is_none_or(|level| level < required);
+        let error = if below_level {
+            match self.track.as_str() {
+                "total" => 0x01,
+                "combat" => 0x08,
+                "trade" => 0x10,
+                "explore" => 0x20,
+                _ => 0x04,
+            }
+        } else if available_points(inventory)? < current.max(1) {
+            0x02
+        } else {
+            0
+        };
+        Ok([
+            4,
+            error,
+            if below_level { required } else { 0 },
+            current.max(1),
+        ])
+    }
+}
+
+/// Returns:
+///     u32: Earned points remaining after durable purchases.
+pub fn available_points(inventory: &crate::inventory::Inventory) -> io::Result<u32> {
+    let earned = [
+        inventory.combat_xp,
+        inventory.trade_xp,
+        inventory.explore_xp,
+    ]
+    .into_iter()
+    .map(|xp| crate::experience::track(inventory.xp_start_level, xp))
+    .collect::<io::Result<Vec<_>>>()?
+    .into_iter()
+    .fold(0u64, |total, track| {
+        total.saturating_add(track.skill_points)
+    });
+    let remaining = earned.saturating_sub(u64::from(inventory.spent_skill_points));
+    Ok(remaining.min(u64::from(u32::MAX)) as u32)
+}
+
+/// Reject malformed saved training without changing older max-rank pilots.
+pub fn validate_training(inventory: &crate::inventory::Inventory) -> io::Result<()> {
+    let Some(trained) = &inventory.trained_skills else {
+        if inventory.spent_skill_points != 0 {
+            return Err(invalid("Skill points spent without trained ranks."));
+        }
+        return Ok(());
+    };
+    if trained.len() > 64
+        || trained
+            .iter()
+            .any(|(&skill, &rank)| skill >= 64 || rank > 9)
+    {
+        return Err(invalid("Invalid trained skill ranks."));
+    }
+    let earned = [
+        inventory.combat_xp,
+        inventory.trade_xp,
+        inventory.explore_xp,
+    ]
+    .into_iter()
+    .map(|xp| crate::experience::track(inventory.xp_start_level, xp))
+    .collect::<io::Result<Vec<_>>>()?
+    .into_iter()
+    .fold(0u64, |total, track| {
+        total.saturating_add(track.skill_points)
+    });
+    if u64::from(inventory.spent_skill_points) > earned {
+        return Err(invalid("Spent skill points exceed earned points."));
+    }
+    Ok(())
+}
+
 fn je_index() -> usize {
     5
 }
@@ -101,10 +260,97 @@ impl SkillCatalog {
         }
         Ok(catalog)
     }
+    /// Returns:
+    ///     SkillCatalog: Actual trained ranks, preserving legacy maxed characters.
+    pub fn for_inventory(
+        profile: &crate::account::CharacterProfile,
+        inventory: &crate::inventory::Inventory,
+    ) -> io::Result<Self> {
+        validate_training(inventory)?;
+        let mut catalog = Self::for_profile(profile)?;
+        if let Some(trained) = &inventory.trained_skills {
+            for (&id, &rank) in trained {
+                let ceiling = catalog
+                    .skills
+                    .iter()
+                    .find(|definition| definition.id == id)
+                    .ok_or_else(|| invalid("Trained skill is not owned by this class."))?;
+                if rank > ceiling.level {
+                    return Err(invalid("Trained skill exceeds its class ceiling."));
+                }
+            }
+            for skill in &mut catalog.skills {
+                skill.level = trained.get(&skill.id).copied().unwrap_or(0);
+            }
+        }
+        Ok(catalog)
+    }
+
+    /// Returns:
+    ///     Inventory: Durable candidate after one native rank purchase.
+    pub fn purchased_rank(
+        &self,
+        inventory: &crate::inventory::Inventory,
+        skill_id: u32,
+    ) -> io::Result<crate::inventory::Inventory> {
+        let trained = inventory
+            .trained_skills
+            .as_ref()
+            .ok_or_else(|| invalid("This sandbox pilot already has maximum training."))?;
+        let ceiling = Self::for_class_index(self.class_index)?
+            .skills
+            .into_iter()
+            .find(|skill| skill.id == skill_id)
+            .ok_or_else(|| invalid("This class cannot train that skill."))?
+            .level;
+        let current = trained.get(&skill_id).copied().unwrap_or(0);
+        if current >= ceiling {
+            return Err(invalid("Skill is already at its class maximum."));
+        }
+        let rule = SkillRule::for_skill(self.class_index, skill_id)?
+            .ok_or_else(|| invalid("Archived training requirement is unavailable."))?;
+        if rule.quested && !inventory.mission_awarded_skills.contains(&skill_id) && current == 0 {
+            return Err(invalid("This skill requires its mission unlock."));
+        }
+        let requirement = rule
+            .required_level(current)
+            .ok_or_else(|| invalid("This rank is unavailable under its skill scheme."))?;
+        if rule
+            .track_level(inventory)?
+            .is_none_or(|level| level < requirement)
+        {
+            return Err(invalid("Pilot level is too low for this skill rank."));
+        }
+        let cost = current.max(1);
+        if available_points(inventory)? < cost {
+            return Err(invalid("Not enough skill points."));
+        }
+        let mut candidate = inventory.clone();
+        candidate.spent_skill_points = candidate
+            .spent_skill_points
+            .checked_add(cost)
+            .ok_or_else(|| invalid("Skill point balance overflow."))?;
+        candidate
+            .trained_skills
+            .as_mut()
+            .expect("validated training map")
+            .insert(skill_id, current + 1);
+        Ok(candidate)
+    }
+
+    /// Returns:
+    ///     SkillCatalog: Validated immutable class ceilings before training.
+    fn for_class_index(index: usize) -> io::Result<Self> {
+        let catalogs: Vec<Self> = serde_json::from_str(include_str!("../data/class_skills.json"))?;
+        catalogs
+            .into_iter()
+            .find(|catalog| catalog.class_index == index)
+            .ok_or_else(|| invalid("Missing class catalog."))
+    }
     pub fn ability(&self, id: u32) -> io::Result<AbilityDefinition> {
         self.abilities
             .iter()
-            .find(|ability| ability.id == id)
+            .find(|ability| ability.id == id && self.level(ability.skill) >= ability.rank)
             .cloned()
             .ok_or_else(|| invalid("This character does not have that ability."))
     }
@@ -266,5 +512,34 @@ mod tests {
         assert_eq!(catalog.ability(0).unwrap().kind, AbilityKind::Cloak);
         assert_eq!(catalog.ability(37).unwrap().destination, Some(2210));
         assert!(catalog.ability(17).is_err()); // Area Teleport is not a JE ability.
+    }
+
+    /// XML and public SQL disagree in places; only evidenced gates can be bought.
+    #[test]
+    fn archived_training_rules_gate_class_track_and_missing_entries() {
+        let je = SkillRule::for_skill(5, 1).unwrap().unwrap();
+        assert_eq!(je.track, "combat");
+        assert_eq!(je.scheme, "PW");
+        assert_eq!(je.required_level(1), Some(0));
+        assert_eq!(je.required_level(2), Some(6));
+        assert!(SkillRule::for_skill(4, 24).unwrap().is_none());
+        assert_eq!(SkillRule::for_skill(5, 1).unwrap().unwrap().skill, 1);
+    }
+
+    /// Old inventory JSON still means maximum trained class ranks.
+    #[test]
+    fn legacy_maxed_inventory_does_not_gain_spent_points_or_lose_abilities() {
+        let items = crate::items::ItemCatalog::load().unwrap();
+        let inventory = crate::inventory::Inventory::starter(&items).unwrap();
+        let profile = crate::account::Account::create("legacy".into(), "pass", "Legacy".into())
+            .unwrap()
+            .character;
+        let catalog = SkillCatalog::for_inventory(&profile, &inventory).unwrap();
+        assert_eq!(
+            catalog.level(1),
+            SkillCatalog::for_profile(&profile).unwrap().level(1)
+        );
+        assert_eq!(inventory.spent_skill_points, 0);
+        assert!(catalog.ability(0).is_ok());
     }
 }

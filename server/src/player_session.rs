@@ -84,6 +84,9 @@ mod session_resources;
 mod session_tick;
 #[path = "shield_recharge.rs"]
 mod shield_recharge;
+#[cfg(test)]
+#[path = "session_skill_tests.rs"]
+mod skill_tests;
 #[path = "station_actions.rs"]
 mod station_actions;
 #[path = "station_peers.rs"]
@@ -260,7 +263,7 @@ impl PlayerSession {
             Inventory::starter_for(&account.character, &items)?
         };
         inventory.migrate_cargo_for_profile(&account.character)?;
-        let skill_catalog = SkillCatalog::for_profile(&account.character)?;
+        let skill_catalog = SkillCatalog::for_inventory(&account.character, &inventory)?;
         let granted = crate::sandbox_loadout::provision(
             &world_root,
             &state_dir,
@@ -798,6 +801,21 @@ impl PlayerSession {
                 }
             }
             0x27 => self.move_inventory(body)?,
+            0x57 => {
+                if let Err(error) = self.purchase_skill(body) {
+                    self.pending.push(packets::message(&format!(
+                        "Skill upgrade rejected: {error}"
+                    )));
+                    if self.logged_in {
+                        self.pending.push(packets::player_aux(
+                            &self.sector,
+                            &self.account.character,
+                            &self.inventory,
+                            &self.items,
+                        ));
+                    }
+                }
+            }
             0x5d => self.activate_equipped_item(body)?,
             0x55 => self.talk_choice(body)?,
             0x9d | 0x9f => self.station_movement(opcode, body)?,
@@ -1178,15 +1196,68 @@ impl PlayerSession {
         Ok(())
     }
 
+    /// Apply one native skill upgrade through the ordinary durable inventory boundary.
+    fn purchase_skill(&mut self, body: &[u8]) -> io::Result<()> {
+        let mut reader = Reader::new(body);
+        let owner = reader.u32()?;
+        let _advertised_points = reader.u32()?;
+        let skill = reader.u16()? as u32;
+        if body.len() != 10
+            || !self.logged_in
+            || (owner != self.player_id() && owner != self.player_id() & 0xffffff)
+        {
+            return Err(invalid("Invalid skill action owner or length."));
+        }
+        let candidate = self.skill_catalog.purchased_rank(&self.inventory, skill)?;
+        self.commit_inventory(candidate)?;
+        self.pending.push(packets::message(&format!(
+            "{} trained to rank {}.",
+            self.skill_catalog
+                .skills
+                .iter()
+                .find(|entry| entry.id == skill)
+                .map_or("Skill", |entry| entry.name.as_str()),
+            self.skill_catalog.level(skill)
+        )));
+        Ok(())
+    }
+
     /// All inventory operations share this durable publication boundary. The
     /// candidate includes both cargo and credits, so they cannot commit apart.
-    fn commit_inventory(&mut self, candidate: Inventory) -> io::Result<()> {
+    fn commit_inventory(&mut self, mut candidate: Inventory) -> io::Result<()> {
+        if let Some(trained) = candidate.trained_skills.as_mut() {
+            for &skill in candidate
+                .mission_awarded_skills
+                .difference(&self.inventory.mission_awarded_skills)
+            {
+                if crate::skills::SkillRule::for_skill(self.skill_catalog.class_index, skill)?
+                    .is_some_and(|rule| rule.quested)
+                    && self
+                        .skill_catalog
+                        .skills
+                        .iter()
+                        .any(|entry| entry.id == skill)
+                {
+                    trained
+                        .entry(skill)
+                        .and_modify(|rank| *rank = (*rank).max(1))
+                        .or_insert(1);
+                }
+            }
+        }
         candidate.validate(&self.items)?;
-        if candidate.hull_upgrade != self.inventory.hull_upgrade {
+        let skill_changed = candidate.trained_skills != self.inventory.trained_skills
+            || candidate.spent_skill_points != self.inventory.spent_skill_points;
+        let candidate_skills = if skill_changed {
+            SkillCatalog::for_inventory(&self.account.character, &candidate)?
+        } else {
+            self.skill_catalog.clone()
+        };
+        if candidate.hull_upgrade != self.inventory.hull_upgrade || skill_changed {
             candidate.validate_for_profile(
                 &self.account.character,
                 &self.items,
-                &self.skill_catalog,
+                &candidate_skills,
             )?;
         }
         let active_device = self
@@ -1208,7 +1279,7 @@ impl PlayerSession {
         let equipment = EquipmentStats::derive_with_activated(
             &candidate,
             &self.items,
-            &self.skill_catalog,
+            &candidate_skills,
             &active_modifiers,
         )?;
         let prices = self.vendor_prices(&candidate)?;
@@ -1240,7 +1311,8 @@ impl PlayerSession {
             || candidate.trade_xp != self.inventory.trade_xp
             || candidate.xp_start_level != self.inventory.xp_start_level
             || candidate.missions != self.inventory.missions
-            || candidate.hull_upgrade != self.inventory.hull_upgrade;
+            || candidate.hull_upgrade != self.inventory.hull_upgrade
+            || skill_changed;
         // Publish only after durable replacement. A disk failure leaves the
         // authoritative inventory unchanged and sends no success snapshot.
         fs::create_dir_all(&self.state_dir)?;
@@ -1251,19 +1323,20 @@ impl PlayerSession {
             &candidate,
         )?;
         self.inventory = candidate;
+        self.skill_catalog = candidate_skills;
         self.active_device = active_device;
         self.reputation = reputation;
         self.equipment = equipment;
         self.apply_equipment_parameters();
         if hull_upgraded {
             self.hull = self.equipment.ship.hull_capacity;
-            if self.logged_in {
-                self.pending.push(packets::ship_parameters(
-                    self.player_id(),
-                    &self.equipment.ship,
-                    self.ship_resources(),
-                ));
-            }
+        }
+        if (hull_upgraded || skill_changed) && self.logged_in {
+            self.pending.push(packets::ship_parameters(
+                self.player_id(),
+                &self.equipment.ship,
+                self.ship_resources(),
+            ));
         }
         if reputation_changed {
             self.publish_reputation();

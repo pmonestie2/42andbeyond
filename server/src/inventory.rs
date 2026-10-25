@@ -156,6 +156,11 @@ pub struct Inventory {
     pub missions: crate::missions::MissionJournal,
     #[serde(default)]
     pub mission_awarded_skills: std::collections::BTreeSet<u32>,
+    /// None preserves the original max-rank sandbox pilots after migration.
+    #[serde(default)]
+    pub trained_skills: Option<BTreeMap<u32, u32>>,
+    #[serde(default)]
+    pub spent_skill_points: u32,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -257,6 +262,30 @@ impl Inventory {
         Ok(inventory)
     }
 
+    /// Returns:
+    ///     Inventory: Level-zero starter with archived free rank-one core skills.
+    pub fn native_starter_for(
+        profile: &crate::account::CharacterProfile,
+        templates: &ItemCatalog,
+    ) -> io::Result<Self> {
+        let mut inventory = Self::starter_for(profile, templates)?;
+        inventory.hull_upgrade = 0;
+        inventory.cargo_capacity =
+            crate::ship_progression::progression(profile.class(), 0)?.cargo_capacity;
+        inventory.xp_start_level = 0;
+        inventory.trained_skills = Some(
+            [(1, 1), (18, 1), (20, 1), (45, 1), (55, 1)]
+                .into_iter()
+                .collect(),
+        );
+        // Explicit native progression must not be replaced by a global sandbox
+        // gear grant on its first login.
+        inventory.sandbox_grant = u32::MAX;
+        let skills = crate::skills::SkillCatalog::for_inventory(profile, &inventory)?;
+        inventory.validate_for_profile(profile, templates, &skills)?;
+        Ok(inventory)
+    }
+
     pub fn validate_for_profile(
         &self,
         profile: &crate::account::CharacterProfile,
@@ -275,6 +304,11 @@ impl Inventory {
         {
             return Err(invalid("Foreign launch journal."));
         }
+        let levels = [
+            crate::experience::track(self.xp_start_level, self.combat_xp)?.level,
+            crate::experience::track(self.xp_start_level, self.trade_xp)?.level,
+            crate::experience::track(self.xp_start_level, self.explore_xp)?.level,
+        ];
         for (slot, item) in self
             .equipped
             .iter()
@@ -289,7 +323,7 @@ impl Inventory {
             {
                 return Err(invalid("Mount is locked until a hull upgrade."));
             }
-            template.check_requirements(profile, skills, [50, 50, 50])?;
+            template.check_requirements(profile, skills, levels)?;
         }
         Ok(())
     }
@@ -326,6 +360,8 @@ impl Inventory {
             faction_standings: BTreeMap::new(),
             missions: crate::missions::MissionJournal::default(),
             mission_awarded_skills: std::collections::BTreeSet::new(),
+            trained_skills: None,
+            spent_skill_points: 0,
         };
         for starting in templates.starting_items()? {
             if starting.slot >= EQUIPMENT_SLOTS || inventory.equipped[starting.slot].is_some() {
@@ -384,6 +420,7 @@ impl Inventory {
         if self.xp_start_level > crate::experience::MAX_LEVEL {
             return Err(invalid("Invalid XP starting level."));
         }
+        crate::skills::validate_training(self)?;
         if self.explored_navs.len() > 10_000 || self.explored_navs.contains(&0) {
             return Err(invalid("Invalid explored navigation history."));
         }

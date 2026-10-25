@@ -1,0 +1,1194 @@
+[
+  {
+    "class_index": 0,
+    "skill": 1,
+    "track": "combat",
+    "scheme": "SW",
+    "quested": false,
+    "learn_level": 0
+  },
+  {
+    "class_index": 0,
+    "skill": 3,
+    "track": "combat",
+    "scheme": "NON",
+    "quested": false,
+    "learn_level": 45
+  },
+  {
+    "class_index": 0,
+    "skill": 6,
+    "track": "trade",
+    "scheme": "NON",
+    "quested": true,
+    "learn_level": 45
+  },
+  {
+    "class_index": 0,
+    "skill": 10,
+    "track": "trade",
+    "scheme": "NON",
+    "quested": true,
+    "learn_level": 0
+  },
+  {
+    "class_index": 0,
+    "skill": 16,
+    "track": "combat",
+    "scheme": "NON",
+    "quested": true,
+    "learn_level": 20
+  },
+  {
+    "class_index": 0,
+    "skill": 17,
+    "track": "combat",
+    "scheme": "NON",
+    "quested": true,
+    "learn_level": 25
+  },
+  {
+    "class_index": 0,
+    "skill": 18,
+    "track": "total",
+    "scheme": "ST",
+    "quested": false,
+    "learn_level": 0
+  },
+  {
+    "class_index": 0,
+    "skill": 20,
+    "track": "total",
+    "scheme": "PT",
+    "quested": false,
+    "learn_level": 0
+  },
+  {
+    "class_index": 0,
+    "skill": 22,
+    "track": "explore",
+    "scheme": "NON",
+    "quested": true,
+    "learn_level": 0
+  },
+  {
+    "class_index": 0,
+    "skill": 26,
+    "track": "combat",
+    "scheme": "NON",
+    "quested": true,
+    "learn_level": 0
+  },
+  {
+    "class_index": 0,
+    "skill": 34,
+    "track": "combat",
+    "scheme": "PW",
+    "quested": true,
+    "learn_level": 0
+  },
+  {
+    "class_index": 0,
+    "skill": 36,
+    "track": "trade",
+    "scheme": "NON",
+    "quested": true,
+    "learn_level": 25
+  },
+  {
+    "class_index": 0,
+    "skill": 40,
+    "track": "combat",
+    "scheme": "SW",
+    "quested": true,
+    "learn_level": 0
+  },
+  {
+    "class_index": 0,
+    "skill": 44,
+    "track": "combat",
+    "scheme": "NON",
+    "quested": true,
+    "learn_level": 20
+  },
+  {
+    "class_index": 0,
+    "skill": 45,
+    "track": "total",
+    "scheme": "ST",
+    "quested": false,
+    "learn_level": 0
+  },
+  {
+    "class_index": 0,
+    "skill": 47,
+    "track": "trade",
+    "scheme": "NON",
+    "quested": true,
+    "learn_level": 20
+  },
+  {
+    "class_index": 0,
+    "skill": 55,
+    "track": "total",
+    "scheme": "PT",
+    "quested": false,
+    "learn_level": 0
+  },
+  {
+    "class_index": 1,
+    "skill": 1,
+    "track": "combat",
+    "scheme": "SW",
+    "quested": false,
+    "learn_level": 0
+  },
+  {
+    "class_index": 1,
+    "skill": 2,
+    "track": "trade",
+    "scheme": "NON",
+    "quested": true,
+    "learn_level": 11
+  },
+  {
+    "class_index": 1,
+    "skill": 4,
+    "track": "trade",
+    "scheme": "NON",
+    "quested": true,
+    "learn_level": 10
+  },
+  {
+    "class_index": 1,
+    "skill": 5,
+    "track": "trade",
+    "scheme": "NON",
+    "quested": true,
+    "learn_level": 0
+  },
+  {
+    "class_index": 1,
+    "skill": 6,
+    "track": "trade",
+    "scheme": "NON",
+    "quested": true,
+    "learn_level": 35
+  },
+  {
+    "class_index": 1,
+    "skill": 9,
+    "track": "trade",
+    "scheme": "NON",
+    "quested": true,
+    "learn_level": 0
+  },
+  {
+    "class_index": 1,
+    "skill": 10,
+    "track": "trade",
+    "scheme": "NON",
+    "quested": true,
+    "learn_level": 0
+  },
+  {
+    "class_index": 1,
+    "skill": 18,
+    "track": "total",
+    "scheme": "ST",
+    "quested": false,
+    "learn_level": 0
+  },
+  {
+    "class_index": 1,
+    "skill": 20,
+    "track": "total",
+    "scheme": "PT",
+    "quested": false,
+    "learn_level": 0
+  },
+  {
+    "class_index": 1,
+    "skill": 27,
+    "track": "combat",
+    "scheme": "NON",
+    "quested": true,
+    "learn_level": 20
+  },
+  {
+    "class_index": 1,
+    "skill": 34,
+    "track": "combat",
+    "scheme": "PW",
+    "quested": true,
+    "learn_level": 0
+  },
+  {
+    "class_index": 1,
+    "skill": 35,
+    "track": "explore",
+    "scheme": "NON",
+    "quested": true,
+    "learn_level": 40
+  },
+  {
+    "class_index": 1,
+    "skill": 36,
+    "track": "trade",
+    "scheme": "NON",
+    "quested": true,
+    "learn_level": 0
+  },
+  {
+    "class_index": 1,
+    "skill": 45,
+    "track": "total",
+    "scheme": "ST",
+    "quested": false,
+    "learn_level": 0
+  },
+  {
+    "class_index": 1,
+    "skill": 46,
+    "track": "combat",
+    "scheme": "NON",
+    "quested": true,
+    "learn_level": 0
+  },
+  {
+    "class_index": 1,
+    "skill": 51,
+    "track": "combat",
+    "scheme": "NON",
+    "quested": false,
+    "learn_level": 45
+  },
+  {
+    "class_index": 1,
+    "skill": 55,
+    "track": "total",
+    "scheme": "PT",
+    "quested": false,
+    "learn_level": 0
+  },
+  {
+    "class_index": 2,
+    "skill": 1,
+    "track": "combat",
+    "scheme": "SW",
+    "quested": false,
+    "learn_level": 0
+  },
+  {
+    "class_index": 2,
+    "skill": 5,
+    "track": "trade",
+    "scheme": "NON",
+    "quested": true,
+    "learn_level": 0
+  },
+  {
+    "class_index": 2,
+    "skill": 6,
+    "track": "trade",
+    "scheme": "NON",
+    "quested": true,
+    "learn_level": 45
+  },
+  {
+    "class_index": 2,
+    "skill": 18,
+    "track": "total",
+    "scheme": "PT",
+    "quested": false,
+    "learn_level": 0
+  },
+  {
+    "class_index": 2,
+    "skill": 20,
+    "track": "total",
+    "scheme": "PT",
+    "quested": false,
+    "learn_level": 0
+  },
+  {
+    "class_index": 2,
+    "skill": 26,
+    "track": "combat",
+    "scheme": "NON",
+    "quested": true,
+    "learn_level": 0
+  },
+  {
+    "class_index": 2,
+    "skill": 27,
+    "track": "combat",
+    "scheme": "NON",
+    "quested": true,
+    "learn_level": 20
+  },
+  {
+    "class_index": 2,
+    "skill": 31,
+    "track": "explore",
+    "scheme": "NON",
+    "quested": true,
+    "learn_level": 20
+  },
+  {
+    "class_index": 2,
+    "skill": 34,
+    "track": "combat",
+    "scheme": "PW",
+    "quested": true,
+    "learn_level": 0
+  },
+  {
+    "class_index": 2,
+    "skill": 35,
+    "track": "explore",
+    "scheme": "NON",
+    "quested": true,
+    "learn_level": 15
+  },
+  {
+    "class_index": 2,
+    "skill": 36,
+    "track": "trade",
+    "scheme": "NON",
+    "quested": true,
+    "learn_level": 25
+  },
+  {
+    "class_index": 2,
+    "skill": 41,
+    "track": "explore",
+    "scheme": "NON",
+    "quested": true,
+    "learn_level": 0
+  },
+  {
+    "class_index": 2,
+    "skill": 45,
+    "track": "total",
+    "scheme": "ST",
+    "quested": false,
+    "learn_level": 0
+  },
+  {
+    "class_index": 2,
+    "skill": 49,
+    "track": "explore",
+    "scheme": "NON",
+    "quested": true,
+    "learn_level": 35
+  },
+  {
+    "class_index": 2,
+    "skill": 55,
+    "track": "total",
+    "scheme": "ST",
+    "quested": false,
+    "learn_level": 0
+  },
+  {
+    "class_index": 3,
+    "skill": 1,
+    "track": "combat",
+    "scheme": "PW",
+    "quested": false,
+    "learn_level": 0
+  },
+  {
+    "class_index": 3,
+    "skill": 5,
+    "track": "trade",
+    "scheme": "NON",
+    "quested": true,
+    "learn_level": 30
+  },
+  {
+    "class_index": 3,
+    "skill": 10,
+    "track": "trade",
+    "scheme": "NON",
+    "quested": true,
+    "learn_level": 25
+  },
+  {
+    "class_index": 3,
+    "skill": 12,
+    "track": "explore",
+    "scheme": "NON",
+    "quested": true,
+    "learn_level": 10
+  },
+  {
+    "class_index": 3,
+    "skill": 16,
+    "track": "combat",
+    "scheme": "NON",
+    "quested": true,
+    "learn_level": 0
+  },
+  {
+    "class_index": 3,
+    "skill": 18,
+    "track": "total",
+    "scheme": "PT",
+    "quested": false,
+    "learn_level": 0
+  },
+  {
+    "class_index": 3,
+    "skill": 19,
+    "track": "combat",
+    "scheme": "NON",
+    "quested": false,
+    "learn_level": 45
+  },
+  {
+    "class_index": 3,
+    "skill": 20,
+    "track": "total",
+    "scheme": "ST",
+    "quested": false,
+    "learn_level": 0
+  },
+  {
+    "class_index": 3,
+    "skill": 24,
+    "track": "explore",
+    "scheme": "NON",
+    "quested": true,
+    "learn_level": 0
+  },
+  {
+    "class_index": 3,
+    "skill": 34,
+    "track": "combat",
+    "scheme": "SW",
+    "quested": true,
+    "learn_level": 20
+  },
+  {
+    "class_index": 3,
+    "skill": 40,
+    "track": "combat",
+    "scheme": "SW",
+    "quested": true,
+    "learn_level": 11
+  },
+  {
+    "class_index": 3,
+    "skill": 42,
+    "track": "combat",
+    "scheme": "NON",
+    "quested": true,
+    "learn_level": 0
+  },
+  {
+    "class_index": 3,
+    "skill": 45,
+    "track": "total",
+    "scheme": "PT",
+    "quested": false,
+    "learn_level": 0
+  },
+  {
+    "class_index": 3,
+    "skill": 47,
+    "track": "trade",
+    "scheme": "NON",
+    "quested": true,
+    "learn_level": 20
+  },
+  {
+    "class_index": 3,
+    "skill": 49,
+    "track": "explore",
+    "scheme": "NON",
+    "quested": true,
+    "learn_level": 40
+  },
+  {
+    "class_index": 3,
+    "skill": 55,
+    "track": "total",
+    "scheme": "ST",
+    "quested": false,
+    "learn_level": 0
+  },
+  {
+    "class_index": 3,
+    "skill": 56,
+    "track": "combat",
+    "scheme": "NON",
+    "quested": true,
+    "learn_level": 0
+  },
+  {
+    "class_index": 4,
+    "skill": 1,
+    "track": "combat",
+    "scheme": "PW",
+    "quested": false,
+    "learn_level": 0
+  },
+  {
+    "class_index": 4,
+    "skill": 4,
+    "track": "trade",
+    "scheme": "NON",
+    "quested": true,
+    "learn_level": 0
+  },
+  {
+    "class_index": 4,
+    "skill": 5,
+    "track": "trade",
+    "scheme": "NON",
+    "quested": true,
+    "learn_level": 0
+  },
+  {
+    "class_index": 4,
+    "skill": 6,
+    "track": "trade",
+    "scheme": "NON",
+    "quested": true,
+    "learn_level": 0
+  },
+  {
+    "class_index": 4,
+    "skill": 10,
+    "track": "trade",
+    "scheme": "NON",
+    "quested": true,
+    "learn_level": 0
+  },
+  {
+    "class_index": 4,
+    "skill": 12,
+    "track": "explore",
+    "scheme": "NON",
+    "quested": true,
+    "learn_level": 0
+  },
+  {
+    "class_index": 4,
+    "skill": 18,
+    "track": "total",
+    "scheme": "ST",
+    "quested": false,
+    "learn_level": 0
+  },
+  {
+    "class_index": 4,
+    "skill": 20,
+    "track": "total",
+    "scheme": "PT",
+    "quested": false,
+    "learn_level": 0
+  },
+  {
+    "class_index": 4,
+    "skill": 36,
+    "track": "trade",
+    "scheme": "NON",
+    "quested": true,
+    "learn_level": 0
+  },
+  {
+    "class_index": 4,
+    "skill": 40,
+    "track": "combat",
+    "scheme": "SW",
+    "quested": true,
+    "learn_level": 0
+  },
+  {
+    "class_index": 4,
+    "skill": 45,
+    "track": "total",
+    "scheme": "PT",
+    "quested": false,
+    "learn_level": 0
+  },
+  {
+    "class_index": 4,
+    "skill": 46,
+    "track": "combat",
+    "scheme": "NON",
+    "quested": true,
+    "learn_level": 0
+  },
+  {
+    "class_index": 4,
+    "skill": 49,
+    "track": "explore",
+    "scheme": "NON",
+    "quested": true,
+    "learn_level": 0
+  },
+  {
+    "class_index": 4,
+    "skill": 55,
+    "track": "total",
+    "scheme": "ST",
+    "quested": false,
+    "learn_level": 0
+  },
+  {
+    "class_index": 5,
+    "skill": 1,
+    "track": "combat",
+    "scheme": "PW",
+    "quested": false,
+    "learn_level": 0
+  },
+  {
+    "class_index": 5,
+    "skill": 5,
+    "track": "trade",
+    "scheme": "NON",
+    "quested": true,
+    "learn_level": 0
+  },
+  {
+    "class_index": 5,
+    "skill": 8,
+    "track": "trade",
+    "scheme": "NON",
+    "quested": true,
+    "learn_level": 40
+  },
+  {
+    "class_index": 5,
+    "skill": 12,
+    "track": "explore",
+    "scheme": "NON",
+    "quested": true,
+    "learn_level": 8
+  },
+  {
+    "class_index": 5,
+    "skill": 14,
+    "track": "total",
+    "scheme": "NON",
+    "quested": true,
+    "learn_level": 135
+  },
+  {
+    "class_index": 5,
+    "skill": 15,
+    "track": "explore",
+    "scheme": "NON",
+    "quested": true,
+    "learn_level": 15
+  },
+  {
+    "class_index": 5,
+    "skill": 18,
+    "track": "total",
+    "scheme": "PT",
+    "quested": false,
+    "learn_level": 0
+  },
+  {
+    "class_index": 5,
+    "skill": 20,
+    "track": "total",
+    "scheme": "ST",
+    "quested": false,
+    "learn_level": 0
+  },
+  {
+    "class_index": 5,
+    "skill": 23,
+    "track": "explore",
+    "scheme": "NON",
+    "quested": true,
+    "learn_level": 45
+  },
+  {
+    "class_index": 5,
+    "skill": 24,
+    "track": "explore",
+    "scheme": "NON",
+    "quested": true,
+    "learn_level": 8
+  },
+  {
+    "class_index": 5,
+    "skill": 31,
+    "track": "explore",
+    "scheme": "NON",
+    "quested": true,
+    "learn_level": 20
+  },
+  {
+    "class_index": 5,
+    "skill": 35,
+    "track": "explore",
+    "scheme": "NON",
+    "quested": true,
+    "learn_level": 15
+  },
+  {
+    "class_index": 5,
+    "skill": 40,
+    "track": "combat",
+    "scheme": "SW",
+    "quested": true,
+    "learn_level": 25
+  },
+  {
+    "class_index": 5,
+    "skill": 41,
+    "track": "explore",
+    "scheme": "NON",
+    "quested": true,
+    "learn_level": 0
+  },
+  {
+    "class_index": 5,
+    "skill": 45,
+    "track": "total",
+    "scheme": "PT",
+    "quested": false,
+    "learn_level": 0
+  },
+  {
+    "class_index": 5,
+    "skill": 49,
+    "track": "explore",
+    "scheme": "NON",
+    "quested": true,
+    "learn_level": 35
+  },
+  {
+    "class_index": 5,
+    "skill": 53,
+    "track": "explore",
+    "scheme": "NON",
+    "quested": false,
+    "learn_level": 45
+  },
+  {
+    "class_index": 5,
+    "skill": 55,
+    "track": "total",
+    "scheme": "ST",
+    "quested": false,
+    "learn_level": 0
+  },
+  {
+    "class_index": 6,
+    "skill": 1,
+    "track": "combat",
+    "scheme": "SW",
+    "quested": false,
+    "learn_level": 0
+  },
+  {
+    "class_index": 6,
+    "skill": 10,
+    "track": "trade",
+    "scheme": "NON",
+    "quested": true,
+    "learn_level": 10
+  },
+  {
+    "class_index": 6,
+    "skill": 13,
+    "track": "combat",
+    "scheme": "NON",
+    "quested": true,
+    "learn_level": 10
+  },
+  {
+    "class_index": 6,
+    "skill": 16,
+    "track": "combat",
+    "scheme": "NON",
+    "quested": true,
+    "learn_level": 10
+  },
+  {
+    "class_index": 6,
+    "skill": 17,
+    "track": "combat",
+    "scheme": "NON",
+    "quested": true,
+    "learn_level": 9
+  },
+  {
+    "class_index": 6,
+    "skill": 18,
+    "track": "total",
+    "scheme": "ST",
+    "quested": false,
+    "learn_level": 0
+  },
+  {
+    "class_index": 6,
+    "skill": 20,
+    "track": "total",
+    "scheme": "ST",
+    "quested": false,
+    "learn_level": 0
+  },
+  {
+    "class_index": 6,
+    "skill": 22,
+    "track": "explore",
+    "scheme": "NON",
+    "quested": true,
+    "learn_level": 35
+  },
+  {
+    "class_index": 6,
+    "skill": 25,
+    "track": "combat",
+    "scheme": "NON",
+    "quested": true,
+    "learn_level": 0
+  },
+  {
+    "class_index": 6,
+    "skill": 34,
+    "track": "combat",
+    "scheme": "SW",
+    "quested": true,
+    "learn_level": 0
+  },
+  {
+    "class_index": 6,
+    "skill": 40,
+    "track": "combat",
+    "scheme": "PW",
+    "quested": true,
+    "learn_level": 0
+  },
+  {
+    "class_index": 6,
+    "skill": 45,
+    "track": "total",
+    "scheme": "PT",
+    "quested": false,
+    "learn_level": 0
+  },
+  {
+    "class_index": 6,
+    "skill": 47,
+    "track": "trade",
+    "scheme": "NON",
+    "quested": true,
+    "learn_level": 20
+  },
+  {
+    "class_index": 6,
+    "skill": 50,
+    "track": "combat",
+    "scheme": "NON",
+    "quested": true,
+    "learn_level": 40
+  },
+  {
+    "class_index": 6,
+    "skill": 52,
+    "track": "combat",
+    "scheme": "NON",
+    "quested": true,
+    "learn_level": 0
+  },
+  {
+    "class_index": 6,
+    "skill": 54,
+    "track": "combat",
+    "scheme": "NON",
+    "quested": false,
+    "learn_level": 45
+  },
+  {
+    "class_index": 6,
+    "skill": 55,
+    "track": "total",
+    "scheme": "PT",
+    "quested": false,
+    "learn_level": 0
+  },
+  {
+    "class_index": 7,
+    "skill": 1,
+    "track": "combat",
+    "scheme": "SW",
+    "quested": false,
+    "learn_level": 0
+  },
+  {
+    "class_index": 7,
+    "skill": 4,
+    "track": "trade",
+    "scheme": "NON",
+    "quested": true,
+    "learn_level": 40
+  },
+  {
+    "class_index": 7,
+    "skill": 8,
+    "track": "trade",
+    "scheme": "NON",
+    "quested": true,
+    "learn_level": 35
+  },
+  {
+    "class_index": 7,
+    "skill": 9,
+    "track": "trade",
+    "scheme": "NON",
+    "quested": true,
+    "learn_level": 35
+  },
+  {
+    "class_index": 7,
+    "skill": 10,
+    "track": "trade",
+    "scheme": "NON",
+    "quested": true,
+    "learn_level": 10
+  },
+  {
+    "class_index": 7,
+    "skill": 16,
+    "track": "combat",
+    "scheme": "NON",
+    "quested": true,
+    "learn_level": 45
+  },
+  {
+    "class_index": 7,
+    "skill": 18,
+    "track": "total",
+    "scheme": "ST",
+    "quested": false,
+    "learn_level": 0
+  },
+  {
+    "class_index": 7,
+    "skill": 20,
+    "track": "total",
+    "scheme": "ST",
+    "quested": false,
+    "learn_level": 0
+  },
+  {
+    "class_index": 7,
+    "skill": 33,
+    "track": "explore",
+    "scheme": "NON",
+    "quested": true,
+    "learn_level": 15
+  },
+  {
+    "class_index": 7,
+    "skill": 34,
+    "track": "combat",
+    "scheme": "SW",
+    "quested": true,
+    "learn_level": 0
+  },
+  {
+    "class_index": 7,
+    "skill": 36,
+    "track": "trade",
+    "scheme": "NON",
+    "quested": true,
+    "learn_level": 0
+  },
+  {
+    "class_index": 7,
+    "skill": 40,
+    "track": "combat",
+    "scheme": "PW",
+    "quested": true,
+    "learn_level": 0
+  },
+  {
+    "class_index": 7,
+    "skill": 45,
+    "track": "total",
+    "scheme": "PT",
+    "quested": false,
+    "learn_level": 0
+  },
+  {
+    "class_index": 7,
+    "skill": 46,
+    "track": "combat",
+    "scheme": "NON",
+    "quested": true,
+    "learn_level": 20
+  },
+  {
+    "class_index": 7,
+    "skill": 52,
+    "track": "combat",
+    "scheme": "NON",
+    "quested": true,
+    "learn_level": 0
+  },
+  {
+    "class_index": 7,
+    "skill": 55,
+    "track": "total",
+    "scheme": "PT",
+    "quested": false,
+    "learn_level": 0
+  },
+  {
+    "class_index": 8,
+    "skill": 1,
+    "track": "combat",
+    "scheme": "SW",
+    "quested": false,
+    "learn_level": 0
+  },
+  {
+    "class_index": 8,
+    "skill": 5,
+    "track": "trade",
+    "scheme": "NON",
+    "quested": true,
+    "learn_level": 10
+  },
+  {
+    "class_index": 8,
+    "skill": 9,
+    "track": "trade",
+    "scheme": "NON",
+    "quested": true,
+    "learn_level": 35
+  },
+  {
+    "class_index": 8,
+    "skill": 11,
+    "track": "total",
+    "scheme": "NON",
+    "quested": true,
+    "learn_level": 135
+  },
+  {
+    "class_index": 8,
+    "skill": 16,
+    "track": "combat",
+    "scheme": "NON",
+    "quested": true,
+    "learn_level": 45
+  },
+  {
+    "class_index": 8,
+    "skill": 18,
+    "track": "total",
+    "scheme": "PT",
+    "quested": false,
+    "learn_level": 0
+  },
+  {
+    "class_index": 8,
+    "skill": 20,
+    "track": "total",
+    "scheme": "ST",
+    "quested": false,
+    "learn_level": 0
+  },
+  {
+    "class_index": 8,
+    "skill": 25,
+    "track": "combat",
+    "scheme": "NON",
+    "quested": true,
+    "learn_level": 0
+  },
+  {
+    "class_index": 8,
+    "skill": 31,
+    "track": "explore",
+    "scheme": "NON",
+    "quested": true,
+    "learn_level": 20
+  },
+  {
+    "class_index": 8,
+    "skill": 33,
+    "track": "explore",
+    "scheme": "NON",
+    "quested": true,
+    "learn_level": 15
+  },
+  {
+    "class_index": 8,
+    "skill": 34,
+    "track": "combat",
+    "scheme": "SW",
+    "quested": true,
+    "learn_level": 0
+  },
+  {
+    "class_index": 8,
+    "skill": 37,
+    "track": "combat",
+    "scheme": "NON",
+    "quested": true,
+    "learn_level": 6
+  },
+  {
+    "class_index": 8,
+    "skill": 40,
+    "track": "combat",
+    "scheme": "PW",
+    "quested": true,
+    "learn_level": 0
+  },
+  {
+    "class_index": 8,
+    "skill": 41,
+    "track": "explore",
+    "scheme": "NON",
+    "quested": true,
+    "learn_level": 0
+  },
+  {
+    "class_index": 8,
+    "skill": 45,
+    "track": "total",
+    "scheme": "ST",
+    "quested": false,
+    "learn_level": 0
+  },
+  {
+    "class_index": 8,
+    "skill": 48,
+    "track": "explore",
+    "scheme": "NON",
+    "quested": false,
+    "learn_level": 45
+  },
+  {
+    "class_index": 8,
+    "skill": 49,
+    "track": "explore",
+    "scheme": "NON",
+    "quested": true,
+    "learn_level": 40
+  },
+  {
+    "class_index": 8,
+    "skill": 55,
+    "track": "total",
+    "scheme": "PT",
+    "quested": false,
+    "learn_level": 0
+  }
+]

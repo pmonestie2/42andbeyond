@@ -27,6 +27,7 @@ fn run() -> io::Result<()> {
     let mut check = false;
     let mut seed_play_accounts = false;
     let mut create_account: Option<String> = None;
+    let mut native_progression = false;
     let mut character = String::from("SandboxPilot");
     let mut class = beyond_server::classes::CharacterClass::parse("je")?;
     let mut arguments = std::env::args().skip(1);
@@ -54,6 +55,7 @@ fn run() -> io::Result<()> {
             "--check" => check = true,
             "--seed-demo-accounts" | "--seed-play-accounts" => seed_play_accounts = true,
             "--create-account" => create_account = arguments.next(),
+            "--native-progression" => native_progression = true,
             "--class" => {
                 class = beyond_server::classes::CharacterClass::parse(
                     &arguments
@@ -67,7 +69,7 @@ fn run() -> io::Result<()> {
                     .ok_or_else(|| io::Error::other("--character needs a name"))?
             }
             "--help" | "-h" => {
-                beyond_server::server_log!("beyond-server [--bind 127.0.0.1] [--content data/sector.json] [--state-dir state] [--check] [--create-account NAME --character NAME --class te|tt|ts|jd|js|je|pw|pp|ps] [--seed-demo-accounts]\nConnect the 42 and Beyond client, or use win_legacy/launch_original_client.cmd on Windows. Demo account: local / local.");
+                beyond_server::server_log!("beyond-server [--bind 127.0.0.1] [--content data/sector.json] [--state-dir state] [--check] [--create-account NAME --character NAME --class te|tt|ts|jd|js|je|pw|pp|ps [--native-progression]] [--seed-demo-accounts]\nConnect the 42 and Beyond client, or use win_legacy/launch_original_client.cmd on Windows. Demo account: local / local.");
                 return Ok(());
             }
             _ => return Err(io::Error::other(format!("unknown option {argument}"))),
@@ -83,16 +85,30 @@ fn run() -> io::Result<()> {
         beyond_server::server_log!("Published demo pilots: {}", codes.join(", "));
         return Ok(());
     }
+    if native_progression && create_account.is_none() {
+        return Err(io::Error::other(
+            "--native-progression requires --create-account",
+        ));
+    }
     if let Some(username) = create_account {
         let mut password = String::new();
         io::stdin().read_line(&mut password)?;
         let password = password.trim_end_matches(['\r', '\n']);
-        AccountDirectory::new(&state_dir).create_class(
-            username.clone(),
-            password,
-            character.clone(),
-            class,
-        )?;
+        if native_progression {
+            AccountDirectory::new(&state_dir).create_class_progression(
+                username.clone(),
+                password,
+                character.clone(),
+                class,
+            )?;
+        } else {
+            AccountDirectory::new(&state_dir).create_class(
+                username.clone(),
+                password,
+                character.clone(),
+                class,
+            )?;
+        }
         beyond_server::server_log!("Created local account {username}; character {character}; class {}. Password hash saved.", class.code());
         return Ok(());
     }

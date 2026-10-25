@@ -781,18 +781,17 @@ pub fn player_aux(
     inventory: &Inventory,
     items: &ItemCatalog,
 ) -> Frame {
-    let catalog = SkillCatalog::for_profile(profile).expect("validated built-in class catalog");
+    let catalog = SkillCatalog::for_inventory(profile, inventory)
+        .expect("validated character skill training");
+    let ceilings = SkillCatalog::for_profile(profile).expect("validated built-in class catalog");
     let combat = crate::experience::track(inventory.xp_start_level, inventory.combat_xp)
         .expect("validated XP starting level");
     let trade = crate::experience::track(inventory.xp_start_level, inventory.trade_xp)
         .expect("validated XP starting level");
     let explore = crate::experience::track(inventory.xp_start_level, inventory.explore_xp)
         .expect("validated XP starting level");
-    let skill_points = combat
-        .skill_points
-        .saturating_add(trade.skill_points)
-        .saturating_add(explore.skill_points)
-        .min(u64::from(u32::MAX)) as u32;
+    let skill_points =
+        crate::skills::available_points(inventory).expect("validated character skill points");
     let skills = aux_record(
         64,
         &(0..64).collect::<Vec<_>>(),
@@ -800,6 +799,21 @@ pub fn player_aux(
             .skills
             .iter()
             .map(|skill| {
+                let maximum = ceilings.level(skill.id);
+                let availability =
+                    crate::skills::SkillRule::for_skill(catalog.class_index, skill.id)
+                        .expect("validated archived skill rules")
+                        .map_or(
+                            if skill.level >= maximum {
+                                [4, 0x40, 0, 0]
+                            } else {
+                                [4, 0x04, 0, skill.level.max(1)]
+                            },
+                            |rule| {
+                                rule.availability(inventory, skill.level, maximum)
+                                    .expect("validated skill availability")
+                            },
+                        );
                 (
                     skill.id as usize,
                     aux_record(
@@ -810,13 +824,13 @@ pub fn player_aux(
                             (2, 1u32.to_le_bytes().to_vec()),
                             (
                                 3,
-                                [4u32, 0x40, 0, 0]
+                                availability
                                     .into_iter()
                                     .flat_map(u32::to_le_bytes)
                                     .collect(),
                             ),
-                            (4, 9u32.to_le_bytes().to_vec()),
-                            (5, skill.level.to_le_bytes().to_vec()),
+                            (4, maximum.to_le_bytes().to_vec()),
+                            (5, maximum.to_le_bytes().to_vec()),
                         ]),
                     ),
                 )
@@ -829,6 +843,7 @@ pub fn player_aux(
         catalog
             .abilities
             .iter()
+            .filter(|ability| catalog.level(ability.skill) >= ability.rank)
             .map(|ability| {
                 (
                     ability.id as usize,
