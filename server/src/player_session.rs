@@ -3684,6 +3684,43 @@ mod tests {
         std::fs::remove_dir_all(root).unwrap();
     }
 
+    /// An unwritable checkpoint never announces or partially applies the buff.
+    #[test]
+    fn environment_recipient_checkpoint_failure_rolls_back_gear_and_visual() {
+        let mut ship = session();
+        ship.logged_in = true;
+        let peer = SocketAddr::from(([127, 0, 0, 9], 22961));
+        ship.endpoint = Some(peer);
+        ship.selected_peer = Some(peer.ip());
+        let before_effect = ship.next_effect;
+        let before_frames = ship.pending.len();
+        std::fs::create_dir_all(&ship.state_dir).unwrap();
+        let blocked = ship.state_dir.join("session.local.json.tmp");
+        std::fs::create_dir(&blocked).unwrap();
+        assert!(ship
+            .apply_environment(7, crate::environment_gear::Strength::bounded(3.33, 20.))
+            .is_err());
+        assert_eq!(ship.environment_snapshot(), (0, 0., 0.));
+        assert_eq!(ship.next_effect, before_effect);
+        assert_eq!(ship.pending.len(), before_frames);
+        std::fs::remove_dir(blocked).unwrap();
+        ship.apply_environment(7, crate::environment_gear::Strength::bounded(3.33, 20.))
+            .unwrap();
+        assert_eq!(ship.environment_snapshot(), (7, 3.33, 200.));
+        let root = ship.state_dir.clone();
+        let sector = ship.sector.clone();
+        let bind = ship.bind;
+        drop(ship);
+        let restored = PlayerSession::new(sector, bind, root.clone()).unwrap();
+        assert_eq!(restored.environment_snapshot(), (7, 3.33, 200.));
+        assert!(restored.pending.iter().any(|frame| frame.opcode == 0x1b
+            && frame
+                .body
+                .windows(b"Environment_Shield".len())
+                .any(|part| part == b"Environment_Shield")));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     /// Sustained class statuses occupy separate AUX slots and clear on expiry.
     #[test]
     fn cloak_environment_and_combat_cloak_publish_replay_and_clear() {
@@ -3802,7 +3839,8 @@ mod tests {
         .unwrap();
         ship.skills.cloak_rank = 1;
         ship.publish_cloak_status(false);
-        ship.apply_environment(1);
+        ship.apply_environment(1, crate::environment_gear::Strength::bounded(0., 0.))
+            .unwrap();
         for token in [
             b"Increase Scan Range".as_slice(),
             b"Damage_Tactics".as_slice(),

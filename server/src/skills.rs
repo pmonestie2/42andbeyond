@@ -542,6 +542,8 @@ pub struct SkillState {
     pub environment_rank: u32,
     pub environment_seconds: f32,
     pub environment_effect: Option<u32>,
+    #[serde(default)]
+    pub environment_skill_bonus: f32,
     pub combat_cloak_seconds: f32,
     #[serde(default)]
     pub cloak_source: Option<u32>,
@@ -602,6 +604,8 @@ pub enum SupportAction {
     Environment {
         target: u32,
         rank: u32,
+        skill_bonus: f32,
+        duration_bonus: f32,
     },
     Jumpstart {
         target: u32,

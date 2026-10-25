@@ -271,6 +271,9 @@ impl PlayerSession {
             || !saved.energy.is_finite()
             || saved.mining.as_ref().is_some_and(|cast| !cast.valid())
             || saved.skills.cast.as_ref().is_some_and(|cast| !cast.valid())
+            || !saved.skills.environment_skill_bonus.is_finite()
+            || !(0. ..=crate::environment_gear::MAX_BONUS)
+                .contains(&saved.skills.environment_skill_bonus)
             || saved
                 .skills
                 .pending_high_fold

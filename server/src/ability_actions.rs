@@ -834,8 +834,24 @@ impl PlayerSession {
         if self.skills.environment_rank > 0 {
             self.skills.environment_seconds -= dt;
             if self.skills.environment_seconds <= 0. {
+                let previous = (
+                    self.skills.environment_rank,
+                    self.skills.environment_seconds,
+                    self.skills.environment_effect,
+                    self.skills.environment_skill_bonus,
+                );
                 self.skills.environment_rank = 0;
-                if let Some(effect) = self.skills.environment_effect.take() {
+                self.skills.environment_skill_bonus = 0.;
+                self.skills.environment_seconds = 0.;
+                let effect = self.skills.environment_effect.take();
+                if let Err(error) = self.checkpoint_session(true) {
+                    self.skills.environment_rank = previous.0;
+                    self.skills.environment_seconds = previous.1;
+                    self.skills.environment_effect = previous.2;
+                    self.skills.environment_skill_bonus = previous.3;
+                    return Err(error);
+                }
+                if let Some(effect) = effect {
                     self.remove_effect(effect);
                 }
                 self.pending.push(packets::ship_active_buff_slot(
@@ -1293,6 +1309,26 @@ impl PlayerSession {
                     }
                     return Ok(());
                 }
+                if ability.kind == AbilityKind::Environment {
+                    let previous_cooldown = self.skills.cooldowns.insert(ability.skill, cooldown);
+                    if let Err(error) = self.apply_ability(&ability, &cast) {
+                        if let Some(previous) = previous_cooldown {
+                            self.skills.cooldowns.insert(ability.skill, previous);
+                        } else {
+                            self.skills.cooldowns.remove(&ability.skill);
+                        }
+                        self.skills.cast = Some(cast);
+                        return Err(error);
+                    }
+                    self.remove_effect(cast.effect);
+                    self.pending.push(packets::ability_progress(None, 0, 0));
+                    self.pending.push(packets::skill_cooldown(
+                        ability.skill,
+                        self.tick_ms(),
+                        (cooldown * 1000.) as u32,
+                    ));
+                    return Ok(());
+                }
                 self.remove_effect(cast.effect);
                 self.pending.push(packets::ability_progress(None, 0, 0));
                 if cooldown > 0. {
@@ -1326,6 +1362,38 @@ impl PlayerSession {
         let recharge_amount = cast.recharge_amount;
         let hull_repair_amount = cast.hull_repair_amount;
         let sap_generation = cast.sap_generation;
+        if ability.kind == AbilityKind::Environment {
+            let strength = crate::environment_gear::Strength::bounded(
+                self.equipment.ship.environment_skill_bonus,
+                self.equipment.ship.environment_duration_bonus,
+            );
+            if target == self.player_id() {
+                self.apply_environment(ability.rank, strength)?;
+            }
+            if ability.rank == 7 {
+                self.support_actions.push(SupportAction::Environment {
+                    target: 0,
+                    rank: 7,
+                    skill_bonus: strength.skill_bonus,
+                    duration_bonus: strength.duration_bonus,
+                });
+            } else if target != self.player_id() {
+                self.support_actions.push(SupportAction::Environment {
+                    target,
+                    rank: ability.rank,
+                    skill_bonus: strength.skill_bonus,
+                    duration_bonus: strength.duration_bonus,
+                });
+            }
+            self.pending.push(packets::ship_resources(
+                self.player_id(),
+                &self.equipment.ship,
+                Some(self.energy),
+                None,
+                None,
+            ));
+            return Ok(());
+        }
         let shared = Arc::clone(&self.combat);
         let mut combat = lock_combat(&shared)?;
         match ability.kind {
@@ -1372,20 +1440,7 @@ impl PlayerSession {
                 mob.pacify(30.);
                 self.add_skill_effect(target, 1179);
             }
-            AbilityKind::Environment => {
-                if target == self.account.character.game_id {
-                    self.apply_environment(ability.rank);
-                } else {
-                    self.support_actions.push(SupportAction::Environment {
-                        target,
-                        rank: ability.rank,
-                    });
-                }
-                if ability.rank == 7 {
-                    self.support_actions
-                        .push(SupportAction::Environment { target: 0, rank: 7 });
-                }
-            }
+            AbilityKind::Environment => unreachable!("Environment settles before the combat lock"),
             AbilityKind::Fold => {
                 if ability.id == 126 {
                     self.fold_self();
@@ -1706,14 +1761,62 @@ impl PlayerSession {
         Ok(())
     }
 
-    pub(super) fn apply_environment(&mut self, rank: u32) {
-        if let Some(effect) = self.skills.environment_effect.take() {
-            self.remove_effect(effect);
-        }
+    /// Persist one trained Environment tier with the caster's equipped strength.
+    ///
+    /// Raises:
+    ///     io::Error: Recipient status could not be checkpointed.
+    pub(super) fn apply_environment(
+        &mut self,
+        rank: u32,
+        strength: crate::environment_gear::Strength,
+    ) -> io::Result<()> {
+        let previous = (
+            self.skills.environment_rank,
+            self.skills.environment_seconds,
+            self.skills.environment_effect,
+            self.skills.environment_skill_bonus,
+            self.next_effect,
+        );
+        let strength = crate::environment_gear::Strength::bounded(
+            strength.skill_bonus,
+            strength.duration_bonus,
+        );
+        let effect = self.next_effect;
+        self.next_effect = self.next_effect.wrapping_add(1).max(1);
         self.skills.environment_rank = rank;
-        self.skills.environment_seconds = 180.;
-        self.skills.environment_effect = Some(self.add_skill_effect(self.player_id(), 216));
+        self.skills.environment_seconds = 180. + strength.duration_bonus;
+        self.skills.environment_skill_bonus = strength.skill_bonus;
+        self.skills.environment_effect = Some(effect);
+        if let Err(error) = self.checkpoint_session(true) {
+            self.skills.environment_rank = previous.0;
+            self.skills.environment_seconds = previous.1;
+            self.skills.environment_effect = previous.2;
+            self.skills.environment_skill_bonus = previous.3;
+            self.next_effect = previous.4;
+            return Err(error);
+        }
+        if let Some(previous_effect) = previous.2 {
+            self.remove_effect(previous_effect);
+        }
+        self.pending.push(packets::object_effect(
+            self.player_id(),
+            effect,
+            216,
+            self.tick_ms(),
+        ));
         self.publish_environment_status(false);
+        Ok(())
+    }
+
+    /// Returns:
+    ///     (u32, f32, f32): Trained tier, frozen gear bonus, and remaining seconds.
+    #[cfg(test)]
+    pub(crate) fn environment_snapshot(&self) -> (u32, f32, f32) {
+        (
+            self.skills.environment_rank,
+            self.skills.environment_skill_bonus,
+            self.skills.environment_seconds,
+        )
     }
     pub(super) fn fold_self(&mut self) {
         let angle = rand::random::<f32>() * std::f32::consts::TAU;

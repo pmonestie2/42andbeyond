@@ -58,23 +58,14 @@ impl PlayerSession {
         let mut energy = self.energy;
         let mut reflection = 0.;
         if self.skills.environment_rank > 0 {
-            reduced *= if self.skills.environment_rank >= 3 {
-                0.9
-            } else {
-                0.95
-            };
-            if self.skills.environment_rank >= 5 {
-                let maximum = match self.skills.environment_rank {
-                    5 => 10.,
-                    6 => 25.,
-                    _ => 50.,
-                };
-                reflection = reduced.min(maximum);
-            }
-            if self.skills.environment_rank >= 6 {
-                energy =
-                    (energy + (reduced * 0.05).min(10.)).min(self.equipment.ship.energy_capacity);
-            }
+            let protection = crate::environment_gear::protect(
+                self.skills.environment_rank,
+                self.skills.environment_skill_bonus,
+                reduced,
+            );
+            reduced = protection.damage;
+            reflection = protection.reflection;
+            energy = (energy + protection.reactor_gain).min(self.equipment.ship.energy_capacity);
         }
         let interception = crate::psionic_shield::intercept(
             self.psionic_shield_buff.as_ref(),
@@ -356,6 +347,26 @@ mod tests {
             damage: 10.,
             damage_type: 3,
         }
+    }
+
+    /// Frozen equipped Environment strength changes actual incoming hit settlement.
+    #[test]
+    fn environment_gear_improves_authoritative_damage_and_feedback() {
+        let mut ship = ship();
+        ship.skills.environment_rank = 7;
+        ship.energy = 10.;
+        let mut shot = hit(&ship, 101);
+        shot.damage = 100.;
+        let baseline = ship
+            .plan_mob_damage(&shot, DamageType::from_index(3).unwrap())
+            .unwrap();
+        ship.skills.environment_skill_bonus = 3.33;
+        let geared = ship
+            .plan_mob_damage(&shot, DamageType::from_index(3).unwrap())
+            .unwrap();
+        assert!(geared.result.reported_damage < baseline.result.reported_damage);
+        assert!(geared.reflection > baseline.reflection);
+        assert!(geared.energy > baseline.energy);
     }
 
     #[test]

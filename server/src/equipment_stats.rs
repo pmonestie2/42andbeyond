@@ -42,6 +42,8 @@ pub struct ShipStats {
     pub self_destruct_damage_bonus_pct: f32,
     pub rally_skill_bonus: f32,
     pub power_down_skill_bonus: f32,
+    pub environment_skill_bonus: f32,
+    pub environment_duration_bonus: f32,
     pub tractor_speed: f32,
     pub tractor_range: f32,
     pub deflects: [f32; 9],
@@ -151,6 +153,7 @@ impl EquipmentStats {
     ) -> io::Result<Self> {
         inventory.validate(catalog)?;
         let mut modifiers = EquippedModifiers::default();
+        let mut environment_duration_bonus = 0_f32;
         for item in inventory
             .equipped
             .iter()
@@ -158,6 +161,10 @@ impl EquipmentStats {
             .filter(|item| item.structure > 0.)
         {
             for effect in &catalog.get(item.template)?.equipped {
+                if effect.id == 50 {
+                    environment_duration_bonus =
+                        environment_duration_bonus.max(effect.values.get(1).copied().unwrap_or(0.));
+                }
                 for modifier in &effect.modifiers {
                     modifiers.add(modifier);
                 }
@@ -364,6 +371,18 @@ impl EquipmentStats {
             },
             power_down_skill_bonus: if skills.level(37) > 0 {
                 modifiers.apply_signed("SKILL_POWERDOWN", 0.).clamp(0., 4.)
+            } else {
+                0.
+            },
+            environment_skill_bonus: if skills.level(23) > 0 {
+                modifiers
+                    .apply_signed("SKILL_ENVIRONMENT_SHIELD", 0.)
+                    .clamp(0., crate::environment_gear::MAX_BONUS)
+            } else {
+                0.
+            },
+            environment_duration_bonus: if skills.level(23) > 0 {
+                environment_duration_bonus.clamp(0., crate::environment_gear::MAX_DURATION_BONUS)
             } else {
                 0.
             },
@@ -759,6 +778,43 @@ mod tests {
         let boosted = EquipmentStats::derive(&geared, &catalog, &skills).unwrap();
         assert_eq!(boosted.ship.deflects[0] - below.ship.deflects[0], 49.);
         assert!((boosted.ship.energy_recharge - below.ship.energy_recharge * 2.).abs() < 0.001);
+    }
+
+    /// A public Environment Shield device supplies both catalog skill and duration values.
+    #[test]
+    fn environment_shield_gear_uses_strongest_intact_equipped_effect() {
+        let catalog = ItemCatalog::load().unwrap();
+        let mut profile = crate::account::Account::create("je".into(), "pass", "JE".into())
+            .unwrap()
+            .character;
+        profile.race = 1;
+        profile.profession = 2;
+        let mut skills = SkillCatalog::for_profile(&profile).unwrap();
+        skills
+            .skills
+            .iter_mut()
+            .find(|skill| skill.id == 23)
+            .unwrap()
+            .level = 7;
+        let mut inventory = Inventory::starter_for(&profile, &catalog).unwrap();
+        inventory.equipped[9] = Some(crate::inventory::ItemInstance::stock(5335, 1));
+        inventory.equipped[10] = Some(crate::inventory::ItemInstance::stock(5336, 1));
+        let geared = EquipmentStats::derive(&inventory, &catalog, &skills).unwrap();
+        assert!((geared.ship.environment_skill_bonus - 3.33).abs() < 0.001);
+        assert_eq!(geared.ship.environment_duration_bonus, 20.);
+        inventory.equipped[9].as_mut().unwrap().structure = 0.;
+        let broken = EquipmentStats::derive(&inventory, &catalog, &skills).unwrap();
+        assert_eq!(broken.ship.environment_skill_bonus, 3.);
+        assert_eq!(broken.ship.environment_duration_bonus, 18.);
+        skills
+            .skills
+            .iter_mut()
+            .find(|skill| skill.id == 23)
+            .unwrap()
+            .level = 0;
+        let untrained = EquipmentStats::derive(&inventory, &catalog, &skills).unwrap();
+        assert_eq!(untrained.ship.environment_skill_bonus, 0.);
+        assert_eq!(untrained.ship.environment_duration_bonus, 0.);
     }
     #[test]
     fn chance_modifiers_keep_percent_operations_at_zero_base_and_strongest_effects() {

@@ -37,6 +37,75 @@ pub(super) fn game() -> GameState {
     .unwrap()
 }
 
+/// Equipped Environment Shield strength and duration reach a grouped recipient.
+#[test]
+fn explorer_environment_gear_freezes_group_protection_across_restart() {
+    let root = std::env::temp_dir().join(format!("enb-environment-gear-{}", rand::random::<u64>()));
+    let accounts = AccountDirectory::new(&root);
+    let explorer_account = accounts
+        .create_class(
+            "explorer".into(),
+            "example",
+            "Explorer".into(),
+            crate::classes::CharacterClass::parse("je").unwrap(),
+        )
+        .unwrap();
+    let explorer = explorer_account.account.character.game_id;
+    let ally_account = accounts
+        .create_class(
+            "ally".into(),
+            "example",
+            "Ally".into(),
+            crate::classes::CharacterClass::parse("jd").unwrap(),
+        )
+        .unwrap();
+    let ally = ally_account.account.character.game_id;
+    let catalog = crate::items::ItemCatalog::load().unwrap();
+    let mut equipment =
+        crate::inventory::Inventory::starter_for(&explorer_account.account.character, &catalog)
+            .unwrap();
+    equipment.equipped[1].as_mut().unwrap().template = 3340;
+    equipment.equipped[9] = Some(crate::inventory::ItemInstance::stock(5335, 1));
+    fs::write(
+        explorer_account.directory.join("inventory.json"),
+        serde_json::to_vec(&equipment).unwrap(),
+    )
+    .unwrap();
+    let sector: Sector = serde_json::from_str(include_str!("../data/sector.json")).unwrap();
+    let bind = Ipv4Addr::new(127, 0, 0, 2);
+    let mut game = GameState::new(sector.clone(), bind, root.clone()).unwrap();
+    login(&mut game, explorer, 24921, "explorer");
+    login(&mut game, ally, 24922, "ally");
+    game.groups.invite(explorer, ally).unwrap();
+    game.groups.accept(ally).unwrap();
+    game.sessions.get_mut(&explorer).unwrap().position = [0.; 3];
+    game.sessions.get_mut(&ally).unwrap().position = [1_000., 0., 0.];
+    game.update_views();
+    activate(&mut game, explorer, explorer, 128);
+    game.sessions
+        .get_mut(&explorer)
+        .unwrap()
+        .advance_player(1.1)
+        .unwrap();
+    game.deliver_support().unwrap();
+    for id in [explorer, ally] {
+        let (rank, bonus, seconds) = game.sessions[&id].environment_snapshot();
+        assert_eq!(rank, 7);
+        assert!((bonus - 3.33).abs() < 0.001);
+        assert!((seconds - 200.).abs() < 1.);
+    }
+    assert!(ally_account.directory.join("session.local.json").exists());
+    drop(game);
+    let restored = GameState::new(sector, bind, root.clone()).unwrap();
+    for id in [explorer, ally] {
+        let (rank, bonus, seconds) = restored.sessions[&id].environment_snapshot();
+        assert_eq!(rank, 7);
+        assert!((bonus - 3.33).abs() < 0.001);
+        assert!(seconds > 199.);
+    }
+    fs::remove_dir_all(root).unwrap();
+}
+
 /// A world drain survives a torn group ledger and transfers power only once.
 #[test]
 fn defender_energy_leech_drains_reactor_and_replays_group_award() {

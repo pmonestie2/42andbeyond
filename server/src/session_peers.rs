@@ -310,7 +310,15 @@ impl PlayerSession {
         action: &SupportAction,
     ) -> io::Result<()> {
         match *action {
-            SupportAction::Environment { rank, .. } => self.apply_environment(rank),
+            SupportAction::Environment {
+                rank,
+                skill_bonus,
+                duration_bonus,
+                ..
+            } => self.apply_environment(
+                rank,
+                crate::environment_gear::Strength::bounded(skill_bonus, duration_bonus),
+            )?,
             SupportAction::Energy { amount } => {
                 self.energy = (self.energy + amount).min(self.equipment.ship.energy_capacity);
                 self.pending.push(packets::ship_resources(
