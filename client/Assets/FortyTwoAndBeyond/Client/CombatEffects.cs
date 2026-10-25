@@ -65,6 +65,9 @@ namespace FortyTwoAndBeyond.Client
         private uint deviceEffectId;
         private ushort deviceDescriptor;
         private Color deviceTint;
+        private LineRenderer peerHalo, peerSweep;
+        private uint peerEffectId;
+        private ushort peerDescriptor;
         private WarpPhase warpPhase;
         private bool warpArrived;
         private float warpChangedAt;
@@ -106,6 +109,7 @@ namespace FortyTwoAndBeyond.Client
             playerId = snapshot.PlayerId;
             loadout.Apply(snapshot);
             SetDeviceBuff(snapshot.DeviceBuff, snapshot.Station != null);
+            SetPeerBuff(snapshot.PeerBuff, snapshot.Station != null);
             foreach (ShotEvent shot in snapshot.Shots)
             {
                 if (shot.Sequence <= lastShotSequence) continue;
@@ -389,6 +393,60 @@ namespace FortyTwoAndBeyond.Client
             TickLoot();
             TickWarp();
             TickDeviceBuff();
+            TickPeerBuff();
+        }
+
+        /// <summary>Show only the server-active recipient Scan Boost field on this ship.</summary>
+        private void SetPeerBuff(DeviceBuffView buff, bool docked)
+        {
+            if (docked || buff == null || !buff.VisualActive)
+            { ClearPeerBuff(); return; }
+            if (peerHalo != null && peerEffectId == buff.VisualEffectId &&
+                peerDescriptor == buff.VisualDescriptor) return;
+            ClearPeerBuff();
+            peerEffectId = buff.VisualEffectId;
+            peerDescriptor = buff.VisualDescriptor;
+            Color tint = new Color(.3f, .92f, 1f);
+            peerHalo = Line("Recipient scan field", .024f, tint, 65);
+            peerSweep = Line("Recipient scan sweep", .028f, tint, 2);
+            foreach (LineRenderer line in new[] { peerHalo, peerSweep })
+                if (line != null) { line.useWorldSpace = false; line.enabled = false; }
+        }
+
+        /// <summary>Rotate a low-opacity scan plane while the native recipient effect exists.</summary>
+        private void TickPeerBuff()
+        {
+            if (peerHalo == null || peerSweep == null) return;
+            float time = Time.unscaledTime;
+            float pulse = .72f + .28f * Mathf.Sin(time * 5f);
+            peerHalo.transform.position = peerSweep.transform.position = player.position;
+            peerHalo.transform.rotation = peerSweep.transform.rotation = player.rotation;
+            for (int index = 0; index < 65; index++)
+            {
+                float angle = index * Mathf.PI * 2f / 64f;
+                peerHalo.SetPosition(index, new Vector3(Mathf.Cos(angle) * .68f,
+                    Mathf.Sin(time * 2.1f + angle * 3f) * .025f, Mathf.Sin(angle) * .5f));
+            }
+            float sweepAngle = time * 1.9f;
+            peerSweep.SetPosition(0, Vector3.zero);
+            peerSweep.SetPosition(1, new Vector3(Mathf.Cos(sweepAngle) * .68f,
+                .025f, Mathf.Sin(sweepAngle) * .5f));
+            Color halo = new Color(.32f, .92f, 1f, .17f * pulse);
+            Color sweep = new Color(.6f, 1f, 1f, .27f * pulse);
+            peerHalo.startColor = peerHalo.endColor = halo;
+            peerSweep.startColor = new Color(sweep.r, sweep.g, sweep.b, .08f);
+            peerSweep.endColor = sweep;
+            peerHalo.enabled = peerSweep.enabled = true;
+        }
+
+        /// <summary>Remove the recipient field on native expiry, docking or scene reset.</summary>
+        private void ClearPeerBuff()
+        {
+            if (peerHalo != null) Object.Destroy(peerHalo.gameObject);
+            if (peerSweep != null) Object.Destroy(peerSweep.gameObject);
+            peerHalo = peerSweep = null;
+            peerEffectId = 0;
+            peerDescriptor = 0;
         }
 
         /// <summary>Display a ship-local field only while the native device visual is active.</summary>
@@ -621,6 +679,7 @@ namespace FortyTwoAndBeyond.Client
             ClearMining();
             ClearLoot();
             ClearDeviceBuff();
+            ClearPeerBuff();
             ClearWarp(); warpPhase = WarpPhase.Idle; warpArrived = false;
             reportedShields.Clear();
             loadout.Reset();
