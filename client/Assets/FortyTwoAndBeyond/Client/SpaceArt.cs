@@ -12,7 +12,7 @@ namespace FortyTwoAndBeyond.Client
         private readonly List<Material> materials = new List<Material>();
         private readonly List<Mesh> meshes = new List<Mesh>();
         private readonly Mesh[] rocks = new Mesh[8];
-        private readonly Mesh ring, shipHull, suitArmor;
+        private readonly Mesh ring, shipHull, suitArmor, gateArc, gateLightRing;
         private readonly GameObject corvetteAsset, frigateAsset, destroyerAsset, cruiserAsset, carrierAsset;
         private readonly GameObject[] proteronAssets = new GameObject[5];
         private readonly Material[] proteronSurfaces = new Material[5];
@@ -23,6 +23,7 @@ namespace FortyTwoAndBeyond.Client
         private readonly Material hostileFrigateSurface, hostileDestroyerSurface, hostileCruiserSurface,
             hostileCarrierSurface;
         private readonly Material hull, trim, dark, glass, glow, amber, hostile, crewSignal, mineral, rock, oreRock, field;
+        private readonly Material gateArmor, gateInset, gateCircuit;
         private readonly Material stationDeck, stationWall, stationFrame, stationRecess, stationBlue, stationAmber;
         public Material Sky { get; }
         public Material EffectLine { get; }
@@ -45,6 +46,12 @@ namespace FortyTwoAndBeyond.Client
                 new Color(.01f, .15f, .24f));
             stationAmber = Surface(new Color(.61f, .28f, .065f), .47f, .48f,
                 new Color(.22f, .085f, .012f));
+            gateArmor = Surface(new Color(.28f, .39f, .49f), .78f, .4f);
+            gateInset = Surface(new Color(.035f, .075f, .12f), .61f, .34f);
+            gateCircuit = Surface(new Color(.025f, .2f, .34f), .52f, .45f,
+                new Color(.008f, .12f, .22f));
+            foreach (Material surface in new[] { gateArmor, gateInset })
+            { surface.SetTexture("_DetailTex", plating); surface.SetFloat("_TextureStrength", .62f); }
             glass = Surface(new Color(.015f, .12f, .18f), .8f, .85f);
             glow = Surface(new Color(.05f, .6f, .85f), .2f, .5f, new Color(.1f, 1.4f, 2.1f));
             amber = Surface(new Color(.8f, .35f, .06f), .4f, .3f, new Color(1.3f, .35f, .04f));
@@ -97,6 +104,8 @@ namespace FortyTwoAndBeyond.Client
                 moonOre[index] = MoonSurface(name, true);
             }
             ring = Torus(1, .12f, 48, 8); meshes.Add(ring);
+            gateArc = GateArc(); meshes.Add(gateArc);
+            gateLightRing = Torus(1, .045f, 64, 8); meshes.Add(gateLightRing);
             shipHull = Hull(); meshes.Add(shipHull);
             suitArmor = SuitArmor(); meshes.Add(suitArmor);
             for (int i = 0; i < rocks.Length; i++) { rocks[i] = Asteroid(i + 17); meshes.Add(rocks[i]); }
@@ -647,19 +656,29 @@ namespace FortyTwoAndBeyond.Client
             return true;
         }
 
-        /// <summary>Assemble a traversable circular gate with a recessed energy field.</summary>
+        /// <summary>Assemble a segmented jump gate with armored arcs and a recessed energy field.</summary>
         private void Gate(Transform root)
         {
-            Model(root, ring, hull, Vector3.zero, Vector3.one * 5);
-            Model(root, ring, glow, new Vector3(0, 0, -.1f), Vector3.one * 4.35f);
+            Model(root, gateArc, gateArmor, Vector3.zero, Vector3.one);
+            Model(root, ring, gateInset, new Vector3(0, 0, .18f), Vector3.one * 4.13f);
+            Model(root, gateLightRing, gateCircuit, new Vector3(0, 0, -.23f),
+                Vector3.one * 4.02f);
             for (int i = 0; i < 8; i++)
             {
                 float a = i * Mathf.PI / 4;
-                Transform pylon = Part(root, PrimitiveType.Cube, new Vector3(Mathf.Cos(a) * 5, Mathf.Sin(a) * 5, 0), new Vector3(1.2f, 1.5f, 2.3f), trim);
+                Transform pylon = Root(root, "Gate radial actuator");
                 pylon.localRotation = Quaternion.Euler(0, 0, i * 45);
-                Part(pylon, PrimitiveType.Cube, new Vector3(0, 0, -.51f), new Vector3(.35f, .5f, .04f), amber);
+                Part(pylon, PrimitiveType.Cube, new Vector3(5.05f, 0, 0),
+                    new Vector3(1.05f, .85f, 1.65f), gateInset);
+                Part(pylon, PrimitiveType.Cube, new Vector3(5.05f, 0, -.88f),
+                    new Vector3(.7f, .34f, .14f), gateArmor);
+                Part(pylon, PrimitiveType.Cube, new Vector3(4.54f, 0, -.99f),
+                    new Vector3(.27f, .2f, .035f), gateCircuit);
+                Part(pylon, PrimitiveType.Cube, new Vector3(5.72f, 0, .22f),
+                    new Vector3(.14f, .42f, 1.3f), gateArmor);
             }
-            Part(root, PrimitiveType.Quad, Vector3.zero, new Vector3(8.3f, 8.3f, 1), field);
+            Part(root, PrimitiveType.Quad, new Vector3(0, 0, .07f),
+                new Vector3(7.75f, 7.75f, 1), field);
         }
 
         /// <summary>Assemble a station with a central core, habitation ring and docking arms.</summary>
@@ -782,6 +801,53 @@ namespace FortyTwoAndBeyond.Client
             { facets[index] = vertices[triangles[index]]; facetIndices[index] = index; }
             var mesh = new Mesh { name = "Asteroid " + seed, vertices = facets, triangles = facetIndices };
             mesh.RecalculateNormals(); mesh.RecalculateBounds(); return mesh;
+        }
+
+        /// <returns>Mesh: Eight separated, flat-shaded armor sectors around the jump aperture.</returns>
+        private static Mesh GateArc()
+        {
+            var vertices = new List<Vector3>();
+            var triangles = new List<int>();
+            const int sectors = 8, steps = 10;
+            for (int sector = 0; sector < sectors; sector++)
+            {
+                float start = (sector + .09f) * Mathf.PI * 2 / sectors;
+                float end = (sector + .91f) * Mathf.PI * 2 / sectors;
+                for (int step = 0; step < steps; step++)
+                {
+                    float a = Mathf.Lerp(start, end, (float)step / steps);
+                    float b = Mathf.Lerp(start, end, (float)(step + 1) / steps);
+                    Vector3 ia = new Vector3(Mathf.Cos(a) * 4.18f, Mathf.Sin(a) * 4.18f, -.53f);
+                    Vector3 oa = new Vector3(Mathf.Cos(a) * 5.42f, Mathf.Sin(a) * 5.42f, -.53f);
+                    Vector3 ib = new Vector3(Mathf.Cos(b) * 4.18f, Mathf.Sin(b) * 4.18f, -.53f);
+                    Vector3 ob = new Vector3(Mathf.Cos(b) * 5.42f, Mathf.Sin(b) * 5.42f, -.53f);
+                    Vector3 iaRear = ia + Vector3.forward * 1.06f;
+                    Vector3 oaRear = oa + Vector3.forward * 1.06f;
+                    Vector3 ibRear = ib + Vector3.forward * 1.06f;
+                    Vector3 obRear = ob + Vector3.forward * 1.06f;
+                    GateQuad(vertices, triangles, ia, ib, ob, oa);
+                    GateQuad(vertices, triangles, iaRear, oaRear, obRear, ibRear);
+                    GateQuad(vertices, triangles, oa, ob, obRear, oaRear);
+                    GateQuad(vertices, triangles, iaRear, ibRear, ib, ia);
+                    if (step == 0) GateQuad(vertices, triangles, ia, oa, oaRear, iaRear);
+                    if (step == steps - 1)
+                        GateQuad(vertices, triangles, ibRear, obRear, ob, ib);
+                }
+            }
+            var mesh = new Mesh { name = "Segmented jump gate", vertices = vertices.ToArray(),
+                triangles = triangles.ToArray() };
+            mesh.RecalculateNormals(); mesh.RecalculateBounds();
+            return mesh;
+        }
+
+        /// <summary>Add one flat-shaded quadrilateral to a generated gate shell.</summary>
+        private static void GateQuad(List<Vector3> vertices, List<int> triangles,
+            Vector3 a, Vector3 b, Vector3 c, Vector3 d)
+        {
+            int first = vertices.Count;
+            vertices.AddRange(new[] { a, b, c, d });
+            triangles.AddRange(new[] { first, first + 1, first + 2,
+                first, first + 2, first + 3 });
         }
 
         /// <returns>A torus oriented around local Z.</returns>
