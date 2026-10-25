@@ -6714,6 +6714,25 @@ mod tests {
         assert_eq!(restored.sector.id, 1910);
     }
 
+    /// Equipped wormhole gear shortens a frozen cast without changing its destination.
+    #[test]
+    fn equipped_wormhole_creation_time_reduces_cast_duration() {
+        let mut session = session();
+        session.logged_in = true;
+        session.inventory.equipped[3] = Some(crate::inventory::ItemInstance::stock(777, 1));
+        session.refresh_equipment().unwrap();
+        assert!((session.equipment.ship.wormhole_creation_reduction - 0.9).abs() < 0.001);
+        session.begin_ability(67).unwrap();
+        assert!((session.skills.cast.as_ref().unwrap().remaining - 2.1).abs() < 0.001);
+        session.inventory.equipped[3] = None;
+        session.refresh_equipment().unwrap();
+        assert!((session.skills.cast.as_ref().unwrap().remaining - 2.1).abs() < 0.001);
+        for _ in 0..22 {
+            session.advance_abilities(0.1).unwrap();
+        }
+        assert_eq!(session.sector.id, 1910);
+    }
+
     #[test]
     fn restart_preserves_udp_identity_sequence_clock_and_active_warp() {
         let mut original = session();

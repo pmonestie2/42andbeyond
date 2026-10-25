@@ -326,6 +326,8 @@ impl PlayerSession {
                 self.equipment.ship.recharge_shields_skill
             };
             (5. - (trained - ability.rank as f32)).clamp(0., 5.)
+        } else if ability.kind == AbilityKind::Wormhole {
+            (ability.charge - self.equipment.ship.wormhole_creation_reduction).max(0.25)
         } else {
             jumpstart
                 .as_ref()

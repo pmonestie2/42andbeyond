@@ -42,6 +42,7 @@ pub struct ShipStats {
     pub self_destruct_damage_bonus_pct: f32,
     pub rally_skill_bonus: f32,
     pub power_down_skill_bonus: f32,
+    pub wormhole_creation_reduction: f32,
     pub environment_skill_bonus: f32,
     pub environment_duration_bonus: f32,
     pub summon_skill_bonus: f32,
@@ -372,6 +373,13 @@ impl EquipmentStats {
             },
             power_down_skill_bonus: if skills.level(37) > 0 {
                 modifiers.apply_signed("SKILL_POWERDOWN", 0.).clamp(0., 4.)
+            } else {
+                0.
+            },
+            wormhole_creation_reduction: if skills.level(15) > 0 {
+                modifiers
+                    .value("STAT_WORMHOLE_CREATION_TIME", 3)
+                    .clamp(0., 10.)
             } else {
                 0.
             },
