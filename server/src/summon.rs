@@ -2,6 +2,9 @@
 //! Costs and cast timing are local tuning because the archived server has no
 //! executable Summon handler.
 
+/// Public Black Peg Leg equipped effects grant at most +3.5 levels today.
+pub const MAX_EQUIPPED_BONUS: f32 = 5.;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SummonTarget {
     Enemy,
@@ -51,6 +54,20 @@ pub fn tier(ability: u32, trained_rank: u32) -> Option<SummonTier> {
 }
 
 /// Returns:
+///     f32: Trained range extended by frozen equipped skill levels.
+pub fn effective_range(tier: SummonTier, equipped_bonus: f32) -> f32 {
+    if tier.target == SummonTarget::Group {
+        return tier.range;
+    }
+    let bonus = if equipped_bonus.is_finite() {
+        equipped_bonus.clamp(0., MAX_EQUIPPED_BONUS)
+    } else {
+        0.
+    };
+    tier.range + 250. * bonus
+}
+
+/// Returns:
 ///     [f32; 3]: A bounded arrival point in front of the caster.
 pub fn arrival_position(
     caster: [f32; 3],
@@ -83,6 +100,12 @@ mod tests {
         assert_eq!(tier(97, 7).unwrap().target, SummonTarget::ReturnFriend);
         assert!(tier(97, 6).is_none());
         assert!(tier(117, 8).is_none());
+        assert_eq!(effective_range(tier(117, 7).unwrap(), 3.5), 7_375.);
+        assert_eq!(effective_range(tier(120, 7).unwrap(), 3.5), 250_000.);
+        assert_eq!(
+            effective_range(tier(119, 3).unwrap(), f32::INFINITY),
+            5_500.
+        );
     }
 
     #[test]

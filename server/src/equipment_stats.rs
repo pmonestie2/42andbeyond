@@ -44,6 +44,7 @@ pub struct ShipStats {
     pub power_down_skill_bonus: f32,
     pub environment_skill_bonus: f32,
     pub environment_duration_bonus: f32,
+    pub summon_skill_bonus: f32,
     pub tractor_speed: f32,
     pub tractor_range: f32,
     pub deflects: [f32; 9],
@@ -383,6 +384,13 @@ impl EquipmentStats {
             },
             environment_duration_bonus: if skills.level(23) > 0 {
                 environment_duration_bonus.clamp(0., crate::environment_gear::MAX_DURATION_BONUS)
+            } else {
+                0.
+            },
+            summon_skill_bonus: if skills.level(56) > 0 {
+                modifiers
+                    .apply_signed("SKILL_SUMMON", 0.)
+                    .clamp(0., crate::summon::MAX_EQUIPPED_BONUS)
             } else {
                 0.
             },
@@ -815,6 +823,40 @@ mod tests {
         let untrained = EquipmentStats::derive(&inventory, &catalog, &skills).unwrap();
         assert_eq!(untrained.ship.environment_skill_bonus, 0.);
         assert_eq!(untrained.ship.environment_duration_bonus, 0.);
+    }
+
+    /// Summon gear improves trained casts but a broken item grants nothing.
+    #[test]
+    fn summon_device_grants_bounded_effective_skill_levels() {
+        let catalog = ItemCatalog::load().unwrap();
+        let mut profile = crate::account::Account::create("jd".into(), "pass", "JD".into())
+            .unwrap()
+            .character;
+        profile.race = 1;
+        profile.profession = 0;
+        let mut skills = SkillCatalog::for_profile(&profile).unwrap();
+        skills
+            .skills
+            .iter_mut()
+            .find(|skill| skill.id == 56)
+            .unwrap()
+            .level = 7;
+        let mut inventory = Inventory::starter_for(&profile, &catalog).unwrap();
+        inventory.equipped[9] = Some(crate::inventory::ItemInstance::stock(6135, 1));
+        inventory.equipped[10] = Some(crate::inventory::ItemInstance::stock(6173, 1));
+        let stats = EquipmentStats::derive(&inventory, &catalog, &skills).unwrap();
+        assert_eq!(stats.ship.summon_skill_bonus, 3.5);
+        inventory.equipped[9].as_mut().unwrap().structure = 0.;
+        let broken = EquipmentStats::derive(&inventory, &catalog, &skills).unwrap();
+        assert_eq!(broken.ship.summon_skill_bonus, 3.);
+        skills
+            .skills
+            .iter_mut()
+            .find(|skill| skill.id == 56)
+            .unwrap()
+            .level = 0;
+        let untrained = EquipmentStats::derive(&inventory, &catalog, &skills).unwrap();
+        assert_eq!(untrained.ship.summon_skill_bonus, 0.);
     }
     #[test]
     fn chance_modifiers_keep_percent_operations_at_zero_base_and_strongest_effects() {

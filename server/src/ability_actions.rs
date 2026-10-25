@@ -41,6 +41,7 @@ impl PlayerSession {
         let durable_befriend = ability.kind == AbilityKind::Befriend;
         let durable_bio = ability.kind == AbilityKind::Biorepression;
         let durable_high_fold = ability.kind == AbilityKind::Fold && matches!(ability.id, 17 | 36);
+        let durable_summon = ability.kind == AbilityKind::Summon;
         let durable_enrage = ability.kind == AbilityKind::Enrage;
         if ability.kind == AbilityKind::Jumpstart {
             self.jumpstart_definition()?;
@@ -289,6 +290,11 @@ impl PlayerSession {
             } else {
                 None
             };
+        let summon_skill_bonus = if ability.kind == AbilityKind::Summon {
+            self.equipment.ship.summon_skill_bonus
+        } else {
+            0.
+        };
         let jumpstart = if ability.kind == AbilityKind::Jumpstart {
             Some(self.prepare_jumpstart_plan(target)?)
         } else {
@@ -420,6 +426,7 @@ impl PlayerSession {
             fold_mob_generation,
             enrage_generation,
             summon_generation,
+            summon_skill_bonus,
             sap_generation,
             leech_generation,
             inversion_generation,
@@ -432,6 +439,7 @@ impl PlayerSession {
             || durable_befriend
             || durable_bio
             || durable_high_fold
+            || durable_summon
             || durable_enrage
             || durable_optimization
             || durable_shield_charging
@@ -509,6 +517,8 @@ impl PlayerSession {
         if ability.kind == AbilityKind::Summon {
             let tier = crate::summon::tier(ability.id, self.skill_catalog.level(56))
                 .ok_or_else(|| invalid("Summon rank is not trained."))?;
+            let range =
+                crate::summon::effective_range(tier, self.equipment.ship.summon_skill_bonus);
             return match tier.target {
                 crate::summon::SummonTarget::Group => Ok(self.player_id()),
                 crate::summon::SummonTarget::Friend | crate::summon::SummonTarget::ReturnFriend => {
@@ -519,7 +529,7 @@ impl PlayerSession {
                         .ok_or_else(|| invalid("Select a group pilot for Summon."))?;
                     if contact.sector != self.sector.id
                         || contact.incapacitated
-                        || distance(contact.position, self.position) > tier.range
+                        || distance(contact.position, self.position) > range
                     {
                         return Err(invalid("Summon recipient is unavailable or out of range."));
                     }
@@ -538,7 +548,7 @@ impl PlayerSession {
                     if mob.state == MobState::Dead
                         || !self.mob_visible_in_scan(index as usize, mob)
                         || self.mob_relationship(mob) != 0
-                        || mob.range_to(self.position) > tier.range
+                        || mob.range_to(self.position) > range
                     {
                         return Err(invalid("Summon enemy is unavailable or out of range."));
                     }
@@ -1477,6 +1487,7 @@ impl PlayerSession {
                         self.support_actions.push(SupportAction::Summon {
                             ability: ability.id,
                             trained_rank: self.skill_catalog.level(56),
+                            skill_bonus: cast.summon_skill_bonus,
                             target,
                             origin_sector: self.sector.id,
                             origin_position: self.position,
@@ -1497,7 +1508,8 @@ impl PlayerSession {
                             || cast.summon_generation != Some(anchor.death_generation)
                             || !self.mob_visible_in_scan(selected, anchor)
                             || self.mob_relationship(anchor) != 0
-                            || anchor.range_to(self.position) > tier.range
+                            || anchor.range_to(self.position)
+                                > crate::summon::effective_range(tier, cast.summon_skill_bonus)
                         {
                             return Err(invalid("Summon enemy left range."));
                         }

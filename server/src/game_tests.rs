@@ -568,6 +568,94 @@ fn defender_directional_fold_moves_peer_and_generation_pinned_mob() {
     fs::remove_dir_all(root).unwrap();
 }
 
+/// A frozen equipped bonus extends the friend cast through a server replacement.
+#[test]
+fn defender_summon_device_extends_friend_range_across_cast_restart() {
+    let root = std::env::temp_dir().join(format!("enb-summon-gear-{}", rand::random::<u64>()));
+    let accounts = AccountDirectory::new(&root);
+    let caster_account = accounts
+        .create_class(
+            "defender".into(),
+            "example",
+            "Defender".into(),
+            crate::classes::CharacterClass::parse("jd").unwrap(),
+        )
+        .unwrap();
+    let caster = caster_account.account.character.game_id;
+    let ally = accounts
+        .create_class(
+            "ally".into(),
+            "example",
+            "Ally".into(),
+            crate::classes::CharacterClass::parse("je").unwrap(),
+        )
+        .unwrap()
+        .account
+        .character
+        .game_id;
+    let catalog = crate::items::ItemCatalog::load().unwrap();
+    let mut inventory =
+        crate::inventory::Inventory::starter_for(&caster_account.account.character, &catalog)
+            .unwrap();
+    inventory.equipped[1] = Some(crate::inventory::ItemInstance::stock(3340, 1));
+    inventory.equipped[9] = Some(crate::inventory::ItemInstance::stock(6135, 1));
+    fs::write(
+        caster_account.directory.join("inventory.json"),
+        serde_json::to_vec(&inventory).unwrap(),
+    )
+    .unwrap();
+    let sector: Sector = serde_json::from_str(include_str!("../data/sector.json")).unwrap();
+    let bind = Ipv4Addr::new(127, 0, 0, 2);
+    let mut game = GameState::new(sector.clone(), bind, root.clone()).unwrap();
+    login(&mut game, caster, 24931, "defender");
+    login(&mut game, ally, 24932, "ally");
+    game.groups.invite(caster, ally).unwrap();
+    game.groups.accept(ally).unwrap();
+    game.sessions.get_mut(&caster).unwrap().position = [0.; 3];
+    game.sessions.get_mut(&ally).unwrap().position = [7_000., 0., 0.];
+    game.update_views();
+    let energy = game.sessions[&caster].energy_balance().0;
+    activate(&mut game, caster, ally, 119);
+    assert!(game.sessions[&caster].energy_balance().0 < energy);
+    game.sessions
+        .get_mut(&caster)
+        .unwrap()
+        .checkpoint_session(true)
+        .unwrap();
+    game.sessions
+        .get_mut(&ally)
+        .unwrap()
+        .checkpoint_session(true)
+        .unwrap();
+    drop(game);
+    inventory.equipped[9] = None;
+    fs::write(
+        caster_account.directory.join("inventory.json"),
+        serde_json::to_vec(&inventory).unwrap(),
+    )
+    .unwrap();
+    let mut restored = GameState::new(sector, bind, root.clone()).unwrap();
+    assert!((restored.sessions[&ally].position[0] - 7_000.).abs() < 1.);
+    // Groups are currently volatile; restore the live membership before the
+    // queued cast completes, without changing its frozen equipped bonus.
+    restored.groups.invite(caster, ally).unwrap();
+    restored.groups.accept(ally).unwrap();
+    restored
+        .sessions
+        .get_mut(&caster)
+        .unwrap()
+        .advance_player(3.1)
+        .unwrap();
+    restored.deliver_support().unwrap();
+    assert!(
+        distance(
+            restored.sessions[&ally].position,
+            restored.sessions[&caster].position
+        ) < 300.
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
 /// Summon moves a hostile, then one grouped pilot and finally journals port return.
 #[test]
 fn defender_summon_enemy_friend_and_registered_port_survive_restart() {

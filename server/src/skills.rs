@@ -410,6 +410,8 @@ pub struct Cast {
     #[serde(default)]
     pub summon_generation: Option<u64>,
     #[serde(default)]
+    pub summon_skill_bonus: f32,
+    #[serde(default)]
     pub sap_generation: Option<u64>,
     #[serde(default)]
     pub leech_generation: Option<u64>,
@@ -521,6 +523,9 @@ impl Cast {
             && self.summon_generation.is_none_or(|generation| {
                 matches!(self.ability, 117 | 118) && generation < 1_000_000_000
             })
+            && self.summon_skill_bonus.is_finite()
+            && (0. ..=crate::summon::MAX_EQUIPPED_BONUS).contains(&self.summon_skill_bonus)
+            && (self.summon_skill_bonus == 0. || matches!(self.ability, 97 | 117 | 118 | 119 | 120))
             && self.sap_generation.is_none_or(|generation| {
                 matches!(self.ability, 54 | 55 | 98 | 112 | 114) && generation < 1_000_000_000
             })
@@ -618,6 +623,7 @@ pub enum SupportAction {
     Summon {
         ability: u32,
         trained_rank: u32,
+        skill_bonus: f32,
         target: u32,
         origin_sector: u32,
         origin_position: [f32; 3],

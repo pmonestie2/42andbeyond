@@ -15,6 +15,7 @@ impl GameState {
         let SupportAction::Summon {
             ability,
             trained_rank,
+            skill_bonus,
             target,
             origin_sector,
             origin_position,
@@ -25,6 +26,7 @@ impl GameState {
         };
         let tier = crate::summon::tier(ability, trained_rank)
             .ok_or_else(|| invalid("Unknown Summon ability tier."))?;
+        let range = crate::summon::effective_range(tier, skill_bonus);
         if matches!(
             tier.target,
             SummonTarget::Enemy | SummonTarget::EnemyFormation
@@ -56,7 +58,7 @@ impl GameState {
             };
             if !peer.summon_available()
                 || peer.sector.id != origin_sector
-                || distance(peer.position, origin_position) > tier.range
+                || distance(peer.position, origin_position) > range
             {
                 continue;
             }
