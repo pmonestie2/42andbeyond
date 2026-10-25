@@ -4,6 +4,8 @@ Standalone Unity client and Rust game server - Still work in progress but the se
 
 Why: I wanted to explore making a new client - For that you need a server to play with - the Net7 server being close source (I really wonder why) I remade a server.
 
+A quick demo here: https://www.youtube.com/watch?v=TjWSGhOvHgU
+
 | Directory | Purpose |
 | --- | --- |
 | `client/` | Unity game, C# wire protocol, launcher and tests |
@@ -12,10 +14,10 @@ Why: I wanted to explore making a new client - For that you need a server to pla
 | `win_legacy/` | Optional original-client/Net7Proxy launcher and reversible configuration |
 | `reference/cpp/` | Pinned archived C++ reference files for reimplementation |
 
-Mac and Windows agents can exchange short messages through the private HTTP
-relay documented in [tools/COORDINATION.md](tools/COORDINATION.md).
 
 ## Run locally
+
+The simplest is probably to sping up codex or claude and ask it to run the server.
 
 Install Rust and Unity Editor 6000.3.13f1. From this directory:
 
@@ -24,12 +26,10 @@ python3 server/tools/run_server.py --bind 127.0.0.1
 ```
 
 Open `client/` in Unity Hub and press Play. Connect to `127.0.0.1` with the local
-server account. The disposable demo account is `local` / `local`.
-For the existing Windows VM, use its private LAN IP in the client login form.
+server account. There is 1 account per race: ppw/ppw pte/pte you get the idea.
 
-Create an account with `python3 server/tools/create_account.py`; its password is
-read interactively. Saved server accounts and characters belong in `server/state/`.
-Existing VM state is not copied or changed by this source migration.
+I'm running this on Mac with legacy clients on winVM - Should be no problem to run all on windows.
+
 
 On macOS, `client/Play Local.command` builds and launches an owned local setup.
 `client/Play 42 and Beyond.command` launches the installed app against the VM.
