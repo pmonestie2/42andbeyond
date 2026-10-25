@@ -575,9 +575,9 @@ fn grouped_recharge_devices_restore_recipient_stats_and_sender_energy() {
     }
 }
 
-/// Two catalog ally effects coexist through ledger replay and refresh.
+/// Three catalog ally effects coexist through ledger replay and refresh.
 #[test]
-fn grouped_scan_and_reactor_buffs_stack_and_resume_independently() {
+fn grouped_scan_reactor_and_signature_buffs_stack_and_resume_independently() {
     let initial = game();
     let root = initial.root.clone();
     let sector = initial.initial_sector.clone();
@@ -588,7 +588,19 @@ fn grouped_scan_and_reactor_buffs_stack_and_resume_independently() {
         serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
     inventory.equipped[9] = Some(crate::inventory::ItemInstance::stock(1813, 1));
     inventory.equipped[10] = Some(crate::inventory::ItemInstance::stock(2172, 1));
+    inventory.equipped[11] = Some(crate::inventory::ItemInstance::stock(1945, 1));
     fs::write(&path, serde_json::to_vec(&inventory).unwrap()).unwrap();
+    // The fixture's Aspiration reactor already reduces signature by 74%,
+    // stronger than Musca's 25%; give the recipient a neutral reactor.
+    let recipient_path = root.join("accounts/bob/inventory.json");
+    let mut recipient_inventory: crate::inventory::Inventory =
+        serde_json::from_slice(&fs::read(&recipient_path).unwrap()).unwrap();
+    recipient_inventory.equipped[1].as_mut().unwrap().template = 3337;
+    fs::write(
+        recipient_path,
+        serde_json::to_vec(&recipient_inventory).unwrap(),
+    )
+    .unwrap();
 
     let alice = FIRST_PLAYER_ID;
     let bob = alice + 1;
@@ -607,7 +619,7 @@ fn grouped_scan_and_reactor_buffs_stack_and_resume_independently() {
     let before = game.sessions[&bob].peer_snapshot().unwrap().stats;
     let source_energy = game.sessions[&alice].energy_balance().0;
     let epoch = game.sessions[&alice].energy_transfer_epoch();
-    for (sequence, slot) in [(2, 9), (3, 10)] {
+    for (sequence, slot) in [(2, 9), (3, 10), (4, 11)] {
         game.handle_udp(
             SECTOR_PORT,
             "127.0.0.1:22851".parse().unwrap(),
@@ -621,11 +633,27 @@ fn grouped_scan_and_reactor_buffs_stack_and_resume_independently() {
         .unwrap();
         game.advance_at(0., crate::resources::unix_ms()).unwrap();
     }
-    assert_eq!(game.energy_ledger.revision(), 2);
-    assert_eq!(game.energy_ledger.peer_buffs(bob).len(), 2);
+    assert_eq!(game.energy_ledger.revision(), 3);
+    assert_eq!(game.energy_ledger.peer_buffs(bob).len(), 3);
     let boosted = game.sessions[&bob].peer_snapshot().unwrap().stats;
     assert!(boosted.scan_range > before.scan_range);
     assert!(boosted.energy_recharge > before.energy_recharge);
+    assert!(boosted.signature < before.signature);
+    assert_eq!(boosted.signature, before.signature * 0.75);
+    let mob_scan = 2500. + 150. * 10.;
+    let between_detection_ranges = mob_scan + (before.signature + boosted.signature) / 2.;
+    assert!(crate::mob_targeting::mob_sees_player(
+        10,
+        before.signature,
+        between_detection_ranges,
+        false
+    ));
+    assert!(!crate::mob_targeting::mob_sees_player(
+        10,
+        game.sessions[&bob].threat().signature,
+        between_detection_ranges,
+        false
+    ));
     let after_energy = game.sessions[&alice].energy_balance().0;
     assert!(after_energy < source_energy);
     for (directory, sender) in [(&root, true), (&root.join("accounts/bob"), false)] {
@@ -649,10 +677,11 @@ fn grouped_scan_and_reactor_buffs_stack_and_resume_independently() {
         &fs::read(restored.root.join("accounts/bob/session.local.json")).unwrap(),
     )
     .unwrap();
-    assert_eq!(checkpoint["peer_buffs"].as_array().unwrap().len(), 2);
+    assert_eq!(checkpoint["peer_buffs"].as_array().unwrap().len(), 3);
     let replayed = restored.sessions[&bob].peer_snapshot().unwrap().stats;
     assert_eq!(replayed.scan_range, boosted.scan_range);
     assert_eq!(replayed.energy_recharge, boosted.energy_recharge);
+    assert_eq!(replayed.signature, boosted.signature);
     restored
         .handle_event(
             alice,
@@ -664,7 +693,7 @@ fn grouped_scan_and_reactor_buffs_stack_and_resume_independently() {
             },
         )
         .unwrap();
-    assert_eq!(restored.energy_ledger.revision(), 2);
+    assert_eq!(restored.energy_ledger.revision(), 3);
     restored
         .handle_event(
             alice,
@@ -672,15 +701,16 @@ fn grouped_scan_and_reactor_buffs_stack_and_resume_independently() {
                 target: bob,
                 slot: 9,
                 epoch,
-                sequence: 4,
+                sequence: 5,
             },
         )
         .unwrap();
-    assert_eq!(restored.energy_ledger.revision(), 3);
-    assert_eq!(restored.energy_ledger.peer_buffs(bob).len(), 2);
+    assert_eq!(restored.energy_ledger.revision(), 4);
+    assert_eq!(restored.energy_ledger.peer_buffs(bob).len(), 3);
     let refreshed = restored.sessions[&bob].peer_snapshot().unwrap().stats;
     assert!(refreshed.scan_range > before.scan_range);
     assert!(refreshed.energy_recharge > before.energy_recharge);
+    assert_eq!(refreshed.signature, boosted.signature);
 }
 
 #[test]

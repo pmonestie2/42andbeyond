@@ -2284,6 +2284,29 @@ mod tests {
     }
 
     #[test]
+    fn targeted_signature_buff_uses_fourth_peer_slot_without_object_visual() {
+        let applied = ship_active_buff_slot(FIRST_PLAYER_ID + 1, 4, "Reduce Signature", 5000);
+        let cleared = ship_active_buff_slot(FIRST_PLAYER_ID + 1, 4, "", 0);
+        assert_eq!(applied.opcode, 0x1b);
+        assert_eq!(cleared.opcode, 0x1b);
+        let hex = |frame: Frame| {
+            frame
+                .body
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect::<String>()
+        };
+        assert_eq!(
+            hex(applied),
+            "020000402500010200000000400000020100d2001000526564756365205369676e61747572650088130000"
+        );
+        assert_eq!(
+            hex(cleared),
+            "020000401500010200000000400000020100d20000000000000000"
+        );
+    }
+
+    #[test]
     fn client_damage_matches_native_float_and_identity_field_order() {
         let packet = client_damage(0x10000001, 0x40000002, 42.5, 0.25, 5, 3);
         assert_eq!(packet.opcode, 0x64);

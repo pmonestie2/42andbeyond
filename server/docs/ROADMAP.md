@@ -209,13 +209,17 @@ mean the corresponding gameplay system is complete.
   stale checkpoints once after process replacement, reject duplicate requests,
   and preserve ordinary full-energy login after acknowledged logout. Disposable
   two-client tests cover range, write failure, stale checkpoints and replay.
-  Twelve single-effect Scan Boost devices and catalog Recharge Shields and
-  Recharge Reactor devices with nonzero activation range now apply to a
-  selected grouped friendly peer through the same 0x5d request. One atomic
-  ledger revision couples caster energy with recipient status; the recipient's stat,
-  second native buff slot and catalog visual replay across short replacement
-  and clear on expiry. Shield and reactor recipients gain their catalog
-  regeneration modifier each ship tick; old Scan Boost receipts remain readable.
+  Twelve single-effect Scan Boost devices, catalog Recharge Shields and
+  Recharge Reactor devices, and seven Musca Reduce Ship Signature devices now
+  apply to a selected grouped friendly peer through the same 0x5d request. One
+  atomic ledger revision couples caster energy with recipient status; the
+  recipient's stat and native buff slot replay across short replacement and
+  clear on expiry, as does any catalog visual. Shield and reactor recipients
+  gain their catalog regeneration modifier each ship tick; Musca reduces the
+  recipient's real signature by 25%, shortening the archived MOB detection range
+  while active.
+  Its fourth peer buff slot has no object visual because the public catalog
+  specifies visual zero. Old Scan Boost receipts remain readable.
   Disposable two-client native packet and stale-checkpoint tests pass. Other
   ally/hostile effects remain pending. Different catalog ally effects now occupy
   independent native buff slots and coexist on one recipient; the atomic ledger

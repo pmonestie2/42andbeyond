@@ -2806,6 +2806,40 @@ mod tests {
         )));
     }
 
+    /// A targeted signature reduction changes MOB detection and clears only its own icon.
+    #[test]
+    fn reduce_signature_peer_buff_changes_threat_until_expiry() {
+        let mut ship = session();
+        ship.logged_in = true;
+        let original = ship.threat().signature;
+        let buff = crate::peer_buffs::PeerBuff {
+            revision: 1,
+            source: ship.player_id() + 1,
+            target_epoch: ship.session_epoch,
+            template: 1945,
+            effect: crate::peer_buffs::FriendlyEffect::ReduceSignature,
+            value: 25.,
+            operation: 4,
+            expires_at_ms: crate::resources::unix_ms() + 10_000,
+        };
+        ship.apply_peer_buff(buff).unwrap();
+        assert_eq!(ship.threat().signature, original * 0.75);
+        assert!(ship.pending.iter().any(|frame| frame.opcode == 0x1b
+            && frame
+                .body
+                .windows(16)
+                .any(|bytes| bytes == b"Reduce Signature")));
+        assert!(!ship.pending.iter().any(|frame| frame.opcode == 9));
+        ship.pending.clear();
+        ship.peer_buffs[0].expires_at_ms = crate::resources::unix_ms() - 1;
+        ship.advance_peer_buff().unwrap();
+        assert_eq!(ship.threat().signature, original);
+        assert!(ship
+            .pending
+            .contains(&packets::ship_active_buff_slot(ship.player_id(), 4, "", 0)));
+        assert!(!ship.pending.iter().any(|frame| frame.opcode == 0x0f));
+    }
+
     #[test]
     fn loot_cancel_and_inventory_write_failure_preserve_stock_and_release_claim() {
         let mut ship = looting_ship();

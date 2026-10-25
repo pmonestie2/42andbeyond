@@ -9,6 +9,7 @@ pub enum FriendlyEffect {
     ScanBoost,
     RechargeShields,
     RechargeReactor,
+    ReduceSignature,
 }
 
 impl FriendlyEffect {
@@ -19,6 +20,7 @@ impl FriendlyEffect {
             Self::ScanBoost => "Scan Boost",
             Self::RechargeShields => "Recharge Shields",
             Self::RechargeReactor => "Recharge Reactor",
+            Self::ReduceSignature => "Reduce Ship Signature",
         }
     }
 
@@ -29,6 +31,7 @@ impl FriendlyEffect {
             Self::ScanBoost => "STAT_SCAN_RANGE",
             Self::RechargeShields => "STAT_SHIELD_RECHARGE",
             Self::RechargeReactor => "STAT_ENERGY_RECHARGE",
+            Self::ReduceSignature => "STAT_SIGNATURE",
         }
     }
 
@@ -39,6 +42,7 @@ impl FriendlyEffect {
             Self::ScanBoost => 1,
             Self::RechargeShields => 2,
             Self::RechargeReactor => 3,
+            Self::ReduceSignature => 4,
         }
     }
 }
@@ -62,6 +66,7 @@ pub fn friendly_offer(template: &ItemTemplate) -> Option<FriendlyOffer> {
         "Scan Boost (Activated)" => (FriendlyEffect::ScanBoost, 16, 100.),
         "Recharge Shields (Activated)" => (FriendlyEffect::RechargeShields, 64, 1000.),
         "Recharge Reactor (Activated)" => (FriendlyEffect::RechargeReactor, 64, 1000.),
+        "Reduce Ship Signature (Activated)" => (FriendlyEffect::ReduceSignature, 16, 100.),
         _ => return None,
     };
     if template.item_type != 11
@@ -87,6 +92,7 @@ pub fn friendly_offer(template: &ItemTemplate) -> Option<FriendlyOffer> {
     if !(match kind {
         FriendlyEffect::ScanBoost | FriendlyEffect::RechargeShields => stat.operation == 2,
         FriendlyEffect::RechargeReactor => matches!(stat.operation, 1 | 2),
+        FriendlyEffect::ReduceSignature => stat.operation == 4,
     }) || !stat.value.is_finite()
         || !(0. ..=maximum).contains(&stat.value)
         || timer.operation != 5
@@ -173,7 +179,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn public_friendly_devices_have_bounded_recharge_and_scan_rules() {
+    fn public_friendly_devices_have_bounded_recharge_scan_and_signature_rules() {
         let items = ItemCatalog::load().unwrap();
         for id in [1813, 1828, 1864, 2500] {
             let offer = friendly_offer(items.get(id).unwrap()).unwrap();
@@ -187,6 +193,13 @@ mod tests {
             let offer = friendly_offer(items.get(id).unwrap()).unwrap();
             assert_eq!(offer.effect, kind);
             assert!(offer.duration_ms > 0);
+        }
+        for id in [1945, 2027, 2119, 2209, 2300, 2403, 2494] {
+            let offer = friendly_offer(items.get(id).unwrap()).unwrap();
+            assert_eq!(offer.effect, FriendlyEffect::ReduceSignature);
+            assert_eq!(offer.operation, 4);
+            assert_eq!(offer.value, 25.);
+            assert_eq!(offer.visual, 0);
         }
         assert!(friendly_offer(items.get(2412).unwrap()).is_none());
     }
