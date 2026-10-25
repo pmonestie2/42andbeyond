@@ -285,6 +285,7 @@ impl PlayerSession {
     pub(crate) fn publish_mobs(&mut self) -> io::Result<()> {
         if !self.logged_in || self.sector.station.is_some() {
             self.mob_menace_visuals.clear();
+            self.mob_hacking_visuals.clear();
             self.mob_enrage_visuals.clear();
             return Ok(());
         }
@@ -344,6 +345,24 @@ impl PlayerSession {
                     self.mob_menace_visuals.insert(object_id, effect);
                     self.pending
                         .push(packets::object_effect(object_id, effect, asset, tick));
+                }
+            }
+            let hacking_visual = visible
+                .then(|| mob.active_hack_visual())
+                .flatten()
+                .map(|hack| hack.visual_id(object_id));
+            if self.mob_hacking_visuals.get(&object_id).copied() != hacking_visual {
+                if let Some(previous) = self.mob_hacking_visuals.remove(&object_id) {
+                    self.pending.push(packets::remove_effect(previous));
+                }
+                if let Some(effect) = hacking_visual {
+                    self.mob_hacking_visuals.insert(object_id, effect);
+                    self.pending.push(packets::object_effect(
+                        object_id,
+                        effect,
+                        crate::hacking::VISUAL_DESCRIPTOR,
+                        tick,
+                    ));
                 }
             }
             let enrage_visual = visible

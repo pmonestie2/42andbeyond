@@ -65,6 +65,9 @@ fn warning_hate(aggression: u32, roll: u32) -> f32 {
 
 impl Mob {
     pub(super) fn check_warning_shots(&mut self, dt: f32, players: &[PlayerThreat]) {
+        if self.hacked_communications() {
+            return;
+        }
         let Some(aggression @ 1..=4) = self.definition.aggression else {
             return;
         };

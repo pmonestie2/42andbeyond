@@ -35,6 +35,7 @@ impl PlayerSession {
         let durable_sap = ability.kind == AbilityKind::ShieldSap;
         let durable_gravity = ability.kind == AbilityKind::GravityLink;
         let durable_menace = ability.kind == AbilityKind::Menace;
+        let durable_hacking = ability.kind == AbilityKind::Hacking;
         let durable_enrage = ability.kind == AbilityKind::Enrage;
         if ability.kind == AbilityKind::Jumpstart {
             self.jumpstart_definition()?;
@@ -149,6 +150,16 @@ impl PlayerSession {
         {
             return Err(invalid("Menace rank is not trained."));
         }
+        if durable_hacking
+            && crate::hacking::tier(
+                ability.id,
+                self.skill_catalog.level(26),
+                self.account.character.class().code(),
+            )
+            .is_none()
+        {
+            return Err(invalid("Hacking rank is not trained."));
+        }
         if durable_enrage && crate::enrage::tier(ability.id, self.skill_catalog.level(22)).is_none()
         {
             return Err(invalid("Enrage rank is not trained."));
@@ -170,6 +181,11 @@ impl PlayerSession {
         };
         let menace_generation = if durable_menace {
             Some(self.menace_target_generation(target)?)
+        } else {
+            None
+        };
+        let hacking_generation = if durable_hacking {
+            Some(self.hacking_target_generation(target)?)
         } else {
             None
         };
@@ -259,6 +275,7 @@ impl PlayerSession {
             AbilityKind::ShieldInversion => 0,
             AbilityKind::GravityLink => 0,
             AbilityKind::Menace => 0,
+            AbilityKind::Hacking => 0,
             AbilityKind::Enrage => 0,
             AbilityKind::ShieldSap => 733,
             AbilityKind::Summon => 0,
@@ -304,6 +321,7 @@ impl PlayerSession {
             hull_repair_amount,
             gravity_generation,
             menace_generation,
+            hacking_generation,
             enrage_generation,
             summon_generation,
             sap_generation,
@@ -313,6 +331,7 @@ impl PlayerSession {
             || durable_rally
             || durable_gravity
             || durable_menace
+            || durable_hacking
             || durable_enrage
             || durable_optimization
             || durable_shield_charging
@@ -522,6 +541,7 @@ impl PlayerSession {
                 AbilityKind::GravityLink
                     | AbilityKind::ShieldSap
                     | AbilityKind::Menace
+                    | AbilityKind::Hacking
                     | AbilityKind::Enrage
                     | AbilityKind::ShieldInversion
             );
@@ -535,6 +555,15 @@ impl PlayerSession {
                 .get(index as usize)
                 .ok_or_else(|| invalid("Select a hostile MOB first."))?;
             let range = match ability.kind {
+                AbilityKind::Hacking => {
+                    crate::hacking::tier(
+                        ability.id,
+                        self.skill_catalog.level(26),
+                        self.account.character.class().code(),
+                    )
+                    .ok_or_else(|| invalid("Hacking rank is not trained."))?
+                    .range
+                }
                 AbilityKind::Menace => {
                     crate::menace::tier(ability.id, self.skill_catalog.level(33))
                         .ok_or_else(|| invalid("Menace rank is not trained."))?
@@ -555,7 +584,10 @@ impl PlayerSession {
             if !self.mob_visible_in_scan(index as usize, mob)
                 || matches!(
                     ability.kind,
-                    AbilityKind::Menace | AbilityKind::Enrage | AbilityKind::ShieldInversion
+                    AbilityKind::Menace
+                        | AbilityKind::Hacking
+                        | AbilityKind::Enrage
+                        | AbilityKind::ShieldInversion
                 ) && self.mob_relationship(mob) != 0
                 || distance(self.position, mob.position) > range
             {
@@ -683,6 +715,11 @@ impl PlayerSession {
                     || self.gate_transit.is_some()
                     || self.sector.station.is_some()
                     || !self.logged_in);
+            let invalid_hacking = definition.kind == AbilityKind::Hacking
+                && (self.warp.active()
+                    || self.gate_transit.is_some()
+                    || self.sector.station.is_some()
+                    || !self.logged_in);
             let invalid_menace = definition.kind == AbilityKind::Menace
                 && (self.warp.active()
                     || self.gate_transit.is_some()
@@ -712,6 +749,7 @@ impl PlayerSession {
                 || invalid_psionic
                 || invalid_gravity
                 || invalid_menace
+                || invalid_hacking
                 || invalid_enrage
                 || invalid_sap
                 || invalid_inversion
@@ -725,6 +763,7 @@ impl PlayerSession {
                     AbilityKind::GravityLink
                         | AbilityKind::ShieldSap
                         | AbilityKind::Menace
+                        | AbilityKind::Hacking
                         | AbilityKind::Enrage
                         | AbilityKind::PsionicShield
                         | AbilityKind::RepulsorField
@@ -777,6 +816,37 @@ impl PlayerSession {
                         "Gravity Link applied for 30 seconds."
                     } else {
                         "Gravity Link target was lost before completion."
+                    });
+                    return Ok(());
+                }
+                if ability.kind == AbilityKind::Hacking {
+                    let outcome = match self.apply_hacking(&ability, &cast) {
+                        Ok(outcome) => outcome,
+                        Err(error) => {
+                            self.skills.cast = Some(cast);
+                            return Err(error);
+                        }
+                    };
+                    let previous_cooldown = self.skills.cooldowns.insert(ability.skill, cooldown);
+                    if let Err(error) = self.checkpoint_session(true) {
+                        if let Some(previous) = previous_cooldown {
+                            self.skills.cooldowns.insert(ability.skill, previous);
+                        } else {
+                            self.skills.cooldowns.remove(&ability.skill);
+                        }
+                        self.skills.cast = Some(cast);
+                        return Err(error);
+                    }
+                    self.pending.push(packets::ability_progress(None, 0, 0));
+                    self.pending.push(packets::skill_cooldown(
+                        ability.skill,
+                        self.tick_ms(),
+                        (cooldown * 1000.) as u32,
+                    ));
+                    self.message(match outcome {
+                        Some(result) if result.affected > 0 => "Hacking disabled hostile systems.",
+                        Some(result) if result.resisted > 0 => "Hostile systems resisted Hacking.",
+                        _ => "Hacking target was lost before completion.",
                     });
                     return Ok(());
                 }
@@ -1226,6 +1296,9 @@ impl PlayerSession {
                 return Err(invalid(
                     "Gravity Link settles through its durable MOB cast.",
                 ));
+            }
+            AbilityKind::Hacking => {
+                return Err(invalid("Hacking settles through its durable MOB cast."));
             }
             AbilityKind::Menace => {
                 return Err(invalid("Menace settles through its durable MOB cast."));

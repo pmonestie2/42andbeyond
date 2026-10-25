@@ -56,6 +56,8 @@ mod follow_service;
 mod gating_service;
 #[path = "gravity_link_service.rs"]
 mod gravity_link_service;
+#[path = "hacking_service.rs"]
+mod hacking_service;
 #[path = "harvest_visuals.rs"]
 mod harvest_visuals;
 #[path = "hull_repair.rs"]
@@ -230,6 +232,7 @@ pub struct PlayerSession {
     mob_visible: Vec<bool>,
     mob_relationships: Vec<Option<u32>>,
     mob_menace_visuals: HashMap<u32, u32>,
+    mob_hacking_visuals: HashMap<u32, u32>,
     mob_enrage_visuals: HashMap<u32, u32>,
     player_firing: bool,
     weapon_cooldowns: [f32; 20],
@@ -439,6 +442,7 @@ impl PlayerSession {
             mob_visible,
             mob_relationships,
             mob_menace_visuals: HashMap::new(),
+            mob_hacking_visuals: HashMap::new(),
             mob_enrage_visuals: HashMap::new(),
             player_firing: false,
             weapon_cooldowns: [0.; 20],

@@ -35,6 +35,7 @@ pub struct ShipStats {
     pub recharge_shields_skill: f32,
     pub hull_patch_skill: f32,
     pub gravity_link_skill: f32,
+    pub hacking_bonus: f32,
     pub repulsor_field_skill: f32,
     pub shield_inversion_duration_bonus: f32,
     pub tractor_speed: f32,
@@ -328,6 +329,7 @@ impl EquipmentStats {
             } else {
                 0.
             },
+            hacking_bonus: modifiers.chance_bonus("STAT_HACKING").clamp(0., 100.),
             repulsor_field_skill: if skills.level(48) > 0 {
                 modifiers
                     .apply_signed("SKILL_REPULSOR_FIELD", skills.level(48) as f32)
@@ -492,6 +494,29 @@ mod tests {
         assert_eq!(
             crate::shield_inversion::duration_ms(geared.ship.shield_inversion_duration_bonus),
             17_700
+        );
+    }
+
+    /// Public hacking gear improves authoritative attempt chance without rank unlock.
+    #[test]
+    fn hacking_equipped_percent_increases_success_chance() {
+        let catalog = ItemCatalog::load().unwrap();
+        let mut profile = crate::account::Account::create("pilot".into(), "pass", "Pilot".into())
+            .unwrap()
+            .character;
+        let class = crate::classes::CharacterClass::parse("te").unwrap();
+        profile.race = class.race();
+        profile.profession = class.profession();
+        let skills = SkillCatalog::for_profile(&profile).unwrap();
+        let mut inventory = Inventory::starter_for(&profile, &catalog).unwrap();
+        let base = EquipmentStats::derive(&inventory, &catalog, &skills).unwrap();
+        inventory.equipped[3] = Some(crate::inventory::ItemInstance::stock(773, 1));
+        let geared = EquipmentStats::derive(&inventory, &catalog, &skills).unwrap();
+        assert_eq!(base.ship.hacking_bonus, 0.);
+        assert_eq!(geared.ship.hacking_bonus, 26.);
+        assert!(
+            crate::hacking::success_chance(1, 20, 20, geared.ship.hacking_bonus)
+                > crate::hacking::success_chance(1, 20, 20, base.ship.hacking_bonus)
         );
     }
 

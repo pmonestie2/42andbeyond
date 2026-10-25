@@ -3678,3 +3678,216 @@ fn repulsor_selected_peer_is_durable_and_class_slots_do_not_collide() {
     drop(restored);
     fs::remove_dir_all(root).unwrap();
 }
+
+/// A Terran area hack persists MOB subsystem effects before acknowledging the cast.
+#[test]
+fn terran_hacking_area_is_generation_pinned_and_restart_safe() {
+    let root = std::env::temp_dir().join(format!("enb-hacking-{}", rand::random::<u64>()));
+    let accounts = AccountDirectory::new(&root);
+    let enforcer_account = accounts
+        .create_class(
+            "enforcer".into(),
+            "example",
+            "Enforcer".into(),
+            crate::classes::CharacterClass::parse("te").unwrap(),
+        )
+        .unwrap();
+    let enforcer = enforcer_account.account.character.game_id;
+    let scout = accounts
+        .create_class(
+            "scout".into(),
+            "example",
+            "Scout".into(),
+            crate::classes::CharacterClass::parse("ts").unwrap(),
+        )
+        .unwrap()
+        .account
+        .character
+        .game_id;
+    let catalog = crate::items::ItemCatalog::load().unwrap();
+    let mut equipment =
+        crate::inventory::Inventory::starter_for(&enforcer_account.account.character, &catalog)
+            .unwrap();
+    equipment.equipped[1] = Some(crate::inventory::ItemInstance::stock(3335, 1));
+    fs::write(
+        enforcer_account.directory.join("inventory.json"),
+        serde_json::to_vec(&equipment).unwrap(),
+    )
+    .unwrap();
+    let mut sector: Sector = serde_json::from_str(include_str!("../data/sector.json")).unwrap();
+    let mut first = sector.mobs[0].clone();
+    first.source_id = 910_001;
+    first.level = 1;
+    first.spawn = [1_000., 0., 0.];
+    first.mob_type = 0;
+    first.aggressive = false;
+    let mut second = first.clone();
+    second.source_id = 910_002;
+    second.spawn = [1_500., 0., 0.];
+    let mut organic = first.clone();
+    organic.source_id = 910_003;
+    organic.mob_type = 2;
+    organic.spawn = [1_600., 0., 0.];
+    let mut distant = first.clone();
+    distant.source_id = 910_004;
+    distant.spawn = [6_000., 0., 0.];
+    sector.mobs = vec![first, second, organic, distant];
+    let bind = Ipv4Addr::new(127, 0, 0, 2);
+    let mut game = GameState::new(sector.clone(), bind, root.clone()).unwrap();
+    login(&mut game, enforcer, 24601, "enforcer");
+    login(&mut game, scout, 24602, "scout");
+    game.sessions.get_mut(&enforcer).unwrap().position = [0.; 3];
+    game.sessions.get_mut(&scout).unwrap().position = [0.; 3];
+    game.update_views();
+    let scout_energy = game.sessions[&scout].energy_balance().0;
+    activate(&mut game, scout, MOB_ID, 13); // Scout cannot train area tier.
+    assert_eq!(game.sessions[&scout].energy_balance().0, scout_energy);
+    activate(&mut game, scout, MOB_ID + 2, 57); // Organic target is immune.
+    assert_eq!(game.sessions[&scout].energy_balance().0, scout_energy);
+    let energy = game.sessions[&enforcer].energy_balance().0;
+    activate(&mut game, enforcer, MOB_ID, 13);
+    assert_eq!(game.sessions[&enforcer].energy_balance().0, energy - 240.);
+    let blocked = root.join("combat/1076.json.next");
+    fs::create_dir(&blocked).unwrap();
+    game.advance(2.1).unwrap();
+    assert!(lock_combat(game.combats.get(&sector.id).unwrap())
+        .unwrap()
+        .actors[0]
+        .hacks
+        .is_empty());
+    fs::remove_dir(blocked).unwrap();
+    advance(&mut game, 0.1);
+    let first_effect = {
+        let world = lock_combat(game.combats.get(&sector.id).unwrap()).unwrap();
+        assert_eq!(world.actors[0].hacks.len(), 1);
+        assert_eq!(world.actors[1].hacks.len(), 1);
+        assert!(world.actors[2].hacks.is_empty());
+        assert!(world.actors[3].hacks.is_empty());
+        world.actors[0].hacks[0].effect
+    };
+    drop(game);
+    let mut restored = GameState::new(sector, bind, root.clone()).unwrap();
+    {
+        let world = lock_combat(restored.combats.get(&1076).unwrap()).unwrap();
+        assert_eq!(world.actors[0].hacks[0].effect, first_effect);
+        assert_eq!(world.actors[1].hacks.len(), 1);
+    }
+    restored.sessions.get_mut(&scout).unwrap().position = [0.; 3];
+    restored.update_views();
+    restored.advance(0.1).unwrap();
+    assert_eq!(
+        lock_combat(restored.combats.get(&1076).unwrap())
+            .unwrap()
+            .actors[0]
+            .hacks
+            .len(),
+        1
+    );
+    let visual_seen = restored.take_outgoing().into_iter().any(|outbound| {
+        let Ok(packet) = Datagram::decode(&outbound.data) else {
+            return false;
+        };
+        let mut remaining = packet.body.as_slice();
+        while remaining.len() >= 4 {
+            let length = u16::from_le_bytes([remaining[0], remaining[1]]) as usize;
+            if length < 4 || length > remaining.len() {
+                break;
+            }
+            if let Ok(frame) = Frame::decode(&remaining[..length]) {
+                if frame.opcode == 9
+                    && frame.body.len() >= 7
+                    && u16::from_le_bytes(frame.body[5..7].try_into().unwrap())
+                        == crate::hacking::VISUAL_DESCRIPTOR
+                {
+                    return true;
+                }
+            }
+            remaining = &remaining[length..];
+        }
+        false
+    });
+    assert!(
+        visual_seen,
+        "verified native Hacking visual must replay on MOB visibility"
+    );
+    let visual_id = {
+        let mut world = lock_combat(restored.combats.get(&1076).unwrap()).unwrap();
+        let visual = world.actors[0].hacks[0].visual_id(MOB_ID);
+        world.actors[0].hacks[0].deadline_ms = crate::resources::unix_ms() - 1;
+        world.persist().unwrap();
+        visual
+    };
+    restored.advance(0.1).unwrap();
+    let removed = restored.take_outgoing().into_iter().any(|outbound| {
+        let Ok(packet) = Datagram::decode(&outbound.data) else {
+            return false;
+        };
+        let mut remaining = packet.body.as_slice();
+        while remaining.len() >= 4 {
+            let length = u16::from_le_bytes([remaining[0], remaining[1]]) as usize;
+            if length < 4 || length > remaining.len() {
+                break;
+            }
+            if let Ok(frame) = Frame::decode(&remaining[..length]) {
+                if frame == packets::remove_effect(visual_id) {
+                    return true;
+                }
+            }
+            remaining = &remaining[length..];
+        }
+        false
+    });
+    assert!(removed, "expired native Hacking visual must be removed");
+    fs::remove_dir_all(root).unwrap();
+}
+
+/// A MOB killed during charge cannot receive a hack on its next generation.
+#[test]
+fn hacking_lost_generation_rejects_completion_and_replay() {
+    let root = std::env::temp_dir().join(format!("enb-hack-generation-{}", rand::random::<u64>()));
+    let accounts = AccountDirectory::new(&root);
+    let scout = accounts
+        .create_class(
+            "scout".into(),
+            "example",
+            "Scout".into(),
+            crate::classes::CharacterClass::parse("ts").unwrap(),
+        )
+        .unwrap()
+        .account
+        .character
+        .game_id;
+    let mut sector: Sector = serde_json::from_str(include_str!("../data/sector.json")).unwrap();
+    sector.mobs[0].source_id = 920_001;
+    sector.mobs[0].mob_type = 0;
+    sector.mobs[0].spawn = [500., 0., 0.];
+    sector.mobs[0].aggressive = false;
+    let bind = Ipv4Addr::new(127, 0, 0, 2);
+    let mut game = GameState::new(sector.clone(), bind, root.clone()).unwrap();
+    login(&mut game, scout, 24611, "scout");
+    game.sessions.get_mut(&scout).unwrap().position = [0.; 3];
+    game.update_views();
+    let before = game.sessions[&scout].energy_balance().0;
+    activate(&mut game, scout, MOB_ID, 57);
+    assert_eq!(game.sessions[&scout].energy_balance().0, before - 30.);
+    {
+        let mut world = lock_combat(game.combats.get(&sector.id).unwrap()).unwrap();
+        world.actors[0].damage(1_000_000_000.);
+        assert_eq!(world.actors[0].state, crate::mob::MobState::Dead);
+        world.persist().unwrap();
+    }
+    advance(&mut game, 2.1);
+    assert!(lock_combat(game.combats.get(&sector.id).unwrap())
+        .unwrap()
+        .actors[0]
+        .hacks
+        .is_empty());
+    drop(game);
+    let restored = GameState::new(sector, bind, root.clone()).unwrap();
+    assert!(lock_combat(restored.combats.get(&1076).unwrap())
+        .unwrap()
+        .actors[0]
+        .hacks
+        .is_empty());
+    fs::remove_dir_all(root).unwrap();
+}

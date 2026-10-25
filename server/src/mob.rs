@@ -8,6 +8,9 @@ use crate::motion::Motion;
 #[path = "mob_faction_tests.rs"]
 mod faction_tests;
 #[cfg(test)]
+#[path = "hacking_mob_tests.rs"]
+mod hacking_tests;
+#[cfg(test)]
 #[path = "menace_mob_tests.rs"]
 mod menace_tests;
 #[cfg(test)]
@@ -16,6 +19,8 @@ mod radius_tests;
 use serde::{Deserialize, Serialize};
 #[path = "enrage_mob.rs"]
 mod enrage_mob;
+#[path = "hacking_mob.rs"]
+mod hacking_mob;
 #[path = "mob_motion.rs"]
 mod movement;
 #[path = "mob_roaming.rs"]
@@ -170,6 +175,8 @@ pub struct Mob {
     #[serde(default)]
     pub menace: Vec<crate::menace::MenaceFear>,
     #[serde(default)]
+    pub hacks: Vec<crate::hacking::HackEffect>,
+    #[serde(default)]
     pub death_generation: u64,
     #[serde(default)]
     pub killer: Option<u32>,
@@ -255,6 +262,7 @@ impl Mob {
             gravity: Vec::new(),
             enrage: Vec::new(),
             menace: Vec::new(),
+            hacks: Vec::new(),
             death_generation: 0,
             killer: None,
             cooldown: 0.,
@@ -288,6 +296,12 @@ impl Mob {
         if saved.menace.len() > 16 || saved.menace.iter().any(|fear| !fear.valid()) {
             return Err(crate::protocol::invalid("Invalid MOB Menace state."));
         }
+        if saved.hacks.len() > 16 || saved.hacks.iter().any(|effect| !effect.valid()) {
+            return Err(crate::protocol::invalid("Invalid MOB Hacking state."));
+        }
+        saved
+            .hacks
+            .retain(|effect| effect.active(crate::resources::unix_ms(), saved.death_generation));
         saved
             .gravity
             .retain(|effect| effect.active(crate::resources::unix_ms()));
@@ -366,9 +380,15 @@ impl Mob {
         self.provoked = true;
         self.disabled_seconds = 0.; // Attacks break contemplation.
         let absorbed = damage.min(self.shield);
+        let shield_leak = if self.hacked_system(crate::hacking::ShipSystem::Shield) {
+            absorbed * 0.5
+        } else {
+            0.
+        };
         self.shield -= absorbed;
-        self.health = (self.health - (damage - absorbed)).max(0.);
-        if self.health == 0. && self.shield == 0. {
+        self.health = (self.health - (damage - absorbed + shield_leak)).max(0.);
+        if self.health == 0. && (self.shield == 0. || shield_leak > 0.) {
+            self.shield = 0.;
             self.stop_motion();
             self.state = MobState::Dead;
             self.respawn_remaining = self.definition.respawn_seconds;
@@ -382,6 +402,7 @@ impl Mob {
             self.gravity.clear();
             self.enrage.clear();
             self.menace.clear();
+            self.hacks.clear();
         }
     }
     pub fn damage_by(&mut self, damage: f32, player: u32) {
@@ -646,6 +667,8 @@ impl Mob {
                 .active_menace()
                 .is_some_and(|fear| fear.suppress_weapons())
             && self.disabled_seconds <= 0.
+            && !self.hacked_weapon()
+            && !self.hacked_system(crate::hacking::ShipSystem::Reactor)
             && self.cooldown <= dt
             && players.iter().any(|player| {
                 player.visible
@@ -668,6 +691,7 @@ impl Mob {
     pub fn tick_idle(&mut self, dt: f32, players: &[PlayerThreat]) -> f32 {
         if self.state != MobState::Dead
             && self.active_menace().is_none()
+            && !self.hacked_system(crate::hacking::ShipSystem::Engine)
             && self.disabled_seconds <= 0.
             && self.native_roaming()
         {
@@ -740,6 +764,7 @@ impl Mob {
                 self.gravity.clear();
                 self.enrage.clear();
                 self.menace.clear();
+                self.hacks.clear();
                 self.state = MobState::Idle;
             }
             return 0.;
@@ -747,12 +772,30 @@ impl Mob {
         if let Some(fear) = self.active_menace().cloned() {
             self.state = MobState::Fleeing;
             self.cooldown = (self.cooldown - dt).max(0.);
-            let speed = 150. * self.gravity_speed_fraction();
+            let speed = if self.hacked_system(crate::hacking::ShipSystem::Engine) {
+                0.
+            } else {
+                150. * self.gravity_speed_fraction()
+            };
             self.position = fear.flee_position(self.position, speed, dt);
             return if visible
                 && !fear.suppress_weapons()
                 && self.range_to(player) <= self.combat.range
             {
+                self.fire_if_ready()
+            } else {
+                0.
+            };
+        }
+        if self.hacked_system(crate::hacking::ShipSystem::Engine) {
+            self.stop_motion();
+            self.cooldown = (self.cooldown - dt).max(0.);
+            self.state = if visible && self.range_to(player) <= self.combat.range {
+                MobState::Attacking
+            } else {
+                MobState::Idle
+            };
+            return if self.state == MobState::Attacking {
                 self.fire_if_ready()
             } else {
                 0.
@@ -822,7 +865,10 @@ impl Mob {
     /// Returns:
     ///     f32: One admitted weapon launch's damage, or zero while cooling.
     fn fire_if_ready(&mut self) -> f32 {
-        if self.cooldown == 0. {
+        if self.cooldown == 0.
+            && !self.hacked_weapon()
+            && !self.hacked_system(crate::hacking::ShipSystem::Reactor)
+        {
             self.cooldown = self.combat.reload;
             let accuracy = self.enrage_accuracy_multiplier();
             if accuracy < 1.
