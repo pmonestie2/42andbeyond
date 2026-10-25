@@ -8,6 +8,10 @@ use serde::{Deserialize, Serialize};
 pub const DURATION_MS: u64 = 600_000;
 pub const CHARGE_SECONDS: f32 = 2.;
 pub const COOLDOWN_SECONDS: f32 = 30.;
+/// Visual approximation: the original Rally EffectDescID is absent from the
+/// archived ARally handler/effect.ini. The native Environment Shield field is
+/// the closest source-backed protective arc available for a client-side trial.
+pub const VISUAL_DESCRIPTOR: u16 = 216;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Tactic {
@@ -94,6 +98,15 @@ pub struct RallyBuff {
 }
 
 impl RallyBuff {
+    /// Returns:
+    ///     u32: Stable native 0x09/0x0f identity for this recipient's Rally field.
+    pub fn visual_id(&self, target: u32) -> u32 {
+        // Each pilot has at most one Rally buff; reuse only after removing the
+        // previous field. Ordinary skill IDs and targeted-device IDs use other
+        // ranges. A fixed identity lets short replacement replay the same art.
+        0x6a00_0000 | (target & 0x00ff_ffff)
+    }
+
     /// Returns:
     ///     bool: Whether the saved Rally status is bounded and still active.
     pub fn valid(&self, now_ms: u64, epoch: u64) -> bool {
@@ -202,5 +215,10 @@ mod tests {
         assert_eq!(trained.modifiers()[0].value, 15.);
         assert_eq!(Tactic::Damage.buff_type(), "Damage_Tactics");
         assert_eq!(Tactic::Stealth.buff_type(), "Stealth_Tactics");
+        assert_eq!(trained.visual_id(0x4000_0001), 0x6a00_0001);
+        assert_ne!(
+            trained.visual_id(0x4000_0001),
+            trained.visual_id(0x4000_0002)
+        );
     }
 }

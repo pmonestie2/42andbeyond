@@ -3062,6 +3062,12 @@ mod tests {
                 .body
                 .windows(b"Damage_Tactics".len())
                 .any(|part| part == b"Damage_Tactics")));
+        let visual = ship.rally_buff.as_ref().unwrap().visual_id(id);
+        assert!(ship.pending.iter().any(|frame| frame.opcode == 9
+            && frame.body.get(1..5) == Some(id.to_le_bytes().as_slice())
+            && frame.body.get(5..7)
+                == Some(crate::rally::VISUAL_DESCRIPTOR.to_le_bytes().as_slice())
+            && frame.body.get(7..11) == Some(visual.to_le_bytes().as_slice())));
         ship.pending.clear();
         ship.rally_buff.as_mut().unwrap().expires_at_ms = crate::resources::unix_ms() - 1;
         ship.advance_rally_buff().unwrap();
@@ -3069,6 +3075,7 @@ mod tests {
         assert!(ship
             .pending
             .contains(&packets::ship_active_buff_slot(id, 5, "", 0)));
+        assert!(ship.pending.contains(&packets::remove_effect(visual)));
     }
 
     /// Legacy status icons resolve the underscore BuffType, including resume.
@@ -3098,12 +3105,93 @@ mod tests {
         ship.publish_rally_resume();
         assert!(ship.pending.iter().any(|frame| frame.opcode == 0x1b
             && frame.body.windows(token.len()).any(|part| part == token)));
+        let visual = ship.rally_buff.as_ref().unwrap().visual_id(id);
+        assert!(ship.pending.iter().any(|frame| frame.opcode == 9
+            && frame.body.get(7..11) == Some(visual.to_le_bytes().as_slice())));
         ship.pending.clear();
         ship.rally_buff.as_mut().unwrap().expires_at_ms = crate::resources::unix_ms() - 1;
         ship.advance_rally_buff().unwrap();
         assert!(ship
             .pending
             .contains(&packets::ship_active_buff_slot(id, 5, "", 0)));
+        assert!(ship.pending.contains(&packets::remove_effect(visual)));
+    }
+
+    /// A renewed Rally removes the old field before reusing its stable ID.
+    #[test]
+    fn rally_replacement_reuses_visual_identity_after_native_removal() {
+        let mut ship = session();
+        ship.logged_in = true;
+        let id = ship.player_id();
+        let epoch = ship.session_epoch;
+        for (revision, tactic) in [
+            (1, crate::rally::Tactic::Damage),
+            (2, crate::rally::Tactic::Defense),
+        ] {
+            ship.apply_rally_buff(crate::rally::RallyBuff {
+                revision,
+                source: id,
+                target_epoch: epoch,
+                tactic,
+                skill_rank: 3,
+                expires_at_ms: crate::resources::unix_ms() + 30_000,
+            })
+            .unwrap();
+            if revision == 1 {
+                ship.pending.clear();
+            }
+        }
+        let visual = ship.rally_buff.as_ref().unwrap().visual_id(id);
+        let removed = ship
+            .pending
+            .iter()
+            .position(|frame| *frame == packets::remove_effect(visual))
+            .unwrap();
+        let added = ship
+            .pending
+            .iter()
+            .position(|frame| {
+                frame.opcode == 9 && frame.body.get(7..11) == Some(visual.to_le_bytes().as_slice())
+            })
+            .unwrap();
+        assert!(removed < added);
+    }
+
+    /// Resume reuses the same ObjectEffect ID and descriptor after replacement.
+    #[test]
+    fn rally_visual_replays_from_disposable_session_checkpoint() {
+        let mut ship = session();
+        ship.logged_in = true;
+        let peer = SocketAddr::from(([127, 0, 0, 9], 22960));
+        ship.endpoint = Some(peer);
+        ship.selected_peer = Some(peer.ip());
+        let id = ship.player_id();
+        ship.apply_rally_buff(crate::rally::RallyBuff {
+            revision: 1,
+            source: id,
+            target_epoch: ship.session_epoch,
+            tactic: crate::rally::Tactic::Stealth,
+            skill_rank: 7,
+            expires_at_ms: crate::resources::unix_ms() + 30_000,
+        })
+        .unwrap();
+        let visual = ship.rally_buff.as_ref().unwrap().visual_id(id);
+        ship.checkpoint_session(true).unwrap();
+        let root = ship.state_dir.clone();
+        let sector = ship.sector.clone();
+        let bind = ship.bind;
+        drop(ship);
+        let restored = PlayerSession::new(sector, bind, root.clone()).unwrap();
+        assert!(restored.pending.iter().any(|frame| frame.opcode == 9
+            && frame.body.get(5..7)
+                == Some(crate::rally::VISUAL_DESCRIPTOR.to_le_bytes().as_slice())
+            && frame.body.get(7..11) == Some(visual.to_le_bytes().as_slice())));
+        assert!(restored.pending.iter().any(|frame| frame.opcode == 0x1b
+            && frame
+                .body
+                .windows(b"Stealth_Tactics".len())
+                .any(|part| part == b"Stealth_Tactics")));
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     /// Sustained class statuses occupy separate AUX slots and clear on expiry.

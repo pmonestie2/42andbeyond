@@ -32,9 +32,11 @@ impl PlayerSession {
         if buff.revision <= self.rally_revision {
             return Ok(());
         }
-        if self.rally_buff.is_some() {
+        if let Some(previous) = self.rally_buff.as_ref() {
             self.pending
                 .push(packets::ship_active_buff_slot(self.player_id(), 5, "", 0));
+            self.pending
+                .push(packets::remove_effect(previous.visual_id(self.player_id())));
         }
         self.rally_revision = buff.revision;
         let accepted = buff.valid(crate::resources::unix_ms(), self.session_epoch)
@@ -63,6 +65,12 @@ impl PlayerSession {
             buff.tactic.buff_type(),
             self.tick_ms().wrapping_add(remaining as u32),
         ));
+        self.pending.push(packets::object_effect(
+            self.player_id(),
+            buff.visual_id(self.player_id()),
+            crate::rally::VISUAL_DESCRIPTOR,
+            self.tick_ms(),
+        ));
         self.pending.push(packets::message(&format!(
             "Rally {} active for {} seconds.",
             buff.tactic.label(),
@@ -78,11 +86,13 @@ impl PlayerSession {
                 || self.sector.station.is_some()
         });
         if expired {
-            self.rally_buff = None;
+            let previous = self.rally_buff.take().unwrap();
             let checkpoint = self.checkpoint_session(true);
             self.refresh_equipment()?;
             self.pending
                 .push(packets::ship_active_buff_slot(self.player_id(), 5, "", 0));
+            self.pending
+                .push(packets::remove_effect(previous.visual_id(self.player_id())));
             self.pending.push(packets::message("Rally ended."));
             checkpoint?;
         }
