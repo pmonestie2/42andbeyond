@@ -3783,6 +3783,81 @@ mod tests {
             .contains(&packets::reputation(&ship.factions, &ship.reputation)));
     }
 
+    /// The archived -2 talk destination awards and removes each repeatable combat cycle.
+    #[test]
+    fn scuttle_infestation_reoffers_after_durable_combat_and_faction_rewards() {
+        let mut ship = session();
+        ship.account.character.race = 0;
+        ship.account.character.profession = 0;
+        ship.skill_catalog = SkillCatalog::for_profile(&ship.account.character).unwrap();
+        ship.inventory.faction_standings.insert(6, 5000.);
+        ship.inventory.missions.completed.extend([102, 104]);
+        ship.refresh_equipment().unwrap();
+        ship.sector = ship.sectors.sector(10151).unwrap();
+        ship.logged_in = true;
+        enter_npc_room(&mut ship, 46);
+        let initial_credits = ship.inventory.credits;
+        let initial_combat = ship.inventory.combat_xp;
+        let initial_trade = ship.inventory.trade_xp;
+        let initial_explore = ship.inventory.explore_xp;
+        let player = ship.player_id();
+        let mut generation = 0;
+        for cycle in 1..=2 {
+            ship.open_npc(46).unwrap();
+            assert_eq!(ship.npc_interaction.as_ref().unwrap().mission, Some(303));
+            npc_choice(&mut ship, 3).unwrap();
+            ship.close_npc();
+            for (template, stage) in [(1253, 2), (1254, 3)] {
+                for _ in 0..5 {
+                    generation += 1;
+                    let award = crate::loot_world::KillAward {
+                        sector: 1015,
+                        death: crate::loot_world::MobDeath {
+                            spawn: 125300,
+                            generation,
+                        },
+                        killer: player,
+                        level: 1,
+                        amount: Some(100),
+                        source_killer: player,
+                        template,
+                    };
+                    ship.settle_kill_award(&award).unwrap();
+                    ship.settle_kill_award(&award).unwrap();
+                }
+                assert_eq!(ship.inventory.missions.active[0].stage, stage);
+            }
+            ship.open_npc(46).unwrap();
+            assert_eq!(ship.npc_interaction.as_ref().unwrap().mission_stage, 3);
+            if cycle == 2 {
+                let before = ship.inventory.clone();
+                let temporary = ship.state_dir.join("inventory.json.tmp");
+                std::fs::create_dir(&temporary).unwrap();
+                assert!(npc_choice(&mut ship, 2).is_err());
+                assert_eq!(ship.inventory, before);
+                assert_eq!(ship.reputation.standing(6), 5005.);
+                std::fs::remove_dir(temporary).unwrap();
+            }
+            npc_choice(&mut ship, 2).unwrap();
+            ship.close_npc();
+            assert!(ship.inventory.missions.active.is_empty());
+            assert!(!ship.inventory.missions.completed.contains(&303));
+            assert_eq!(ship.reputation.standing(6), 5000. + 5. * cycle as f32);
+            assert_eq!(ship.inventory.credits, initial_credits + 3000 * cycle);
+        }
+        assert_eq!(
+            ship.inventory.combat_xp,
+            initial_combat + 20 * 100 + 2 * 1500
+        );
+        assert_eq!(ship.inventory.trade_xp, initial_trade + 2 * 1500);
+        assert_eq!(ship.inventory.explore_xp, initial_explore + 2 * 1500);
+        let saved: crate::inventory::Inventory =
+            serde_json::from_slice(&std::fs::read(ship.state_dir.join("inventory.json")).unwrap())
+                .unwrap();
+        assert_eq!(saved.faction_standings.get(&6), Some(&5010.));
+        assert!(!saved.missions.contains(303));
+    }
+
     #[test]
     fn negotiation_mission_turn_in_debits_credits_with_repeated_rewards_once() {
         let mut ship = session();

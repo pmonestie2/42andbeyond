@@ -157,10 +157,10 @@ impl MissionCatalog {
         inventory: &Inventory,
     ) -> Option<u32> {
         self.0.values().find_map(|mission| {
-            (matches!(mission.id, 3 | 5 | 6 | 81 | 90 | 102 | 104 | 245 | 246 | 258..=261 | 341)
+            (matches!(mission.id, 3 | 5 | 6 | 81 | 90 | 102 | 104 | 245 | 246 | 258..=261 | 303 | 341)
                 && mission.stages.len() >= 2
                 && mission.time_limit == 0
-                && (!mission.forfeitable || matches!(mission.id, 245 | 246 | 258..=261))
+                && (!mission.forfeitable || matches!(mission.id, 245 | 246 | 258..=261 | 303))
                 && Self::start_tree_supported(&mission.stages[0])
                 && mission.stages[0]
                     .completion
@@ -367,6 +367,21 @@ impl MissionJournal {
         }
         self.active.remove(index);
         self.completed.insert(id);
+        Ok(())
+    }
+
+    /// Remove a finished native repeatable mission without locking its next offer.
+    pub fn finish_repeatable(&mut self, id: u32, catalog: &MissionCatalog) -> io::Result<()> {
+        let index = self
+            .active
+            .iter()
+            .position(|progress| progress.id == id)
+            .ok_or_else(|| invalid("Mission is not active."))?;
+        let mission = catalog.get(id)?;
+        if id != 303 || self.active[index].stage as usize + 1 != mission.stages.len() {
+            return Err(invalid("Mission is not at its repeatable final stage."));
+        }
+        self.active.remove(index);
         Ok(())
     }
 

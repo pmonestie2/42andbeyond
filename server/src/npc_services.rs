@@ -164,7 +164,7 @@ impl PlayerSession {
         &self,
         mission: u32,
         stage: u32,
-        destination: Option<u32>,
+        destination: Option<i32>,
     ) -> io::Result<Inventory> {
         let catalog = crate::missions::MissionCatalog::load()?;
         let definition = catalog.get(mission)?;
@@ -226,7 +226,16 @@ impl PlayerSession {
             }
         }
         if let Some(destination) = destination {
-            candidate.missions.advance(mission, destination, &catalog)?;
+            if destination == -2 {
+                candidate.missions.finish_repeatable(mission, &catalog)?;
+            } else {
+                candidate.missions.advance(
+                    mission,
+                    u32::try_from(destination)
+                        .map_err(|_| invalid("Mission stage destination is invalid."))?,
+                    &catalog,
+                )?;
+            }
         } else {
             candidate.missions.complete(mission, &catalog)?;
         }
@@ -384,8 +393,9 @@ impl PlayerSession {
                 .and_then(|stage| stage.nodes.iter().find(|entry| entry.id == node))
                 .map(|entry| entry.destination)
                 .ok_or_else(|| invalid("Mission dialogue destination is unavailable."))?;
-            let destination = u32::try_from(destination)
-                .map_err(|_| invalid("Mission dialogue destination is invalid."))?;
+            if destination != -2 && destination <= 0 {
+                return Err(invalid("Mission dialogue destination is invalid."));
+            }
             let mut candidate = self.inventory.clone();
             if active.mission_stage == 0 {
                 if destination != 1
@@ -405,11 +415,19 @@ impl PlayerSession {
                 )?;
             }
             self.commit_inventory(candidate)?;
-            self.npc_interaction.as_mut().unwrap().mission_stage = destination;
-            self.pending.push(packets::message(&format!(
-                "Mission {}: stage {destination}.",
-                catalog.get(mission)?.name
-            )));
+            if destination == -2 {
+                self.npc_interaction.as_mut().unwrap().mission = None;
+                self.pending.push(packets::message(&format!(
+                    "Mission completed: {}.",
+                    catalog.get(mission)?.name
+                )));
+            } else {
+                self.npc_interaction.as_mut().unwrap().mission_stage = destination as u32;
+                self.pending.push(packets::message(&format!(
+                    "Mission {}: stage {destination}.",
+                    catalog.get(mission)?.name
+                )));
+            }
         } else if entry.flag == 6 {
             let mission = active.mission.unwrap();
             let candidate =
