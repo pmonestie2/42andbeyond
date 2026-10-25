@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using FortyTwoAndBeyond.Client;
 using FortyTwoAndBeyond.Protocol;
 using UnityEditor;
@@ -14,7 +15,8 @@ namespace FortyTwoAndBeyond.Editor
     public static class LootEffectsSmoke
     {
         private static int stage;
-        private static uint corpseId;
+        private static uint corpseId, itemTemplate, startingStock, startingCargo;
+        private static int itemSlot;
         private static double deadline, nextAt;
         private static bool connected;
 
@@ -68,42 +70,80 @@ namespace FortyTwoAndBeyond.Editor
                 if (corpse == null) return;
                 corpseId = corpse.Id;
                 client.StopWeapons();
-                Vector3 projected = client.Project(corpse.Position);
-                if (projected.z > 0) client.SelectAtPointer(new Vector2(projected.x, projected.y));
-                client.OpenLoot(corpseId);
+                FieldInfo field = typeof(SpaceClient).GetField("hud", BindingFlags.Instance | BindingFlags.NonPublic);
+                FlightHud hud = field?.GetValue(client) as FlightHud;
+                if (hud == null) { Fail("Flight HUD was unavailable for wreck selection."); return; }
+                hud.SelectWreck(corpseId);
                 stage = 2;
                 return;
             }
             if (stage == 2)
             {
-                CorpseLoot contents = snapshot.Loot.FirstOrDefault(item => item.Id == corpseId);
-                if (snapshot.OpenLootId != corpseId || contents == null) return;
-                ItemView item = contents.Items.FirstOrDefault(entry => entry != null);
-                if (item == null) { Fail("Wreck has no tractorable stock"); return; }
-                client.TakeLoot(corpseId, item.Slot);
+                if (snapshot.SelectedTargetId != corpseId || snapshot.Verbs.Available(corpseId, 3) != true)
+                    return;
+                client.OpenLoot(corpseId);
                 stage = 3;
                 return;
             }
             if (stage == 3)
             {
-                if (snapshot.LootActivity?.CorpseId != corpseId) return;
-                nextAt = EditorApplication.timeSinceStartup + .2;
+                CorpseLoot contents = snapshot.Loot.FirstOrDefault(item => item.Id == corpseId);
+                if (snapshot.OpenLootId != corpseId || contents == null) return;
+                ItemView item = contents.Items.FirstOrDefault(entry => entry != null);
+                if (item == null) { Fail("Wreck has no tractorable stock"); return; }
+                itemTemplate = item.Template;
+                itemSlot = item.Slot;
+                startingStock = item.Quantity;
+                startingCargo = (uint)snapshot.Cargo.Where(entry => entry?.Template == itemTemplate)
+                    .Sum(entry => (long)entry.Quantity);
+                client.TakeLoot(corpseId, item.Slot);
                 stage = 4;
                 return;
             }
             if (stage == 4)
             {
-                if (snapshot.LootActivity?.CorpseId != corpseId ||
-                    EditorApplication.timeSinceStartup < nextAt) return;
-                ScreenCapture.CaptureScreenshot("Builds/verification/loot-effects.png");
-                nextAt = EditorApplication.timeSinceStartup + 1;
+                if (snapshot.LootActivity?.CorpseId != corpseId) return;
+                nextAt = EditorApplication.timeSinceStartup + .2;
                 stage = 5;
                 return;
             }
-            if (stage != 5 || EditorApplication.timeSinceStartup < nextAt) return;
-            if (!File.Exists("Builds/verification/loot-effects.png"))
-            { Fail("Missing loot graphical capture"); return; }
-            Debug.Log("PASS: native wreck tractor effect captured from disposable server.");
+            if (stage == 5)
+            {
+                if (snapshot.LootActivity?.CorpseId != corpseId ||
+                    EditorApplication.timeSinceStartup < nextAt) return;
+                if (File.Exists("Builds/verification/loot-effects.png"))
+                    File.Delete("Builds/verification/loot-effects.png");
+                ScreenCapture.CaptureScreenshot("Builds/verification/loot-effects.png");
+                nextAt = EditorApplication.timeSinceStartup + 1;
+                stage = 6;
+                return;
+            }
+            if (stage == 6 && EditorApplication.timeSinceStartup >= nextAt)
+            {
+                if (!File.Exists("Builds/verification/loot-effects.png"))
+                { Fail("Missing loot graphical capture"); return; }
+                stage = 7;
+            }
+            if (stage == 7 && snapshot.LootActivity == null &&
+                snapshot.Messages.Any(message => message.StartsWith("Looted ", StringComparison.Ordinal)))
+            {
+                uint cargo = (uint)snapshot.Cargo.Where(entry => entry?.Template == itemTemplate)
+                    .Sum(entry => (long)entry.Quantity);
+                uint stock = snapshot.Loot.FirstOrDefault(entry => entry.Id == corpseId)?
+                    .Items[itemSlot]?.Quantity ?? 0;
+                if (cargo <= startingCargo || stock >= startingStock)
+                { Fail("Server reported loot completion without cargo gain and wreck depletion."); return; }
+                if (File.Exists("Builds/verification/loot-collected.png"))
+                    File.Delete("Builds/verification/loot-collected.png");
+                ScreenCapture.CaptureScreenshot("Builds/verification/loot-collected.png");
+                nextAt = EditorApplication.timeSinceStartup + 1;
+                stage = 8;
+                return;
+            }
+            if (stage != 8 || EditorApplication.timeSinceStartup < nextAt) return;
+            if (!File.Exists("Builds/verification/loot-collected.png"))
+            { Fail("Missing completed loot graphical capture"); return; }
+            Debug.Log("PASS: server-created wreck, native tractor, cargo award, and depleted stock captured.");
             EditorApplication.update -= Tick;
             EditorApplication.Exit(0);
         }

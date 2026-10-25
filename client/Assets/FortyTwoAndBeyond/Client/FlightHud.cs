@@ -848,7 +848,7 @@ namespace FortyTwoAndBeyond.Client
             bool open = snapshot.OpenLootId == wreckId;
             bool tractoring = snapshot.LootActivity != null && snapshot.LootActivity.CorpseId == wreckId;
             float height = open ? tractoring ? 272 : 250 : 126;
-            float x = (CanvasWidth - 360) * .5f, y = CanvasHeight - height - 122;
+            float x = CanvasWidth - 690, y = CanvasHeight - height - 122;
             Panel(new Rect(x, y, 360, height));
             GUI.Label(new Rect(x + 12, y + 8, open ? 250 : 336, 22), wreck.Name, body);
             if (open && GUI.Button(new Rect(x + 274, y + 5, 74, 26), "CLOSE", button))
@@ -877,7 +877,7 @@ namespace FortyTwoAndBeyond.Client
                 if (stock.Length == 0) GUILayout.Label("No items remain", small);
                 foreach (ItemView item in stock)
                 {
-                    GUI.enabled = distance < 2000 && !tractoring;
+                    GUI.enabled = !tractoring;
                     if (GUILayout.Button("TRACTOR  " + item.Name + "  ×" + item.Quantity, button,
                         GUILayout.Height(34))) client.TakeLoot(wreckId, item.Slot);
                 }
@@ -1172,7 +1172,7 @@ namespace FortyTwoAndBeyond.Client
                     if (snapshot.OpenLootId == wreckId && contents != null)
                         foreach (ItemView item in contents.Items.Where(item => item != null))
                         {
-                            GUI.enabled = distance < 2000 && !tractoring;
+                            GUI.enabled = !tractoring;
                             if (GUILayout.Button("TRACTOR  " + item.Name + "  ×" + item.Quantity, button))
                                 client.TakeLoot(wreckId, item.Slot);
                             GUI.enabled = true;

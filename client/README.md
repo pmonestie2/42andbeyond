@@ -189,7 +189,8 @@ native inventory transfers, and shows item condition, range and any server quote
 Ammo can be loaded through the same server move command; the whole selected cargo
 stack is sent for loading, and the server checks its launcher family. Defeated
 mobs leave server-owned wrecks. Click a wreck to open its fixed loot panel;
-within 6 km, open it; within 2 km, tractor listed items into cargo. The client tracks
+within 6 km of its surface, open it; request listed items within the server's
+2 km surface limit. The client tracks
 the server's timed tractor packet and blocks repeat collection until completion
 or cancellation. **Close Wreck** sends the native close action and cancels an
 active tractor; the wreck can be reopened while it remains visible. Wreck and
@@ -316,6 +317,17 @@ server MOB state, weapon effects, damage, wreck loot, station docking, a docked
 reconnect, and launch, then stops it
 in a cleanup block. It fails if the ports are occupied rather than stopping any
 existing server. It must not be pointed at a live character session.
+
+For an opt-in macOS graphical wreck pickup check, build the debug server first,
+then run:
+
+```sh
+python3 client/Tests/run_loot_visual.py --unity /Applications/Unity/Hub/Editor/6000.3.13f1/Unity.app/Contents/MacOS/Unity
+```
+
+This owned loopback fixture kills one MOB, opens its corpse, captures the native
+tractor, and requires both a cargo gain and reduced wreck stock before capturing
+the completed pickup. It stops its Editor and server processes afterward.
 
 Verified on macOS: C# protocol checks; actual local bridge login, character
 selection, UDP entry, map and position delivery, impulse, warp, gate activation
