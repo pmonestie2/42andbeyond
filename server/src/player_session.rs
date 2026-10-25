@@ -23,7 +23,7 @@ use crate::skills::{GroupContact, SkillCatalog, SkillState, SupportAction};
 use crate::warp::{FinishReason, Warp, WarpEvent, WarpPhase, Waypoint};
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 use std::collections::{HashMap, VecDeque};
 use std::fs;
 use std::io;
@@ -32,6 +32,8 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 #[path = "ability_actions.rs"]
 mod ability_actions;
+#[path = "attacker_feedback.rs"]
+mod attacker_feedback;
 #[path = "combat_experience.rs"]
 mod combat_experience;
 #[path = "dev_session.rs"]
@@ -165,6 +167,7 @@ pub struct PlayerSession {
     last_motion_report: Option<Instant>,
     last_launch: u64,
     mob_damage_receipts: Vec<mob_damage::MobDamageReceipt>,
+    attacker_ids: BTreeSet<u32>,
     following: bool,
     follow_peer: Option<crate::following::FollowContact>,
     target: u32,
@@ -353,6 +356,7 @@ impl PlayerSession {
             last_motion_report: None,
             last_launch: 0,
             mob_damage_receipts: Vec::new(),
+            attacker_ids: BTreeSet::new(),
             following: false,
             follow_peer: None,
             target: u32::MAX,
@@ -708,6 +712,7 @@ impl PlayerSession {
                 self.peer_ids.clear();
                 self.peer_contacts.clear();
                 self.visible_peers.clear();
+                self.attacker_ids.clear();
                 self.peer_stats.clear();
                 self.visible_resources.clear();
                 self.resource_fractions.clear();
@@ -1518,6 +1523,7 @@ impl PlayerSession {
         self.warp_effects.clear();
         self.last_motion_report = None;
         self.pending.clear();
+        self.attacker_ids.clear();
         self.stop_weapons();
         self.active_device = None;
         self.peer_buffs.clear();

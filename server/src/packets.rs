@@ -620,6 +620,16 @@ pub fn remove_effect(effect_id: u32) -> Frame {
     Frame::new(0x0f, effect_id.to_le_bytes().to_vec())
 }
 
+/// Returns:
+///     Frame: Native MOB engagement update for the target pilot's combat display.
+pub fn attacker_update(mob_id: u32, engaged: bool) -> Frame {
+    let mut body = Vec::with_capacity(9);
+    body.extend_from_slice(&u32::from(engaged).to_le_bytes());
+    body.push(1);
+    body.extend_from_slice(&mob_id.to_le_bytes());
+    Frame::new(0x8b, body)
+}
+
 /// Simulation supplies raw points. AuxPercent.StartValue is a fraction; hull
 /// alone stays in absolute points. This applies equally to players and peers.
 pub fn ship_resources(
@@ -2303,6 +2313,18 @@ mod tests {
         assert_eq!(
             hex(cleared),
             "020000401500010200000000400000020100d20000000000000000"
+        );
+    }
+
+    #[test]
+    fn attacker_update_matches_native_nine_byte_payload() {
+        assert_eq!(
+            attacker_update(0x10000001, true).body,
+            [1, 0, 0, 0, 1, 1, 0, 0, 0x10]
+        );
+        assert_eq!(
+            attacker_update(0x10000001, false).body,
+            [0, 0, 0, 0, 1, 1, 0, 0, 0x10]
         );
     }
 

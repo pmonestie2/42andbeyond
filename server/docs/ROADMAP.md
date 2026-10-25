@@ -69,6 +69,11 @@ mean the corresponding gameplay system is complete.
   acknowledgment; quiet ticks avoid full-world snapshots. See
   [NPC projectile recovery](NPC_PROJECTILES.md). Native graphical verification
   remains pending; NPC ammunition AI and original boss mechanics remain open.
+- Native attacker-list updates (0x8b) now reach only the pilot a MOB actually
+  fired upon. Engagement is retained through reload and chase, removed on
+  target loss or death, and checkpointed through short server replacement;
+  a fresh login starts a new attacker list. Disposable two-pilot tests cover
+  target switching and recovery. Native combat-display verification is pending.
 - Public catalog of 4,568 item templates with effects, restrictions, stacks,
   recipes/refine targets and weapon/reactor/shield/engine data. Starting mounts
   are separate from templates. Only owned item metadata is sent on login.

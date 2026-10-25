@@ -122,6 +122,90 @@ fn land_npc_shots(game: &mut GameState) {
     game.advance_at(0., deadline).unwrap();
 }
 
+/// Returns:
+///     Vec<Datagram>: Native attacker updates emitted to authenticated pilots.
+fn attacker_updates(game: &mut GameState) -> Vec<Datagram> {
+    game.take_outgoing()
+        .into_iter()
+        .filter(|outbound| outbound.port == SECTOR_PORT)
+        .filter_map(|outbound| Datagram::decode(&outbound.data).ok())
+        .flat_map(|packet| {
+            let mut frames = Vec::new();
+            let mut remaining = packet.body.as_slice();
+            while remaining.len() >= 4 {
+                let length = u16::from_le_bytes([remaining[0], remaining[1]]) as usize;
+                if length < 4 || length > remaining.len() {
+                    break;
+                }
+                if let Ok(frame) = Frame::decode(&remaining[..length]) {
+                    if frame.opcode == 0x8b {
+                        frames.push(Datagram {
+                            opcode: frame.opcode,
+                            player: packet.player,
+                            sequence: packet.sequence,
+                            body: frame.body,
+                        });
+                    }
+                }
+                remaining = &remaining[length..];
+            }
+            frames
+        })
+        .collect()
+}
+
+#[test]
+fn mob_attacker_updates_follow_actual_shots_and_survive_replacement() {
+    let mut game = game();
+    let alice = FIRST_PLAYER_ID;
+    let bob = alice + 1;
+    login(&mut game, alice, 22901, "alice");
+    login(&mut game, bob, 22902, "bob");
+    game.take_outgoing();
+    game.sessions.get_mut(&alice).unwrap().position = [15_000., 15_000., 0.];
+    game.sessions.get_mut(&bob).unwrap().position = [30_000., 30_000., 0.];
+    game.advance(0.1).unwrap();
+    let started = attacker_updates(&mut game);
+    assert_eq!(started.len(), 1);
+    assert_eq!(started[0].player, alice);
+    assert_eq!(started[0].body, packets::attacker_update(MOB_ID, true).body);
+    game.advance(0.1).unwrap();
+    assert!(attacker_updates(&mut game).is_empty());
+
+    let root = game.root.clone();
+    let sector = game.initial_sector.clone();
+    let bind = game.bind;
+    drop(game);
+    let mut restored = GameState::new(sector, bind, root).unwrap();
+    restored.advance(0.1).unwrap();
+    assert!(attacker_updates(&mut restored).is_empty());
+    restored.sessions.get_mut(&alice).unwrap().position = [30_000., 30_000., 0.];
+    restored.sessions.get_mut(&bob).unwrap().position = [15_000., 15_000., 0.];
+    lock_combat(&restored.sessions[&bob].combat).unwrap().actors[0].damage_by(1., bob);
+    restored.advance(0.1).unwrap();
+    let stopped = attacker_updates(&mut restored);
+    assert_eq!(stopped.len(), 1);
+    assert_eq!(stopped[0].player, alice);
+    assert_eq!(
+        stopped[0].body,
+        packets::attacker_update(MOB_ID, false).body
+    );
+    advance(&mut restored, 3.);
+    let switched = attacker_updates(&mut restored);
+    assert_eq!(switched.len(), 1);
+    assert_eq!(switched[0].player, bob);
+    assert_eq!(
+        switched[0].body,
+        packets::attacker_update(MOB_ID, true).body
+    );
+    lock_combat(&restored.sessions[&bob].combat).unwrap().actors[0].damage_by(1_000_000., bob);
+    restored.advance(0.1).unwrap();
+    let ended = attacker_updates(&mut restored);
+    assert_eq!(ended.len(), 1);
+    assert_eq!(ended[0].player, bob);
+    assert_eq!(ended[0].body, packets::attacker_update(MOB_ID, false).body);
+}
+
 /// A single ledger revision survives stale checkpoints and rejects repeat actions.
 #[test]
 fn targeted_reactor_transfer_is_atomic_across_two_players_and_replacement() {

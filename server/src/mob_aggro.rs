@@ -115,6 +115,12 @@ impl MobAggro {
         self.target == Some(player)
     }
 
+    /// Returns:
+    ///     Option<u32>: Current player selected by the native hate and sensor rules.
+    pub fn targeted_player(&self) -> Option<u32> {
+        self.target
+    }
+
     pub fn remove(&mut self, player: u32) {
         self.retain(|id| id != player);
     }

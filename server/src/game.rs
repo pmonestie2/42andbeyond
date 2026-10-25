@@ -12,7 +12,7 @@ use crate::peers::PeerSnapshot;
 use crate::player_session::{Outbound, PlayerSession};
 use crate::protocol::{invalid, Datagram, Frame, Reader};
 use crate::resources::{lock_resources, ResourceField};
-use crate::sector_combat::{lock_combat, SectorCombat};
+use crate::sector_combat::{lock_combat, MobLaunchVisual, SectorCombat, MOB_ID};
 use crate::skills::SupportAction;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::io;
@@ -706,6 +706,11 @@ impl GameState {
                 projectile_visuals.push((sector, visual));
             }
         }
+        if let Err(error) = self.publish_attacker_updates(&mob_launches) {
+            if first_error.is_none() {
+                first_error = Some(error);
+            }
+        }
         let peers = self.snapshots();
         let mut station_rooms: HashMap<(u32, u32), Vec<crate::peers::StationPeerSnapshot>> =
             HashMap::new();
@@ -816,6 +821,36 @@ impl GameState {
             .values()
             .filter_map(PlayerSession::peer_snapshot)
             .collect()
+    }
+    /// Reconcile actual MOB launches with each pilot's native attacker list.
+    fn publish_attacker_updates(&mut self, launches: &[MobLaunchVisual]) -> io::Result<()> {
+        let mut targeted: HashMap<(u32, u32), HashSet<u32>> = HashMap::new();
+        for (&sector, combat) in &self.combats {
+            for (index, mob) in lock_combat(combat)?.actors.iter().enumerate() {
+                if let Some(player) = mob.targeted_player() {
+                    targeted
+                        .entry((sector, player))
+                        .or_default()
+                        .insert(MOB_ID + index as u32);
+                }
+            }
+        }
+        let mut fired: HashMap<(u32, u32), HashSet<u32>> = HashMap::new();
+        for shot in launches {
+            fired
+                .entry((shot.sector, shot.target))
+                .or_default()
+                .insert(MOB_ID + shot.attacker_index as u32);
+        }
+        let empty = HashSet::new();
+        for (&player, session) in &mut self.sessions {
+            let key = (session.sector.id, player);
+            session.sync_attackers(
+                targeted.get(&key).unwrap_or(&empty),
+                fired.get(&key).unwrap_or(&empty),
+            )?;
+        }
+        Ok(())
     }
     fn update_views(&mut self) {
         let peers = self.snapshots();

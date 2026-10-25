@@ -212,6 +212,13 @@ impl Mob {
     pub fn targets(&self, player: u32) -> bool {
         self.aggro.targets(player)
     }
+    /// Returns:
+    ///     Option<u32>: Pilot this living MOB currently pursues or attacks.
+    pub fn targeted_player(&self) -> Option<u32> {
+        (self.state != MobState::Dead)
+            .then(|| self.aggro.targeted_player())
+            .flatten()
+    }
     pub fn new(definition: MobDefinition) -> Self {
         let combat = MobStats::derive(&definition);
         let max_health = combat.hull;

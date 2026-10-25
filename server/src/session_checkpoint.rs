@@ -70,6 +70,8 @@ pub(super) struct Checkpoint {
     #[serde(default)]
     mob_damage_receipts: Vec<mob_damage::MobDamageReceipt>,
     #[serde(default)]
+    attacker_ids: BTreeSet<u32>,
+    #[serde(default)]
     skills: SkillState,
     #[serde(default)]
     handoff: Option<Vec<u8>>,
@@ -193,6 +195,11 @@ impl PlayerSession {
                 .as_ref()
                 .is_some_and(|buff| buff.revision > saved.peer_buff_revision)
             || !mob_damage::valid_receipts(&saved.mob_damage_receipts)
+            || saved.attacker_ids.len() > saved.mobs.len()
+            || saved
+                .attacker_ids
+                .iter()
+                .any(|id| *id < MOB_ID || (*id - MOB_ID) as usize >= saved.mobs.len())
             || saved
                 .workbench
                 .as_ref()
@@ -288,6 +295,7 @@ impl PlayerSession {
         self.following = saved.following;
         self.last_launch = saved.last_launch;
         self.mob_damage_receipts = saved.mob_damage_receipts;
+        self.attacker_ids = saved.attacker_ids;
         self.follow_peer = None;
         self.skills = saved.skills;
         self.handoff = saved.handoff;
@@ -500,6 +508,7 @@ impl PlayerSession {
             following: self.following,
             last_launch: self.last_launch,
             mob_damage_receipts: self.mob_damage_receipts.clone(),
+            attacker_ids: self.attacker_ids.clone(),
             skills: self.skills.clone(),
             handoff: self.handoff.clone(),
             docking_target: self.docking_target,
@@ -594,6 +603,7 @@ impl PlayerSession {
         saved.player_firing = false;
         saved.following = false;
         saved.weapon_firing = [false; 20];
+        saved.attacker_ids.clear();
         saved.handoff = Some(join.to_vec());
         saved.docking_target = None;
         saved.gate_transit = None;
