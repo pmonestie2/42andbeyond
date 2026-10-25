@@ -19,6 +19,19 @@ pub enum Tactic {
 
 impl Tactic {
     /// Returns:
+    ///     &str: Legacy client buff icon token, separate from status prose.
+    pub fn buff_type(self) -> &'static str {
+        // Net-7's archived AUX buff example uses `Damage_Tactics`; the other
+        // tier tokens follow that same client-facing naming convention.
+        match self {
+            Self::Damage => "Damage_Tactics",
+            Self::Defense => "Defense_Tactics",
+            Self::Firing => "Firing_Tactics",
+            Self::Stealth => "Stealth_Tactics",
+        }
+    }
+
+    /// Returns:
     ///     &str: Native status icon label for this Rally tier.
     pub fn label(self) -> &'static str {
         match self {
@@ -187,5 +200,7 @@ mod tests {
             expires_at_ms: 1_000_001,
         };
         assert_eq!(trained.modifiers()[0].value, 15.);
+        assert_eq!(Tactic::Damage.buff_type(), "Damage_Tactics");
+        assert_eq!(Tactic::Stealth.buff_type(), "Stealth_Tactics");
     }
 }

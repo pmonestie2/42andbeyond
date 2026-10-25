@@ -86,6 +86,8 @@ mod session_resources;
 mod session_tick;
 #[path = "shield_recharge.rs"]
 mod shield_recharge;
+#[path = "skill_status.rs"]
+mod skill_status;
 #[cfg(test)]
 #[path = "session_skill_tests.rs"]
 mod skill_tests;
@@ -3058,8 +3060,8 @@ mod tests {
         assert!(ship.pending.iter().any(|frame| frame.opcode == 0x1b
             && frame
                 .body
-                .windows(b"Damage Tactics".len())
-                .any(|part| part == b"Damage Tactics")));
+                .windows(b"Damage_Tactics".len())
+                .any(|part| part == b"Damage_Tactics")));
         ship.pending.clear();
         ship.rally_buff.as_mut().unwrap().expires_at_ms = crate::resources::unix_ms() - 1;
         ship.advance_rally_buff().unwrap();
@@ -3067,6 +3069,184 @@ mod tests {
         assert!(ship
             .pending
             .contains(&packets::ship_active_buff_slot(id, 5, "", 0)));
+    }
+
+    /// Legacy status icons resolve the underscore BuffType, including resume.
+    #[test]
+    fn rally_stealth_uses_native_icon_token_on_apply_and_resume() {
+        let mut ship = session();
+        ship.logged_in = true;
+        let id = ship.player_id();
+        ship.apply_rally_buff(crate::rally::RallyBuff {
+            revision: 1,
+            source: id,
+            target_epoch: ship.session_epoch,
+            tactic: crate::rally::Tactic::Stealth,
+            skill_rank: 7,
+            expires_at_ms: crate::resources::unix_ms() + 30_000,
+        })
+        .unwrap();
+        let token = b"Stealth_Tactics";
+        assert!(ship.pending.iter().any(|frame| frame.opcode == 0x1b
+            && frame.body.windows(token.len()).any(|part| part == token)));
+        assert!(ship.pending.iter().any(|frame| frame.opcode == 0x1d
+            && frame
+                .body
+                .windows(b"Stealth Tactics".len())
+                .any(|part| part == b"Stealth Tactics")));
+        ship.pending.clear();
+        ship.publish_rally_resume();
+        assert!(ship.pending.iter().any(|frame| frame.opcode == 0x1b
+            && frame.body.windows(token.len()).any(|part| part == token)));
+        ship.pending.clear();
+        ship.rally_buff.as_mut().unwrap().expires_at_ms = crate::resources::unix_ms() - 1;
+        ship.advance_rally_buff().unwrap();
+        assert!(ship
+            .pending
+            .contains(&packets::ship_active_buff_slot(id, 5, "", 0)));
+    }
+
+    /// Sustained class statuses occupy separate AUX slots and clear on expiry.
+    #[test]
+    fn cloak_environment_and_combat_cloak_publish_replay_and_clear() {
+        let mut ship = session();
+        ship.logged_in = true;
+        let id = ship.player_id();
+        ship.skills.cloak_rank = 5;
+        ship.skills.cloak_effect = Some(7001);
+        ship.skills.environment_rank = 3;
+        ship.skills.environment_seconds = 4.;
+        ship.skills.environment_effect = Some(7002);
+        ship.skills.combat_cloak_seconds = 3.;
+        ship.publish_skill_status_resume();
+        assert!(ship
+            .pending
+            .contains(&packets::ship_status_buff_slot(id, 6, "Cloak", true, 0)));
+        for name in [b"Environment_Shield".as_slice(), b"Combat_Cloak".as_slice()] {
+            assert!(ship.pending.iter().any(|frame| frame.opcode == 0x1b
+                && frame.body.windows(name.len()).any(|part| part == name)));
+        }
+        for effect in [7001u32, 7002] {
+            assert!(ship.pending.iter().any(|frame| frame.opcode == 9
+                && frame
+                    .body
+                    .windows(4)
+                    .any(|part| part == effect.to_le_bytes())));
+        }
+        ship.pending.clear();
+        ship.stop_cloak();
+        assert!(ship
+            .pending
+            .contains(&packets::ship_active_buff_slot(id, 6, "", 0)));
+        assert!(ship.pending.iter().any(|frame| frame.opcode == 0x1b
+            && frame
+                .body
+                .windows(b"Combat_Cloak".len())
+                .any(|part| part == b"Combat_Cloak")));
+        ship.pending.clear();
+        ship.advance_abilities(5.).unwrap();
+        assert!(ship
+            .pending
+            .contains(&packets::ship_active_buff_slot(id, 7, "", 0)));
+        assert!(ship
+            .pending
+            .contains(&packets::ship_active_buff_slot(id, 8, "", 0)));
+        assert!(ship.pending.contains(&packets::remove_effect(7002)));
+        assert!(!ship
+            .pending
+            .contains(&packets::ship_active_buff_slot(id, 5, "", 0)));
+    }
+
+    /// A short process replacement replays icon state and native skill visuals.
+    #[test]
+    fn active_skill_statuses_replay_from_disposable_checkpoint() {
+        let mut ship = session();
+        ship.logged_in = true;
+        let peer = SocketAddr::from(([127, 0, 0, 9], 22950));
+        ship.endpoint = Some(peer);
+        ship.selected_peer = Some(peer.ip());
+        ship.skills.cloak_rank = 5;
+        ship.skills.cloak_effect = Some(8001);
+        ship.skills.environment_rank = 3;
+        ship.skills.environment_seconds = 150.;
+        ship.skills.environment_effect = Some(8002);
+        ship.skills.combat_cloak_seconds = 4.;
+        ship.checkpoint_session(true).unwrap();
+        let root = ship.state_dir.clone();
+        let sector = ship.sector.clone();
+        let bind = ship.bind;
+        drop(ship);
+        let restored = PlayerSession::new(sector, bind, root.clone()).unwrap();
+        for token in [
+            b"Cloak".as_slice(),
+            b"Environment_Shield".as_slice(),
+            b"Combat_Cloak".as_slice(),
+        ] {
+            assert!(restored.pending.iter().any(|frame| frame.opcode == 0x1b
+                && frame.body.windows(token.len()).any(|part| part == token)));
+        }
+        for effect in [8001u32, 8002] {
+            assert!(restored.pending.iter().any(|frame| frame.opcode == 9
+                && frame
+                    .body
+                    .windows(4)
+                    .any(|part| part == effect.to_le_bytes())));
+        }
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    /// An expiring class shield leaves simultaneous ally, Rally and cloak icons.
+    #[test]
+    fn overlapping_ally_rally_and_skill_statuses_clear_only_expired_slot() {
+        let mut ship = session();
+        ship.logged_in = true;
+        let id = ship.player_id();
+        ship.apply_peer_buff(crate::peer_buffs::PeerBuff {
+            revision: 1,
+            source: id + 1,
+            target_epoch: ship.session_epoch,
+            template: 1813,
+            effect: crate::peer_buffs::FriendlyEffect::ScanBoost,
+            value: 25.,
+            operation: 2,
+            expires_at_ms: crate::resources::unix_ms() + 30_000,
+        })
+        .unwrap();
+        ship.apply_rally_buff(crate::rally::RallyBuff {
+            revision: 1,
+            source: id,
+            target_epoch: ship.session_epoch,
+            tactic: crate::rally::Tactic::Damage,
+            skill_rank: 1,
+            expires_at_ms: crate::resources::unix_ms() + 30_000,
+        })
+        .unwrap();
+        ship.skills.cloak_rank = 1;
+        ship.publish_cloak_status(false);
+        ship.apply_environment(1);
+        for token in [
+            b"Increase Scan Range".as_slice(),
+            b"Damage_Tactics".as_slice(),
+            b"Cloak".as_slice(),
+            b"Environment_Shield".as_slice(),
+        ] {
+            assert!(ship.pending.iter().any(|frame| frame.opcode == 0x1b
+                && frame.body.windows(token.len()).any(|part| part == token)));
+        }
+        ship.pending.clear();
+        ship.skills.environment_seconds = 0.1;
+        ship.advance_abilities(0.2).unwrap();
+        assert!(ship
+            .pending
+            .contains(&packets::ship_active_buff_slot(id, 7, "", 0)));
+        for occupied in [1, 5, 6] {
+            assert!(!ship
+                .pending
+                .contains(&packets::ship_active_buff_slot(id, occupied, "", 0)));
+        }
+        assert!(ship.rally_buff.is_some());
+        assert_eq!(ship.peer_buffs.len(), 1);
+        assert_eq!(ship.skills.cloak_rank, 1);
     }
 
     #[test]

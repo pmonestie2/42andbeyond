@@ -440,6 +440,7 @@ impl PlayerSession {
         self.publish_active_device_resume();
         self.publish_peer_buff_resume();
         self.publish_rally_resume();
+        self.publish_skill_status_resume();
         for expired in expired_peer_buffs {
             self.remove_peer_buff_presentation(&expired);
         }

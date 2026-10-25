@@ -308,7 +308,16 @@ impl PlayerSession {
         for seconds in self.skills.cooldowns.values_mut() {
             *seconds = (*seconds - dt).max(0.);
         }
+        let combat_cloak_was_active = self.skills.combat_cloak_seconds > 0.;
         self.skills.combat_cloak_seconds = (self.skills.combat_cloak_seconds - dt).max(0.);
+        if combat_cloak_was_active && self.skills.combat_cloak_seconds == 0. {
+            self.pending.push(packets::ship_active_buff_slot(
+                self.player_id(),
+                skill_status::COMBAT_CLOAK_SLOT,
+                "",
+                0,
+            ));
+        }
         if self.skills.cloak_rank > 0 && self.skills.cloak_source.is_none() {
             let drain = match self.skills.cloak_rank {
                 1 => 0.5,
@@ -329,6 +338,12 @@ impl PlayerSession {
                 if let Some(effect) = self.skills.environment_effect.take() {
                     self.remove_effect(effect);
                 }
+                self.pending.push(packets::ship_active_buff_slot(
+                    self.player_id(),
+                    skill_status::ENVIRONMENT_SLOT,
+                    "",
+                    0,
+                ));
             }
         }
         if let Some(mut cast) = self.skills.cast.take() {
@@ -444,6 +459,7 @@ impl PlayerSession {
                     Some(self.add_skill_effect(self.account.character.game_id, asset));
                 self.pending
                     .push(packets::cloak(self.account.character.game_id, true));
+                self.publish_cloak_status(false);
                 if ability.rank >= 6 {
                     self.support_actions.push(SupportAction::Cloak {
                         enabled: true,
@@ -621,6 +637,7 @@ impl PlayerSession {
         self.skills.environment_rank = rank;
         self.skills.environment_seconds = 180.;
         self.skills.environment_effect = Some(self.add_skill_effect(self.player_id(), 216));
+        self.publish_environment_status(false);
     }
     pub(super) fn fold_self(&mut self) {
         let angle = rand::random::<f32>() * std::f32::consts::TAU;
@@ -648,8 +665,17 @@ impl PlayerSession {
         if let Some(effect) = self.skills.cloak_effect.take() {
             self.remove_effect(effect);
         }
+        if rank > 0 {
+            self.pending.push(packets::ship_active_buff_slot(
+                self.player_id(),
+                skill_status::CLOAK_SLOT,
+                "",
+                0,
+            ));
+        }
         if rank >= 5 {
             self.skills.combat_cloak_seconds = 5.;
+            self.publish_combat_cloak_status();
         }
         self.pending.push(packets::cloak(self.player_id(), false));
         if rank >= 6 && !inherited {

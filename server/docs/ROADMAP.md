@@ -260,6 +260,18 @@ mean the corresponding gameplay system is complete.
   original manual and Net-7 skill documentation, while bonus percentages,
   reactor costs, charge time and cooldown are explicitly local balance tuning
   in `src/rally.rs`. Rally does not invent an unknown visual descriptor.
+- Sustained active statuses use native ShipIndex.Buffs slots without collision:
+  equipped item 0, targeted devices 1–4, Rally 5, Cloak 6, Environment
+  Shield 7, and the five-second Combat Cloak damage window 8. Activation and
+  short replacement publish `0x1b` with the remaining server tick; expiry or
+  cancel clears only that slot. Indefinite Cloak sets the native permanent
+  field. Existing skill visuals replay through `0x09` with their original
+  effect IDs and are removed with `0x0f`. The archived Net-7 AUX example uses
+  `Damage_Tactics` as a buff type, so Rally uses underscore tactic tokens for
+  native icon lookup; later tactic names and skill icon tokens follow that
+  convention pending legacy-client artwork confirmation. Instant repairs,
+  Jumpstart, Fold, Leech, and Wormhole have no persistent buff slot; charging
+  and recovery keep their native progress/cooldown packets.
 - Public Turbo Weapons devices now supply a timed self-buff through the same
   weapon reload modifiers as passive gear. Activation checks the equipped
   slot, reactor cost and ship state; firing rate is authoritative and the buff

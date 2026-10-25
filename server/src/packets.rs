@@ -599,12 +599,24 @@ pub fn ship_active_buff(id: u32, name: &str, removal_tick: u32) -> Frame {
 /// Returns:
 ///     Frame: Native ship buff update for one of sixteen display slots.
 pub fn ship_active_buff_slot(id: u32, slot: usize, name: &str, removal_tick: u32) -> Frame {
+    ship_status_buff_slot(id, slot, name, false, removal_tick)
+}
+
+/// Returns:
+///     Frame: Native timed or indefinite status for one noncolliding buff slot.
+pub fn ship_status_buff_slot(
+    id: u32,
+    slot: usize,
+    name: &str,
+    permanent: bool,
+    removal_tick: u32,
+) -> Frame {
     assert!(slot < 16);
     let buff = aux_diff(
         5,
         BTreeMap::from([
             (0, text(name)),
-            (2, vec![0]),
+            (2, vec![u8::from(permanent)]),
             (3, removal_tick.to_le_bytes().to_vec()),
         ]),
     );
@@ -2315,6 +2327,28 @@ mod tests {
                 .collect::<String>(),
             "020000401500010200000000400000220000d20000000000000000"
         );
+    }
+
+    /// Every concurrent status touches one distinct member of ShipIndex.Buffs.
+    #[test]
+    fn native_status_slots_do_not_collide_and_cloak_marks_permanence() {
+        let id = FIRST_PLAYER_ID;
+        let frames: Vec<_> = (0..=8)
+            .map(|slot| ship_active_buff_slot(id, slot, "Status", 5000))
+            .collect();
+        for left in 0..frames.len() {
+            assert_eq!(frames[left].opcode, 0x1b);
+            for right in left + 1..frames.len() {
+                assert_ne!(frames[left].body, frames[right].body);
+            }
+        }
+        let indefinite = ship_status_buff_slot(id, 6, "Cloak", true, 0);
+        let timed = ship_status_buff_slot(id, 6, "Cloak", false, 0);
+        assert_ne!(indefinite.body, timed.body);
+        assert!(indefinite
+            .body
+            .windows(b"Cloak".len())
+            .any(|part| part == b"Cloak"));
     }
 
     #[test]

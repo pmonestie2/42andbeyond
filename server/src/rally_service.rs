@@ -60,7 +60,7 @@ impl PlayerSession {
         self.pending.push(packets::ship_active_buff_slot(
             self.player_id(),
             5,
-            buff.tactic.label(),
+            buff.tactic.buff_type(),
             self.tick_ms().wrapping_add(remaining as u32),
         ));
         self.pending.push(packets::message(&format!(

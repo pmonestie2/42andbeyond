@@ -360,6 +360,7 @@ impl PlayerSession {
                     self.skills.cloak_stealth = Some(stealth);
                     self.stop_weapons();
                     self.pending.push(packets::cloak(self.player_id(), true));
+                    self.publish_cloak_status(false);
                 }
             }
             SupportAction::Cloak { enabled: false, .. } => {
