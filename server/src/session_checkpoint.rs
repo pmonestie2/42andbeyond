@@ -66,6 +66,10 @@ pub(super) struct Checkpoint {
     #[serde(default)]
     peer_buff_revision: u64,
     #[serde(default)]
+    rally_buff: Option<crate::rally::RallyBuff>,
+    #[serde(default)]
+    rally_revision: u64,
+    #[serde(default)]
     player_firing: bool,
     #[serde(default)]
     following: bool,
@@ -181,6 +185,11 @@ impl PlayerSession {
             || saved.replay.len() > 128
             || saved.inputs.len() > 256
             || saved.peer_buffs.len() > 3
+            || saved.rally_buff.as_ref().is_some_and(|buff| {
+                buff.revision > saved.rally_revision
+                    || buff.skill_rank < buff.tactic.rank()
+                    || buff.skill_rank > 7
+            })
             || saved
                 .peer_buffs
                 .windows(2)
@@ -227,6 +236,11 @@ impl PlayerSession {
                 .pending_hull_repair
                 .as_ref()
                 .is_some_and(|repair| !repair.valid())
+            || saved
+                .skills
+                .pending_rally
+                .as_ref()
+                .is_some_and(|rally| !rally.valid())
             || saved.loot_cast.as_ref().is_some_and(|cast| !cast.valid())
             || saved.corpse_ids.len() > 4096
             || saved.corpse_ids.iter().any(|(id, position)| {
@@ -295,6 +309,10 @@ impl PlayerSession {
         } else {
             saved.peer_buffs
         };
+        self.rally_buff = saved
+            .rally_buff
+            .filter(|buff| buff.valid(unix_ms(), self.session_epoch));
+        self.rally_revision = saved.rally_revision;
         let mut expired_peer_buffs = Vec::new();
         self.peer_buffs.retain(|buff| {
             if buff.valid(&self.items, unix_ms(), self.session_epoch) {
@@ -421,6 +439,7 @@ impl PlayerSession {
         ));
         self.publish_active_device_resume();
         self.publish_peer_buff_resume();
+        self.publish_rally_resume();
         for expired in expired_peer_buffs {
             self.remove_peer_buff_presentation(&expired);
         }
@@ -522,6 +541,8 @@ impl PlayerSession {
             peer_buff: None,
             peer_buffs: self.peer_buffs.clone(),
             peer_buff_revision: self.peer_buff_revision,
+            rally_buff: self.rally_buff.clone(),
+            rally_revision: self.rally_revision,
             player_firing: self.player_firing,
             following: self.following,
             last_launch: self.last_launch,

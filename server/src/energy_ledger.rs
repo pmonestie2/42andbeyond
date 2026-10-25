@@ -3,6 +3,7 @@
 //! status value wins after a process crash or short server replacement.
 use crate::peer_buffs::PeerBuff;
 use crate::protocol::invalid;
+use crate::rally::RallyBuff;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fs::{self, File};
@@ -69,6 +70,10 @@ struct LedgerData {
     last_hull_repair: BTreeMap<u32, TransferSequence>,
     #[serde(default)]
     peer_buffs: BTreeMap<u32, StoredPeerBuffs>,
+    #[serde(default)]
+    rally_buffs: BTreeMap<u32, RallyBuff>,
+    #[serde(default)]
+    last_rally: BTreeMap<u32, TransferSequence>,
 }
 
 pub struct EnergyLedger {
@@ -93,6 +98,8 @@ impl EnergyLedger {
                 last_recharge: BTreeMap::new(),
                 last_hull_repair: BTreeMap::new(),
                 peer_buffs: BTreeMap::new(),
+                rally_buffs: BTreeMap::new(),
+                last_rally: BTreeMap::new(),
             }
         };
         if data.version != 1
@@ -150,6 +157,20 @@ impl EnergyLedger {
                             .iter()
                             .any(|prior| prior.effect == buff.effect)
                     })
+            })
+            || data
+                .last_rally
+                .iter()
+                .any(|(source, last)| *source == 0 || last.epoch == 0 || last.sequence == 0)
+            || data.rally_buffs.iter().any(|(target, buff)| {
+                *target == 0
+                    || buff.revision == 0
+                    || buff.revision > data.revision
+                    || buff.source == 0
+                    || buff.target_epoch == 0
+                    || buff.skill_rank < buff.tactic.rank()
+                    || buff.skill_rank > 7
+                    || buff.expires_at_ms == 0
             })
         {
             return Err(invalid("Invalid targeted energy transfer ledger."));
@@ -335,6 +356,94 @@ impl EnergyLedger {
             .peer_buffs
             .get(&target)
             .map_or(&[], StoredPeerBuffs::as_slice)
+    }
+
+    /// Returns:
+    ///     Option<&RallyBuff>: Last atomic Rally status for this pilot.
+    pub fn rally_buff(&self, target: u32) -> Option<&RallyBuff> {
+        self.data.rally_buffs.get(&target)
+    }
+
+    /// Returns:
+    ///     bool: Whether this Rally cast was already committed.
+    pub fn rally_seen(&self, source: u32, epoch: u64, effect: u32) -> bool {
+        self.data
+            .last_rally
+            .get(&source)
+            .is_some_and(|last| last.epoch == epoch && effect <= last.sequence)
+    }
+
+    /// Commit one caster cost and every in-range group recipient atomically.
+    ///
+    /// Returns:
+    ///     u64: Shared world revision for the Rally cast.
+    pub fn cast_rally(
+        &mut self,
+        source: u32,
+        epoch: u64,
+        effect: u32,
+        source_energy: f32,
+        recipients: Vec<(u32, RallyBuff)>,
+    ) -> io::Result<u64> {
+        if source == 0
+            || epoch == 0
+            || effect == 0
+            || self.rally_seen(source, epoch, effect)
+            || !source_energy.is_finite()
+            || !(0. ..=1_000_000_000.).contains(&source_energy)
+            || recipients.is_empty()
+            || recipients.len() > 6
+            || !recipients.iter().any(|(target, _)| *target == source)
+            || recipients
+                .iter()
+                .enumerate()
+                .any(|(index, (target, buff))| {
+                    *target == 0
+                        || buff.source != source
+                        || buff.target_epoch == 0
+                        || buff.skill_rank < buff.tactic.rank()
+                        || buff.skill_rank > 7
+                        || buff.expires_at_ms == 0
+                        || recipients[..index].iter().any(|(prior, _)| prior == target)
+                })
+        {
+            return Err(invalid("Invalid or repeated Rally cast."));
+        }
+        let mut next = self.data.clone();
+        next.revision = next
+            .revision
+            .checked_add(1)
+            .ok_or_else(|| invalid("Rally revision exhausted."))?;
+        next.balances.insert(
+            source,
+            EnergyBalance {
+                revision: next.revision,
+                energy: source_energy,
+            },
+        );
+        for (target, mut buff) in recipients {
+            buff.revision = next.revision;
+            next.rally_buffs.insert(target, buff);
+        }
+        next.last_rally.insert(
+            source,
+            TransferSequence {
+                epoch,
+                sequence: effect,
+            },
+        );
+        let directory = self
+            .path
+            .parent()
+            .ok_or_else(|| invalid("Rally ledger has no directory."))?;
+        fs::create_dir_all(directory)?;
+        let temporary = self.path.with_extension("json.tmp");
+        let mut file = File::create(&temporary)?;
+        file.write_all(&serde_json::to_vec_pretty(&next)?)?;
+        file.sync_all()?;
+        fs::rename(temporary, &self.path)?;
+        self.data = next;
+        Ok(self.data.revision)
     }
 
     /// Returns:

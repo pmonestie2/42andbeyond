@@ -6,6 +6,107 @@ use super::*;
 use crate::mob::distance;
 
 impl GameState {
+    /// Settle one Rally cast for all nearby grouped pilots in one world revision.
+    pub(super) fn deliver_rallies(&mut self) -> io::Result<()> {
+        let sources: Vec<u32> = self
+            .sessions
+            .iter()
+            .filter_map(|(id, session)| session.pending_rally().map(|_| *id))
+            .collect();
+        for source in sources {
+            let pending = self.sessions[&source].pending_rally().unwrap();
+            if !pending.valid() {
+                return Err(invalid("Invalid saved Rally cast."));
+            }
+            self.sessions
+                .get_mut(&source)
+                .unwrap()
+                .checkpoint_session(true)?;
+            let epoch = self.sessions[&source].energy_transfer_epoch();
+            if !self.energy_ledger.rally_seen(source, epoch, pending.effect) {
+                self.update_views();
+                let caster = &self.sessions[&source];
+                if !caster.rally_available() {
+                    self.sessions
+                        .get_mut(&source)
+                        .unwrap()
+                        .clear_pending_rally()?;
+                    continue;
+                }
+                let recipients = std::iter::once(source)
+                    .chain(
+                        self.groups
+                            .members(source)
+                            .into_iter()
+                            .filter(|id| *id != source),
+                    )
+                    .filter_map(|target| {
+                        let recipient = self.sessions.get(&target)?;
+                        (recipient.rally_available()
+                            && recipient.sector.id == caster.sector.id
+                            && distance(recipient.position, caster.position)
+                                <= crate::rally::range(pending.skill_rank))
+                        .then_some((
+                            target,
+                            crate::rally::RallyBuff {
+                                revision: 0,
+                                source,
+                                target_epoch: recipient.energy_transfer_epoch(),
+                                tactic: pending.tactic,
+                                skill_rank: pending.skill_rank,
+                                expires_at_ms: crate::resources::unix_ms()
+                                    .saturating_add(crate::rally::DURATION_MS),
+                            },
+                        ))
+                    })
+                    .collect();
+                self.energy_ledger.cast_rally(
+                    source,
+                    epoch,
+                    pending.effect,
+                    caster.energy_balance().0,
+                    recipients,
+                )?;
+            }
+            if let Some(balance) = self.energy_ledger.balance(source) {
+                if let Err(error) = self
+                    .sessions
+                    .get_mut(&source)
+                    .unwrap()
+                    .apply_energy_balance(balance)
+                {
+                    crate::server_error!("Rally sender checkpoint retry for {source}: {error}");
+                }
+            }
+            let targets: Vec<(u32, crate::rally::RallyBuff)> = self
+                .sessions
+                .keys()
+                .filter_map(|target| {
+                    self.energy_ledger
+                        .rally_buff(*target)
+                        .filter(|buff| buff.source == source)
+                        .cloned()
+                        .map(|buff| (*target, buff))
+                })
+                .collect();
+            for (target, buff) in targets {
+                if let Err(error) = self
+                    .sessions
+                    .get_mut(&target)
+                    .unwrap()
+                    .apply_rally_buff(buff)
+                {
+                    crate::server_error!("Rally recipient checkpoint retry for {target}: {error}");
+                }
+            }
+            self.sessions
+                .get_mut(&source)
+                .unwrap()
+                .clear_pending_rally()?;
+        }
+        Ok(())
+    }
+
     pub(super) fn handle_event(&mut self, source: u32, event: ClientEvent) -> io::Result<()> {
         if !self
             .sessions

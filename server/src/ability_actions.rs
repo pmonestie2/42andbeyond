@@ -26,6 +26,7 @@ impl PlayerSession {
             ability.kind,
             AbilityKind::RechargeShields | AbilityKind::HullPatch
         );
+        let durable_rally = ability.kind == AbilityKind::Rally;
         if ability.kind == AbilityKind::Jumpstart {
             self.jumpstart_definition()?;
         }
@@ -49,6 +50,9 @@ impl PlayerSession {
         }
         if ability.kind == AbilityKind::HullPatch && self.skills.pending_hull_repair.is_some() {
             return Err(invalid("Previous hull repair is still settling."));
+        }
+        if durable_rally && self.skills.pending_rally.is_some() {
+            return Err(invalid("Previous Rally is still settling."));
         }
         let self_jumpstart = ability.kind == AbilityKind::Jumpstart
             && (requested_target == self.player_id() || requested_target == u32::MAX);
@@ -137,6 +141,7 @@ impl PlayerSession {
             AbilityKind::Leech => 1059,
             AbilityKind::RechargeShields => 733,
             AbilityKind::HullPatch => 733,
+            AbilityKind::Rally => 0,
         };
         if ability.kind == AbilityKind::Jumpstart {
             self.pending.push(packets::weapon_effect(
@@ -147,7 +152,7 @@ impl PlayerSession {
                 self.tick_ms(),
                 500,
             ));
-        } else {
+        } else if asset != 0 {
             self.pending.push(packets::object_effect(
                 self.player_id(),
                 effect,
@@ -176,7 +181,7 @@ impl PlayerSession {
             recharge_amount,
             hull_repair_amount,
         });
-        if durable_repair {
+        if durable_repair || durable_rally {
             if let Err(error) = self.checkpoint_session(true) {
                 self.energy += energy;
                 self.skills.cast = None;
@@ -200,6 +205,9 @@ impl PlayerSession {
     ) -> io::Result<u32> {
         if ability.kind == AbilityKind::Jumpstart {
             return self.jumpstart_target(ability, requested_target);
+        }
+        if ability.kind == AbilityKind::Rally {
+            return Ok(self.player_id());
         }
         if ability.kind == AbilityKind::RechargeShields {
             if ability.rank == 1
@@ -579,11 +587,20 @@ impl PlayerSession {
                     range: ability.range as f32,
                 });
             }
+            AbilityKind::Rally => {
+                let tactic = crate::rally::tactic(ability.id)
+                    .ok_or_else(|| invalid("Unknown Rally tactic."))?;
+                self.skills.pending_rally = Some(crate::rally::PendingRally {
+                    effect,
+                    tactic,
+                    skill_rank: self.skill_catalog.level(44),
+                });
+            }
         }
         drop(combat);
         if matches!(
             ability.kind,
-            AbilityKind::RechargeShields | AbilityKind::HullPatch
+            AbilityKind::RechargeShields | AbilityKind::HullPatch | AbilityKind::Rally
         ) {
             self.checkpoint_session(true)?;
         }

@@ -251,6 +251,15 @@ mean the corresponding gameplay system is complete.
   pending. Mission 111's starting NPC is absent from the public NPC placements.
 - Vault transfers require an authoritative station sector. Rejected space
   transfers preserve the inventory and send the current cargo/vault state.
+- Terran Enforcer Rally now offers Damage, Defense, Firing and Stealth Tactics
+  through native skill activation. One reactor charge and all in-range grouped
+  recipients commit in a single world ledger revision; each recipient derives
+  critical chance, typed deflects, beam/projectile accuracy and signature from
+  a timed ten-minute buff, with native icon, expiry and restart replay. The
+  archived ARally handler is absent: the four effect families come from the
+  original manual and Net-7 skill documentation, while bonus percentages,
+  reactor costs, charge time and cooldown are explicitly local balance tuning
+  in `src/rally.rs`. Rally does not invent an unknown visual descriptor.
 - Public Turbo Weapons devices now supply a timed self-buff through the same
   weapon reload modifiers as passive gear. Activation checks the equipped
   slot, reactor cost and ship state; firing rate is authoritative and the buff

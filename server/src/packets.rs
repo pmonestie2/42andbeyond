@@ -852,7 +852,16 @@ pub fn player_aux(
                         &[],
                         BTreeMap::from([
                             (0, vec![1]),
-                            (3, ability.range.to_le_bytes().to_vec()),
+                            (
+                                3,
+                                if ability.kind == crate::skills::AbilityKind::Rally {
+                                    (crate::rally::range(catalog.level(44)) as u32)
+                                        .to_le_bytes()
+                                        .to_vec()
+                                } else {
+                                    ability.range.to_le_bytes().to_vec()
+                                },
+                            ),
                             (4, ability.radius.to_le_bytes().to_vec()),
                         ]),
                     ),

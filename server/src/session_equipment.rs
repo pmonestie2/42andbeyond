@@ -382,6 +382,13 @@ impl PlayerSession {
                 })
                 .map(crate::peer_buffs::PeerBuff::modifier),
         );
+        modifiers.extend(
+            self.rally_buff
+                .as_ref()
+                .filter(|buff| buff.valid(crate::resources::unix_ms(), self.session_epoch))
+                .into_iter()
+                .flat_map(crate::rally::RallyBuff::modifiers),
+        );
         self.equipment = EquipmentStats::derive_with_activated(
             &self.inventory,
             &self.items,

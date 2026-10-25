@@ -64,6 +64,8 @@ mod npc_services;
 mod peer_buff_service;
 #[path = "production_service.rs"]
 mod production_service;
+#[path = "rally_service.rs"]
+mod rally_service;
 #[path = "recovery.rs"]
 mod recovery;
 #[path = "reputation_service.rs"]
@@ -203,6 +205,8 @@ pub struct PlayerSession {
     active_device: Option<session_equipment::ActiveDevice>,
     peer_buffs: Vec<crate::peer_buffs::PeerBuff>,
     peer_buff_revision: u64,
+    rally_buff: Option<crate::rally::RallyBuff>,
+    rally_revision: u64,
     shield: f32,
     pub(crate) hull: f32,
     energy: f32,
@@ -398,6 +402,8 @@ impl PlayerSession {
             active_device: None,
             peer_buffs: Vec::new(),
             peer_buff_revision: 0,
+            rally_buff: None,
+            rally_revision: 0,
             shield: stats.shield_capacity,
             hull: stats.hull_capacity,
             energy: stats.energy_capacity,
@@ -1282,6 +1288,13 @@ impl PlayerSession {
                 })
                 .map(crate::peer_buffs::PeerBuff::modifier),
         );
+        active_modifiers.extend(
+            self.rally_buff
+                .as_ref()
+                .filter(|buff| buff.valid(crate::resources::unix_ms(), self.session_epoch))
+                .into_iter()
+                .flat_map(crate::rally::RallyBuff::modifiers),
+        );
         let equipment = EquipmentStats::derive_with_activated(
             &candidate,
             &self.items,
@@ -1623,6 +1636,8 @@ impl PlayerSession {
         self.active_device = None;
         self.peer_buffs.clear();
         self.peer_buff_revision = 0;
+        self.rally_buff = None;
+        self.rally_revision = 0;
         self.refresh_equipment()?;
         self.forget_session()?;
         self.skills = SkillState::default();
@@ -3010,6 +3025,48 @@ mod tests {
             .pending
             .contains(&packets::ship_active_buff_slot(ship.player_id(), 4, "", 0)));
         assert!(!ship.pending.iter().any(|frame| frame.opcode == 0x0f));
+    }
+
+    /// Rank-one Rally raises actual weapon critical odds and clears on expiry.
+    #[test]
+    fn rally_damage_tactics_changes_weapon_roll_and_native_slot_five() {
+        let mut ship = session();
+        ship.logged_in = true;
+        let baseline = ship.equipment.weapons[0].hit_chances;
+        let target_epoch = ship.session_epoch;
+        let id = ship.player_id();
+        ship.apply_rally_buff(crate::rally::RallyBuff {
+            revision: 1,
+            source: id + 1,
+            target_epoch,
+            tactic: crate::rally::Tactic::Damage,
+            skill_rank: 1,
+            expires_at_ms: crate::resources::unix_ms() + 10_000,
+        })
+        .unwrap();
+        assert_ne!(ship.equipment.weapons[0].hit_chances, baseline);
+        assert_eq!(
+            crate::weapon_accuracy::roll_weapon_damage(
+                10.,
+                9000,
+                ship.equipment.weapons[0].hit_chances
+            )
+            .unwrap()
+            .outcome,
+            crate::weapon_accuracy::HitOutcome::Critical
+        );
+        assert!(ship.pending.iter().any(|frame| frame.opcode == 0x1b
+            && frame
+                .body
+                .windows(b"Damage Tactics".len())
+                .any(|part| part == b"Damage Tactics")));
+        ship.pending.clear();
+        ship.rally_buff.as_mut().unwrap().expires_at_ms = crate::resources::unix_ms() - 1;
+        ship.advance_rally_buff().unwrap();
+        assert_eq!(ship.equipment.weapons[0].hit_chances, baseline);
+        assert!(ship
+            .pending
+            .contains(&packets::ship_active_buff_slot(id, 5, "", 0)));
     }
 
     #[test]

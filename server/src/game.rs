@@ -170,6 +170,11 @@ impl GameState {
                     "Player targeted buff revision exceeds the durable ledger.",
                 ));
             }
+            if session.rally_revision() > self.energy_ledger.revision()
+                || session.rally_revision() > 0 && self.energy_ledger.rally_buff(id).is_none()
+            {
+                return Err(invalid("Player Rally revision exceeds the durable ledger."));
+            }
             if let Some(balance) = self.energy_ledger.balance(id) {
                 session.apply_energy_balance(balance)?;
             }
@@ -190,6 +195,9 @@ impl GameState {
             }
             for buff in self.energy_ledger.peer_buffs(id) {
                 session.apply_peer_buff(buff.clone())?;
+            }
+            if let Some(buff) = self.energy_ledger.rally_buff(id) {
+                session.apply_rally_buff(buff.clone())?;
             }
             for (&peer, at) in &self.registrations {
                 if at.elapsed() < Duration::from_secs(600) {
@@ -626,6 +634,7 @@ impl GameState {
         }
         self.deliver_shield_recharges()?;
         self.deliver_hull_repairs()?;
+        self.deliver_rallies()?;
         self.deliver_support()?;
         for id in &ids {
             self.attach_session(*id)?;

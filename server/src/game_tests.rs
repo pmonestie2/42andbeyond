@@ -99,6 +99,174 @@ fn activate(game: &mut GameState, owner: u32, target: u32, ability: u32) {
     .unwrap();
 }
 
+/// Send the native untargeted Rally activation without a selection packet.
+fn rally_cast(game: &mut GameState, owner: u32, ability: u32) {
+    game.handle_input(
+        owner,
+        0x58,
+        &[
+            owner.to_le_bytes(),
+            0u32.to_le_bytes(),
+            ability.to_le_bytes(),
+        ]
+        .concat(),
+    )
+    .unwrap();
+}
+
+/// Rally grants one durable status to nearby group members, with atomic retry.
+#[test]
+fn enforcer_rally_is_group_scoped_and_recovers_a_torn_recipient_checkpoint() {
+    let root = std::env::temp_dir().join(format!("enb-rally-{}", rand::random::<u64>()));
+    let accounts = AccountDirectory::new(&root);
+    let alice = accounts
+        .create_class(
+            "alice".into(),
+            "example",
+            "Alice".into(),
+            crate::classes::CharacterClass::parse("te").unwrap(),
+        )
+        .unwrap()
+        .account
+        .character
+        .game_id;
+    let bob = accounts
+        .create("bob".into(), "example", "Bob".into())
+        .unwrap()
+        .account
+        .character
+        .game_id;
+    let outsider = accounts
+        .create("outsider".into(), "example", "Outsider".into())
+        .unwrap()
+        .account
+        .character
+        .game_id;
+    let inventory_path = root.join("inventory.json");
+    let profile = crate::account::Account::load(&root).unwrap().character;
+    let mut inventory = crate::inventory::Inventory::starter_for(
+        &profile,
+        &crate::items::ItemCatalog::load().unwrap(),
+    )
+    .unwrap();
+    inventory.equipped[1].as_mut().unwrap().template = 3337;
+    fs::write(&inventory_path, serde_json::to_vec(&inventory).unwrap()).unwrap();
+    let sector: Sector = serde_json::from_str(include_str!("../data/sector.json")).unwrap();
+    let bind = Ipv4Addr::new(127, 0, 0, 2);
+    let mut game = GameState::new(sector.clone(), bind, root.clone()).unwrap();
+    login(&mut game, alice, 22941, "alice");
+    login(&mut game, bob, 22942, "bob");
+    login(&mut game, outsider, 22943, "outsider");
+    game.groups.invite(alice, bob).unwrap();
+    game.groups.accept(bob).unwrap();
+    game.sessions.get_mut(&bob).unwrap().position = [5_500., 0., 0.];
+    game.sessions.get_mut(&outsider).unwrap().position = [2_000., 0., 0.];
+    let baseline = game.sessions[&bob].peer_snapshot().unwrap().stats;
+    let outsider_baseline = game.sessions[&outsider].peer_snapshot().unwrap().stats;
+    let energy = game.sessions[&alice].energy_balance().0;
+    activate(&mut game, alice, outsider, 116); // Target selection cannot redirect Rally.
+    assert_eq!(game.sessions[&alice].energy_balance().0, energy - 400.);
+    assert_eq!(game.sessions[&bob].peer_snapshot().unwrap().stats, baseline);
+    game.sessions
+        .get_mut(&bob)
+        .unwrap()
+        .checkpoint_session(true)
+        .unwrap();
+    let torn = root.join("accounts/bob/session.local.json.tmp");
+    fs::create_dir(&torn).unwrap();
+    advance(&mut game, 2.2);
+    assert_eq!(game.energy_ledger.revision(), 1);
+    assert_eq!(
+        game.energy_ledger.rally_buff(bob).unwrap().tactic,
+        crate::rally::Tactic::Stealth
+    );
+    assert!(game.energy_ledger.rally_buff(outsider).is_none());
+    assert_eq!(
+        game.sessions[&outsider].peer_snapshot().unwrap().stats,
+        outsider_baseline
+    );
+    let committed_energy = game.energy_ledger.balance(alice).unwrap().energy;
+    fs::remove_dir(&torn).unwrap();
+    drop(game);
+    let mut resumed = GameState::new(sector, bind, root.clone()).unwrap();
+    let buffed = resumed.sessions[&bob].peer_snapshot().unwrap().stats;
+    assert_eq!(buffed.signature, baseline.signature * 0.75);
+    assert_eq!(buffed.deflects[0], baseline.deflects[0] + 14.);
+    assert_eq!(
+        resumed.sessions[&alice].energy_balance().0,
+        committed_energy
+    );
+    assert_eq!(resumed.energy_ledger.revision(), 1);
+    assert!(resumed.sessions[&bob].rally_revision() > 0);
+    // A replacement replays the world revision without charging again.
+    resumed.deliver_rallies().unwrap();
+    assert_eq!(resumed.energy_ledger.revision(), 1);
+    drop(resumed);
+    fs::remove_dir_all(root).unwrap();
+}
+
+/// A low-tier Rally respects training, range, energy and skill recovery.
+#[test]
+fn rally_damage_tactics_rejects_wrong_class_and_excludes_distant_groupmate() {
+    let root = std::env::temp_dir().join(format!("enb-rally-range-{}", rand::random::<u64>()));
+    let accounts = AccountDirectory::new(&root);
+    let alice = accounts
+        .create_class(
+            "alice".into(),
+            "example",
+            "Alice".into(),
+            crate::classes::CharacterClass::parse("te").unwrap(),
+        )
+        .unwrap()
+        .account
+        .character
+        .game_id;
+    let bob = accounts
+        .create("bob".into(), "example", "Bob".into())
+        .unwrap()
+        .account
+        .character
+        .game_id;
+    let sector: Sector = serde_json::from_str(include_str!("../data/sector.json")).unwrap();
+    let mut game = GameState::new(sector, Ipv4Addr::new(127, 0, 0, 2), root.clone()).unwrap();
+    login(&mut game, alice, 22951, "alice");
+    login(&mut game, bob, 22952, "bob");
+    game.groups.invite(alice, bob).unwrap();
+    game.groups.accept(bob).unwrap();
+    game.sessions.get_mut(&bob).unwrap().position = [7_000., 0., 0.];
+    let bob_energy = game.sessions[&bob].energy_balance().0;
+    rally_cast(&mut game, bob, 34);
+    assert_eq!(game.sessions[&bob].energy_balance().0, bob_energy);
+    game.sessions
+        .get_mut(&alice)
+        .unwrap()
+        .set_energy_for_test(10.);
+    rally_cast(&mut game, alice, 34);
+    assert_eq!(game.sessions[&alice].energy_balance().0, 10.);
+    assert_eq!(game.energy_ledger.revision(), 0);
+    game.sessions
+        .get_mut(&alice)
+        .unwrap()
+        .set_energy_for_test(100.);
+    rally_cast(&mut game, alice, 34);
+    advance(&mut game, 2.2);
+    assert_eq!(
+        game.energy_ledger.rally_buff(alice).unwrap().tactic,
+        crate::rally::Tactic::Damage
+    );
+    assert!(game.energy_ledger.rally_buff(bob).is_none());
+    let revision = game.energy_ledger.revision();
+    game.sessions
+        .get_mut(&alice)
+        .unwrap()
+        .set_energy_for_test(100.);
+    rally_cast(&mut game, alice, 34);
+    assert_eq!(game.energy_ledger.revision(), revision);
+    assert_eq!(game.sessions[&alice].energy_balance().0, 100.);
+    drop(game);
+    fs::remove_dir_all(root).unwrap();
+}
+
 /// Rank-three Recharge Shields heals a visible pilot once across replacement.
 #[test]
 fn recharge_shields_is_durable_for_two_pilots() {
