@@ -84,6 +84,12 @@ impl PlayerSession {
             return Ok(());
         }
         self.advance_abilities(dt)?;
+        if self.self_destruct_action_locked() {
+            self.motion.stop();
+            if self.player_firing || self.weapon_firing.iter().any(|firing| *firing) {
+                self.stop_weapons();
+            }
+        }
         if !self.logged_in {
             return Ok(());
         } // wormhole cast handed off

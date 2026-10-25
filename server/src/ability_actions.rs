@@ -31,6 +31,7 @@ impl PlayerSession {
         let durable_shield_charging = ability.kind == AbilityKind::ShieldCharging;
         let durable_psionic_shield = ability.kind == AbilityKind::PsionicShield;
         let durable_repulsor = ability.kind == AbilityKind::RepulsorField;
+        let durable_blast = ability.kind == AbilityKind::SelfDestruct;
         let durable_inversion = ability.kind == AbilityKind::ShieldInversion;
         let durable_sap = ability.kind == AbilityKind::ShieldSap;
         let durable_gravity = ability.kind == AbilityKind::GravityLink;
@@ -42,6 +43,9 @@ impl PlayerSession {
         }
         if ability.kind == AbilityKind::Unsupported {
             return Err(invalid("This class ability is not implemented yet."));
+        }
+        if self.self_destruct_action_locked() {
+            return Err(invalid("Ship systems are recovering from Self Destruct."));
         }
         if !self.logged_in || self.sector.station.is_some() {
             return Err(invalid("Enter space before using an ability."));
@@ -88,6 +92,9 @@ impl PlayerSession {
         if durable_inversion && self.skills.active_inversion.is_some() {
             return Err(invalid("Shield Inversion is already active."));
         }
+        if durable_blast && self.skills.pending_self_destruct.is_some() {
+            return Err(invalid("Previous Self Destruct is still settling."));
+        }
         let self_jumpstart = ability.kind == AbilityKind::Jumpstart
             && (requested_target == self.player_id() || requested_target == u32::MAX);
         if self.hull <= 0. && !self_jumpstart {
@@ -106,6 +113,9 @@ impl PlayerSession {
         }
         if durable_inversion && self.mining.is_some() {
             return Err(invalid("Stop prospecting before using Shield Inversion."));
+        }
+        if durable_blast && self.mining.is_some() {
+            return Err(invalid("Stop prospecting before using Self Destruct."));
         }
         if self
             .skills
@@ -145,6 +155,11 @@ impl PlayerSession {
             && crate::shield_inversion::tier(ability.id, self.skill_catalog.level(52)).is_none()
         {
             return Err(invalid("Shield Inversion rank is not trained."));
+        }
+        if durable_blast
+            && crate::self_destruct::tier(ability.id, self.skill_catalog.level(50)).is_none()
+        {
+            return Err(invalid("Self Destruct rank is not trained."));
         }
         if durable_menace && crate::menace::tier(ability.id, self.skill_catalog.level(33)).is_none()
         {
@@ -273,6 +288,7 @@ impl PlayerSession {
             AbilityKind::PsionicShield => 0,
             AbilityKind::RepulsorField => 0,
             AbilityKind::ShieldInversion => 0,
+            AbilityKind::SelfDestruct => 0,
             AbilityKind::GravityLink => 0,
             AbilityKind::Menace => 0,
             AbilityKind::Hacking => 0,
@@ -339,6 +355,7 @@ impl PlayerSession {
             || durable_repulsor
             || durable_sap
             || durable_inversion
+            || durable_blast
         {
             if let Err(error) = self.checkpoint_session(true) {
                 self.energy += energy;
@@ -365,6 +382,9 @@ impl PlayerSession {
             return self.jumpstart_target(ability, requested_target);
         }
         if ability.kind == AbilityKind::Rally {
+            return Ok(self.player_id());
+        }
+        if ability.kind == AbilityKind::SelfDestruct {
             return Ok(self.player_id());
         }
         if ability.kind == AbilityKind::Summon {
@@ -738,6 +758,12 @@ impl PlayerSession {
                     || !self.logged_in);
             let invalid_inversion = definition.kind == AbilityKind::ShieldInversion
                 && (!self.inversion_available() || self.mining.is_some());
+            let invalid_blast = definition.kind == AbilityKind::SelfDestruct
+                && (self.warp.active()
+                    || self.gate_transit.is_some()
+                    || self.sector.station.is_some()
+                    || self.mining.is_some()
+                    || !self.logged_in);
             let invalid_summon = definition.kind == AbilityKind::Summon
                 && (self.warp.active()
                     || self.gate_transit.is_some()
@@ -753,6 +779,7 @@ impl PlayerSession {
                 || invalid_enrage
                 || invalid_sap
                 || invalid_inversion
+                || invalid_blast
                 || invalid_summon
                 || definition.kind == AbilityKind::Cloak
                     && definition.rank < 5
@@ -768,6 +795,7 @@ impl PlayerSession {
                         | AbilityKind::PsionicShield
                         | AbilityKind::RepulsorField
                         | AbilityKind::ShieldInversion
+                        | AbilityKind::SelfDestruct
                 ) {
                     if let Err(error) = self.checkpoint_session(true) {
                         self.skills.cast = Some(cast);
@@ -937,6 +965,25 @@ impl PlayerSession {
                             return Err(error);
                         }
                         self.message("Shield Inversion target was lost before completion.");
+                    }
+                    self.pending.push(packets::ability_progress(None, 0, 0));
+                    self.pending.push(packets::skill_cooldown(
+                        ability.skill,
+                        self.tick_ms(),
+                        (cooldown * 1000.) as u32,
+                    ));
+                    return Ok(());
+                }
+                if ability.kind == AbilityKind::SelfDestruct {
+                    let previous_cooldown = self.skills.cooldowns.insert(ability.skill, cooldown);
+                    if let Err(error) = self.prepare_self_destruct(&ability, &cast) {
+                        if let Some(previous) = previous_cooldown {
+                            self.skills.cooldowns.insert(ability.skill, previous);
+                        } else {
+                            self.skills.cooldowns.remove(&ability.skill);
+                        }
+                        self.skills.cast = Some(cast);
+                        return Err(error);
                     }
                     self.pending.push(packets::ability_progress(None, 0, 0));
                     self.pending.push(packets::skill_cooldown(
@@ -1310,6 +1357,9 @@ impl PlayerSession {
                 return Err(invalid(
                     "Shield Inversion settles through timed combat pulses.",
                 ));
+            }
+            AbilityKind::SelfDestruct => {
+                return Err(invalid("Self Destruct settles through its durable blast."));
             }
             AbilityKind::EquipmentRepair => {
                 return Err(invalid("Repair Equipment has no charged cast."));

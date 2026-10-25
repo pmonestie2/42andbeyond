@@ -273,6 +273,13 @@ impl PlayerSession {
                 .skills
                 .active_inversion
                 .is_some_and(|inversion| !inversion.valid() || inversion.source != self.player_id())
+            || saved.skills.pending_self_destruct.is_some_and(|blast| {
+                !blast.valid()
+                    || blast.source != self.player_id()
+                    || self.skill_catalog.ability(blast.ability).is_err()
+            })
+            || saved.skills.self_destruct_until_ms
+                > crate::resources::unix_ms().saturating_add(crate::self_destruct::ACTION_LOCK_MS)
             || saved.skills.power_down_ability.is_some_and(|ability| {
                 crate::power_down::tier(ability, self.skill_catalog.level(37)).is_none()
                     || saved.motion.speed.abs() >= 1.

@@ -43,6 +43,7 @@ pub mod repulsor_field;
 pub mod resources;
 pub mod sector_combat;
 pub mod sectors;
+pub mod self_destruct;
 pub mod server;
 pub mod shield_charging;
 pub mod shield_inversion;

@@ -96,6 +96,8 @@ mod reputation_service;
 mod sector_transfer;
 #[path = "sector_transition.rs"]
 mod sector_transition;
+#[path = "self_destruct_service.rs"]
+mod self_destruct_service;
 #[path = "session_checkpoint.rs"]
 mod session_checkpoint;
 #[path = "session_equipment.rs"]
@@ -767,6 +769,11 @@ impl PlayerSession {
         }
         if self.sector.station.is_some() && matches!(opcode, 0x12..=0x14 | 0x58 | 0x9b) {
             return Err(invalid("Launch into space before controlling the ship."));
+        }
+        if self.self_destruct_action_locked()
+            && !matches!(opcode, 2 | 0x17 | 0x5a | 0x2017 | 0x2021)
+        {
+            return Err(invalid("Ship systems are recovering from Self Destruct."));
         }
         let mut reader = Reader::new(body);
         match opcode {

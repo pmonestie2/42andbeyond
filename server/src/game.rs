@@ -31,6 +31,8 @@ mod dev_commands;
 mod psionic_shield_game;
 #[path = "repulsor_field_game.rs"]
 mod repulsor_field_game;
+#[path = "self_destruct_game.rs"]
+mod self_destruct_game;
 #[path = "shield_inversion_game.rs"]
 mod shield_inversion_game;
 #[path = "shield_sap_game.rs"]
@@ -710,6 +712,7 @@ impl GameState {
         self.deliver_psionic_shields()?;
         self.deliver_repulsor_fields()?;
         self.deliver_shield_saps()?;
+        self.deliver_self_destructs()?;
         self.deliver_shield_inversions(now_ms)?;
         self.deliver_support()?;
         for id in &ids {

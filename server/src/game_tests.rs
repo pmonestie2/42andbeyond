@@ -37,6 +37,82 @@ pub(super) fn game() -> GameState {
     .unwrap()
 }
 
+/// A committed blast survives a failed account checkpoint without striking twice.
+#[test]
+fn warrior_self_destruct_replays_one_blast_and_recovers_resources() {
+    let root = std::env::temp_dir().join(format!("enb-self-destruct-{}", rand::random::<u64>()));
+    let warrior = AccountDirectory::new(&root)
+        .create_class(
+            "warrior".into(),
+            "example",
+            "Warrior".into(),
+            crate::classes::CharacterClass::parse("pw").unwrap(),
+        )
+        .unwrap()
+        .account
+        .character
+        .game_id;
+    let mut sector: Sector = serde_json::from_str(include_str!("../data/sector.json")).unwrap();
+    sector.mobs[0].spawn = [900., 0., 0.];
+    sector.mobs[0].aggressive = false;
+    let bind = Ipv4Addr::new(127, 0, 0, 2);
+    let mut game = GameState::new(sector.clone(), bind, root.clone()).unwrap();
+    login(&mut game, warrior, 23591, "warrior");
+    game.sessions.get_mut(&warrior).unwrap().position = [0., 0., 0.];
+    game.update_views();
+    let before = {
+        let world = lock_combat(&game.sessions[&warrior].combat).unwrap();
+        world.actors[0].health + world.actors[0].shield
+    };
+    activate(&mut game, warrior, warrior, 100);
+    game.sessions
+        .get_mut(&warrior)
+        .unwrap()
+        .advance_player(3.1)
+        .unwrap();
+    let pending = game.sessions[&warrior].pending_self_destruct().unwrap();
+    assert_eq!(pending.ability, 100);
+    let world_poison = root.join("combat/1076.json.next");
+    fs::create_dir(&world_poison).unwrap();
+    assert!(game.deliver_self_destructs().is_err());
+    assert!(lock_combat(&game.sessions[&warrior].combat)
+        .unwrap()
+        .self_destruct_receipt(pending)
+        .is_none());
+    fs::remove_dir(&world_poison).unwrap();
+    let poison = root.join("session.local.json.tmp");
+    fs::create_dir(&poison).unwrap();
+    assert!(game.deliver_self_destructs().is_err());
+    let after = {
+        let world = lock_combat(&game.sessions[&warrior].combat).unwrap();
+        assert!(world.self_destruct_receipt(pending).is_some());
+        world.actors[0].health + world.actors[0].shield
+    };
+    assert!(after < before);
+    assert!(game.sessions[&warrior].pending_self_destruct().is_some());
+    fs::remove_dir(&poison).unwrap();
+    drop(game);
+    let mut resumed = GameState::new(sector, bind, root.clone()).unwrap();
+    assert!(resumed.sessions[&warrior].pending_self_destruct().is_some());
+    resumed.deliver_self_destructs().unwrap();
+    assert_eq!(resumed.sessions[&warrior].energy_balance().0, 0.);
+    assert_eq!(resumed.sessions[&warrior].shield_balance().0, 0.);
+    assert!(resumed.sessions[&warrior].self_destruct_action_locked());
+    assert!(resumed
+        .sessions
+        .get_mut(&warrior)
+        .unwrap()
+        .handle_input(0x12, &[])
+        .is_err());
+    let restored = lock_combat(&resumed.sessions[&warrior].combat).unwrap();
+    assert_eq!(restored.actors[0].health + restored.actors[0].shield, after);
+    drop(restored);
+    resumed.deliver_self_destructs().unwrap();
+    assert!(resumed.sessions[&warrior].pending_self_destruct().is_none());
+    drop(resumed);
+    fs::remove_dir_all(root).unwrap();
+}
+
 /// A Progen timed cast spends shields only when its durable MOB pulse lands.
 #[test]
 fn warrior_shield_inversion_pulses_and_survives_world_restart() {

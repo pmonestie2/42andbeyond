@@ -13,6 +13,8 @@ use std::time::Instant;
 mod inversion;
 #[path = "shield_sap_combat.rs"]
 mod sap;
+#[path = "self_destruct_combat.rs"]
+mod self_destruct;
 #[path = "combat_storage.rs"]
 mod storage;
 use std::sync::{Mutex, MutexGuard};
@@ -30,6 +32,7 @@ pub struct SectorCombat {
     accepted: BTreeMap<u32, u64>,
     sap_receipts: BTreeMap<u32, crate::shield_sap::SapReceipt>,
     inversion_receipts: BTreeMap<u32, crate::shield_inversion::InversionReceipt>,
+    self_destruct_receipts: BTreeMap<u32, crate::self_destruct::BlastReceipt>,
     path: Option<PathBuf>,
     sector: u32,
     next_developer_spawn: u32,
@@ -52,6 +55,7 @@ impl SectorCombat {
             accepted: BTreeMap::new(),
             sap_receipts: BTreeMap::new(),
             inversion_receipts: BTreeMap::new(),
+            self_destruct_receipts: BTreeMap::new(),
             path: None,
             sector: 0,
             next_developer_spawn: storage::DEVELOPER_SOURCE_BASE,

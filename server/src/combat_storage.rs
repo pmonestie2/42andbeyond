@@ -25,6 +25,8 @@ struct SavedCombat {
     sap_receipts: BTreeMap<u32, crate::shield_sap::SapReceipt>,
     #[serde(default)]
     inversion_receipts: BTreeMap<u32, crate::shield_inversion::InversionReceipt>,
+    #[serde(default)]
+    self_destruct_receipts: BTreeMap<u32, crate::self_destruct::BlastReceipt>,
     #[serde(default = "initial_developer_source")]
     next_developer_spawn: u32,
     #[serde(default)]
@@ -50,6 +52,7 @@ impl SectorCombat {
                     || saved.accepted.len() > 65535
                     || saved.sap_receipts.len() > 65535
                     || saved.inversion_receipts.len() > 65535
+                    || saved.self_destruct_receipts.len() > 65535
                     || saved
                         .sap_receipts
                         .iter()
@@ -57,6 +60,14 @@ impl SectorCombat {
                     || saved.inversion_receipts.iter().any(|(source, receipt)| {
                         !receipt.valid() || receipt.sector != sector || *source != receipt.source
                     })
+                    || saved
+                        .self_destruct_receipts
+                        .iter()
+                        .any(|(source, receipt)| {
+                            !receipt.valid()
+                                || receipt.sector != sector
+                                || *source != receipt.source
+                        })
                     || saved.accepted.iter().any(|(owner, sequence)| {
                         !(0x40000001..=0x4000ffff).contains(owner) || *sequence == 0
                     })
@@ -99,6 +110,7 @@ impl SectorCombat {
                 world.npc_sequence = saved.npc_sequence;
                 world.sap_receipts = saved.sap_receipts;
                 world.inversion_receipts = saved.inversion_receipts;
+                world.self_destruct_receipts = saved.self_destruct_receipts;
                 world.npc_shots = saved.npc_shots;
                 for actor in &world.actors {
                     if actor.definition.source_id >= DEVELOPER_SOURCE_BASE {
@@ -346,6 +358,7 @@ impl SectorCombat {
                     accepted: self.accepted.clone(),
                     sap_receipts: self.sap_receipts.clone(),
                     inversion_receipts: self.inversion_receipts.clone(),
+                    self_destruct_receipts: self.self_destruct_receipts.clone(),
                     next_developer_spawn: self.next_developer_spawn,
                     npc_shots: self.npc_shots.clone(),
                     npc_sequence: self.npc_sequence,

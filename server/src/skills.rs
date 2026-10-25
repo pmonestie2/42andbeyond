@@ -39,6 +39,7 @@ pub enum AbilityKind {
     ShieldCharging,
     PsionicShield,
     RepulsorField,
+    SelfDestruct,
     ShieldInversion,
     ShieldSap,
     Summon,
@@ -545,6 +546,10 @@ pub struct SkillState {
     pub pending_repulsor_field: Option<crate::repulsor_field::PendingRepulsorField>,
     #[serde(default)]
     pub active_inversion: Option<crate::shield_inversion::ActiveShieldInversion>,
+    #[serde(default)]
+    pub pending_self_destruct: Option<crate::self_destruct::PendingSelfDestruct>,
+    #[serde(default)]
+    pub self_destruct_until_ms: u64,
     #[serde(default)]
     pub equipment_repair: Option<crate::equipment_repair::ActiveEquipmentRepair>,
     #[serde(default)]
