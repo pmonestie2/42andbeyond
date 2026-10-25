@@ -904,8 +904,8 @@ internal static class Program
             "Native instant and impulse catalog descriptions lost their UI labels.");
         foreach (string ally in new[] { "Scan Boost", "Recharge Shields",
                      "Recharge Reactor", "Reduce Ship Signature" })
-            Assert(DeviceEffects.RequiresPeer(ally, true) && !DeviceEffects.RequiresPeer(ally),
-                "A targeted-friendly device bypassed the selected crew recipient check.");
+            Assert(!DeviceEffects.RequiresPeer(ally, true),
+                "A self-capable ally device lost its self-target activation path.");
         Assert(DeviceEffects.MountedSlot("Transfer Reactor Energy", 11, 14, 6) &&
             DeviceEffects.MountedSlot("Reroute Shield Energy", 7, 1, 6) &&
             DeviceEffects.MountedSlot("Increase Maneuverability", 2, 0, 6) &&
@@ -936,7 +936,7 @@ internal static class Program
         ItemTemplateInfo reactor = ItemTemplateInfo.Decode(FixtureBytes("item3337.hex"));
         Assert(peerScan.Id == 1813 && peerScan.Type == 11 && peerScan.TargetsPeer &&
             peerScan.ActivationLabel == "Scan Boost" &&
-            DeviceEffects.RequiresPeer(peerScan.ActivationLabel, peerScan.TargetsPeer) &&
+            !DeviceEffects.RequiresPeer(peerScan.ActivationLabel, peerScan.TargetsPeer) &&
             reactor.Id == 3337 && reactor.Type == 7 && !reactor.TargetsPeer &&
             reactor.ActivationLabel == "Reroute Shield Energy",
             "Native catalog flags or core effects were lost during item metadata decoding.");

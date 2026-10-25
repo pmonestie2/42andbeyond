@@ -768,6 +768,24 @@ namespace FortyTwoAndBeyond.Client
                 worker.Submit(new ClientCommand(CommandKind.ActivateDevice, (uint)slot));
         }
 
+        /// <summary>Queue a device cast for self or a visible crew member after native target acknowledgment.</summary>
+        public void ActivateDeviceFor(int slot, uint recipient)
+        {
+            ItemView item = snapshot != null && slot >= 0 && slot < snapshot.Mounted.Length ?
+                snapshot.Mounted[slot] : null;
+            bool requiresPeer = item != null && DeviceEffects.RequiresPeer(item.ActivationLabel);
+            bool validRecipient = snapshot != null && (recipient == snapshot.PlayerId ?
+                !requiresPeer : (item?.TargetsPeer == true || requiresPeer) &&
+                snapshot.Players.Any(actor => actor.Id == recipient && actor.HasPosition &&
+                    (requiresPeer || snapshot.Group.Members.Any(member => member.Id == recipient))));
+            if (!Ready || Incapacitated || snapshot.Station != null || item == null ||
+                snapshot.WarpPhase != WarpPhase.Idle ||
+                !DeviceEffects.MountedSlot(item.ActivationLabel, item.Type, slot,
+                    snapshot.DeviceMounts) || !validRecipient)
+                return;
+            worker.Submit(new ClientCommand(CommandKind.ActivateDeviceFor, recipient, slot: slot));
+        }
+
         /// <summary>Request activation of the equipped Turbo Weapons device.</summary>
         public void ActivateTurboWeapons()
         {

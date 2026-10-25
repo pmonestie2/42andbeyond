@@ -47,11 +47,9 @@ namespace FortyTwoAndBeyond.Protocol
         public static bool IsInstant(string label)
         { return label == "Reroute Shield Energy" || label == "Transfer Reactor Energy"; }
 
-        /// <returns>bool: Whether activation needs an acknowledged visible pilot target.</returns>
+        /// <returns>bool: Whether this effect has no self-target activation path.</returns>
         public static bool RequiresPeer(string label, bool targetsPeer = false)
-        { return label == "Transfer Reactor Energy" || targetsPeer &&
-            (label == "Scan Boost" || label == "Recharge Shields" ||
-             label == "Recharge Reactor" || label == "Reduce Ship Signature"); }
+        { return label == "Transfer Reactor Energy"; }
 
         /// <returns>bool: Whether the catalog effect may be activated from this unlocked mount.</returns>
         public static bool MountedSlot(string label, uint type, int slot, uint deviceMounts)

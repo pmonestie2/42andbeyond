@@ -64,7 +64,7 @@ def main() -> None:
                     while editor.poll() is None and time.monotonic() < finish_by:
                         log = (state / 'unity.log').read_text(errors='replace') if (
                             state / 'unity.log').exists() else ''
-                        if 'PASS: four independent recipient buff slots' in log and screenshot.is_file():
+                        if 'PASS: four recipient casts and one self cast' in log and screenshot.is_file():
                             if completed_at is None:
                                 completed_at = time.monotonic()
                             elif time.monotonic() - completed_at > 3:

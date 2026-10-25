@@ -16,6 +16,7 @@ namespace FortyTwoAndBeyond.Editor
         private static int stage;
         private static double deadline;
         private static bool connected;
+        private static uint firstTarget;
         private static ClientWorker explorer, sentinel;
 
         /// <summary>Register only for the owned three-pilot buff fixture.</summary>
@@ -50,9 +51,14 @@ namespace FortyTwoAndBeyond.Editor
             if (!connected) { connected = true; client.StartLocalSession("127.0.0.1", "local", "local"); }
             if (client.ChoosingCharacter) client.ChooseCharacter(client.Characters[0].Slot);
             if (client.ConnectionError != null) { Fail(client.ConnectionError); return; }
-            if (stage == 11)
+            if (stage == 9)
             {
-                if (File.Exists("Builds/verification/concurrent-buffs.png")) Finish(0);
+                if (File.Exists("Builds/verification/concurrent-buffs.png"))
+                {
+                    explorer.Submit(new ClientCommand(CommandKind.ActivateDeviceFor,
+                        firstTarget, slot: 12));
+                    stage = 10;
+                }
                 return;
             }
             Snapshot own = client.CurrentSnapshot;
@@ -81,18 +87,16 @@ namespace FortyTwoAndBeyond.Editor
             if (stage == 3 && second.Confirmation?.Kind == ConfirmationKind.Group)
             { sentinel.Submit(new ClientCommand(CommandKind.AnswerConfirmation, 1)); stage = 4; return; }
             if (stage == 4 && own.Group.Members.Any(member => member.Id == second.PlayerId))
-            { explorer.Submit(new ClientCommand(CommandKind.SelectTarget, own.PlayerId)); stage = 5; return; }
-            if (stage == 5 && first.SelectedTargetId == own.PlayerId)
-            { explorer.Submit(new ClientCommand(CommandKind.ActivateDevice, 12)); stage = 6; return; }
-            if (stage == 6 && own.PeerBuff?.VisualActive == true)
-            { sentinel.Submit(new ClientCommand(CommandKind.SelectTarget, own.PlayerId)); stage = 7; return; }
-            if (stage == 7 && second.SelectedTargetId == own.PlayerId)
-            { sentinel.Submit(new ClientCommand(CommandKind.ActivateDevice, 12)); stage = 8; return; }
-            if (stage == 8 && own.ShieldBuff?.VisualActive == true)
-            { explorer.Submit(new ClientCommand(CommandKind.ActivateDevice, 13)); stage = 9; return; }
-            if (stage == 9 && own.ReactorBuff?.VisualActive == true)
-            { explorer.Submit(new ClientCommand(CommandKind.ActivateDevice, 14)); stage = 10; return; }
-            if (stage != 10 || own.SignatureBuff == null) return;
+            { explorer.Submit(new ClientCommand(CommandKind.ActivateDeviceFor, own.PlayerId, slot: 12)); stage = 5; return; }
+            if (stage == 5 && own.PeerBuff?.VisualActive == true && first.SelectedTargetId == own.PlayerId)
+            { sentinel.Submit(new ClientCommand(CommandKind.ActivateDeviceFor, own.PlayerId, slot: 12)); stage = 6; return; }
+            if (stage == 6 && own.ShieldBuff?.VisualActive == true && second.SelectedTargetId == own.PlayerId)
+            { explorer.Submit(new ClientCommand(CommandKind.ActivateDeviceFor, own.PlayerId, slot: 13)); stage = 7; return; }
+            if (stage == 7 && own.ReactorBuff?.VisualActive == true)
+            { explorer.Submit(new ClientCommand(CommandKind.ActivateDeviceFor, own.PlayerId, slot: 14)); stage = 8; return; }
+            if (stage == 10 && first.SelectedTargetId == first.PlayerId && first.DeviceBuff != null)
+            { Debug.Log("PASS: four recipient casts and one self cast waited for native target acknowledgment."); Finish(0); return; }
+            if (stage != 8 || own.SignatureBuff == null) return;
             if (own.PeerBuff?.VisualDescriptor != 462 ||
                 own.ShieldBuff.VisualDescriptor != 553 ||
                 own.ReactorBuff.VisualDescriptor != 553 ||
@@ -107,7 +111,8 @@ namespace FortyTwoAndBeyond.Editor
             if (File.Exists(capture)) File.Delete(capture);
             ScreenCapture.CaptureScreenshot(capture);
             Debug.Log("PASS: four independent recipient buff slots and three visuals captured.");
-            stage = 11;
+            firstTarget = first.PlayerId;
+            stage = 9;
         }
 
         /// <summary>Join owned network workers before Editor exit.</summary>

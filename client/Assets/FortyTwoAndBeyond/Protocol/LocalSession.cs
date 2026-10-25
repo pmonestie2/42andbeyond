@@ -22,6 +22,10 @@ namespace FortyTwoAndBeyond.Protocol
         private uint sequence = 1;
         private double receivedAt, keepaliveAt, resendAt, gateAt, dockAt, enteredAt;
         private uint gate, dock, combatTarget, followTarget, pendingLoot, pendingResource;
+        private uint pendingDeviceTarget;
+        private uint pendingDeviceTemplate;
+        private int pendingDeviceSlot = -1;
+        private double pendingDeviceAt;
         private double combatTargetAt, followTargetAt, pendingLootAt, pendingResourceAt, selfJumpstartAt, rescueRequestAt;
         private bool gateActivated, gateCamera, gateFinished, dockRequested, lootRequested, selfJumpstartPending, rescuePending, disposed, failed;
         private byte[] handoff;
@@ -170,7 +174,9 @@ namespace FortyTwoAndBeyond.Protocol
             if (port == 0) throw new InvalidDataException("Missing sector port.");
             sector.Connect(address, port);
             stream = new SectorStream(Player); World = new World(); sequence = 1; Ready = false;
-            gate = dock = followTarget = pendingResource = 0; selfJumpstartPending = rescuePending = false; handoff = null;
+            gate = dock = followTarget = pendingResource = pendingDeviceTarget = 0;
+            pendingDeviceSlot = -1; pendingDeviceTemplate = 0;
+            selfJumpstartPending = rescuePending = false; handoff = null;
             byte[] body = Wire.Body(w =>
             {
                 w.Write(join); w.Write(unchecked((uint)Environment.TickCount)); w.Write(new byte[40]);
@@ -375,8 +381,39 @@ namespace FortyTwoAndBeyond.Protocol
                 "Firing weapon slot " + slot;
         }
 
-        /// <summary>Request activation of a supported mounted effect; the server decides eligibility.</summary>
+        /// <summary>Activate a mounted effect for the acknowledged selected crew pilot or self.</summary>
         public void ActivateDevice(int slot)
+        {
+            ItemState item = slot >= 0 && slot < World.Equipment.Mounted.Length ?
+                World.Equipment.Mounted[slot] : null;
+            if (item?.Present != true ||
+                !World.ItemCatalog.TryGetValue(item.Template, out ItemTemplateInfo template)) return;
+            uint target = World.Equipment.TargetId;
+            bool selectedPeer = World.Players.TryGetValue(target, out ShipActor peer) && peer.HasPosition &&
+                World.Group.Members.Any(member => member.Id == target);
+            if (DeviceEffects.RequiresPeer(template.ActivationLabel))
+            { ActivateDeviceFor(slot, target); return; }
+            if (template.TargetsPeer)
+            {
+                if (selectedPeer || World.Players.ContainsKey(target))
+                    ActivateDeviceFor(slot, selectedPeer ? target : Player);
+                else if (Ready && gate == 0 && World.Station == null &&
+                    World.Warp.Phase == WarpPhase.Idle && World.Equipment.Hull > 0 &&
+                    DeviceEffects.MountedSlot(template.ActivationLabel, template.Type, slot,
+                        World.Equipment.DeviceMounts))
+                    SendDeviceActivation(slot, Player, template.ActivationLabel);
+                return;
+            }
+            if (Ready && gate == 0 && World.Station == null && World.Equipment.Hull > 0 &&
+                World.Warp.Phase != WarpPhase.Charging && World.Warp.Phase != WarpPhase.Traveling &&
+                DeviceEffects.MountedSlot(template.ActivationLabel, template.Type, slot,
+                    World.Equipment.DeviceMounts) &&
+                (DeviceEffects.IsInstant(template.ActivationLabel) || World.ActiveDeviceLabel.Length == 0))
+                SendDeviceActivation(slot, Player, template.ActivationLabel);
+        }
+
+        /// <summary>Wait for the native target acknowledgment before sending one device activation.</summary>
+        public void ActivateDeviceFor(int slot, uint target)
         {
             if (!Ready || gate != 0 || World.Station != null || World.Equipment.Hull <= 0 ||
                 World.Warp.Phase == WarpPhase.Charging || World.Warp.Phase == WarpPhase.Traveling ||
@@ -389,16 +426,31 @@ namespace FortyTwoAndBeyond.Protocol
                 !DeviceEffects.IsInstant(template.ActivationLabel) && !template.TargetsPeer &&
                     World.ActiveDeviceLabel.Length > 0)
                 return;
-            ShipActor peer = null;
-            bool needsPeer = DeviceEffects.RequiresPeer(template.ActivationLabel, template.TargetsPeer);
-            if (needsPeer &&
-                (!World.Players.TryGetValue(World.Equipment.TargetId, out peer) || !peer.HasPosition ||
-                    template.TargetsPeer && !World.Group.Members.Any(member => member.Id == peer.Id)))
-            { Status = template.TargetsPeer ? "Select a visible crew pilot for " + template.ActivationLabel :
-                "Select a nearby pilot before transferring reactor energy"; return; }
+            bool transfer = DeviceEffects.RequiresPeer(template.ActivationLabel);
+            if ((target == Player && transfer) ||
+                (target != Player && !template.TargetsPeer && !transfer))
+            { Status = "This effect cannot target that pilot"; return; }
+            if (target != Player && (!World.Players.TryGetValue(target, out ShipActor peer) ||
+                !peer.HasPosition || template.TargetsPeer &&
+                !World.Group.Members.Any(member => member.Id == target)))
+            { Status = "Select a visible crew pilot for " + template.ActivationLabel; return; }
+            pendingDeviceTarget = pendingDeviceTemplate = 0; pendingDeviceSlot = -1;
+            if (World.Equipment.TargetId == target)
+            { SendDeviceActivation(slot, target, template.ActivationLabel); return; }
+            SelectTarget(target);
+            pendingDeviceTarget = target; pendingDeviceSlot = slot;
+            pendingDeviceTemplate = item.Template;
+            pendingDeviceAt = clock.Elapsed.TotalSeconds;
+            Status = "Waiting for device target acknowledgment";
+        }
+
+        /// <summary>Submit one mounted-device activation after the target is server-confirmed.</summary>
+        private void SendDeviceActivation(int slot, uint target, string label)
+        {
             Send(0x5d, Wire.Body(w => { w.Write(Player); w.Write((byte)2); w.Write((byte)slot); }));
-            Status = template.TargetsPeer ? "Sending " + template.ActivationLabel + " to " + peer.Name :
-                needsPeer ? "Transferring reactor energy to " + peer.Name : "Activating " + template.Name;
+            string recipient = target == Player ? "your ship" :
+                World.Players.TryGetValue(target, out ShipActor peer) ? peer.Name : "the selected pilot";
+            Status = "Activating " + label + " for " + recipient;
         }
 
         /// <summary>Activate the equipped Turbo Weapons device through native item control.</summary>
@@ -527,6 +579,7 @@ namespace FortyTwoAndBeyond.Protocol
         /// <summary>Select a visible actor or world object to receive native target verbs.</summary>
         public void SelectTarget(uint target)
         {
+            pendingDeviceTarget = pendingDeviceTemplate = 0; pendingDeviceSlot = -1;
             bool selectableObject = World.Objects.TryGetValue(target, out MapObject item) &&
                 (item.Navigable || item.Kind == 25 || item.Kind == 38);
             if (!Ready || gate != 0 || (target != Player && !World.Mobs.ContainsKey(target) &&
@@ -720,6 +773,20 @@ namespace FortyTwoAndBeyond.Protocol
                     if (rescuePending) { rescuePending = false; Status = "Rescue options received"; }
                     break;
                 case 0x19:
+                    if (b.Length == 8 && pendingDeviceSlot >= 0 &&
+                        Wire.U32(b, 0) == pendingDeviceTarget && Wire.U32(b, 4) == uint.MaxValue)
+                    {
+                        int slot = pendingDeviceSlot;
+                        uint target = pendingDeviceTarget;
+                        uint template = pendingDeviceTemplate;
+                        pendingDeviceSlot = -1; pendingDeviceTarget = pendingDeviceTemplate = 0;
+                        if (Ready && gate == 0 && World.Station == null && World.Equipment.Hull > 0 &&
+                            World.Warp.Phase == WarpPhase.Idle &&
+                            World.Equipment.Mounted[slot] is ItemState mounted &&
+                            mounted.Present && mounted.Template == template &&
+                            World.ItemCatalog.TryGetValue(mounted.Template, out ItemTemplateInfo metadata))
+                            SendDeviceActivation(slot, target, metadata.ActivationLabel);
+                    }
                     if (b.Length == 8 && selfJumpstartPending && Wire.U32(b, 0) == Player && Wire.U32(b, 4) == uint.MaxValue)
                     {
                         selfJumpstartPending = false;
@@ -821,6 +888,9 @@ namespace FortyTwoAndBeyond.Protocol
                 { combatTarget = 0; Status = "Target did not acknowledge weapon command"; }
                 if (followTarget != 0 && now - followTargetAt > 5)
                 { followTarget = 0; Status = "Follow target did not acknowledge"; }
+                if (pendingDeviceSlot >= 0 && now - pendingDeviceAt > 5)
+                { pendingDeviceSlot = -1; pendingDeviceTarget = pendingDeviceTemplate = 0;
+                  Status = "Device target did not acknowledge; activation cancelled"; }
                 if (gate != 0)
                 {
                     double elapsed = now - gateAt;
