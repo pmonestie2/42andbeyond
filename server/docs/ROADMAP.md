@@ -141,12 +141,19 @@ mean the corresponding gameplay system is complete.
   within 40,000 units in the same sector. Each source commit freezes recipient
   awards in the owner's inventory; recipient receipts survive write failure and
   restart without duplicate XP.
-  Skill-point spending and ordinary level-one character creation remain open.
+  Native hull stages 0–6 now derive class hull health, unlocked weapon/device
+  mounts, cargo capacity, appearance tier and warp power. Legacy 22-slot
+  inventories migrate to the 40-slot wire layout without moving owned items;
+  prior sandbox pilots retain their stage-six gear. Stage capacity and the hull
+  stage publish through ship inventory and player RPG AUX. Skill-point spending
+  and ordinary level-one character creation remain open.
 - The public mission catalog loads all 364 imported definitions; the runtime
-  currently offers seven fully wired NPC missions: Finer Points of Negotiation
+  currently offers thirteen wired NPC missions: Finer Points of Negotiation
   (3), Reactor Leak (5), Supply Run (6), Going for Repairs (90), Basic Shooting Range (102), its
   prerequisite-gated sequel Kill Scuttle Larva (104), and Cash for 'Roids
-  (341). The twelve-slot journal,
+  (341), plus the six Scout hull upgrades (245, 246, 258–261) at NPC27.
+  The Scout rewards advance exactly one stage at native total-level gates.
+  The twelve-slot journal,
   reached-stage descriptions and
   durable kill counts publish through native player AUX. Reactor Leak advances
   on two stationary arrivals within the archived C++ 2,500-unit nav range.
@@ -156,7 +163,7 @@ mean the corresponding gameplay system is complete.
   owned-item and learned-formula rewards commit atomically. Skill
   unlocks are recorded durably, while the sandbox class catalog still grants
   those skills at their ceiling. Other mission objectives, offers, scripts,
-  faction rewards and timed/forfeitable jobs remain pending. Mission 111's
+  faction rewards and other timed/forfeitable jobs remain pending. Mission 111's
   starting NPC is absent from the public NPC placements.
 - Vault transfers require an authoritative station sector. Rejected space
   transfers preserve the inventory and send the current cargo/vault state.

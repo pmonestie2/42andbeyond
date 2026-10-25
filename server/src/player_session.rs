@@ -241,11 +241,12 @@ impl PlayerSession {
         let items = ItemCatalog::load()?;
         let npcs = NpcCatalog::load()?;
         let inventory_path = state_dir.join("inventory.json");
-        let inventory = if inventory_path.exists() {
+        let mut inventory = if inventory_path.exists() {
             serde_json::from_slice(&fs::read(inventory_path)?)?
         } else {
             Inventory::starter_for(&account.character, &items)?
         };
+        inventory.migrate_cargo_for_profile(&account.character)?;
         let skill_catalog = SkillCatalog::for_profile(&account.character)?;
         let granted = crate::sandbox_loadout::provision(
             &world_root,
@@ -1160,6 +1161,13 @@ impl PlayerSession {
     /// candidate includes both cargo and credits, so they cannot commit apart.
     fn commit_inventory(&mut self, candidate: Inventory) -> io::Result<()> {
         candidate.validate(&self.items)?;
+        if candidate.hull_upgrade != self.inventory.hull_upgrade {
+            candidate.validate_for_profile(
+                &self.account.character,
+                &self.items,
+                &self.skill_catalog,
+            )?;
+        }
         let active_device = self
             .active_device
             .as_ref()
@@ -1204,11 +1212,13 @@ impl PlayerSession {
             .map(|item| item.packet())
             .collect();
         let previous_credits = self.inventory.credits;
+        let hull_upgraded = candidate.hull_upgrade > self.inventory.hull_upgrade;
         let experience_changed = candidate.combat_xp != self.inventory.combat_xp
             || candidate.explore_xp != self.inventory.explore_xp
             || candidate.trade_xp != self.inventory.trade_xp
             || candidate.xp_start_level != self.inventory.xp_start_level
-            || candidate.missions != self.inventory.missions;
+            || candidate.missions != self.inventory.missions
+            || candidate.hull_upgrade != self.inventory.hull_upgrade;
         // Publish only after durable replacement. A disk failure leaves the
         // authoritative inventory unchanged and sends no success snapshot.
         fs::create_dir_all(&self.state_dir)?;
@@ -1223,6 +1233,16 @@ impl PlayerSession {
         self.reputation = reputation;
         self.equipment = equipment;
         self.apply_equipment_parameters();
+        if hull_upgraded {
+            self.hull = self.equipment.ship.hull_capacity;
+            if self.logged_in {
+                self.pending.push(packets::ship_parameters(
+                    self.player_id(),
+                    &self.equipment.ship,
+                    self.ship_resources(),
+                ));
+            }
+        }
         if reputation_changed {
             self.publish_reputation();
         }
@@ -3322,6 +3342,67 @@ mod tests {
             position: [0.; 3],
             action: 0x41,
         });
+    }
+
+    /// Verify native Scout upgrade dialogue, persistence and replay gating.
+    #[test]
+    fn scout_hull_missions_advance_six_stages_and_resume_without_losing_items() {
+        let state_dir =
+            std::env::temp_dir().join(format!("beyond-scout-hull-{}", rand::random::<u64>()));
+        let mut account =
+            crate::account::Account::create("scout".into(), "scout", "Scout".into()).unwrap();
+        account.character.race = 0;
+        account.character.profession = 2;
+        account.save_new(&state_dir).unwrap();
+        let items = ItemCatalog::load().unwrap();
+        let mut inventory = Inventory::starter_for(&account.character, &items).unwrap();
+        inventory.hull_upgrade = 0;
+        inventory.cargo_capacity = 25;
+        inventory.xp_start_level = 4;
+        inventory.cargo[0] = Some(crate::inventory::ItemInstance::stock(2837, 3));
+        std::fs::write(
+            state_dir.join("inventory.json"),
+            serde_json::to_vec(&inventory).unwrap(),
+        )
+        .unwrap();
+        let station = SectorCatalog::load().unwrap().sector(10601).unwrap();
+        let mut ship =
+            PlayerSession::new(station.clone(), Ipv4Addr::LOCALHOST, state_dir.clone()).unwrap();
+        ship.logged_in = true;
+        enter_npc_room(&mut ship, 27);
+        for (stage, mission) in [(1, 245), (2, 246), (3, 258), (4, 259), (5, 260), (6, 261)] {
+            ship.open_npc(27).unwrap();
+            assert_eq!(
+                ship.npc_interaction.as_ref().unwrap().mission,
+                Some(mission)
+            );
+            npc_choice(&mut ship, 2).unwrap();
+            ship.close_npc();
+            ship.open_npc(27).unwrap();
+            npc_choice(&mut ship, 2).unwrap();
+            assert_eq!(ship.inventory.hull_upgrade, stage);
+            assert_eq!(ship.inventory.cargo_capacity, 25 + 2 * stage as usize);
+            assert_eq!(ship.inventory.cargo[0], inventory.cargo[0]);
+            assert!(ship.inventory.missions.completed.contains(&mission));
+            if stage == 1 {
+                let mut earned = ship.inventory.clone();
+                earned.xp_start_level = 50;
+                ship.commit_inventory(earned).unwrap();
+                let mut resumed =
+                    PlayerSession::new(station.clone(), Ipv4Addr::LOCALHOST, state_dir.clone())
+                        .unwrap();
+                assert_eq!(resumed.inventory.hull_upgrade, 1);
+                assert_eq!(resumed.inventory.cargo[0], inventory.cargo[0]);
+                resumed.logged_in = true;
+                enter_npc_room(&mut resumed, 27);
+                ship = resumed;
+            }
+        }
+        ship.close_npc();
+        ship.open_npc(27).unwrap();
+        assert!(ship.npc_interaction.as_ref().unwrap().mission.is_none());
+        drop(ship);
+        std::fs::remove_dir_all(state_dir).unwrap();
     }
 
     #[test]

@@ -10,6 +10,9 @@ use std::io;
 pub struct ShipStats {
     pub weapon_mounts: usize,
     pub device_mounts: usize,
+    pub cargo_capacity: usize,
+    pub appearance_tier: u16,
+    pub warp_power_level: u32,
     pub hull_capacity: f32,
     pub energy_capacity: f32,
     pub energy_recharge: f32,
@@ -175,6 +178,7 @@ impl EquipmentStats {
             deflects[index] = modifiers.apply_signed(name, 0.).min(50.);
         }
         let class = crate::classes::CharacterClass(skills.class_index);
+        let progression = crate::ship_progression::progression(class, inventory.hull_upgrade)?;
         let scan_skill =
             (skills.level(49) as f32 + modifiers.apply_signed("STAT_SKILL_SCAN", 0.)).max(0.);
         let scan_bonus = if scan_skill > 0. {
@@ -183,15 +187,12 @@ impl EquipmentStats {
             0.
         };
         let ship = ShipStats {
-            weapon_mounts: class.weapons(),
-            device_mounts: class.devices(),
-            hull_capacity: modifiers.apply(
-                "STAT_HULL",
-                crate::ship_progression::hull_capacity(
-                    class,
-                    crate::ship_progression::SANDBOX_HULL_UPGRADE,
-                )?,
-            ),
+            weapon_mounts: progression.weapon_mounts,
+            device_mounts: progression.device_mounts,
+            cargo_capacity: progression.cargo_capacity,
+            appearance_tier: progression.appearance_tier,
+            warp_power_level: progression.warp_power_level,
+            hull_capacity: modifiers.apply("STAT_HULL", progression.hull_capacity),
             energy_capacity: modifiers.apply("STAT_ENERGY", field(1, 16)?),
             energy_recharge: modifiers.apply("STAT_ENERGY_RECHARGE", field(1, 20)?),
             shield_capacity: modifiers.apply("STAT_SHIELD", field(0, 24)?),

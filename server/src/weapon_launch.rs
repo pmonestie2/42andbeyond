@@ -481,6 +481,12 @@ mod tests {
         ship.account.character.race = 0;
         ship.account.character.profession = 0;
         ship.skill_catalog = SkillCatalog::for_profile(&ship.account.character).unwrap();
+        ship.inventory.cargo_capacity = crate::ship_progression::progression(
+            ship.account.character.class(),
+            ship.inventory.hull_upgrade,
+        )
+        .unwrap()
+        .cargo_capacity;
         for (slot, template) in [(0, 3628), (1, 3184), (2, 2507)] {
             ship.inventory.equipped[slot] = Some(ItemInstance::stock(template, 1));
         }

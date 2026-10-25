@@ -157,10 +157,10 @@ impl MissionCatalog {
         inventory: &Inventory,
     ) -> Option<u32> {
         self.0.values().find_map(|mission| {
-            (matches!(mission.id, 3 | 5 | 6 | 90 | 102 | 104 | 341)
+            (matches!(mission.id, 3 | 5 | 6 | 90 | 102 | 104 | 245 | 246 | 258..=261 | 341)
                 && mission.stages.len() >= 2
                 && mission.time_limit == 0
-                && !mission.forfeitable
+                && (!mission.forfeitable || matches!(mission.id, 245 | 246 | 258..=261))
                 && Self::start_tree_supported(&mission.stages[0])
                 && mission.stages[0]
                     .completion
@@ -168,6 +168,11 @@ impl MissionCatalog {
                     .any(|entry| entry.kind == 1 && entry.data == i64::from(npc))
                 && !inventory.missions.contains(mission.id)
                 && inventory.missions.active.len() < 12
+                && (!matches!(mission.id, 245 | 246 | 258..=261)
+                    || mission.stages[1].rewards.iter().any(|reward| {
+                        reward.kind == 7
+                            && matches!(reward.data, MissionRewardData::Number(stage) if stage == i64::from(inventory.hull_upgrade + 1))
+                    }))
                 && self.conditions_met(mission, profile, inventory))
             .then_some(mission.id)
         })
@@ -287,8 +292,8 @@ impl MissionCatalog {
             3 => i64::from(explore.level) >= entry.data,
             4 => i64::from(trade.level) >= entry.data,
             5 | 6 => true,
-            // Hull upgrade and reputation checks await their progression service.
-            7 | 8 => false,
+            7 => entry.data == i64::from(inventory.hull_upgrade),
+            8 => false,
             9 => {
                 inventory
                     .cargo

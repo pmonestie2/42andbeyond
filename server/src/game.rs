@@ -353,6 +353,7 @@ impl GameState {
         Ok(packets::characters(
             &session.sector,
             &session.account.character,
+            &session.inventory,
         ))
     }
     pub fn select(

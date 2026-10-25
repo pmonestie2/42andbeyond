@@ -8,6 +8,12 @@ use std::io;
 pub const MAX_HULL_UPGRADE: u32 = 6;
 pub const SANDBOX_HULL_UPGRADE: u32 = MAX_HULL_UPGRADE;
 
+/// Returns:
+///     u32: Legacy sandbox stage for inventories saved before progression.
+pub fn sandbox_hull_upgrade() -> u32 {
+    SANDBOX_HULL_UPGRADE
+}
+
 // Native order: Terran W/T/E, Jenquai W/T/E, Progen W/T/E.
 const HULL: [[u32; 7]; 9] = [
     [18, 70, 280, 1100, 4500, 18000, 72000],
@@ -28,8 +34,9 @@ const WEAPON_ADDITIONS: [[usize; 7]; 9] = [
     [1, 0, 1, 0, 1, 0, 1],
     [1, 0, 1, 0, 0, 1, 0],
     [2, 1, 0, 1, 1, 0, 1],
-    // Archived WeaponTable totals4 for PP, although MaxWeaponSlots says5.
-    [2, 0, 1, 0, 0, 1, 0],
+    // Archived WeaponTable totals4 for PP, but MaxWeaponSlots and the active
+    // max-stage loadout both require5; preserve that occupied final mount.
+    [2, 0, 1, 0, 0, 1, 1],
     [2, 0, 1, 0, 0, 1, 0],
 ];
 const DEVICE_ADDITIONS: [[usize; 7]; 9] = [
@@ -153,10 +160,7 @@ mod tests {
         for code in ["te", "tt", "ts", "jd", "js", "je", "pw", "pp", "ps"] {
             let class = CharacterClass::parse(code).unwrap();
             let maximum = progression(class, 6).unwrap();
-            assert_eq!(
-                maximum.weapon_mounts,
-                if code == "pp" { 4 } else { class.weapons() }
-            );
+            assert_eq!(maximum.weapon_mounts, class.weapons());
             assert_eq!(maximum.device_mounts, class.devices());
             for stage in 0..=6 {
                 let ship = progression(class, stage).unwrap();

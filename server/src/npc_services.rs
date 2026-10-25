@@ -271,6 +271,34 @@ impl PlayerSession {
                     candidate =
                         candidate.received(item, quantity, u32::MAX as usize, &self.items)?;
                 }
+                7 => {
+                    let stage = u32::try_from(amount)
+                        .map_err(|_| invalid("Mission hull stage is invalid."))?;
+                    let total_level = [
+                        candidate.combat_xp,
+                        candidate.trade_xp,
+                        candidate.explore_xp,
+                    ]
+                    .into_iter()
+                    .map(|xp| crate::experience::track(candidate.xp_start_level, xp))
+                    .collect::<io::Result<Vec<_>>>()?
+                    .iter()
+                    .map(|track| track.level)
+                    .sum();
+                    if !crate::ship_progression::can_upgrade(
+                        candidate.hull_upgrade,
+                        stage,
+                        total_level,
+                    )? {
+                        return Err(invalid("Hull upgrade stage or level is unavailable."));
+                    }
+                    candidate.hull_upgrade = stage;
+                    candidate.cargo_capacity = crate::ship_progression::progression(
+                        self.account.character.class(),
+                        stage,
+                    )?
+                    .cargo_capacity;
+                }
                 9 => {
                     let skill = u32::try_from(amount)
                         .map_err(|_| invalid("Mission skill reward is invalid."))?;

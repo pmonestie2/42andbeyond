@@ -42,15 +42,24 @@ pub fn avatar(profile: &CharacterProfile) -> Vec<u8> {
     data
 }
 
-pub fn characters(sector: &Sector, profile: &CharacterProfile) -> Frame {
+/// Returns:
+///     Frame: Native picker entry with the pilot's earned track levels.
+pub fn characters(sector: &Sector, profile: &CharacterProfile, inventory: &Inventory) -> Frame {
     let mut data = vec![0; 5 * 374 + 4 + 2 * 84];
     be32(&mut data, 4, sector.id);
     be32(&mut data, 8, 1);
     be32(&mut data, 12, 5);
     be32(&mut data, 20, profile.game_id & 0xffffff);
     be32(&mut data, 28, 1);
-    for offset in [40, 44, 48] {
-        be32(&mut data, offset, crate::account::SANDBOX_TRACK_LEVEL);
+    for (offset, xp) in [
+        (40, inventory.combat_xp),
+        (44, inventory.trade_xp),
+        (48, inventory.explore_xp),
+    ] {
+        let level = crate::experience::track(inventory.xp_start_level, xp)
+            .expect("validated earned XP")
+            .level;
+        be32(&mut data, offset, level);
     }
     fixed_text(&mut data, 52, 81, &sector.name);
     data[133..374].copy_from_slice(&avatar(profile));
@@ -176,7 +185,7 @@ pub fn resource_name(id: u32, name: &str) -> Frame {
 
 /// A Jenquai ship is assembled from a hull and four bone attachments. These
 /// starting assets come from StaticData.h, not item-template IDs.
-pub fn ship_subparts(id: u32, class: crate::classes::CharacterClass) -> Frame {
+pub fn ship_subparts(id: u32, class: crate::classes::CharacterClass, tier: u16) -> Frame {
     let mut data = Vec::from(id.to_be_bytes());
     data.extend_from_slice(&4u32.to_be_bytes());
     let parts = if class.race() == 1 {
@@ -197,7 +206,7 @@ pub fn ship_subparts(id: u32, class: crate::classes::CharacterClass) -> Frame {
     for (bone, asset) in parts {
         data.extend_from_slice(bone.as_bytes());
         data.push(0);
-        data.extend_from_slice(&asset.to_be_bytes());
+        data.extend_from_slice(&(asset + u32::from(tier)).to_be_bytes());
     }
     Frame::new(0xb4, data)
 }
@@ -842,7 +851,7 @@ pub fn player_aux(
             (9, trade.level.to_le_bytes().to_vec()),
             (10, explore.fraction.to_le_bytes().to_vec()),
             (11, explore.level.to_le_bytes().to_vec()),
-            (12, 6u32.to_le_bytes().to_vec()),
+            (12, inventory.hull_upgrade.to_le_bytes().to_vec()),
             (15, u32::MAX.to_le_bytes().to_vec()),
         ]),
     );
@@ -1111,6 +1120,7 @@ pub fn inventory_update(
             aux_diff(
                 11,
                 BTreeMap::from([
+                    (0, (stats.cargo_capacity as u32).to_le_bytes().to_vec()),
                     (
                         2,
                         equipment_mounts(stats.weapon_mounts, stats.device_mounts),
@@ -1582,7 +1592,7 @@ fn ship_snapshot(
     let percent =
         |value: f32| aux_record(3, &[], BTreeMap::from([(2, value.to_le_bytes().to_vec())]));
     let mut inventory_fields = BTreeMap::from([
-        (0, 22u32.to_le_bytes().to_vec()),
+        (0, (ship.cargo_capacity as u32).to_le_bytes().to_vec()),
         (1, text("tvf01_1")),
         (4, (ship.weapon_mounts as u32).to_le_bytes().to_vec()),
         (5, (ship.device_mounts as u32).to_le_bytes().to_vec()),
@@ -1753,8 +1763,11 @@ pub fn login_world(
         // send a space ClientType, map objects or space ServerParameters here.
         frames.extend([
             player_aux(sector, profile, inventory, ship.catalog),
-            create(profile.game_id, profile.class().hull_asset()),
-            ship_subparts(profile.game_id, profile.class()),
+            create(
+                profile.game_id,
+                profile.class().hull_asset() + ship.stats.appearance_tier,
+            ),
+            ship_subparts(profile.game_id, profile.class(), ship.stats.appearance_tier),
             ship_colors(profile.game_id),
             Frame::new(0x37, profile.game_id.to_le_bytes().to_vec()),
             Frame::new(0x47, profile.game_id.to_le_bytes().to_vec()),
@@ -1784,8 +1797,11 @@ pub fn login_world(
         Frame::new(0x7f, 0u32.to_le_bytes().to_vec()),
         Frame::new(0x3c, 0u32.to_le_bytes().to_vec()),
         player_aux(sector, profile, inventory, ship.catalog),
-        create(profile.game_id, profile.class().hull_asset()),
-        ship_subparts(profile.game_id, profile.class()),
+        create(
+            profile.game_id,
+            profile.class().hull_asset() + ship.stats.appearance_tier,
+        ),
+        ship_subparts(profile.game_id, profile.class(), ship.stats.appearance_tier),
         ship_colors(profile.game_id),
         Frame::new(0x37, profile.game_id.to_le_bytes().to_vec()),
         Frame::new(0x47, profile.game_id.to_le_bytes().to_vec()),
@@ -1908,8 +1924,11 @@ pub fn peer_spawn(peer: &crate::peers::PeerSnapshot, tick: u32) -> Vec<Frame> {
     avatar_data.extend_from_slice(&1f32.to_le_bytes());
     avatar_data.extend_from_slice(&1f32.to_le_bytes());
     vec![
-        create(id, peer.profile.class().hull_asset()),
-        ship_subparts(id, peer.profile.class()),
+        create(
+            id,
+            peer.profile.class().hull_asset() + peer.stats.appearance_tier,
+        ),
+        ship_subparts(id, peer.profile.class(), peer.stats.appearance_tier),
         ship_colors(id),
         Frame::new(0x61, avatar_data),
         player_movement(id, peer.position, tick, &peer.motion),
@@ -2118,6 +2137,78 @@ mod tests {
     }
     use super::*;
 
+    /// Verify the picker reflects a low-stage pilot's earned track levels.
+    #[test]
+    fn character_picker_uses_durable_experience_levels() {
+        let sector = crate::sectors::SectorCatalog::load()
+            .unwrap()
+            .sector(10601)
+            .unwrap();
+        let profile = CharacterProfile {
+            game_id: crate::account::FIRST_PLAYER_ID,
+            name: "Scout".into(),
+            race: 0,
+            profession: 2,
+        };
+        let mut inventory =
+            Inventory::starter_for(&profile, &ItemCatalog::load().unwrap()).unwrap();
+        inventory.xp_start_level = 4;
+        let picker = characters(&sector, &profile, &inventory);
+        for offset in [40, 44, 48] {
+            assert_eq!(&picker.body[offset..offset + 4], &4u32.to_be_bytes());
+        }
+    }
+
+    /// Verify nearby pilots see the upgraded hull asset and mount count.
+    #[test]
+    fn peer_spawn_publishes_hull_appearance_after_upgrade() {
+        let profile = CharacterProfile {
+            game_id: crate::account::FIRST_PLAYER_ID + 1,
+            name: "ScoutPeer".into(),
+            race: 0,
+            profession: 2,
+        };
+        let items = ItemCatalog::load().unwrap();
+        let skills = SkillCatalog::for_profile(&profile).unwrap();
+        let mut inventory = Inventory::starter_for(&profile, &items).unwrap();
+        let mut assets = Vec::new();
+        for stage in [0, 3] {
+            inventory.hull_upgrade = stage;
+            inventory.cargo_capacity = crate::ship_progression::progression(profile.class(), stage)
+                .unwrap()
+                .cargo_capacity;
+            let stats = crate::equipment_stats::EquipmentStats::derive(&inventory, &items, &skills)
+                .unwrap()
+                .ship;
+            let peer = crate::peers::PeerSnapshot {
+                stats,
+                profile: profile.clone(),
+                sector: 10601,
+                position: [0.; 3],
+                motion: crate::motion::Motion::default(),
+                shield: 1.,
+                hull: stats.hull_capacity,
+                cloaked: false,
+            };
+            let frames = peer_spawn(&peer, 100);
+            assert_eq!(frames[0].opcode, 4);
+            assert_eq!(frames[1].opcode, 0xb4);
+            assert_eq!(
+                frames[0].body[8..10],
+                (profile.class().hull_asset() + stats.appearance_tier).to_le_bytes()
+            );
+            assert!(frames.iter().any(|frame| frame.opcode == 0x1b));
+            assets.push((
+                frames[0].body[8..10].to_vec(),
+                stats.weapon_mounts,
+                stats.device_mounts,
+            ));
+        }
+        assert_ne!(assets[0].0, assets[1].0);
+        assert!(assets[1].1 >= assets[0].1);
+        assert!(assets[1].2 > assets[0].2);
+    }
+
     /// Pin the small RPG AUX fixture shared with the C# earned-XP decoder.
     #[test]
     fn slim_rpg_progress_fixture_has_native_nested_flags_and_values() {
@@ -2277,7 +2368,7 @@ mod tests {
 
     #[test]
     fn jenquai_subparts_decode_as_four_named_attachments() {
-        let frame = ship_subparts(FIRST_PLAYER_ID, crate::classes::CharacterClass(5));
+        let frame = ship_subparts(FIRST_PLAYER_ID, crate::classes::CharacterClass(5), 0);
         let mut reader = crate::protocol::Reader::new(&frame.body);
         assert_eq!(reader.be_u32().unwrap(), FIRST_PLAYER_ID);
         assert_eq!(reader.be_u32().unwrap(), 4);

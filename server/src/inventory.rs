@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::io;
 
-pub const CARGO_SLOTS: usize = 22;
+pub const CARGO_SLOTS: usize = 40;
 pub const EQUIPMENT_SLOTS: usize = 20;
 pub const VAULT_SLOTS: usize = 96;
 
@@ -96,6 +96,10 @@ impl MiningEscrow {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Inventory {
     pub cargo: Vec<Option<ItemInstance>>,
+    #[serde(default = "crate::ship_progression::sandbox_hull_upgrade")]
+    pub hull_upgrade: u32,
+    #[serde(default)]
+    pub cargo_capacity: usize,
     pub equipped: Vec<Option<ItemInstance>>,
     #[serde(default = "empty_ammunition")]
     pub ammunition: Vec<Option<ItemInstance>>,
@@ -164,6 +168,21 @@ pub struct ItemTransfer {
 }
 
 impl Inventory {
+    /// Expand legacy storage without moving any owned slot or changing gear.
+    pub fn migrate_cargo_for_profile(
+        &mut self,
+        profile: &crate::account::CharacterProfile,
+    ) -> io::Result<()> {
+        if self.cargo.len() == 22 {
+            self.cargo.resize(CARGO_SLOTS, None);
+        }
+        if self.cargo_capacity == 0 {
+            self.cargo_capacity =
+                crate::ship_progression::progression(profile.class(), self.hull_upgrade)?
+                    .cargo_capacity;
+        }
+        Ok(())
+    }
     /// Prepare a receipt and its loot award in one inventory candidate. The
     /// session's ordinary commit path persists this before shared depletion.
     pub fn collected_loot(
@@ -219,6 +238,9 @@ impl Inventory {
         templates: &ItemCatalog,
     ) -> io::Result<Self> {
         let mut inventory = Self::starter(templates)?;
+        inventory.cargo_capacity =
+            crate::ship_progression::progression(profile.class(), inventory.hull_upgrade)?
+                .cargo_capacity;
         let race = profile.class().race() as usize;
         for (slot, choices) in [
             [3628, 3629, 3627],
@@ -242,6 +264,10 @@ impl Inventory {
         skills: &crate::skills::SkillCatalog,
     ) -> io::Result<()> {
         self.validate(templates)?;
+        let stage = crate::ship_progression::progression(profile.class(), self.hull_upgrade)?;
+        if self.cargo_capacity != stage.cargo_capacity {
+            return Err(invalid("Cargo capacity does not match hull upgrade."));
+        }
         if self
             .pending_launch
             .as_ref()
@@ -257,6 +283,12 @@ impl Inventory {
         {
             let template = templates.get(item.template)?;
             profile.class().check_mount(slot, template.item_type)?;
+            if (matches!(template.item_type, 14..=16)
+                && !(3..3 + stage.weapon_mounts).contains(&slot))
+                || (template.item_type == 11 && !(9..9 + stage.device_mounts).contains(&slot))
+            {
+                return Err(invalid("Mount is locked until a hull upgrade."));
+            }
             template.check_requirements(profile, skills, [50, 50, 50])?;
         }
         Ok(())
@@ -265,6 +297,8 @@ impl Inventory {
     pub fn starter(templates: &ItemCatalog) -> io::Result<Self> {
         let mut inventory = Self {
             cargo: vec![None; CARGO_SLOTS],
+            hull_upgrade: crate::ship_progression::SANDBOX_HULL_UPGRADE,
+            cargo_capacity: 32,
             equipped: vec![None; EQUIPMENT_SLOTS],
             ammunition: empty_ammunition(),
             vault: empty_vault(),
@@ -324,6 +358,15 @@ impl Inventory {
     }
 
     pub fn validate(&self, templates: &ItemCatalog) -> io::Result<()> {
+        if self.hull_upgrade > crate::ship_progression::MAX_HULL_UPGRADE
+            || !(16..=CARGO_SLOTS).contains(&self.cargo_capacity)
+            || self
+                .cargo
+                .get(self.cargo_capacity..)
+                .is_some_and(|tail| tail.iter().any(Option::is_some))
+        {
+            return Err(invalid("Invalid hull stage or cargo capacity."));
+        }
         if self
             .pending_mining
             .as_ref()
@@ -504,7 +547,7 @@ impl Inventory {
 
     fn slots(&self, container: u32) -> io::Result<&[Option<ItemInstance>]> {
         match container {
-            1 => Ok(&self.cargo),
+            1 => Ok(&self.cargo[..self.cargo_capacity]),
             2 => Ok(&self.equipped),
             3 => Ok(&self.vault),
             12 => Ok(&self.production_target),
@@ -673,13 +716,15 @@ impl Inventory {
         self.validate(catalog)?;
         let item = catalog.get(instance.template)?;
         let quantity = instance.quantity;
-        if quantity == 0 || (preferred_slot != u32::MAX as usize && preferred_slot >= CARGO_SLOTS) {
+        if quantity == 0
+            || (preferred_slot != u32::MAX as usize && preferred_slot >= self.cargo_capacity)
+        {
             return Err(invalid("Invalid cargo quantity or destination slot."));
         }
         let mut result = self.clone();
         let mut remaining = quantity;
-        let mut order: Vec<usize> = (0..CARGO_SLOTS).collect();
-        if preferred_slot < CARGO_SLOTS {
+        let mut order: Vec<usize> = (0..self.cargo_capacity).collect();
+        if preferred_slot < self.cargo_capacity {
             order.swap(0, preferred_slot);
         }
         // Merge existing identical stock before filling empty slots. Buying
@@ -931,7 +976,7 @@ mod tests {
         for request in [
             (1, 0, 2, 0, 1),
             (1, 0, 2, 2, 2),
-            (1, 0, 1, 22, 1),
+            (1, 0, 1, original.cargo_capacity, 1),
             (3, 0, 1, 0, 1),
         ] {
             assert!(moved(&cargo, request, &templates).is_err());
@@ -943,5 +988,81 @@ mod tests {
         assert!(swapped.equipped[3].is_none());
         assert_eq!(swapped.equipped[4], original.equipped[3]);
         assert!(moved(&swapped, (2, 4, 2, 1, 1), &templates).is_err());
+    }
+
+    /// Verify the per-class migration retains every occupied legacy slot.
+    #[test]
+    fn legacy_twenty_two_slot_cargo_migrates_without_moving_owned_items() {
+        let templates = ItemCatalog::load().unwrap();
+        for code in ["te", "tt", "ts", "jd", "js", "je", "pw", "pp", "ps"] {
+            let class = crate::classes::CharacterClass::parse(code).unwrap();
+            let profile = crate::account::CharacterProfile {
+                game_id: crate::account::FIRST_PLAYER_ID,
+                name: "Legacy".into(),
+                race: class.race(),
+                profession: class.profession(),
+            };
+            let mut old = Inventory::starter_for(&profile, &templates).unwrap();
+            old.cargo[0] = Some(ItemInstance::stock(2837, 7));
+            old.cargo[21] = Some(ItemInstance::stock(507, 2));
+            let gear = old.equipped.clone();
+            let mut json = serde_json::to_value(&old).unwrap();
+            json.as_object_mut().unwrap().remove("hull_upgrade");
+            json.as_object_mut().unwrap().remove("cargo_capacity");
+            json["cargo"].as_array_mut().unwrap().truncate(22);
+            let mut migrated: Inventory = serde_json::from_value(json).unwrap();
+            migrated.migrate_cargo_for_profile(&profile).unwrap();
+            migrated
+                .validate_for_profile(
+                    &profile,
+                    &templates,
+                    &crate::skills::SkillCatalog::for_profile(&profile).unwrap(),
+                )
+                .unwrap();
+            assert_eq!(migrated.hull_upgrade, 6);
+            assert_eq!(
+                migrated.cargo_capacity,
+                crate::ship_progression::progression(class, 6)
+                    .unwrap()
+                    .cargo_capacity
+            );
+            assert_eq!(migrated.cargo[0], old.cargo[0]);
+            assert_eq!(migrated.cargo[21], old.cargo[21]);
+            assert_eq!(migrated.equipped, gear);
+            assert_eq!(migrated.cargo.len(), CARGO_SLOTS);
+        }
+    }
+
+    /// Verify a lower-stage pilot cannot use future cargo or weapon mounts.
+    #[test]
+    fn hull_stage_gates_cargo_and_weapon_mounts() {
+        let templates = ItemCatalog::load().unwrap();
+        let profile = crate::account::CharacterProfile {
+            game_id: crate::account::FIRST_PLAYER_ID,
+            name: "Scout".into(),
+            race: 0,
+            profession: 2,
+        };
+        let skills = crate::skills::SkillCatalog::for_profile(&profile).unwrap();
+        let mut inventory = Inventory::starter_for(&profile, &templates).unwrap();
+        inventory.hull_upgrade = 0;
+        inventory.cargo_capacity = 25;
+        inventory
+            .validate_for_profile(&profile, &templates, &skills)
+            .unwrap();
+        inventory.cargo[25] = Some(ItemInstance::stock(2837, 1));
+        assert!(inventory
+            .validate_for_profile(&profile, &templates, &skills)
+            .is_err());
+        inventory.cargo[25] = None;
+        inventory.equipped[4] = inventory.equipped[3].clone();
+        assert!(inventory
+            .validate_for_profile(&profile, &templates, &skills)
+            .is_err());
+        inventory.hull_upgrade = 2;
+        inventory.cargo_capacity = 29;
+        inventory
+            .validate_for_profile(&profile, &templates, &skills)
+            .unwrap();
     }
 }

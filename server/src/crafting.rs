@@ -404,7 +404,7 @@ mod tests {
         assert!(failed.production_target[0].is_none());
         assert_eq!(failed.credits, result.credits);
         assert!(failed.cargo.iter().all(Option::is_none));
-        inventory.cargo.fill(sample(769));
+        inventory.cargo[..inventory.cargo_capacity].fill(sample(769));
         let before = inventory.clone();
         assert!(recipe
             .dismantle(&inventory, &skills, &items, &recipe.components)
@@ -475,7 +475,7 @@ mod tests {
         let mut inventory = Inventory::starter(&items).unwrap();
         inventory.credits = 1_000_000;
         inventory.known_formulas.insert(2372);
-        inventory.cargo.fill(sample(769));
+        inventory.cargo[..inventory.cargo_capacity].fill(sample(769));
         for (index, component) in recipe.components.iter().enumerate() {
             inventory.cargo[index] = sample(*component);
         }
