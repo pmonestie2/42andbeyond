@@ -413,6 +413,7 @@ impl PlayerSession {
         self.motion.acceleration = stats.acceleration;
         self.motion.turn_scale = stats.turn_rate / 45.;
         self.warp.speed = stats.warp_speed;
+        self.warp.charge_seconds = stats.warp_charge;
         self.warp.recovery_seconds = stats.warp_recovery;
         for slot in 0..20 {
             if !self

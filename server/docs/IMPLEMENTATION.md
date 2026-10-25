@@ -253,6 +253,11 @@ reactor stops energy recharge; removing an engine stops impulse/warp. Equipping
 larger capacity preserves charge rather than refilling it. Shield recharge runs
 while alive, including indoors. Free warp drains energy and ends at depletion or
 the sector boundary; the old arbitrary 50-second cutoff is gone.
+Navigate now reduces that authoritative free-warp drain by 20–80% at trained
+ranks one through seven (and up to 95% with effective gear ranks), while ranks
+three and above shorten both server warp charge and recovery by 10–30% (up to
+45% with gear). Route warp still follows the existing no-drain rule; the
+archived server does not establish a separate route energy debit.
 
 Equipped beams have independent energy cost, range, damage and reload timers.
 Action 9 toggles weapons; native 0x5d activates individual beam slots. ReadyTime,

@@ -21,6 +21,7 @@ pub struct ShipStats {
     pub impulse_speed: f32,
     pub warp_speed: f32,
     pub warp_drain: f32,
+    pub warp_charge: f32,
     pub warp_recovery: f32,
     pub acceleration: f32,
     pub scan_range: f32,
@@ -180,6 +181,21 @@ impl EquipmentStats {
         } else {
             0.
         };
+        // The Navigate rank table reduces warp energy from 20% at rank one
+        // through 80% at seven, then by another 5% per gear-boosted rank.
+        let warp_energy_reduction = if navigate <= 0. {
+            0.
+        } else if navigate <= 7. {
+            (0.1 + navigate * 0.1).min(0.8)
+        } else {
+            (0.8 + (navigate - 7.) * 0.05).min(0.95)
+        };
+        // Rank three first shortens both the initiation and recovery phases.
+        let warp_delay_reduction = if navigate >= 3. {
+            ((navigate - 1.) * 0.05).min(0.45)
+        } else {
+            0.
+        };
         let mut deflects = [0.; 9];
         // Combat Trance belongs to the Progen Warrior's trained skill 13.
         // PlayerSkills.cpp derives these defensive bands; its lookup of
@@ -268,8 +284,13 @@ impl EquipmentStats {
             } else {
                 0.
             },
-            warp_drain: modifiers.apply("STAT_WARP_ENERGY", field(2, 34)?),
-            warp_recovery: modifiers.apply("STAT_WARP_RECOVERY", 2.).max(0.1),
+            warp_drain: (modifiers.apply("STAT_WARP_ENERGY", field(2, 34)?)
+                * (1. - warp_energy_reduction))
+                .max(0.),
+            warp_charge: (crate::warp::CHARGE_SECONDS * (1. - warp_delay_reduction)).max(0.1),
+            warp_recovery: (modifiers.apply("STAT_WARP_RECOVERY", 2.)
+                * (1. - warp_delay_reduction))
+                .max(0.1),
             acceleration: modifiers.apply("STAT_ACCELERATION", 100.),
             scan_range: modifiers.apply("STAT_SCAN_RANGE", class.base_scan_range() + scan_bonus),
             signature: modifiers.apply("STAT_SIGNATURE", class.base_signature() + field(2, 29)?),
@@ -708,8 +729,42 @@ mod tests {
         let stats = EquipmentStats::derive(&inventory, &catalog, &skills).unwrap();
         assert_eq!(stats.ship.impulse_speed, 212.);
         assert_eq!(stats.ship.warp_speed, 2872.);
-        assert!((stats.ship.warp_recovery - 1.5).abs() < 0.001);
+        // The device changes the base delay to 1.5 s; JE Navigate seven
+        // shortens that configured delay by another 30 percent.
+        assert!((stats.ship.warp_recovery - 1.05).abs() < 0.001);
+        assert!((stats.ship.warp_charge - 1.4).abs() < 0.001);
         assert!((stats.weapons[0].energy - 11. * 0.76).abs() < 0.001);
+    }
+
+    /// Navigate applies its travel bands only when trained or gear boosted.
+    #[test]
+    fn navigate_reduces_warp_energy_charge_and_recovery_by_rank() {
+        let catalog = ItemCatalog::load().unwrap();
+        let inventory = Inventory::starter(&catalog).unwrap();
+        let mut skills = SkillCatalog::load().unwrap();
+        let mut at = |rank| {
+            skills
+                .skills
+                .iter_mut()
+                .find(|skill| skill.id == 35)
+                .unwrap()
+                .level = rank;
+            EquipmentStats::derive(&inventory, &catalog, &skills)
+                .unwrap()
+                .ship
+        };
+        let none = at(0);
+        let first = at(1);
+        let emergency = at(3);
+        let maximum = at(7);
+        assert!(none.warp_drain > 0.);
+        assert!((first.warp_drain - none.warp_drain * 0.8).abs() < 0.001);
+        assert!((emergency.warp_drain - none.warp_drain * 0.6).abs() < 0.001);
+        assert!((maximum.warp_drain - none.warp_drain * 0.2).abs() < 0.001);
+        assert_eq!(first.warp_charge, none.warp_charge);
+        assert!((emergency.warp_charge - none.warp_charge * 0.9).abs() < 0.001);
+        assert!((maximum.warp_charge - none.warp_charge * 0.7).abs() < 0.001);
+        assert!((maximum.warp_recovery - none.warp_recovery * 0.7).abs() < 0.001);
     }
     #[test]
     fn starter_gear_passives_quality_and_missing_equipment_change_actual_stats() {

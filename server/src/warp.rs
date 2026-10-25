@@ -17,6 +17,9 @@ fn default_speed() -> f32 {
 fn default_recovery() -> f32 {
     RECOVERY_SECONDS
 }
+fn default_charge() -> f32 {
+    CHARGE_SECONDS
+}
 fn default_stand_off() -> f32 {
     ARRIVAL_DISTANCE
 }
@@ -59,6 +62,8 @@ pub struct Warp {
     pub speed: f32,
     #[serde(default = "default_recovery")]
     pub recovery_seconds: f32,
+    #[serde(default = "default_charge")]
+    pub charge_seconds: f32,
     pub phase: WarpPhase,
     waypoints: VecDeque<Waypoint>,
     index: u32,
@@ -73,6 +78,7 @@ impl Default for Warp {
         Self {
             speed: WARP_SPEED,
             recovery_seconds: RECOVERY_SECONDS,
+            charge_seconds: CHARGE_SECONDS,
             phase: WarpPhase::Idle,
             waypoints: VecDeque::new(),
             index: 0,
@@ -102,6 +108,13 @@ impl Warp {
         if self.speed <= 0. || !self.speed.is_finite() {
             return Err(invalid("Equip a working engine before warping."));
         }
+        if !self.charge_seconds.is_finite()
+            || self.charge_seconds <= 0.
+            || !self.recovery_seconds.is_finite()
+            || self.recovery_seconds <= 0.
+        {
+            return Err(invalid("Invalid warp drive timing."));
+        }
         if waypoints.iter().any(|point| {
             !point.stand_off.is_finite()
                 || point.stand_off < 0.
@@ -128,7 +141,7 @@ impl Warp {
         self.free_flight = waypoints.is_empty();
         self.waypoints = waypoints;
         self.index = 0;
-        self.remaining = CHARGE_SECONDS;
+        self.remaining = self.charge_seconds;
         self.phase = WarpPhase::Charging;
         self.last_finish_reason = None;
         Ok(WarpEvent::Charging)
@@ -144,9 +157,11 @@ impl Warp {
     pub fn reset(&mut self, motion: &mut Motion) {
         let speed = self.speed;
         let recovery = self.recovery_seconds;
+        let charge = self.charge_seconds;
         *self = Self::default();
         self.speed = speed;
         self.recovery_seconds = recovery;
+        self.charge_seconds = charge;
         motion.stop();
     }
     /// Mirror a formed leader's drive while preserving this ship's own effects.
@@ -286,6 +301,44 @@ impl Warp {
 #[cfg(test)]
 mod tests {
     use super::*;
+    /// Configured Navigate delays control both phases without changing travel speed.
+    #[test]
+    fn configured_charge_and_recovery_determine_phase_boundaries() {
+        let mut warp = Warp {
+            charge_seconds: 1.4,
+            recovery_seconds: 1.4,
+            ..Warp::default()
+        };
+        let mut motion = Motion::default();
+        let mut position = [0.; 3];
+        warp.start(VecDeque::new(), position, &mut motion).unwrap();
+        assert!(warp
+            .advance(&mut position, &mut motion, &Bounds::default(), 1.39)
+            .unwrap()
+            .is_empty());
+        assert_eq!(
+            warp.advance(&mut position, &mut motion, &Bounds::default(), 0.02)
+                .unwrap(),
+            [WarpEvent::Departed]
+        );
+        assert_eq!(
+            warp.finish(FinishReason::Cancelled, &mut motion),
+            WarpEvent::Finished(FinishReason::Cancelled)
+        );
+        assert!(warp
+            .advance(&mut position, &mut motion, &Bounds::default(), 1.39)
+            .unwrap()
+            .is_empty());
+        assert_eq!(
+            warp.advance(&mut position, &mut motion, &Bounds::default(), 0.02)
+                .unwrap(),
+            [WarpEvent::Ready]
+        );
+        warp.reset(&mut motion);
+        assert_eq!(warp.charge_seconds, 1.4);
+        assert_eq!(warp.recovery_seconds, 1.4);
+    }
+
     #[test]
     fn departure_publishes_full_warp_speed_before_first_travel_step() {
         let mut warp = Warp::default();
