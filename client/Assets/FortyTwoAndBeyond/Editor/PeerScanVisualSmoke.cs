@@ -72,6 +72,8 @@ namespace FortyTwoAndBeyond.Editor
                 own.PeerBuff.RemainingSeconds > 0)
             {
                 Directory.CreateDirectory("Builds/verification");
+                if (File.Exists("Builds/verification/peer-scan-buff.png"))
+                    File.Delete("Builds/verification/peer-scan-buff.png");
                 ScreenCapture.CaptureScreenshot("Builds/verification/peer-scan-buff.png");
                 Debug.Log("PASS: recipient Scan Boost slot-one icon, timer, and ObjectEffect462 captured.");
                 stage = 5;
