@@ -569,7 +569,9 @@ namespace FortyTwoAndBeyond.Client
             DialogueState dialogue = snapshot.Dialogue;
             bool trading = dialogue.VendorOpen;
             float width = Mathf.Min(trading ? 700 : 660, CanvasWidth - 630), x = (CanvasWidth - width) * .5f;
-            float height = trading ? CanvasHeight - 140 : 300;
+            float height = trading ? CanvasHeight - 140 :
+                snapshot.Station != null && dialogue.MissionKind != MissionDialogueKind.None ?
+                Mathf.Min(430, CanvasHeight - 155) : 300;
             float top = trading ? 116 : snapshot.Station == null ?
                 Mathf.Max(90, (CanvasHeight - height) * .5f - 40) : CanvasHeight - height - 24;
             Panel(new Rect(x, top, width, height));
@@ -593,6 +595,9 @@ namespace FortyTwoAndBeyond.Client
                     dialogue.MissionStage == 1 ? "MISSION ACCEPTED" : "MISSION UPDATED";
                 GUILayout.Label(phase, section);
                 GUILayout.Label(dialogue.MissionName, dialogueText);
+                if (dialogue.MissionKind == MissionDialogueKind.Completed)
+                    GUILayout.Label($"CURRENT BALANCE  ·  {snapshot.Credits:N0} CREDITS",
+                        dialogueMeta);
                 MissionState mission = snapshot.Missions.FirstOrDefault(entry => entry?.Name == dialogue.MissionName);
                 if (mission != null && !string.IsNullOrEmpty(mission.Objective))
                 {
