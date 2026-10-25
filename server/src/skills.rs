@@ -171,7 +171,7 @@ impl PendingShieldRecharge {
             && self.amount.is_finite()
             && self.amount > 0.
             && self.range.is_finite()
-            && (1. ..=10_000.).contains(&self.range)
+            && (0. ..=10_000.).contains(&self.range)
     }
 }
 
@@ -184,12 +184,14 @@ impl Cast {
                 self.ability == 65 && plan.valid() && self.remaining <= plan.charge_seconds
             })
             && self.recharge_amount.is_none_or(|amount| {
-                self.ability == 89 && amount.is_finite() && (1. ..=3240.).contains(&amount)
+                matches!(self.ability, 32 | 89 | 91)
+                    && amount.is_finite()
+                    && (1. ..=12_960.).contains(&amount)
             })
             && self.hull_repair_amount.is_none_or(|amount| {
-                matches!(self.ability, 77 | 95)
+                matches!(self.ability, 31 | 77 | 95)
                     && amount.is_finite()
-                    && (1. ..=3240.).contains(&amount)
+                    && (1. ..=12_960.).contains(&amount)
             })
     }
 }

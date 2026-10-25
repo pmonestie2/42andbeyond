@@ -326,7 +326,7 @@ impl GameState {
             }
             let caster = self.sessions.get_mut(&source).unwrap();
             caster.clear_shield_recharge()?;
-            caster.publish_shield_recharge(cast.target, cast.effect);
+            caster.publish_shield_recharge(cast.target, cast.effect, cast.range == 0.);
         }
         Ok(())
     }

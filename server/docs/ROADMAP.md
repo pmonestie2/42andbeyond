@@ -54,23 +54,28 @@ mean the corresponding gameplay system is complete.
   dead enemies cannot be revived by contemplation. Recovery rebinds changed
   content/caps while preserving existing damage and death state.
 - JE skills/abilities, incap, self-jumpstart, native tow request and home station.
-- Rank-three Recharge Shields is now usable by Terran Traders, Jenquai Seekers
-  and Progen Privates through the native ability packet. It spends 125 reactor
-  points at charge start, applies the archived 360-per-effective-skill shield
-  amount to self or a selected visible pilot, and honors public equipped skill
-  bonuses. Charge and completion effects use native object packets. A saved
+- Rank-one Regenerate Shields, rank-three Recharge Shields and rank-five
+  Combat Shield Recharge are now usable by Terran Traders, Jenquai Seekers
+  and Progen Privates through the native ability packet. They spend 50, 125
+  and 250 reactor points at charge start and restore 90, 360 and 1,440 shield
+  points per effective skill level, respectively. Rank one always targets self;
+  higher ranks can target a selected visible pilot. Public equipped skill
+  bonuses alter the frozen amount and charge time. Native charge and
+  completion effects distinguish the self flash from the peer beam. A saved
   completed-cast outbox and one world-ledger revision couple caster reactor
   energy with recipient shields; failed writes and short replacement retry
-  without a duplicate heal. Higher Recharge Shields ranks and other class
+  without a duplicate heal. Area Recharge Shields ranks and other class
   abilities remain pending.
-- Terran Traders and Terran Scouts now have native rank-one Patch Hull and
-  rank-three Repair Hull. The first always repairs self; the second repairs a
-  selected visible pilot within the archived 3,004-unit code range. Public
-  Hull Patch skill gear changes the frozen repair amount and charge time.
+- Terran Traders and Terran Scouts now have native rank-one Patch Hull,
+  rank-three Repair Hull and rank-five Combat Hull Repair. Rank one always
+  repairs self; higher ranks repair a selected visible pilot within the
+  archived 3,004-unit code range. Their costs and repair amounts use the same
+  rank bands as shield repair. Public Hull Patch skill gear changes the frozen
+  repair amount and charge time.
   Reactor cost, hull gain and authenticated cast identity settle through the
   same atomic world file and saved outbox as Recharge Shields. Disposable
   self/peer, range, failed-write and replacement tests cover exactly-once
-  repair. Higher area hull ranks remain gated pending native area behavior.
+  repair. Area hull ranks remain gated pending native area behavior.
 - Nine race/profession identities, public SQL class skill ceilings, racial starter
   gear, class ship models and weapon/device mount limits. Shared implemented
   abilities respect class ownership; other class ability handlers remain pending.

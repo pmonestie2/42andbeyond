@@ -325,6 +325,91 @@ fn hull_patch_repairs_self_and_peer_once_after_restart() {
     fs::remove_dir_all(root).unwrap();
 }
 
+/// Native rank-five support and rank-one self repair retain paid casts.
+#[test]
+fn combat_repair_ranks_resume_and_self_rank_ignores_selected_peer() {
+    let root = std::env::temp_dir().join(format!("enb-repair-ranks-{}", rand::random::<u64>()));
+    let accounts = AccountDirectory::new(&root);
+    let alice_stored = accounts
+        .create_class(
+            "alice".into(),
+            "example",
+            "Alice".into(),
+            crate::classes::CharacterClass::parse("tt").unwrap(),
+        )
+        .unwrap();
+    let alice = alice_stored.account.character.game_id;
+    let bob = accounts
+        .create("bob".into(), "example", "Bob".into())
+        .unwrap()
+        .account
+        .character
+        .game_id;
+    let items = crate::items::ItemCatalog::load().unwrap();
+    let mut inventory =
+        crate::inventory::Inventory::starter_for(&alice_stored.account.character, &items).unwrap();
+    inventory.equipped[1] = Some(crate::inventory::ItemInstance::stock(3335, 1));
+    fs::write(
+        alice_stored.directory.join("inventory.json"),
+        serde_json::to_vec(&inventory).unwrap(),
+    )
+    .unwrap();
+    let sector: Sector = serde_json::from_str(include_str!("../data/sector.json")).unwrap();
+    let bind = Ipv4Addr::new(127, 0, 0, 2);
+    let mut game = GameState::new(sector.clone(), bind, root.clone()).unwrap();
+    login(&mut game, alice, 22921, "alice");
+    login(&mut game, bob, 22922, "bob");
+    assert!(game.sessions[&alice].energy_balance().1 >= 500.);
+    game.sessions.get_mut(&bob).unwrap().set_shield_for_test(0.);
+    let bob_hull = game.sessions[&bob].hull_balance().1;
+    game.sessions
+        .get_mut(&bob)
+        .unwrap()
+        .set_hull_for_test(bob_hull * 0.2);
+    game.sessions
+        .get_mut(&bob)
+        .unwrap()
+        .checkpoint_session(true)
+        .unwrap();
+    game.update_views();
+    let energy = game.sessions[&alice].energy_balance().0;
+    activate(&mut game, alice, bob, 32);
+    assert_eq!(game.sessions[&alice].energy_balance().0, energy - 250.);
+    drop(game);
+    let mut resumed = GameState::new(sector, bind, root.clone()).unwrap();
+    advance(&mut resumed, 3.1);
+    assert_eq!(resumed.energy_ledger.revision(), 1);
+    assert!(resumed.sessions[&bob].shield_balance().0 > 0.);
+    assert!(resumed.sessions[&alice].pending_shield_recharge().is_none());
+
+    resumed.update_views();
+    activate(&mut resumed, alice, bob, 31);
+    advance(&mut resumed, 3.1);
+    assert_eq!(resumed.energy_ledger.revision(), 2);
+    assert!(resumed.sessions[&bob].hull_balance().0 > bob_hull * 0.2);
+    resumed
+        .sessions
+        .get_mut(&alice)
+        .unwrap()
+        .set_shield_for_test(0.);
+    resumed
+        .sessions
+        .get_mut(&alice)
+        .unwrap()
+        .checkpoint_session(true)
+        .unwrap();
+    resumed.update_views();
+    activate(&mut resumed, alice, bob, 91);
+    advance(&mut resumed, 0.1);
+    assert_eq!(resumed.energy_ledger.revision(), 3);
+    assert!(resumed.sessions[&alice].shield_balance().0 > 0.);
+    assert_eq!(
+        resumed.energy_ledger.shield_balance(bob).unwrap().revision,
+        1
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
 fn advance(game: &mut GameState, seconds: f32) {
     for _ in 0..(seconds / 0.1).ceil() as usize {
         game.advance(0.1).unwrap();

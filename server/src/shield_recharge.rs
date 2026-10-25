@@ -74,18 +74,25 @@ impl PlayerSession {
         Ok(())
     }
 
-    /// Publish the archived target beam and shield orb after a committed heal.
-    pub(crate) fn publish_shield_recharge(&mut self, target: u32, effect: u32) {
+    /// Publish the archived self flash or target beam and shield orb.
+    pub(crate) fn publish_shield_recharge(&mut self, target: u32, effect: u32, self_rank: bool) {
         let tick = self.tick_ms();
-        self.pending
-            .push(packets::beam(self.player_id(), target, 139, effect, tick));
-        self.pending.push(packets::beam(
-            self.player_id(),
-            target,
-            166,
-            effect.wrapping_add(1),
-            tick,
-        ));
+        if self_rank {
+            let flash = effect.wrapping_add(1);
+            self.pending
+                .push(packets::object_effect(target, flash, 136, tick));
+            self.pending.push(packets::remove_effect(flash));
+        } else {
+            self.pending
+                .push(packets::beam(self.player_id(), target, 139, effect, tick));
+            self.pending.push(packets::beam(
+                self.player_id(),
+                target,
+                166,
+                effect.wrapping_add(1),
+                tick,
+            ));
+        }
         self.message("Recharge Shields completed.");
     }
 

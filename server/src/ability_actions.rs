@@ -80,11 +80,20 @@ impl PlayerSession {
         let energy = jumpstart
             .as_ref()
             .map_or(ability.energy, |plan| plan.energy);
+        let repair_multiplier = if durable_repair {
+            match ability.rank {
+                1 => 90.,
+                3 => 360.,
+                5 => 1440.,
+                _ => return Err(invalid("This area repair rank is not implemented yet.")),
+            }
+        } else {
+            0.
+        };
         let recharge_amount = (ability.kind == AbilityKind::RechargeShields)
-            .then_some(self.equipment.ship.recharge_shields_skill * 360.);
-        let hull_repair_amount = (ability.kind == AbilityKind::HullPatch).then_some(
-            self.equipment.ship.hull_patch_skill * if ability.rank < 3 { 90. } else { 360. },
-        );
+            .then_some(self.equipment.ship.recharge_shields_skill * repair_multiplier);
+        let hull_repair_amount = (ability.kind == AbilityKind::HullPatch)
+            .then_some(self.equipment.ship.hull_patch_skill * repair_multiplier);
         let charge = if durable_repair {
             let trained = if ability.kind == AbilityKind::HullPatch {
                 self.equipment.ship.hull_patch_skill
@@ -193,7 +202,10 @@ impl PlayerSession {
             return self.jumpstart_target(ability, requested_target);
         }
         if ability.kind == AbilityKind::RechargeShields {
-            if requested_target == self.player_id() || requested_target == u32::MAX {
+            if ability.rank == 1
+                || requested_target == self.player_id()
+                || requested_target == u32::MAX
+            {
                 return Ok(self.player_id());
             }
             let contact = self
@@ -548,8 +560,8 @@ impl PlayerSession {
                 self.transfer_sector(destination, false)?;
             }
             AbilityKind::RechargeShields => {
-                let amount =
-                    recharge_amount.unwrap_or(self.equipment.ship.recharge_shields_skill * 360.);
+                let amount = recharge_amount
+                    .ok_or_else(|| invalid("Recharge Shields cast has no frozen amount."))?;
                 self.skills.pending_shield_recharge = Some(PendingShieldRecharge {
                     target,
                     effect,
@@ -558,10 +570,8 @@ impl PlayerSession {
                 });
             }
             AbilityKind::HullPatch => {
-                let amount = hull_repair_amount.unwrap_or(
-                    self.equipment.ship.hull_patch_skill
-                        * if ability.rank < 3 { 90. } else { 360. },
-                );
+                let amount = hull_repair_amount
+                    .ok_or_else(|| invalid("Hull repair cast has no frozen amount."))?;
                 self.skills.pending_hull_repair = Some(PendingHullRepair {
                     target,
                     effect,
