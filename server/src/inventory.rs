@@ -496,7 +496,7 @@ impl Inventory {
             if !(10000..20000).contains(&job.station)
                 || job.iterations == 0
                 || job.iterations > 22_000_000
-                || job.unit_cost != crate::refining::REFINE_PRICE
+                || !crate::refining::valid_unit_cost(job.unit_cost)
                 || job.due_ms == 0
                 || job.request.epoch == 0
                 || self.last_production_request != Some(job.request)

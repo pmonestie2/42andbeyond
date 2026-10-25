@@ -294,6 +294,13 @@ Three placed NPCs advertise trade without a public vendor group (446, 447, 467);
 their conversation explains that inventory is unavailable and grants no trade
 authority. No stock is invented for these missing content links.
 
+Negotiate now uses the [Net-7 rank bands](https://net7wiki.bmsite.net/index.php?title=Negotiate): selling gains 7–19% at ranks one to
+seven, vendor purchases receive 11–19% discounts from rank three, production
+and refining fees receive 15–19% discounts from rank five, and rank seven adds
+19% to mission credit rewards. Server quotes and transactions share integer
+round-down pricing. A pending refinery or crafting job freezes its discounted
+fee before persistence, so a restart cannot change the amount charged.
+
 `npcs.rs` caches immutable content. `npc_services.rs` validates station placement,
 owner, current branch and vendor state. Native request 0x4e/action 4 opens a
 conversation; 0x55 selects an offered branch. Trade sends item templates (0x25),

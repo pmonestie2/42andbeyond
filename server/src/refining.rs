@@ -13,6 +13,18 @@ pub const REFINE_PRICE: u64 = 150;
 pub const REFINE_BASE_PRICE: u64 = 200;
 pub const REFINE_DELAY_MS: u64 = 3000;
 
+/// Returns:
+///     bool: Whether a durable unit fee matches the base or rank-five to seven Negotiate quote.
+pub fn valid_unit_cost(cost: u64) -> bool {
+    [
+        REFINE_PRICE,
+        REFINE_PRICE * 85 / 100,
+        REFINE_PRICE * 83 / 100,
+        REFINE_PRICE * 81 / 100,
+    ]
+    .contains(&cost)
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RefineRecipe {
     pub input: u32,
@@ -150,16 +162,27 @@ impl RefineRecipe {
         Ok(candidate)
     }
     pub fn max_iterations(&self, inventory: &Inventory, items: &ItemCatalog) -> u32 {
-        if self.input_quantity == 0 {
+        self.max_iterations_for_cost(inventory, items, REFINE_PRICE)
+    }
+
+    /// Returns:
+    ///     u32: Maximum atomic refinery iterations affordable at the quoted unit fee.
+    pub fn max_iterations_for_cost(
+        &self,
+        inventory: &Inventory,
+        items: &ItemCatalog,
+        unit_cost: u64,
+    ) -> u32 {
+        if self.input_quantity == 0 || unit_cost == 0 {
             return 0;
         }
         let inputs = self.count_input(inventory) / self.input_quantity;
-        let credits = (inventory.credits / REFINE_PRICE).min(u64::from(u32::MAX)) as u32;
+        let credits = (inventory.credits / unit_cost).min(u64::from(u32::MAX)) as u32;
         let upper = inputs.min(credits);
         // Capacity is not monotonic while consumption gradually frees slots.
         // For each candidate final cargo slot boundary, test the real atomic
         // transaction; the largest material/credit bound is the first candidate.
-        if upper > 0 && self.apply(inventory, upper, REFINE_PRICE, items).is_ok() {
+        if upper > 0 && self.apply(inventory, upper, unit_cost, items).is_ok() {
             return upper;
         }
         let output = match items.get(self.output) {
@@ -190,9 +213,7 @@ impl RefineRecipe {
         }
         candidates
             .into_iter()
-            .filter(|count| {
-                *count > 0 && self.apply(inventory, *count, REFINE_PRICE, items).is_ok()
-            })
+            .filter(|count| *count > 0 && self.apply(inventory, *count, unit_cost, items).is_ok())
             .max()
             .unwrap_or(0)
     }
@@ -234,6 +255,26 @@ mod tests {
         inventory.credits = 149;
         assert!(recipe.apply(&inventory, 1, REFINE_PRICE, &items).is_err());
         assert_eq!(recipe.max_iterations(&inventory, &items), 0);
+    }
+
+    /// A discounted job can be quoted and replayed with its frozen unit price.
+    #[test]
+    fn negotiated_refine_fee_changes_affordability_without_changing_materials() {
+        let catalog = RefineryCatalog::load().unwrap();
+        let items = ItemCatalog::load().unwrap();
+        let recipe = catalog.get(3375).unwrap();
+        let mut inventory = Inventory::starter(&items).unwrap();
+        inventory.cargo[0] = item(2842, 5);
+        inventory.credits = 121;
+        assert_eq!(recipe.max_iterations(&inventory, &items), 0);
+        assert_eq!(recipe.max_iterations_for_cost(&inventory, &items, 121), 1);
+        let completed = recipe.apply(&inventory, 1, 121, &items).unwrap();
+        assert_eq!(completed.credits, 0);
+        assert_eq!(recipe.count_input(&completed), 0);
+        for fee in [150, 127, 124, 121] {
+            assert!(valid_unit_cost(fee));
+        }
+        assert!(!valid_unit_cost(1));
     }
 
     #[test]

@@ -265,12 +265,13 @@ impl PlayerSession {
             .ok_or_else(|| invalid("Open a workbench first."))?;
         let catalog = RefineryCatalog::load()?;
         let recipe = catalog.get(window.selected)?;
+        let unit_cost = self.negotiated_service_price(REFINE_PRICE)?;
         let count = if stack {
-            recipe.max_iterations(&self.inventory, &self.items)
+            recipe.max_iterations_for_cost(&self.inventory, &self.items, unit_cost)
         } else {
             1
         };
-        recipe.apply(&self.inventory, count, REFINE_PRICE, &self.items)?;
+        recipe.apply(&self.inventory, count, unit_cost, &self.items)?;
         let request = ProductionRequest {
             epoch: self.session_epoch,
             sequence: self.inputs.back().copied().unwrap_or(0),
@@ -286,7 +287,7 @@ impl PlayerSession {
             station: self.sector.id,
             product: recipe.output,
             iterations: count,
-            unit_cost: REFINE_PRICE,
+            unit_cost,
             due_ms: unix_ms().saturating_add(REFINE_DELAY_MS),
             request,
             recipe: Some(recipe.clone()),
@@ -296,7 +297,7 @@ impl PlayerSession {
             window.completed = false;
         }
         crate::server_log!(
-            "Refining started: {}; product={}; iterations={count}; unit_cost={REFINE_PRICE}",
+            "Refining started: {}; product={}; iterations={count}; unit_cost={unit_cost}",
             self.account.character.name,
             recipe.output
         );
@@ -705,6 +706,7 @@ impl PlayerSession {
             return Ok(());
         }
         let catalog = RefineryCatalog::load()?;
+        let refine_price = self.negotiated_service_price(REFINE_PRICE)?;
         let mut view = WorkbenchView {
             mode: self.workbench.as_ref().map_or(0, |window| window.mode),
             selected: 0,
@@ -715,7 +717,7 @@ impl PlayerSession {
             additional: 0,
             filter: 0x1ff,
             products: Vec::new(),
-            cost: REFINE_PRICE,
+            cost: refine_price,
             base_cost: crate::refining::REFINE_BASE_PRICE,
             chance: 1.,
             target: self.inventory.production_target[0].clone(),
@@ -743,14 +745,15 @@ impl PlayerSession {
                     view.components = (0..recipe.input_quantity)
                         .map(|index| (recipe.input, u32::from(count > index)))
                         .collect();
-                    let max = recipe.max_iterations(&self.inventory, &self.items);
+                    let max =
+                        recipe.max_iterations_for_cost(&self.inventory, &self.items, refine_price);
                     view.ready = max > 0;
                     view.additional = max.saturating_sub(1);
                     (view.validity, view.failure) = if window.completed {
                         (16, String::new())
                     } else if count < recipe.input_quantity {
                         (5, "Missing Component(s)".into())
-                    } else if self.inventory.credits < REFINE_PRICE {
+                    } else if self.inventory.credits < refine_price {
                         (4, "Insufficient Credits".into())
                     } else if max == 0 {
                         (6, "Inventory Full".into())
@@ -799,5 +802,56 @@ impl PlayerSession {
             window.last_view = Some(view);
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A TT refinery job freezes the quoted discount before its durable completion.
+    #[test]
+    fn tradesman_refinery_persists_discounted_fee_and_charges_it_once() {
+        let root =
+            std::env::temp_dir().join(format!("enb-negotiate-refine-{}", rand::random::<u64>()));
+        let mut account =
+            crate::account::Account::create("tt".into(), "pass", "Trader".into()).unwrap();
+        account.character.race = 0;
+        account.character.profession = 1;
+        account.save_new(&root).unwrap();
+        let initial: Sector = serde_json::from_str(include_str!("../data/sector.json")).unwrap();
+        let mut ship =
+            PlayerSession::new(initial, Ipv4Addr::new(127, 0, 0, 2), root.clone()).unwrap();
+        ship.sector = ship.sectors.sector(10761).unwrap();
+        ship.logged_in = true;
+        ship.inventory.cargo[0] = Some(crate::inventory::ItemInstance::stock(2845, 5));
+        ship.inventory.credits = 121;
+        ship.initialise_workbench_lab(true).unwrap();
+        for (opcode, value) in [(0x79, 4u32), (0x7c, 3381)] {
+            ship.workbench_input(
+                opcode,
+                &[ship.player_id().to_be_bytes(), value.to_be_bytes()].concat(),
+            )
+            .unwrap();
+        }
+        ship.inputs.push_back(1);
+        ship.start_refining(false).unwrap();
+        assert_eq!(ship.inventory.refine_job.as_ref().unwrap().unit_cost, 121);
+        let saved: Inventory =
+            serde_json::from_slice(&std::fs::read(ship.state_dir.join("inventory.json")).unwrap())
+                .unwrap();
+        saved.validate(&ship.items).unwrap();
+        assert_eq!(saved.refine_job.as_ref().unwrap().unit_cost, 121);
+        let mut due = ship.inventory.clone();
+        due.refine_job.as_mut().unwrap().due_ms = 1;
+        ship.commit_inventory(due).unwrap();
+        ship.advance_production(0.1).unwrap();
+        assert_eq!(ship.inventory.credits, 0);
+        assert!(ship.inventory.refine_job.is_none());
+        let completed = ship.inventory.clone();
+        ship.advance_production(0.1).unwrap();
+        assert_eq!(ship.inventory, completed);
+        drop(ship);
+        std::fs::remove_dir_all(root).unwrap();
     }
 }
