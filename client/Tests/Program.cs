@@ -12,7 +12,7 @@ internal static class Program
     private static void Main(string[] args)
     {
         CheckReassembly(); CheckWorld(); CheckMissionJournal(); CheckMissionDialogue();
-        CheckExperience(); CheckHullProgression(); CheckMiningPhases(); CheckLootTractor(); CheckLootSweep(); CheckWarpPhases(); CheckNavigationSelection(); CheckWarpTargets(); CheckWeaponReady();
+        CheckExperience(); CheckHullProgression(); CheckReputation(); CheckMiningPhases(); CheckLootTractor(); CheckLootSweep(); CheckWarpPhases(); CheckNavigationSelection(); CheckWarpTargets(); CheckWeaponReady();
         CheckDamageResults(); CheckCombatEngagement(); CheckShotPresentation(); CheckContactSelection(); CheckTargetVerbs(); CheckDeviceEffects();
         CheckNativeDeviceBuff(); CheckPeerScanBuff(); CheckConcurrentRecipientBuffs(); CheckSupportObjectEffects();
         CheckAmmunitionTransfer(); CheckFlightThrottle(); CheckFormationAnchor();
@@ -130,6 +130,30 @@ internal static class Program
         })), 1);
         Assert(world.Missions[0] == null && first.Missions[0] != null,
             "Mission journal reset changed an earlier immutable snapshot.");
+    }
+
+    /// <summary>Decode the exact native faction reward packets without inventing a login gain.</summary>
+    private static void CheckReputation()
+    {
+        var world = new World();
+        world.Apply(new Frame(0x1b, FixtureBytes("sharim_reputation_before.hex")), 1);
+        Snapshot before = new Snapshot(world, "ready", true);
+        FactionStanding prior = before.Reputation.Standings.Single(row => row.Label == "JW");
+        Assert(prior.Value == 5000 && before.RecentReputationChange == null &&
+            before.Reputation.Affiliation == "Sharim Traders",
+            "Native faction PDA baseline was decoded as a reward.");
+        world.Apply(new Frame(0x1b, FixtureBytes("sharim_reputation_after.hex")), 1);
+        Snapshot after = new Snapshot(world, "ready", true);
+        FactionStanding awarded = after.Reputation.Standings.Single(row => row.Label == "JW");
+        Assert(awarded.Value == 5500 && after.RecentReputationChange.Label == "JW" &&
+            after.RecentReputationChange.Delta == 500 &&
+            after.RecentReputationChange.Value == 5500,
+            "Sharim mission faction reward did not publish the authoritative +500 revision.");
+        Assert(prior.Value == 5000 && before.RecentReputationChange == null,
+            "A later faction revision mutated an earlier snapshot.");
+        byte[] malformed = FixtureBytes("sharim_reputation_after.hex");
+        Array.Resize(ref malformed, malformed.Length - 1);
+        Reject(() => new World().Apply(new Frame(0x1b, malformed), 1));
     }
 
     /// <summary>Keep server mission notices attached only to their current NPC talk tree.</summary>

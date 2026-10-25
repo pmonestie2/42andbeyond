@@ -10,9 +10,9 @@ namespace FortyTwoAndBeyond.Client
     {
         private readonly SpaceClient client;
         private readonly FlightHud flightHud;
-        private Vector2 missionScroll, historyScroll;
+        private Vector2 missionScroll, historyScroll, factionScroll;
         private int selectedSlot = -1;
-        private bool open;
+        private bool open, factionsTab;
         private GUIStyle detailText;
         private float CanvasWidth => Screen.width / flightHud.Scale;
         private float CanvasHeight => Screen.height / flightHud.Scale;
@@ -66,7 +66,13 @@ namespace FortyTwoAndBeyond.Client
                 detailText = new GUIStyle(flightHud.SmallStyle) { wordWrap = true, fontSize = 14 };
             Rect panel = PanelRect();
             flightHud.Panel(panel);
-            GUI.Label(new Rect(panel.x + 19, panel.y + 15, 450, 27), "MISSION JOURNAL", flightHud.BodyStyle);
+            GUI.Label(new Rect(panel.x + 19, panel.y + 15, 315, 27),
+                factionsTab ? "FACTION STANDINGS" : "MISSION JOURNAL", flightHud.BodyStyle);
+            if (GUI.Button(new Rect(panel.x + 438, panel.y + 14, 124, 31), "MISSIONS", flightHud.ButtonStyle))
+                factionsTab = false;
+            if (GUI.Button(new Rect(panel.x + 570, panel.y + 14, 130, 31), "FACTIONS", flightHud.ButtonStyle))
+                factionsTab = true;
+            if (factionsTab) { DrawFactions(snapshot, panel); return; }
             GUI.Label(new Rect(panel.x + 19, panel.y + 43, panel.width - 38, 21),
                 "Objectives and progress update as you play.", flightHud.SmallStyle);
             MissionState selected = visible.FirstOrDefault(mission => mission.Slot == selectedSlot);
@@ -92,6 +98,41 @@ namespace FortyTwoAndBeyond.Client
             if (selected != null) DrawMission(selected);
             GUILayout.EndScrollView();
             GUILayout.EndArea();
+        }
+
+        /// <summary>Show server-owned faction standings and a reward delta after a later revision.</summary>
+        private void DrawFactions(Snapshot snapshot, Rect panel)
+        {
+            ReputationState reputation = snapshot.Reputation;
+            if (reputation == null)
+            {
+                GUI.Label(new Rect(panel.x + 20, panel.y + 76, 650, 45),
+                    "Waiting for faction standings from the server.", detailText);
+                return;
+            }
+            float top = panel.y + 60;
+            if (!string.IsNullOrEmpty(reputation.Affiliation))
+                GUI.Label(new Rect(panel.x + 20, top, panel.width - 40, 24),
+                    "AFFILIATION  " + reputation.Affiliation, flightHud.BodyStyle);
+            ReputationChange change = snapshot.RecentReputationChange;
+            if (change != null)
+                GUI.Label(new Rect(panel.x + 20, top + 30, panel.width - 40, 26),
+                    $"LATEST CHANGE  {change.Label} {change.Delta:+0;-0;0}  ·  {change.Value:0}",
+                    detailText);
+            float listTop = top + (change == null ? 30 : 62);
+            Rect viewport = new Rect(panel.x + 20, listTop, panel.width - 40,
+                Mathf.Max(50, panel.yMax - listTop - 20));
+            float listHeight = reputation.Standings.Count * 28 + 4;
+            factionScroll = GUI.BeginScrollView(viewport, factionScroll,
+                new Rect(0, 0, viewport.width - 20, listHeight));
+            for (int index = 0; index < reputation.Standings.Count; index++)
+            {
+                FactionStanding standing = reputation.Standings[index];
+                GUI.Label(new Rect(5, index * 28, 300, 25), standing.Label, detailText);
+                GUI.Label(new Rect(310, index * 28, 180, 25),
+                    standing.Value.ToString("+0;-0;0"), detailText);
+            }
+            GUI.EndScrollView();
         }
 
         /// <summary>Present the accepted mission's current and earlier stage text.</summary>

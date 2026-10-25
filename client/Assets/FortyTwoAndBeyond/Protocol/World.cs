@@ -515,6 +515,8 @@ namespace FortyTwoAndBeyond.Protocol
         public DialogueState Dialogue { get; private set; }
         public ulong Credits { get; private set; }
         public MissionState[] Missions { get; private set; } = new MissionState[12];
+        public ReputationState Reputation { get; private set; }
+        public ReputationChange RecentReputationChange { get; private set; }
         public ExperienceState Experience { get; private set; }
         public uint[] AvailableAbilities { get; private set; } = Array.Empty<uint>();
         public uint CastingAbilityId { get; private set; } = uint.MaxValue;
@@ -809,6 +811,20 @@ namespace FortyTwoAndBeyond.Protocol
                         AuxState.ReadVault(b, Equipment);
                         MissionState[] missions = AuxState.ReadMissions(b, Missions);
                         if (missions != null) Missions = missions;
+                        ReputationState reputation = AuxState.ReadReputation(b);
+                        if (reputation != null)
+                        {
+                            ReputationChange change = null;
+                            if (Reputation != null)
+                                foreach (FactionStanding current in reputation.Standings)
+                                    foreach (FactionStanding former in Reputation.Standings)
+                                        if (current.Slot == former.Slot && current.Label == former.Label &&
+                                            current.Value != former.Value)
+                                            change = new ReputationChange(current.Label,
+                                                current.Value - former.Value, current.Value);
+                            RecentReputationChange = change;
+                            Reputation = reputation;
+                        }
                         ExperienceState experience = AuxState.ReadExperience(b, Experience);
                         if (experience != null) Experience = experience;
                         uint[] abilities = AuxState.ReadAvailableAbilities(b);
@@ -1011,6 +1027,8 @@ namespace FortyTwoAndBeyond.Protocol
         public readonly DialogueState Dialogue;
         public readonly ulong Credits;
         public readonly MissionState[] Missions;
+        public readonly ReputationState Reputation;
+        public readonly ReputationChange RecentReputationChange;
         public readonly ExperienceState Experience;
         public readonly uint[] AvailableAbilities;
         public readonly uint CastingAbilityId;
@@ -1066,6 +1084,8 @@ namespace FortyTwoAndBeyond.Protocol
             Production = new ProductionView(world.Production, world.ItemCatalog);
             Dialogue = world.Dialogue; Credits = world.Credits;
             Missions = (MissionState[])world.Missions.Clone();
+            Reputation = world.Reputation;
+            RecentReputationChange = world.RecentReputationChange;
             Experience = world.Experience;
             Vendor = new ItemView[world.Vendor.Length];
             AvailableAbilities = (uint[])world.AvailableAbilities.Clone();
