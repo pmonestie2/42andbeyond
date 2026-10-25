@@ -47,6 +47,8 @@ pub struct ShipStats {
     pub hull_damage_multiplier: f32,
     /// Structure-wear multipliers by shield, reactor, engine, weapons, devices.
     pub equipment_wear_multipliers: [f32; 5],
+    /// Seconds of public Cloaking Time gear, frozen when Cloak engages.
+    pub cloak_time_bonus: f32,
     pub environment_skill_bonus: f32,
     pub environment_duration_bonus: f32,
     pub summon_skill_bonus: f32,
@@ -395,6 +397,11 @@ impl EquipmentStats {
             equipment_wear_multipliers: crate::equipment_damage_control::STATS.map(|stat| {
                 crate::equipment_damage_control::wear_multiplier(modifiers.apply_signed(stat, 100.))
             }),
+            cloak_time_bonus: if skills.level(12) > 0 {
+                modifiers.value("STAT_CLOAKING_TIME", 3).clamp(0., 30.)
+            } else {
+                0.
+            },
             environment_skill_bonus: if skills.level(23) > 0 {
                 modifiers
                     .apply_signed("SKILL_ENVIRONMENT_SHIELD", 0.)

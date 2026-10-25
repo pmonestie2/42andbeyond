@@ -1419,10 +1419,12 @@ impl PlayerSession {
             AbilityKind::Cloak => {
                 self.skills.cloak_rank = ability.rank;
                 self.skills.cloak_source = None;
+                self.skills.cloak_time_bonus = self.equipment.ship.cloak_time_bonus;
                 let stealth = crate::mob_targeting::cloak_stealth(
                     self.account.character.total_level(),
                     self.skill_catalog.level(12),
-                );
+                )
+                .saturating_add(self.skills.cloak_time_bonus.round() as u32);
                 self.skills.cloak_stealth = Some(stealth);
                 self.stop_weapons();
                 let asset = match ability.rank {
@@ -1869,9 +1871,11 @@ impl PlayerSession {
     pub(super) fn stop_cloak(&mut self) {
         let rank = self.skills.cloak_rank;
         let inherited = self.skills.cloak_source.is_some();
+        let strike_bonus = self.skills.cloak_time_bonus;
         self.skills.cloak_rank = 0;
         self.skills.cloak_source = None;
         self.skills.cloak_stealth = None;
+        self.skills.cloak_time_bonus = 0.;
         if let Some(effect) = self.skills.cloak_effect.take() {
             self.remove_effect(effect);
         }
@@ -1884,7 +1888,7 @@ impl PlayerSession {
             ));
         }
         if rank >= 5 {
-            self.skills.combat_cloak_seconds = 5.;
+            self.skills.combat_cloak_seconds = 5. + strike_bonus;
             self.publish_combat_cloak_status();
         }
         self.pending.push(packets::cloak(self.player_id(), false));

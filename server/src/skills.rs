@@ -557,6 +557,8 @@ pub struct SkillState {
     pub environment_skill_bonus: f32,
     pub combat_cloak_seconds: f32,
     #[serde(default)]
+    pub cloak_time_bonus: f32,
+    #[serde(default)]
     pub cloak_source: Option<u32>,
     #[serde(default)]
     pub cloak_stealth: Option<u32>,

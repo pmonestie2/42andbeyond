@@ -274,6 +274,8 @@ impl PlayerSession {
             || !saved.skills.environment_skill_bonus.is_finite()
             || !(0. ..=crate::environment_gear::MAX_BONUS)
                 .contains(&saved.skills.environment_skill_bonus)
+            || !saved.skills.cloak_time_bonus.is_finite()
+            || !(0. ..=30.).contains(&saved.skills.cloak_time_bonus)
             || saved
                 .skills
                 .pending_high_fold

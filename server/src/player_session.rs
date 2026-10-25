@@ -3772,6 +3772,40 @@ mod tests {
             .contains(&packets::ship_active_buff_slot(id, 5, "", 0)));
     }
 
+    /// Cloak gear strengthens detection and freezes a longer strike window.
+    #[test]
+    fn equipped_cloak_time_bonus_survives_gear_removal_and_restart() {
+        let mut ship = session();
+        ship.logged_in = true;
+        let peer = SocketAddr::from(([127, 0, 0, 9], 22951));
+        ship.endpoint = Some(peer);
+        ship.selected_peer = Some(peer.ip());
+        ship.inventory.equipped[3] = Some(crate::inventory::ItemInstance::stock(856, 1));
+        ship.refresh_equipment().unwrap();
+        assert!((ship.equipment.ship.cloak_time_bonus - 1.4).abs() < 0.001);
+        let ordinary_stealth = crate::mob_targeting::cloak_stealth(
+            ship.account.character.total_level(),
+            ship.skill_catalog.level(12),
+        );
+        ship.begin_ability(29).unwrap();
+        for _ in 0..31 {
+            ship.advance_abilities(0.1).unwrap();
+        }
+        assert_eq!(ship.skills.cloak_rank, 5);
+        assert_eq!(ship.skills.cloak_stealth, Some(ordinary_stealth + 1));
+        ship.inventory.equipped[3] = None;
+        ship.refresh_equipment().unwrap();
+        ship.checkpoint_session(true).unwrap();
+        let root = ship.state_dir.clone();
+        let sector = ship.sector.clone();
+        let bind = ship.bind;
+        drop(ship);
+        let mut resumed = PlayerSession::new(sector, bind, root).unwrap();
+        assert!((resumed.skills.cloak_time_bonus - 1.4).abs() < 0.001);
+        resumed.stop_cloak();
+        assert!((resumed.skills.combat_cloak_seconds - 6.4).abs() < 0.001);
+    }
+
     /// A short process replacement replays icon state and native skill visuals.
     #[test]
     fn active_skill_statuses_replay_from_disposable_checkpoint() {
