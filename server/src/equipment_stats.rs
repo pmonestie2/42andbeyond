@@ -45,6 +45,8 @@ pub struct ShipStats {
     pub wormhole_creation_reduction: f32,
     /// Received hull damage multiplier from effective hull integrity gear.
     pub hull_damage_multiplier: f32,
+    /// Structure-wear multipliers by shield, reactor, engine, weapons, devices.
+    pub equipment_wear_multipliers: [f32; 5],
     pub environment_skill_bonus: f32,
     pub environment_duration_bonus: f32,
     pub summon_skill_bonus: f32,
@@ -390,6 +392,9 @@ impl EquipmentStats {
                 / modifiers
                     .apply_signed("STAT_HULL_DAMAGE_CONTROL", 100.)
                     .clamp(25., 400.),
+            equipment_wear_multipliers: crate::equipment_damage_control::STATS.map(|stat| {
+                crate::equipment_damage_control::wear_multiplier(modifiers.apply_signed(stat, 100.))
+            }),
             environment_skill_bonus: if skills.level(23) > 0 {
                 modifiers
                     .apply_signed("SKILL_ENVIRONMENT_SHIELD", 0.)
@@ -839,6 +844,39 @@ mod tests {
         inventory.equipped[3].as_mut().unwrap().structure = 0.;
         let broken = EquipmentStats::derive(&inventory, &catalog, &skills).unwrap();
         assert_eq!(damage(broken.ship.hull_damage_multiplier), 100.);
+    }
+
+    /// Public equipment-control modifiers affect only their matching wear category.
+    #[test]
+    fn equipment_damage_control_uses_strongest_intact_category_effects() {
+        let catalog = ItemCatalog::load().unwrap();
+        let skills = SkillCatalog::load().unwrap();
+        let mut inventory = Inventory::starter(&catalog).unwrap();
+        let base = EquipmentStats::derive(&inventory, &catalog, &skills).unwrap();
+        assert_eq!(base.ship.equipment_wear_multipliers, [1.; 5]);
+        inventory.equipped[9] = Some(crate::inventory::ItemInstance::stock(2102, 1));
+        inventory.equipped[10] = Some(crate::inventory::ItemInstance::stock(2124, 1));
+        inventory.equipped[11] = Some(crate::inventory::ItemInstance::stock(2117, 1));
+        inventory.equipped[12] = Some(crate::inventory::ItemInstance::stock(2109, 1));
+        let geared = EquipmentStats::derive(&inventory, &catalog, &skills).unwrap();
+        assert_eq!(geared.ship.equipment_wear_multipliers[2], 1.);
+        for category in [1, 3, 4] {
+            assert!((geared.ship.equipment_wear_multipliers[category] - 100. / 158.).abs() < 0.001);
+        }
+        // Scutums Minor improves reactor durability but exposes the shield.
+        assert!((geared.ship.equipment_wear_multipliers[0] - 100. / 138.).abs() < 0.001);
+        inventory.equipped[9].as_mut().unwrap().structure = 0.;
+        let broken = EquipmentStats::derive(&inventory, &catalog, &skills).unwrap();
+        assert_eq!(broken.ship.equipment_wear_multipliers[0], 1.25);
+        assert_eq!(
+            broken.ship.equipment_wear_multipliers[1],
+            geared.ship.equipment_wear_multipliers[1]
+        );
+
+        inventory.equipped[3] = Some(crate::inventory::ItemInstance::stock(864, 1));
+        let vulnerable = EquipmentStats::derive(&inventory, &catalog, &skills).unwrap();
+        // The strongest reactor control +58% outweighs a separate -20% effect.
+        assert!((vulnerable.ship.equipment_wear_multipliers[1] - 100. / 138.).abs() < 0.001);
     }
 
     /// A public Environment Shield device supplies both catalog skill and duration values.

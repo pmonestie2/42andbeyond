@@ -129,10 +129,14 @@ impl PlayerSession {
             .collect();
         let wear = if result.hull_damage > 0. && !mounted.is_empty() {
             let slot = mounted[(hit.sequence as usize + hit.attacker_index) % mounted.len()];
+            let category = crate::equipment_damage_control::category(slot);
+            let base =
+                (result.hull_damage / self.equipment.ship.hull_capacity * 0.15).clamp(0.001, 0.03);
             Some(EquipmentWear {
                 slot,
-                amount: (result.hull_damage / self.equipment.ship.hull_capacity * 0.15)
-                    .clamp(0.001, 0.03),
+                // Freeze the category-specific amount before the hit receipt
+                // is committed. Gear changes or restart cannot alter a retry.
+                amount: (base * self.equipment.ship.equipment_wear_multipliers[category]).min(0.03),
             })
         } else {
             None
@@ -392,6 +396,119 @@ mod tests {
         let settled_hull = ship.hull;
         ship.receive_mob_hit(&shot).unwrap();
         assert_eq!(ship.hull, settled_hull);
+    }
+
+    /// A hull hit wears only its selected equipment category at the frozen rate.
+    #[test]
+    fn category_damage_control_changes_authoritative_structure_wear() {
+        let mut ship = ship();
+        ship.shield = 0.;
+        let mut shot = hit(&ship, 20);
+        let baseline = ship.plan_mob_damage(&shot, DamageType::Energy).unwrap();
+        assert_eq!(baseline.wear.as_ref().unwrap().slot, 0);
+        ship.inventory.equipped[9] = Some(crate::inventory::ItemInstance::stock(2102, 1));
+        ship.refresh_equipment().unwrap();
+        let protected = ship.plan_mob_damage(&shot, DamageType::Energy).unwrap();
+        assert_eq!(protected.wear.as_ref().unwrap().slot, 0);
+        assert!(
+            (protected.wear.as_ref().unwrap().amount / baseline.wear.as_ref().unwrap().amount
+                - 100. / 158.)
+                .abs()
+                < 0.001
+        );
+        shot.sequence = 21;
+        let reactor = ship.plan_mob_damage(&shot, DamageType::Energy).unwrap();
+        assert_eq!(reactor.wear.as_ref().unwrap().slot, 1);
+        assert!(
+            (reactor.wear.as_ref().unwrap().amount - baseline.wear.as_ref().unwrap().amount).abs()
+                < 0.001
+        );
+
+        // An equipped weapon can worsen reactor tolerance without changing its
+        // own weapon category. Operation four is the catalog vulnerability.
+        ship.inventory.equipped[3] = Some(crate::inventory::ItemInstance::stock(864, 1));
+        ship.refresh_equipment().unwrap();
+        let vulnerable = ship.plan_mob_damage(&shot, DamageType::Energy).unwrap();
+        assert_eq!(vulnerable.wear.as_ref().unwrap().slot, 1);
+        assert!(
+            (vulnerable.wear.as_ref().unwrap().amount / reactor.wear.as_ref().unwrap().amount
+                - 1.25)
+                .abs()
+                < 0.001
+        );
+    }
+
+    /// Device and engine control affect their own slots after a real hull hit.
+    #[test]
+    fn device_and_engine_damage_control_match_native_mount_categories() {
+        let mut ship = ship();
+        ship.shield = 0.;
+        ship.inventory.equipped[9] = Some(crate::inventory::ItemInstance::stock(1758, 1));
+        ship.refresh_equipment().unwrap();
+        let mut shot = hit(&ship, 24);
+        let ordinary_device = ship.plan_mob_damage(&shot, DamageType::Energy).unwrap();
+        assert_eq!(ordinary_device.wear.as_ref().unwrap().slot, 9);
+        ship.inventory.equipped[9] = Some(crate::inventory::ItemInstance::stock(2109, 1));
+        ship.refresh_equipment().unwrap();
+        let protected_device = ship.plan_mob_damage(&shot, DamageType::Energy).unwrap();
+        assert!(
+            (protected_device.wear.as_ref().unwrap().amount
+                / ordinary_device.wear.as_ref().unwrap().amount
+                - 100. / 158.)
+                .abs()
+                < 0.001
+        );
+
+        shot.sequence = 22;
+        let ordinary_engine = ship.plan_mob_damage(&shot, DamageType::Energy).unwrap();
+        assert_eq!(ordinary_engine.wear.as_ref().unwrap().slot, 2);
+        ship.inventory.equipped[2] = Some(crate::inventory::ItemInstance::stock(2527, 1));
+        ship.refresh_equipment().unwrap();
+        let protected_engine = ship.plan_mob_damage(&shot, DamageType::Energy).unwrap();
+        assert!(
+            (protected_engine.wear.as_ref().unwrap().amount
+                / ordinary_engine.wear.as_ref().unwrap().amount
+                - 100. / 138.)
+                .abs()
+                < 0.001
+        );
+    }
+
+    /// A failed inventory settlement replays the pre-hit protected wear amount.
+    #[test]
+    fn protected_equipment_wear_receipt_is_frozen_across_restart_and_gear_change() {
+        let mut ship = ship();
+        ship.shield = 0.;
+        ship.inventory.equipped[9] = Some(crate::inventory::ItemInstance::stock(2102, 1));
+        ship.refresh_equipment().unwrap();
+        ship.save().unwrap();
+        let shot = hit(&ship, 25);
+        let frozen = ship.plan_mob_damage(&shot, DamageType::Energy).unwrap();
+        assert_eq!(frozen.wear.as_ref().unwrap().slot, 0);
+        let old_structure = ship.inventory.equipped[0].as_ref().unwrap().structure;
+        let blocked = ship.state_dir.join("inventory.json.tmp");
+        fs::create_dir(&blocked).unwrap();
+        assert!(ship.receive_mob_hit(&shot).is_err());
+        assert_eq!(
+            ship.inventory.equipped[0].as_ref().unwrap().structure,
+            old_structure
+        );
+        fs::remove_dir(&blocked).unwrap();
+        let mut restored =
+            PlayerSession::new(ship.sector.clone(), ship.bind, ship.state_dir.clone()).unwrap();
+        let expected = old_structure - frozen.wear.as_ref().unwrap().amount;
+        assert!(
+            (restored.inventory.equipped[0].as_ref().unwrap().structure - expected).abs() < 0.0001
+        );
+        restored.inventory.equipped[9] = None;
+        restored.refresh_equipment().unwrap();
+        let structure = restored.inventory.equipped[0].as_ref().unwrap().structure;
+        restored.receive_mob_hit(&shot).unwrap();
+        assert_eq!(
+            restored.inventory.equipped[0].as_ref().unwrap().structure,
+            structure
+        );
+        assert_eq!(restored.inventory.applied_equipment_wear.len(), 1);
     }
 
     #[test]

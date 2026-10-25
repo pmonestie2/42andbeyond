@@ -10,6 +10,7 @@ pub mod energy_ledger;
 pub mod energy_leech;
 pub mod enrage;
 pub mod environment_gear;
+pub mod equipment_damage_control;
 pub mod equipment_repair;
 pub mod equipment_stats;
 pub mod events;
