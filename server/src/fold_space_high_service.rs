@@ -91,6 +91,7 @@ impl PlayerSession {
             self.account.character.class().code(),
         )
         .ok_or_else(|| invalid("High Fold rank is no longer trained."))?;
+        let band = fold_space_high::with_distance_bonus(band, cast.fold_distance_bonus);
         if !self.summon_available() {
             return Ok(false);
         }
@@ -175,6 +176,7 @@ impl PlayerSession {
             sector: self.sector.id,
             effect: cast.effect,
             target: cast.target,
+            distance_bonus: cast.fold_distance_bonus,
             plan: None,
         });
         Ok(true)

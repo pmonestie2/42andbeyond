@@ -1273,7 +1273,7 @@ impl GameState {
                             target == id
                                 && self.sessions[&source].can_deliver_jumpstart(&peer, range)
                         }
-                        SupportAction::Fold { target } => {
+                        SupportAction::Fold { target, .. } => {
                             target == id
                                 && peer.sector == sector
                                 && distance(peer.position, position) <= 6000.

@@ -76,6 +76,7 @@ impl GameState {
         let caster = &self.sessions[&source];
         let tier = fold_space_high::tier(pending.ability, pending.trained_rank, "jd")
             .ok_or_else(|| invalid("Unknown high Fold tier."))?;
+        let tier = fold_space_high::with_distance_bonus(tier, pending.distance_bonus);
         let cast = FoldCast {
             caster: source,
             caster_epoch: pending.source_epoch,

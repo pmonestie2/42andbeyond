@@ -403,6 +403,8 @@ pub struct Cast {
     #[serde(default)]
     pub fold_mob_generation: Option<u64>,
     #[serde(default)]
+    pub fold_distance_bonus: f32,
+    #[serde(default)]
     pub befriend_generation: Option<u64>,
     pub bio_generation: Option<u64>,
     #[serde(default)]
@@ -511,6 +513,10 @@ impl Cast {
             && self
                 .fold_mob_generation
                 .is_none_or(|generation| self.ability == 36 && generation < 1_000_000_000)
+            && self.fold_distance_bonus.is_finite()
+            && (0. ..=crate::fold_space_high::MAX_DISTANCE_BONUS)
+                .contains(&self.fold_distance_bonus)
+            && (self.fold_distance_bonus == 0. || matches!(self.ability, 17 | 36 | 124 | 125 | 126))
             && self.befriend_generation.is_none_or(|generation| {
                 matches!(self.ability, 15 | 20 | 43 | 63 | 115) && generation < 1_000_000_000
             })
@@ -619,6 +625,7 @@ pub enum SupportAction {
     },
     Fold {
         target: u32,
+        distance_bonus: f32,
     },
     Summon {
         ability: u32,

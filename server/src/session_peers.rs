@@ -356,7 +356,7 @@ impl PlayerSession {
                     "Another player jumpstarted your ship."
                 });
             }
-            SupportAction::Fold { .. } => self.fold_self(),
+            SupportAction::Fold { distance_bonus, .. } => self.fold_self(distance_bonus),
             SupportAction::Summon { .. } => {
                 return Err(invalid(
                     "Summon must be delivered by the world coordinator.",

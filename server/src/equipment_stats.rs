@@ -48,6 +48,7 @@ pub struct ShipStats {
     pub environment_skill_bonus: f32,
     pub environment_duration_bonus: f32,
     pub summon_skill_bonus: f32,
+    pub fold_distance_bonus: f32,
     pub tractor_speed: f32,
     pub tractor_range: f32,
     pub deflects: [f32; 9],
@@ -405,6 +406,13 @@ impl EquipmentStats {
                 modifiers
                     .apply_signed("SKILL_SUMMON", 0.)
                     .clamp(0., crate::summon::MAX_EQUIPPED_BONUS)
+            } else {
+                0.
+            },
+            fold_distance_bonus: if skills.level(24) > 0 {
+                modifiers
+                    .apply_signed("STAT_FOLD_SPACE_DISTANCE", 0.)
+                    .clamp(0., crate::fold_space_high::MAX_DISTANCE_BONUS)
             } else {
                 0.
             },
@@ -902,6 +910,40 @@ mod tests {
             .level = 0;
         let untrained = EquipmentStats::derive(&inventory, &catalog, &skills).unwrap();
         assert_eq!(untrained.ship.summon_skill_bonus, 0.);
+    }
+
+    /// Public Fold gear contributes its strongest intact additive distance.
+    #[test]
+    fn fold_distance_gear_uses_catalog_addition_without_unlocking_skill() {
+        let catalog = ItemCatalog::load().unwrap();
+        let mut profile = crate::account::Account::create("jd".into(), "pass", "JD".into())
+            .unwrap()
+            .character;
+        profile.race = 1;
+        profile.profession = 0;
+        let mut skills = SkillCatalog::for_profile(&profile).unwrap();
+        skills
+            .skills
+            .iter_mut()
+            .find(|skill| skill.id == 24)
+            .unwrap()
+            .level = 7;
+        let mut inventory = Inventory::starter_for(&profile, &catalog).unwrap();
+        inventory.equipped[9] = Some(crate::inventory::ItemInstance::stock(2492, 1));
+        inventory.equipped[10] = Some(crate::inventory::ItemInstance::stock(2401, 1));
+        let stats = EquipmentStats::derive(&inventory, &catalog, &skills).unwrap();
+        assert_eq!(stats.ship.fold_distance_bonus, 983.);
+        inventory.equipped[9].as_mut().unwrap().structure = 0.;
+        let broken = EquipmentStats::derive(&inventory, &catalog, &skills).unwrap();
+        assert_eq!(broken.ship.fold_distance_bonus, 883.);
+        skills
+            .skills
+            .iter_mut()
+            .find(|skill| skill.id == 24)
+            .unwrap()
+            .level = 0;
+        let untrained = EquipmentStats::derive(&inventory, &catalog, &skills).unwrap();
+        assert_eq!(untrained.ship.fold_distance_bonus, 0.);
     }
     #[test]
     fn chance_modifiers_keep_percent_operations_at_zero_base_and_strongest_effects() {

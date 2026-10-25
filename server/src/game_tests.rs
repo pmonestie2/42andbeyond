@@ -394,7 +394,7 @@ fn warrior_shield_inversion_pulses_and_survives_world_restart() {
     );
 }
 
-/// Area Fold retries a failed recipient checkpoint without moving the caster twice.
+/// Area Fold freezes equipped distance through partial group retry and restart.
 #[test]
 fn defender_area_fold_retries_partial_group_delivery_without_double_move() {
     let root = std::env::temp_dir().join(format!("enb-fold-high-{}", rand::random::<u64>()));
@@ -422,6 +422,7 @@ fn defender_area_fold_retries_partial_group_delivery_without_double_move() {
         crate::inventory::Inventory::starter_for(&caster_account.account.character, &catalog)
             .unwrap();
     equipment.equipped[1].as_mut().unwrap().template = 3340;
+    equipment.equipped[9] = Some(crate::inventory::ItemInstance::stock(2492, 1));
     fs::write(
         caster_account.directory.join("inventory.json"),
         serde_json::to_vec(&equipment).unwrap(),
@@ -461,16 +462,29 @@ fn defender_area_fold_retries_partial_group_delivery_without_double_move() {
     let second = caster.max(ally);
     let first_origin_x = if first == caster { 0. } else { 1_000. };
     let second_origin_x = if second == caster { 0. } else { 1_000. };
-    assert!((game.sessions[&first].position[0] - first_origin_x - 6_800.).abs() < 1.);
+    assert!((game.sessions[&first].position[0] - first_origin_x - 7_783.).abs() < 1.);
     assert_eq!(game.sessions[&second].position[0], second_origin_x);
-    fs::remove_dir(blocked).unwrap();
-    game.deliver_support().unwrap();
-    assert!((game.sessions[&caster].position[0] - 6_800.).abs() < 1.);
-    assert!((game.sessions[&ally].position[0] - 7_800.).abs() < 1.);
     drop(game);
+    fs::remove_dir(blocked).unwrap();
+    equipment.equipped[9] = None;
+    fs::write(
+        caster_account.directory.join("inventory.json"),
+        serde_json::to_vec(&equipment).unwrap(),
+    )
+    .unwrap();
+    let mut resumed = GameState::new(sector.clone(), bind, root.clone()).unwrap();
+    // The frozen plan and the first recipient's receipt survive replacement.
+    if !resumed.groups.together(caster, ally) {
+        resumed.groups.invite(caster, ally).unwrap();
+        resumed.groups.accept(ally).unwrap();
+    }
+    resumed.deliver_support().unwrap();
+    assert!((resumed.sessions[&caster].position[0] - 7_783.).abs() < 1.);
+    assert!((resumed.sessions[&ally].position[0] - 8_783.).abs() < 1.);
+    drop(resumed);
     let restored = GameState::new(sector, bind, root.clone()).unwrap();
-    assert!((restored.sessions[&caster].position[0] - 6_800.).abs() < 1.);
-    assert!((restored.sessions[&ally].position[0] - 7_800.).abs() < 1.);
+    assert!((restored.sessions[&caster].position[0] - 7_783.).abs() < 1.);
+    assert!((restored.sessions[&ally].position[0] - 8_783.).abs() < 1.);
     fs::remove_dir_all(root).unwrap();
 }
 
@@ -504,6 +518,7 @@ fn defender_directional_fold_moves_peer_and_generation_pinned_mob() {
         crate::inventory::Inventory::starter_for(&defender_account.account.character, &catalog)
             .unwrap();
     equipment.equipped[1].as_mut().unwrap().template = 3340;
+    equipment.equipped[9] = Some(crate::inventory::ItemInstance::stock(2492, 1));
     fs::write(
         defender_account.directory.join("inventory.json"),
         serde_json::to_vec(&equipment).unwrap(),
@@ -526,10 +541,10 @@ fn defender_directional_fold_moves_peer_and_generation_pinned_mob() {
         .advance_player(3.1)
         .unwrap();
     game.deliver_support().unwrap();
-    assert!((game.sessions[&ally].position[0] - 7_500.).abs() < 1.);
+    assert!((game.sessions[&ally].position[0] - 8_483.).abs() < 1.);
     assert_eq!(game.sessions[&defender].position, [0.; 3]);
     game.deliver_support().unwrap();
-    assert!((game.sessions[&ally].position[0] - 7_500.).abs() < 1.);
+    assert!((game.sessions[&ally].position[0] - 8_483.).abs() < 1.);
 
     {
         let mut combat = lock_combat(&game.sessions[&defender].combat).unwrap();
@@ -554,10 +569,10 @@ fn defender_directional_fold_moves_peer_and_generation_pinned_mob() {
         .unwrap()
         .actors[0]
         .position;
-    assert!((mob_position[0] - 8_500.).abs() < 1.);
+    assert!((mob_position[0] - 9_483.).abs() < 1.);
     drop(game);
     let restored = GameState::new(sector, bind, root.clone()).unwrap();
-    assert!((restored.sessions[&ally].position[0] - 7_500.).abs() < 1.);
+    assert!((restored.sessions[&ally].position[0] - 8_483.).abs() < 1.);
     assert_eq!(
         lock_combat(restored.combats.get(&1076).unwrap())
             .unwrap()

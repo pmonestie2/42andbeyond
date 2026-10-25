@@ -6714,6 +6714,36 @@ mod tests {
         assert_eq!(restored.sector.id, 1910);
     }
 
+    /// Low Fold tiers keep equipped travel distance when gear changes mid-cast.
+    #[test]
+    fn equipped_fold_distance_moves_self_and_enemy_after_gear_removal() {
+        let mut ship = session();
+        ship.logged_in = true;
+        ship.inventory.equipped[9] = Some(crate::inventory::ItemInstance::stock(2492, 1));
+        ship.refresh_equipment().unwrap();
+        assert_eq!(ship.equipment.ship.fold_distance_bonus, 983.);
+        ship.begin_ability(126).unwrap();
+        ship.inventory.equipped[9] = None;
+        ship.refresh_equipment().unwrap();
+        for _ in 0..12 {
+            ship.advance_abilities(0.1).unwrap();
+        }
+        assert!((distance(ship.position, [0.; 3]) - 5_983.).abs() < 1.);
+        ship.advance_abilities(10.1).unwrap();
+        ship.position = [0.; 3];
+        ship.inventory.equipped[9] = Some(crate::inventory::ItemInstance::stock(2492, 1));
+        ship.refresh_equipment().unwrap();
+        ship.target = MOB_ID;
+        lock_combat(&ship.combat).unwrap().actors[0].position = [100., 0., 0.];
+        ship.begin_ability(124).unwrap();
+        ship.inventory.equipped[9] = None;
+        ship.refresh_equipment().unwrap();
+        for _ in 0..12 {
+            ship.advance_abilities(0.1).unwrap();
+        }
+        assert!((lock_combat(&ship.combat).unwrap().actors[0].position[0] - 6_083.).abs() < 1.);
+    }
+
     /// Equipped wormhole gear shortens a frozen cast without changing its destination.
     #[test]
     fn equipped_wormhole_creation_time_reduces_cast_duration() {

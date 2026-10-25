@@ -10,6 +10,7 @@ pub const SKILL_ID: u32 = 24;
 pub const GROUP_RADIUS: f32 = 6_000.;
 pub const MAX_GROUP_RECIPIENTS: usize = 6;
 pub const RECEIPT_LIMIT: usize = 32;
+pub const MAX_DISTANCE_BONUS: f32 = 1_000.;
 pub const CHARGE_SECONDS: f32 = 3.;
 pub const COOLDOWN_SECONDS: f32 = 5.;
 
@@ -32,6 +33,8 @@ pub struct PendingHighFold {
     pub sector: u32,
     pub effect: u32,
     pub target: u32,
+    #[serde(default)]
+    pub distance_bonus: f32,
     pub plan: Option<FoldTravelPlan>,
 }
 
@@ -44,6 +47,8 @@ impl PendingHighFold {
             && self.sector != 0
             && self.effect != 0
             && self.target != 0
+            && self.distance_bonus.is_finite()
+            && (0. ..=MAX_DISTANCE_BONUS).contains(&self.distance_bonus)
             && tier(self.ability, self.trained_rank, "jd").is_some()
             && self.plan.as_ref().is_none_or(|plan| {
                 plan.valid()
@@ -122,6 +127,18 @@ pub fn tier(ability: u32, trained_rank: u32, class_code: &str) -> Option<HighFol
         }),
         _ => None,
     }
+}
+
+/// Returns:
+///     HighFoldTier: Travel distance with a bounded equipped modifier.
+pub fn with_distance_bonus(mut band: HighFoldTier, bonus: f32) -> HighFoldTier {
+    let bonus = if bonus.is_finite() {
+        bonus.clamp(0., MAX_DISTANCE_BONUS)
+    } else {
+        0.
+    };
+    band.travel_distance += bonus;
+    band
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -367,6 +384,14 @@ mod tests {
         assert!(tier(36, 5, "jd").is_none());
         assert!(tier(17, 6, "jd").is_none());
         assert!(tier(17, 7, "je").is_none());
+        assert_eq!(
+            with_distance_bonus(tier(17, 7, "jd").unwrap(), 983.).travel_distance,
+            7_783.
+        );
+        assert_eq!(
+            with_distance_bonus(tier(36, 6, "jd").unwrap(), f32::INFINITY).travel_distance,
+            6_500.
+        );
     }
 
     /// Directional move follows the recipient facing and respects world bounds.

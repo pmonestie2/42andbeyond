@@ -295,6 +295,11 @@ impl PlayerSession {
         } else {
             0.
         };
+        let fold_distance_bonus = if ability.kind == AbilityKind::Fold {
+            self.equipment.ship.fold_distance_bonus
+        } else {
+            0.
+        };
         let jumpstart = if ability.kind == AbilityKind::Jumpstart {
             Some(self.prepare_jumpstart_plan(target)?)
         } else {
@@ -426,6 +431,7 @@ impl PlayerSession {
             befriend_generation,
             bio_generation,
             fold_mob_generation,
+            fold_distance_bonus,
             enrage_generation,
             summon_generation,
             summon_skill_bonus,
@@ -1455,9 +1461,12 @@ impl PlayerSession {
             AbilityKind::Environment => unreachable!("Environment settles before the combat lock"),
             AbilityKind::Fold => {
                 if ability.id == 126 {
-                    self.fold_self();
+                    self.fold_self(cast.fold_distance_bonus);
                 } else if ability.id == 125 {
-                    self.support_actions.push(SupportAction::Fold { target });
+                    self.support_actions.push(SupportAction::Fold {
+                        target,
+                        distance_bonus: cast.fold_distance_bonus,
+                    });
                 } else {
                     let mob = combat
                         .actors
@@ -1471,7 +1480,8 @@ impl PlayerSession {
                     let length = distance(mob.position, self.position).max(1.);
                     for axis in 0..3 {
                         mob.position[axis] = (mob.position[axis]
-                            + (mob.position[axis] - self.position[axis]) / length * 5000.)
+                            + (mob.position[axis] - self.position[axis]) / length
+                                * (5000. + cast.fold_distance_bonus))
                             .clamp(self.sector.bounds.min[axis], self.sector.bounds.max[axis]);
                     }
                     self.pending
@@ -1832,11 +1842,18 @@ impl PlayerSession {
             self.skills.environment_seconds,
         )
     }
-    pub(super) fn fold_self(&mut self) {
+    /// Move one ship a bounded native random Fold distance.
+    pub(super) fn fold_self(&mut self, distance_bonus: f32) {
         let angle = rand::random::<f32>() * std::f32::consts::TAU;
-        self.position[0] = (self.position[0] + angle.cos() * 5000.)
+        let distance = 5000.
+            + if distance_bonus.is_finite() {
+                distance_bonus.clamp(0., crate::fold_space_high::MAX_DISTANCE_BONUS)
+            } else {
+                0.
+            };
+        self.position[0] = (self.position[0] + angle.cos() * distance)
             .clamp(self.sector.bounds.min[0], self.sector.bounds.max[0]);
-        self.position[1] = (self.position[1] + angle.sin() * 5000.)
+        self.position[1] = (self.position[1] + angle.sin() * distance)
             .clamp(self.sector.bounds.min[1], self.sector.bounds.max[1]);
         self.motion.stop();
         self.last_motion_report = None;
