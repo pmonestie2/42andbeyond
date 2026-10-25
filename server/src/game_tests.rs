@@ -576,6 +576,7 @@ fn enforcer_rally_is_group_scoped_and_recovers_a_torn_recipient_checkpoint() {
     )
     .unwrap();
     inventory.equipped[1].as_mut().unwrap().template = 3337;
+    inventory.equipped[3] = Some(crate::inventory::ItemInstance::stock(787, 1));
     fs::write(&inventory_path, serde_json::to_vec(&inventory).unwrap()).unwrap();
     let sector: Sector = serde_json::from_str(include_str!("../data/sector.json")).unwrap();
     let bind = Ipv4Addr::new(127, 0, 0, 2);
@@ -606,6 +607,7 @@ fn enforcer_rally_is_group_scoped_and_recovers_a_torn_recipient_checkpoint() {
         game.energy_ledger.rally_buff(bob).unwrap().tactic,
         crate::rally::Tactic::Stealth
     );
+    assert!((game.energy_ledger.rally_buff(bob).unwrap().skill_bonus - 0.87).abs() < 0.001);
     assert!(game.energy_ledger.rally_buff(outsider).is_none());
     assert_eq!(
         game.sessions[&outsider].peer_snapshot().unwrap().stats,
@@ -617,7 +619,7 @@ fn enforcer_rally_is_group_scoped_and_recovers_a_torn_recipient_checkpoint() {
     let mut resumed = GameState::new(sector, bind, root.clone()).unwrap();
     let buffed = resumed.sessions[&bob].peer_snapshot().unwrap().stats;
     assert_eq!(buffed.signature, baseline.signature * 0.75);
-    assert_eq!(buffed.deflects[0], baseline.deflects[0] + 14.);
+    assert!((buffed.deflects[0] - baseline.deflects[0] - 14.87).abs() < 0.001);
     assert_eq!(
         resumed.sessions[&alice].energy_balance().0,
         committed_energy

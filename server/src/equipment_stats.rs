@@ -40,6 +40,7 @@ pub struct ShipStats {
     pub shield_inversion_duration_bonus: f32,
     pub befriend_skill_bonus: f32,
     pub self_destruct_damage_bonus_pct: f32,
+    pub rally_skill_bonus: f32,
     pub tractor_speed: f32,
     pub tractor_range: f32,
     pub deflects: [f32; 9],
@@ -352,6 +353,11 @@ impl EquipmentStats {
                 modifiers
                     .apply_signed("SKILL_SELF_DESTRUCT", 0.)
                     .clamp(0., 200.)
+            } else {
+                0.
+            },
+            rally_skill_bonus: if skills.level(44) > 0 {
+                modifiers.apply_signed("SKILL_RALLY", 0.).clamp(0., 3.)
             } else {
                 0.
             },

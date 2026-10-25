@@ -1497,6 +1497,7 @@ impl PlayerSession {
                     effect,
                     tactic,
                     skill_rank: self.skill_catalog.level(44),
+                    skill_bonus: self.equipment.ship.rally_skill_bonus,
                 });
             }
             AbilityKind::ReactorOptimization => {

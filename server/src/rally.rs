@@ -103,6 +103,8 @@ pub struct RallyBuff {
     pub target_epoch: u64,
     pub tactic: Tactic,
     pub skill_rank: u32,
+    #[serde(default)]
+    pub skill_bonus: f32,
     pub expires_at_ms: u64,
 }
 
@@ -122,6 +124,8 @@ impl RallyBuff {
             && self.source != 0
             && self.target_epoch == epoch
             && (self.tactic.rank()..=7).contains(&self.skill_rank)
+            && self.skill_bonus.is_finite()
+            && (0. ..=3.).contains(&self.skill_bonus)
             && self.expires_at_ms > now_ms
             && self.expires_at_ms <= now_ms.saturating_add(DURATION_MS)
     }
@@ -131,10 +135,11 @@ impl RallyBuff {
     pub fn modifiers(&self) -> Vec<Modifier> {
         // Public skill documentation says intermediate training improves the
         // same bonuses; these bounded slopes are local tuning, not archive data.
+        let effective_rank = self.skill_rank as f32 + self.skill_bonus;
         let mut result = vec![Modifier {
             stat: "STAT_CRITICAL_RATE".into(),
             operation: 1,
-            value: 5. + self.skill_rank as f32 * 5.,
+            value: 5. + effective_rank * 5.,
         }];
         if self.tactic.rank() >= 3 {
             for stat in [
@@ -149,7 +154,7 @@ impl RallyBuff {
                 result.push(Modifier {
                     stat: stat.into(),
                     operation: 1,
-                    value: 7. + self.skill_rank as f32,
+                    value: 7. + effective_rank,
                 });
             }
         }
@@ -158,7 +163,7 @@ impl RallyBuff {
                 result.push(Modifier {
                     stat: stat.into(),
                     operation: 1,
-                    value: 5. + self.skill_rank as f32,
+                    value: 5. + effective_rank,
                 });
             }
         }
@@ -178,13 +183,18 @@ pub struct PendingRally {
     pub effect: u32,
     pub tactic: Tactic,
     pub skill_rank: u32,
+    #[serde(default)]
+    pub skill_bonus: f32,
 }
 
 impl PendingRally {
     /// Returns:
     ///     bool: Whether an interrupted or resumed cast can be settled.
     pub fn valid(&self) -> bool {
-        self.effect != 0 && (self.tactic.rank()..=7).contains(&self.skill_rank)
+        self.effect != 0
+            && (self.tactic.rank()..=7).contains(&self.skill_rank)
+            && self.skill_bonus.is_finite()
+            && (0. ..=3.).contains(&self.skill_bonus)
     }
 }
 
@@ -203,6 +213,7 @@ mod tests {
                 target_epoch: 2,
                 tactic,
                 skill_rank: minimum,
+                skill_bonus: 0.,
                 expires_at_ms: 1_000_001,
             };
             assert!(buff.valid(400_001, 2));
@@ -218,6 +229,7 @@ mod tests {
             target_epoch: 2,
             tactic: Tactic::Damage,
             skill_rank: 2,
+            skill_bonus: 0.,
             expires_at_ms: 1_000_001,
         };
         assert_eq!(trained.modifiers()[0].value, 15.);

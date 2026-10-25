@@ -241,6 +241,7 @@ impl GameState {
                                 target_epoch: recipient.energy_transfer_epoch(),
                                 tactic: pending.tactic,
                                 skill_rank: pending.skill_rank,
+                                skill_bonus: pending.skill_bonus,
                                 expires_at_ms: crate::resources::unix_ms()
                                     .saturating_add(crate::rally::DURATION_MS),
                             },

@@ -234,6 +234,8 @@ impl EnergyLedger {
                     || buff.target_epoch == 0
                     || buff.skill_rank < buff.tactic.rank()
                     || buff.skill_rank > 7
+                    || !buff.skill_bonus.is_finite()
+                    || !(0. ..=3.).contains(&buff.skill_bonus)
                     || buff.expires_at_ms == 0
             })
             || data
@@ -672,6 +674,8 @@ impl EnergyLedger {
                         || buff.target_epoch == 0
                         || buff.skill_rank < buff.tactic.rank()
                         || buff.skill_rank > 7
+                        || !buff.skill_bonus.is_finite()
+                        || !(0. ..=3.).contains(&buff.skill_bonus)
                         || buff.expires_at_ms == 0
                         || recipients[..index].iter().any(|(prior, _)| prior == target)
                 })

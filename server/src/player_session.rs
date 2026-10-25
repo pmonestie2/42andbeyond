@@ -3244,6 +3244,7 @@ mod tests {
             target_epoch,
             tactic: crate::rally::Tactic::Damage,
             skill_rank: 1,
+            skill_bonus: 0.,
             expires_at_ms: crate::resources::unix_ms() + 10_000,
         })
         .unwrap();
@@ -3568,6 +3569,7 @@ mod tests {
             target_epoch: ship.session_epoch,
             tactic: crate::rally::Tactic::Stealth,
             skill_rank: 7,
+            skill_bonus: 0.,
             expires_at_ms: crate::resources::unix_ms() + 30_000,
         })
         .unwrap();
@@ -3616,6 +3618,7 @@ mod tests {
                 target_epoch: epoch,
                 tactic,
                 skill_rank: 7,
+                skill_bonus: 0.,
                 expires_at_ms: crate::resources::unix_ms() + 30_000,
             })
             .unwrap();
@@ -3655,6 +3658,7 @@ mod tests {
             target_epoch: ship.session_epoch,
             tactic: crate::rally::Tactic::Stealth,
             skill_rank: 7,
+            skill_bonus: 0.,
             expires_at_ms: crate::resources::unix_ms() + 30_000,
         })
         .unwrap();
@@ -3788,6 +3792,7 @@ mod tests {
             target_epoch: ship.session_epoch,
             tactic: crate::rally::Tactic::Damage,
             skill_rank: 1,
+            skill_bonus: 0.,
             expires_at_ms: crate::resources::unix_ms() + 30_000,
         })
         .unwrap();
