@@ -91,10 +91,13 @@ namespace FortyTwoAndBeyond.Client
             }
             Rect panel = PanelRect();
             flightHud.Panel(panel);
-            Tint(new Rect(panel.x + 8, panel.y + 68, 277, panel.height - 77),
-                new Color(.012f, .025f, .04f, .46f));
-            Tint(new Rect(panel.x + 285, panel.y + 69, 1, panel.height - 80),
-                new Color(.34f, .68f, .8f, .28f));
+            if (!factionsTab)
+            {
+                Tint(new Rect(panel.x + 8, panel.y + 68, 277, panel.height - 77),
+                    new Color(.012f, .025f, .04f, .46f));
+                Tint(new Rect(panel.x + 285, panel.y + 69, 1, panel.height - 80),
+                    new Color(.34f, .68f, .8f, .28f));
+            }
             GUI.Label(new Rect(panel.x + 19, panel.y + 15, 315, 27),
                 factionsTab ? "FACTION STANDINGS" : "MISSION JOURNAL", flightHud.BodyStyle);
             if (GUI.Button(new Rect(panel.x + 438, panel.y + 14, 124, 31), "MISSIONS", flightHud.ButtonStyle))
@@ -158,6 +161,15 @@ namespace FortyTwoAndBeyond.Client
                     $"LATEST CHANGE  {change.Label} {change.Delta:+0;-0;0}  ·  {change.Value:0}",
                     detailText);
             float listTop = top + (change == null ? 30 : 62);
+            if (reputation.Standings.Count == 0)
+            {
+                Tint(new Rect(panel.x + 20, listTop + 12, panel.width - 40, 78),
+                    new Color(.075f, .17f, .22f, .68f));
+                GUI.Label(new Rect(panel.x + 34, listTop + 28, panel.width - 68, 48),
+                    "No faction standings reported yet. Mission rewards and combat can change your reputation.",
+                    detailText);
+                return;
+            }
             Rect viewport = new Rect(panel.x + 20, listTop, panel.width - 40,
                 Mathf.Max(50, panel.yMax - listTop - 20));
             float listHeight = reputation.Standings.Count * 28 + 4;
