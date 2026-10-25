@@ -35,6 +35,7 @@ impl PlayerSession {
             effect: cast.effect,
             ability: ability.id,
             trained_rank,
+            damage_bonus_percent: self.equipment.ship.self_destruct_damage_bonus_pct,
             position: self.position,
         };
         if !pending.valid() {
@@ -77,6 +78,7 @@ impl PlayerSession {
             || receipt.effect != pending.effect
             || receipt.ability != pending.ability
             || receipt.trained_rank != pending.trained_rank
+            || receipt.damage_bonus_percent != pending.damage_bonus_percent
         {
             return Err(invalid("Self Destruct receipt mismatch."));
         }

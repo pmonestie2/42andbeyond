@@ -172,17 +172,24 @@ fn defender_energy_leech_drains_reactor_and_replays_group_award() {
 #[test]
 fn warrior_self_destruct_replays_one_blast_and_recovers_resources() {
     let root = std::env::temp_dir().join(format!("enb-self-destruct-{}", rand::random::<u64>()));
-    let warrior = AccountDirectory::new(&root)
+    let account = AccountDirectory::new(&root)
         .create_class(
             "warrior".into(),
             "example",
             "Warrior".into(),
             crate::classes::CharacterClass::parse("pw").unwrap(),
         )
-        .unwrap()
-        .account
-        .character
-        .game_id;
+        .unwrap();
+    let warrior = account.account.character.game_id;
+    let catalog = crate::items::ItemCatalog::load().unwrap();
+    let mut inventory =
+        crate::inventory::Inventory::starter_for(&account.account.character, &catalog).unwrap();
+    inventory.equipped[3] = Some(crate::inventory::ItemInstance::stock(796, 1));
+    fs::write(
+        root.join("inventory.json"),
+        serde_json::to_vec(&inventory).unwrap(),
+    )
+    .unwrap();
     let mut sector: Sector = serde_json::from_str(include_str!("../data/sector.json")).unwrap();
     sector.mobs[0].spawn = [900., 0., 0.];
     sector.mobs[0].aggressive = false;
@@ -203,6 +210,7 @@ fn warrior_self_destruct_replays_one_blast_and_recovers_resources() {
         .unwrap();
     let pending = game.sessions[&warrior].pending_self_destruct().unwrap();
     assert_eq!(pending.ability, 100);
+    assert_eq!(pending.damage_bonus_percent, 30.);
     let world_poison = root.join("combat/1076.json.next");
     fs::create_dir(&world_poison).unwrap();
     assert!(game.deliver_self_destructs().is_err());
@@ -216,7 +224,12 @@ fn warrior_self_destruct_replays_one_blast_and_recovers_resources() {
     assert!(game.deliver_self_destructs().is_err());
     let after = {
         let world = lock_combat(&game.sessions[&warrior].combat).unwrap();
-        assert!(world.self_destruct_receipt(pending).is_some());
+        let receipt = world.self_destruct_receipt(pending).unwrap();
+        assert_eq!(receipt.damage_bonus_percent, 30.);
+        let base = crate::self_destruct::tier(100, pending.trained_rank)
+            .unwrap()
+            .damage(pending.trained_rank);
+        assert!((receipt.targets[0].damage - base * 1.3).abs() < 0.001);
         world.actors[0].health + world.actors[0].shield
     };
     assert!(after < before);

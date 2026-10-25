@@ -11,7 +11,7 @@ pub const VISUAL_DESCRIPTOR: u16 = 221;
 pub const MAX_TARGETS: usize = 256;
 pub const CHARGE_SECONDS: f32 = 1.5;
 pub const COOLDOWN_SECONDS: f32 = 15.;
-pub const MAX_DURATION_MS: u64 = 35_000;
+pub const MAX_DURATION_MS: u64 = 44_000;
 
 /// Returns:
 ///     Option<f32>: Locally tuned reactor cost for the native tier.
@@ -29,14 +29,36 @@ pub fn energy_cost(rank: u32) -> Option<f32> {
 /// Returns:
 ///     u64: Locally tuned successful reaction lifetime.
 pub fn duration_ms(rank: u32) -> u64 {
-    14_000 + 3_000 * u64::from(rank.min(7))
+    duration_ms_with_bonus(rank, 0.)
+}
+
+/// Returns:
+///     u64: Reaction lifetime with a bounded equipped skill modifier.
+pub fn duration_ms_with_bonus(rank: u32, bonus: f32) -> u64 {
+    let bonus = if bonus.is_finite() {
+        bonus.clamp(0., 3.)
+    } else {
+        0.
+    };
+    14_000 + (3_000. * (rank.min(7) as f32 + bonus)) as u64
 }
 
 /// Returns:
 ///     f32: Locally tuned and bounded chance against a target MOB level.
 pub fn success_chance(rank: u32, caster_level: u32, mob_level: u32) -> f32 {
+    success_chance_with_bonus(rank, 0., caster_level, mob_level)
+}
+
+/// Returns:
+///     f32: Attempt chance after a bounded equipped Befriend skill bonus.
+pub fn success_chance_with_bonus(rank: u32, bonus: f32, caster_level: u32, mob_level: u32) -> f32 {
+    let bonus = if bonus.is_finite() {
+        bonus.clamp(0., 3.)
+    } else {
+        0.
+    };
     let gap = mob_level as i64 - caster_level as i64;
-    (0.5 + 0.05 * rank.min(7) as f32 - 0.025 * gap as f32).clamp(0.05, 0.95)
+    (0.5 + 0.05 * (rank.min(7) as f32 + bonus) - 0.025 * gap as f32).clamp(0.05, 0.95)
 }
 
 /// Returns:

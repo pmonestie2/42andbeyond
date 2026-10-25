@@ -38,6 +38,8 @@ pub struct ShipStats {
     pub hacking_bonus: f32,
     pub repulsor_field_skill: f32,
     pub shield_inversion_duration_bonus: f32,
+    pub befriend_skill_bonus: f32,
+    pub self_destruct_damage_bonus_pct: f32,
     pub tractor_speed: f32,
     pub tractor_range: f32,
     pub deflects: [f32; 9],
@@ -341,6 +343,18 @@ impl EquipmentStats {
                 0.
             },
             shield_inversion_duration_bonus: modifiers.apply("STAT_SHIELD_INVERSION_DURATION", 0.),
+            befriend_skill_bonus: if skills.level(2) > 0 {
+                modifiers.apply_signed("SKILL_BEFRIEND", 0.).clamp(0., 3.)
+            } else {
+                0.
+            },
+            self_destruct_damage_bonus_pct: if skills.level(50) > 0 {
+                modifiers
+                    .apply_signed("SKILL_SELF_DESTRUCT", 0.)
+                    .clamp(0., 200.)
+            } else {
+                0.
+            },
             tractor_speed: modifiers.apply("STAT_TRACTORBEAM", 200.).max(1.),
             // Long Tractor Beam has a catalog range modifier. The archived
             // fixed range ignored it; retain the current 2 km base.
@@ -517,6 +531,33 @@ mod tests {
         assert!(
             crate::hacking::success_chance(1, 20, 20, geared.ship.hacking_bonus)
                 > crate::hacking::success_chance(1, 20, 20, base.ship.hacking_bonus)
+        );
+    }
+
+    /// Befriend gear increases attempt potency without granting a new tier.
+    #[test]
+    fn befriend_equipped_rank_improves_chance_and_duration() {
+        let catalog = ItemCatalog::load().unwrap();
+        let mut profile = crate::account::Account::create("pilot".into(), "pass", "Pilot".into())
+            .unwrap()
+            .character;
+        let class = crate::classes::CharacterClass::parse("tt").unwrap();
+        profile.race = class.race();
+        profile.profession = class.profession();
+        let skills = SkillCatalog::for_profile(&profile).unwrap();
+        let mut inventory = Inventory::starter_for(&profile, &catalog).unwrap();
+        let base = EquipmentStats::derive(&inventory, &catalog, &skills).unwrap();
+        inventory.equipped[3] = Some(crate::inventory::ItemInstance::stock(781, 1));
+        let geared = EquipmentStats::derive(&inventory, &catalog, &skills).unwrap();
+        assert_eq!(base.ship.befriend_skill_bonus, 0.);
+        assert!((geared.ship.befriend_skill_bonus - 0.87).abs() < 0.001);
+        assert!(
+            crate::befriend::success_chance_with_bonus(3, geared.ship.befriend_skill_bonus, 20, 20)
+                > crate::befriend::success_chance(3, 20, 20)
+        );
+        assert!(
+            crate::befriend::duration_ms_with_bonus(3, geared.ship.befriend_skill_bonus)
+                > crate::befriend::duration_ms(3)
         );
     }
 

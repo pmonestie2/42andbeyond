@@ -33,3 +33,8 @@ not a player buff icon.
 The existing client sends selected MOB `0x17`, then ability `0x58`; the server
 uses `0x19` selection acknowledgement, `0x79` charge progress, and native
 cooldown/status messages. The client need not implement a new packet.
+
+Equipped `SKILL_BEFRIEND` values add a fractional effective rank to the
+locally tuned success and duration formulas, capped at +3. The trained rank
+still gates tiers and their combat effects. Item modifier stacking follows
+the server's strongest equipped modifier rule.

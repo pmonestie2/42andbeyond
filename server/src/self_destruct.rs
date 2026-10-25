@@ -22,6 +22,8 @@ pub struct PendingSelfDestruct {
     pub effect: u32,
     pub ability: u32,
     pub trained_rank: u32,
+    #[serde(default)]
+    pub damage_bonus_percent: f32,
     pub position: [f32; 3],
 }
 
@@ -34,6 +36,8 @@ impl PendingSelfDestruct {
             && self.sector > 0
             && self.effect > 0
             && tier(self.ability, self.trained_rank).is_some()
+            && self.damage_bonus_percent.is_finite()
+            && (0. ..=200.).contains(&self.damage_bonus_percent)
             && self
                 .position
                 .iter()
@@ -49,6 +53,8 @@ pub struct BlastReceipt {
     pub effect: u32,
     pub ability: u32,
     pub trained_rank: u32,
+    #[serde(default)]
+    pub damage_bonus_percent: f32,
     pub targets: Vec<BlastTarget>,
 }
 
@@ -70,13 +76,16 @@ impl BlastReceipt {
             && self.source_epoch > 0
             && self.sector > 0
             && self.effect > 0
+            && self.damage_bonus_percent.is_finite()
+            && (0. ..=200.).contains(&self.damage_bonus_percent)
             && self.targets.len() <= 256
             && unique
             && self.targets.iter().all(|target| {
                 (0x1000_0001..0x1000_0101).contains(&target.object_id)
                     && target.generation < 1_000_000_000
                     && target.damage_type == ABSOLUTE_DAMAGE_TYPE
-                    && target.damage == band.damage(self.trained_rank)
+                    && target.damage
+                        == band.damage(self.trained_rank) * (1. + self.damage_bonus_percent / 100.)
             })
     }
 }

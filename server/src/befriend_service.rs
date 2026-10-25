@@ -106,7 +106,12 @@ impl PlayerSession {
                 outcome.affected += 1;
                 continue;
             }
-            let chance = befriend::success_chance(trained, trade_level, mob.definition.level);
+            let chance = befriend::success_chance_with_bonus(
+                trained,
+                self.equipment.ship.befriend_skill_bonus,
+                trade_level,
+                mob.definition.level,
+            );
             let roll =
                 befriend::cast_roll(cast.effect, mob.definition.source_id, mob.death_generation);
             if roll >= chance {
@@ -120,7 +125,10 @@ impl PlayerSession {
                 ability: ability.id,
                 trained_rank: trained,
                 mob_generation: mob.death_generation,
-                deadline_ms: now.saturating_add(befriend::duration_ms(trained)),
+                deadline_ms: now.saturating_add(befriend::duration_ms_with_bonus(
+                    trained,
+                    self.equipment.ship.befriend_skill_bonus,
+                )),
             };
             if mob.apply_befriend(effect) {
                 outcome.affected += 1;

@@ -64,6 +64,10 @@ impl SectorCombat {
             &lives,
         )
         .ok_or_else(|| invalid("Invalid Self Destruct target plan."))?;
+        let mut targets = plan.targets;
+        for target in &mut targets {
+            target.damage *= 1. + cast.damage_bonus_percent / 100.;
+        }
         let receipt = BlastReceipt {
             source: cast.source,
             source_epoch: cast.source_epoch,
@@ -71,7 +75,8 @@ impl SectorCombat {
             effect: cast.effect,
             ability: cast.ability,
             trained_rank: cast.trained_rank,
-            targets: plan.targets,
+            damage_bonus_percent: cast.damage_bonus_percent,
+            targets,
         };
         if !receipt.valid() {
             return Err(invalid("Invalid Self Destruct blast result."));
