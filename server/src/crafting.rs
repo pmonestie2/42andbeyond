@@ -56,6 +56,29 @@ pub fn build_ceiling(rank: u32) -> u32 {
 }
 
 impl CraftRecipe {
+    /// Returns:
+    ///     bool: Whether a saved fee is the catalog price or a rank-five to seven Negotiate quote.
+    fn valid_quoted_cost(base: u64, quoted: u64) -> bool {
+        [100u32, 85, 83, 81]
+            .into_iter()
+            .any(|percent| u128::from(base) * u128::from(percent) / 100 == u128::from(quoted))
+    }
+
+    /// Check recipe identity while allowing a frozen Negotiate service discount.
+    /// Raises:
+    ///     io::Error: Catalog components or the bounded fee no longer match.
+    fn check_current(&self, items: &ItemCatalog, message: &str) -> io::Result<()> {
+        let mut current = Self::resolve(self.product, items)?;
+        if !Self::valid_quoted_cost(current.cost, self.cost) {
+            return Err(invalid(message));
+        }
+        current.cost = self.cost;
+        if current != *self {
+            return Err(invalid(message));
+        }
+        Ok(())
+    }
+
     pub fn resolve(product: u32, items: &ItemCatalog) -> io::Result<Self> {
         let item = items.get(product)?;
         if item.flags & 128 != 0
@@ -128,9 +151,7 @@ impl CraftRecipe {
     ) -> io::Result<Inventory> {
         inventory.validate(items)?;
         self.check_skill(skills, items)?;
-        if Self::resolve(self.product, items)? != *self {
-            return Err(invalid("Manufacturing recipe changed; select it again."));
-        }
+        self.check_current(items, "Manufacturing recipe changed; select it again.")?;
         if !inventory.known_formulas.contains(&self.product) {
             return Err(invalid("Analyze this item to learn its recipe first."));
         }
@@ -194,9 +215,7 @@ impl CraftRecipe {
     ) -> io::Result<Inventory> {
         inventory.validate(items)?;
         self.check_skill(skills, items)?;
-        if Self::resolve(self.product, items)? != *self {
-            return Err(invalid("Analysis recipe changed."));
-        }
+        self.check_current(items, "Analysis recipe changed.")?;
         if inventory.known_formulas.contains(&self.product) {
             return Err(invalid("This recipe is already known."));
         }
@@ -261,9 +280,7 @@ impl CraftRecipe {
     ) -> io::Result<Inventory> {
         inventory.validate(items)?;
         self.check_skill(skills, items)?;
-        if Self::resolve(self.product, items)? != *self {
-            return Err(invalid("Dismantling recipe changed."));
-        }
+        self.check_current(items, "Dismantling recipe changed.")?;
         self.check_recovery(recovered)?;
         let sample = inventory.production_target[0]
             .as_ref()
@@ -629,6 +646,19 @@ mod tests {
             .manufacture(&inventory, &skills, &items, "TestBuilder")
             .unwrap();
         assert_eq!(built.credits, inventory.credits - recipe.cost);
+        let mut discounted = recipe.clone();
+        discounted.cost = recipe.cost * 81 / 100;
+        let discounted_build = discounted
+            .manufacture(&inventory, &skills, &items, "TestBuilder")
+            .unwrap();
+        assert_eq!(
+            discounted_build.credits,
+            inventory.credits - discounted.cost
+        );
+        discounted.cost -= 1;
+        assert!(discounted
+            .manufacture(&inventory, &skills, &items, "TestBuilder")
+            .is_err());
         assert_eq!(built.trade_xp, 50);
         assert_eq!(
             built
