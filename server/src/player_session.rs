@@ -1557,6 +1557,56 @@ impl PlayerSession {
 mod tests {
     use super::*;
 
+    /// Verify equipped Combat Trance and NPC-hit receipts survive replacement.
+    #[test]
+    fn progen_combat_trance_gear_and_damage_receipt_survive_replacement() {
+        let root = std::env::temp_dir().join(format!("enb-trance-test-{}", rand::random::<u64>()));
+        let mut account = Account::create("pw".into(), "pass", "Warrior".into()).unwrap();
+        account.character.race = 2;
+        account.character.profession = 0;
+        account.save_new(&root).unwrap();
+        let sector: Sector = serde_json::from_str(include_str!("../data/sector.json")).unwrap();
+        let bind = Ipv4Addr::new(127, 0, 0, 2);
+        let mut ship = PlayerSession::new(sector.clone(), bind, root.clone()).unwrap();
+        let ordinary = ship.equipment.ship.deflects[3];
+        let mut candidate = ship.inventory.clone();
+        candidate.equipped[9] = Some(crate::inventory::ItemInstance::stock(2097, 1));
+        ship.commit_inventory(candidate).unwrap();
+        assert!(ship.equipment.ship.deflects[3] > ordinary);
+        ship.logged_in = true;
+        ship.selected_peer = Some("127.0.0.1".parse().unwrap());
+        ship.endpoint = Some("127.0.0.1:22343".parse().unwrap());
+        ship.shield = ship.equipment.ship.shield_capacity;
+        let starting_shield = ship.shield;
+        let hit = crate::npc_projectiles::MobHit {
+            sector: ship.sector.id,
+            sequence: 1,
+            target: ship.player_id(),
+            target_epoch: ship.session_epoch,
+            attacker_index: 0,
+            attacker_source: 46,
+            attacker_template: 0,
+            attacker_generation: 0,
+            damage: 20.,
+            damage_type: 3,
+        };
+        ship.receive_mob_hit(&hit).unwrap();
+        let expected = starting_shield - 20. * (1. - ship.equipment.ship.deflects[3] / 100.);
+        assert!((ship.shield - expected).abs() < 0.001);
+        ship.save().unwrap();
+        ship.checkpoint_session(true).unwrap();
+        let mut restored = PlayerSession::new(sector, bind, root).unwrap();
+        assert_eq!(restored.inventory.equipped[9], ship.inventory.equipped[9]);
+        assert_eq!(
+            restored.equipment.ship.deflects[3],
+            ship.equipment.ship.deflects[3]
+        );
+        assert_eq!(restored.shield, ship.shield);
+        restored.receive_mob_hit(&hit).unwrap();
+        assert_eq!(restored.shield, ship.shield);
+    }
+
+    /// Verify a saved prospect device changes one pilot without changing another.
     #[test]
     fn equipped_prospect_skill_bonus_survives_replacement_without_affecting_other_pilots() {
         let mut miner = session();

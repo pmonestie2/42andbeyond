@@ -88,6 +88,13 @@ mean the corresponding gameplay system is complete.
   changes actual ore reactor cost and admission, with saved equipment restoring
   the same benefit after server replacement. Catalog values use the strongest
   modifier per operation, as in the archived stat engine.
+- Progen Warrior Combat Trance now contributes the archived rank-three typed
+  deflect bands, rank-six reactor recharge and rank-seven shield recharge to
+  authoritative combat/resources and ship AUX. Public Combat Trance gear raises
+  the effective rank (the archived branch uses a mismatched Negotiate stat key);
+  a durable NPC hit receipt test covers equipped resistance across replacement.
+  The archived accuracy branch remains gated because its TODO expression does
+  not define a usable positive-rank bonus.
 - Persistent cargo/equipment/vault inventory and credits, split/merge/swap
   transfers, mount/class/skill/quantity validation, trade/no-store vault rules,
   atomic replacement before publication and restart reconciliation.

@@ -2316,6 +2316,7 @@ mod tests {
         );
     }
 
+    /// Verify native attacker records use the archived nine-byte payload.
     #[test]
     fn attacker_update_matches_native_nine_byte_payload() {
         assert_eq!(

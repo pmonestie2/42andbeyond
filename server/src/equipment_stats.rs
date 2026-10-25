@@ -163,6 +163,22 @@ impl EquipmentStats {
             0.
         };
         let mut deflects = [0.; 9];
+        // Combat Trance belongs to the Progen Warrior's trained skill 13.
+        // PlayerSkills.cpp derives these defensive bands; its lookup of
+        // SKILL_NEGOTIATE for the gear bonus is a typo against the public
+        // SKILL_COMBAT_TRANCE item effects and Stats.h's matching macro.
+        let trance = if skills.level(13) > 0 {
+            modifiers
+                .apply_signed("SKILL_COMBAT_TRANCE", skills.level(13) as f32)
+                .max(0.)
+        } else {
+            0.
+        };
+        let trance_deflect = if trance >= 3. {
+            (13. + (trance - 3.) * 6.).min(50.)
+        } else {
+            0.
+        };
         for (index, name) in [
             "STAT_IMPACT_DEFLECT",
             "STAT_EXPLOSIVE_DEFLECT",
@@ -177,7 +193,12 @@ impl EquipmentStats {
         .into_iter()
         .enumerate()
         {
-            deflects[index] = modifiers.apply_signed(name, 0.).min(50.);
+            let passive = if index <= 5 || index == 8 {
+                trance_deflect
+            } else {
+                0.
+            };
+            deflects[index] = (modifiers.apply_signed(name, 0.) + passive).min(50.);
         }
         let class = crate::classes::CharacterClass(skills.class_index);
         let progression = crate::ship_progression::progression(class, inventory.hull_upgrade)?;
@@ -197,9 +218,22 @@ impl EquipmentStats {
             warp_power_level: progression.warp_power_level,
             hull_capacity: modifiers.apply("STAT_HULL", progression.hull_capacity),
             energy_capacity: modifiers.apply("STAT_ENERGY", field(1, 16)?),
-            energy_recharge: modifiers.apply("STAT_ENERGY_RECHARGE", field(1, 20)?),
+            energy_recharge: {
+                let base = field(1, 20)?;
+                let trance_bonus = if trance >= 6. {
+                    (trance - 5.) * 0.25
+                } else {
+                    0.
+                };
+                (modifiers.apply_signed("STAT_ENERGY_RECHARGE", base) + base * trance_bonus).max(0.)
+            },
             shield_capacity: modifiers.apply("STAT_SHIELD", field(0, 24)?),
-            shield_recharge: modifiers.apply("STAT_SHIELD_RECHARGE", field(0, 26)?),
+            shield_recharge: {
+                let base = field(0, 26)?;
+                (modifiers.apply_signed("STAT_SHIELD_RECHARGE", base)
+                    + if trance >= 7. { base } else { 0. })
+                .max(0.)
+            },
             impulse_speed: if has_engine {
                 modifiers.apply("STAT_IMPULSE", field(2, 31)? + impulse_bonus)
             } else {
@@ -386,6 +420,7 @@ mod tests {
         );
     }
 
+    /// Verify public skill modifiers affect weapon damage and prospect cost.
     #[test]
     fn public_skill_gear_changes_beam_projectile_damage_and_prospect_cost() {
         let catalog = ItemCatalog::load().unwrap();
@@ -420,6 +455,53 @@ mod tests {
         let rank = skills.level(41) as f32;
         let energy_cost = |bonus: f32| 42.5 * 2f32.powi(3) / 2f32.powf(rank + bonus - 1.);
         assert!(energy_cost(miner.ship.prospect_bonus) < energy_cost(0.));
+    }
+
+    /// Verify native Combat Trance defense and recharge thresholds with public gear.
+    #[test]
+    fn combat_trance_passive_changes_typed_defense_and_recharge_at_native_bands() {
+        let catalog = ItemCatalog::load().unwrap();
+        let inventory = Inventory::starter(&catalog).unwrap();
+        let mut profile = crate::account::Account::create("pw".into(), "pass", "PW".into())
+            .unwrap()
+            .character;
+        profile.race = 2;
+        profile.profession = 0;
+        let mut skills = SkillCatalog::for_profile(&profile).unwrap();
+        let trance = skills
+            .skills
+            .iter()
+            .position(|skill| skill.id == 13)
+            .unwrap();
+        skills.skills[trance].level = 2;
+        let below = EquipmentStats::derive(&inventory, &catalog, &skills).unwrap();
+        skills.skills[trance].level = 3;
+        let rank_three = EquipmentStats::derive(&inventory, &catalog, &skills).unwrap();
+        for kind in [0, 1, 2, 3, 4, 5, 8] {
+            assert_eq!(
+                rank_three.ship.deflects[kind] - below.ship.deflects[kind],
+                13.
+            );
+        }
+        assert_eq!(rank_three.ship.deflects[6], below.ship.deflects[6]);
+        assert_eq!(rank_three.ship.deflects[7], below.ship.deflects[7]);
+
+        skills.skills[trance].level = 6;
+        let rank_six = EquipmentStats::derive(&inventory, &catalog, &skills).unwrap();
+        assert_eq!(rank_six.ship.deflects[0] - below.ship.deflects[0], 31.);
+        assert!((rank_six.ship.energy_recharge - below.ship.energy_recharge * 1.25).abs() < 0.001);
+        assert_eq!(rank_six.ship.shield_recharge, below.ship.shield_recharge);
+        skills.skills[trance].level = 7;
+        let rank_seven = EquipmentStats::derive(&inventory, &catalog, &skills).unwrap();
+        assert_eq!(rank_seven.ship.deflects[0] - below.ship.deflects[0], 37.);
+        assert!((rank_seven.ship.energy_recharge - below.ship.energy_recharge * 1.5).abs() < 0.001);
+        assert!((rank_seven.ship.shield_recharge - below.ship.shield_recharge * 2.).abs() < 0.001);
+
+        let mut geared = inventory;
+        geared.equipped[9] = Some(crate::inventory::ItemInstance::stock(2097, 1));
+        let boosted = EquipmentStats::derive(&geared, &catalog, &skills).unwrap();
+        assert_eq!(boosted.ship.deflects[0] - below.ship.deflects[0], 49.);
+        assert!((boosted.ship.energy_recharge - below.ship.energy_recharge * 2.).abs() < 0.001);
     }
     #[test]
     fn chance_modifiers_keep_percent_operations_at_zero_base_and_strongest_effects() {

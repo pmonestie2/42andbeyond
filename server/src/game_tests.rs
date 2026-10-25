@@ -154,6 +154,7 @@ fn attacker_updates(game: &mut GameState) -> Vec<Datagram> {
         .collect()
 }
 
+/// Verify native attacker changes across two pilots and short replacement.
 #[test]
 fn mob_attacker_updates_follow_actual_shots_and_survive_replacement() {
     let mut game = game();
