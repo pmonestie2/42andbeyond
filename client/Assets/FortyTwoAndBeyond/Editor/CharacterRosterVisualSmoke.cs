@@ -13,7 +13,7 @@ namespace FortyTwoAndBeyond.Editor
     [InitializeOnLoad]
     public static class CharacterRosterVisualSmoke
     {
-        private static bool connected, captured;
+        private static bool connected, captured, compact;
         private static int stage;
         private static double deadline, captureAt;
 
@@ -22,6 +22,8 @@ namespace FortyTwoAndBeyond.Editor
         {
             if (Array.IndexOf(Environment.GetCommandLineArgs(), "--42andbeyond-roster-smoke") < 0)
                 return;
+            compact = Array.IndexOf(Environment.GetCommandLineArgs(),
+                "--42andbeyond-roster-compact") >= 0;
             deadline = EditorApplication.timeSinceStartup + 60;
             EditorApplication.update += Tick;
         }
@@ -37,8 +39,15 @@ namespace FortyTwoAndBeyond.Editor
                 EditorSceneManager.OpenScene("Assets/FortyTwoAndBeyond/Space.unity");
                 Type gameView = typeof(EditorWindow).Assembly.GetType("UnityEditor.GameView");
                 if (gameView != null)
-                { EditorWindow window = EditorWindow.GetWindow(gameView);
-                  window.maximized = true; window.Focus(); }
+                {
+                    EditorWindow window = compact ?
+                        ScriptableObject.CreateInstance(gameView) as EditorWindow :
+                        EditorWindow.GetWindow(gameView);
+                    if (compact)
+                    { window.Show(); window.position = new Rect(80, 75, 1180, 700); }
+                    else window.maximized = true;
+                    window.Focus();
+                }
                 EditorApplication.EnterPlaymode(); return;
             }
             if (!EditorApplication.isPlaying) return;
@@ -55,7 +64,14 @@ namespace FortyTwoAndBeyond.Editor
                     pilots[0].CombatLevel != 0 || pilots[0].TradeLevel != 0 ||
                     pilots[0].ExploreLevel != 0 || pilots[0].SectorId != 10201 ||
                     pilots[0].SectorName != "Loki Station")
-                { Fail("Native roster did not expose the level-zero Scout at Loki Station."); return; }
+                {
+                    Fail("Native roster did not expose the level-zero Scout at Loki Station: " +
+                        string.Join(" | ", Array.ConvertAll(pilots, pilot =>
+                            pilot.Name + "/" + pilot.ClassName + "/" + pilot.SectorId + "/" +
+                            pilot.SectorName + "/" + pilot.CombatLevel + "/" +
+                            pilot.TradeLevel + "/" + pilot.ExploreLevel)));
+                    return;
+                }
                 if (!Capture("new-pilot-roster.png")) return;
                 client.ChooseCharacter(pilots[0].Slot); stage = 1; captured = false; return;
             }
@@ -81,7 +97,8 @@ namespace FortyTwoAndBeyond.Editor
         /// <returns>bool: Whether Unity finished saving a fresh screenshot for this stage.</returns>
         private static bool Capture(string name)
         {
-            string path = "Builds/verification/" + name;
+            string path = "Builds/verification/" +
+                name.Replace(".png", compact ? "-compact.png" : ".png");
             if (!captured)
             {
                 Directory.CreateDirectory("Builds/verification");

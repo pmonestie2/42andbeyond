@@ -31,7 +31,7 @@ namespace FortyTwoAndBeyond.Client
             communicationsOpen;
         private bool clearInputFocus;
         private ControlAction? bindingAction;
-        private Vector2 settingsScroll;
+        private Vector2 settingsScroll, characterScroll;
         private int selectedCargo = -1, selectedMount = -1;
         private Vector2 cargoScroll, mountScroll;
         private Vector2 effectScroll;
@@ -666,25 +666,51 @@ namespace FortyTwoAndBeyond.Client
         private void CharacterSelection()
         {
             CharacterRecord[] characters = client.Characters;
-            float height = Mathf.Max(340, 158 + characters.Length * 68);
-            var rect = new Rect(CanvasWidth / 2 - 220, CanvasHeight / 2 - height / 2, 440, height);
-            Panel(rect); GUI.Label(new Rect(rect.x + 24, rect.y + 20, 390, 34), "CHOOSE YOUR PILOT", heading);
-            GUI.Label(new Rect(rect.x + 24, rect.y + 58, 390, 24),
-                "Server-owned combat, trade and explore levels", small);
+            float height = Mathf.Clamp(158 + characters.Length * 100, 262,
+                Mathf.Min(610, CanvasHeight - 90));
+            var rect = new Rect((CanvasWidth - 520) * .5f,
+                (CanvasHeight - height) * .5f, 520, height);
+            Panel(rect);
+            GUI.Label(new Rect(rect.x + 22, rect.y + 16, 470, 34), "CHOOSE YOUR PILOT", heading);
+            GUI.Label(new Rect(rect.x + 23, rect.y + 53, 470, 22),
+                "Select a character to enter the connected server", small);
+            Rect viewport = new Rect(rect.x + 21, rect.y + 84, rect.width - 42,
+                rect.height - 142);
+            characterScroll = GUI.BeginScrollView(viewport, characterScroll,
+                new Rect(0, 0, viewport.width - 18, characters.Length * 100));
             for (int i = 0; i < characters.Length; i++)
             {
                 CharacterRecord character = characters[i];
-                string levelZero = character.CombatLevel + character.TradeLevel +
-                    character.ExploreLevel == 0 ? "  ·  LEVEL 0" : "";
-                string caption = character.Name + "  ·  " + character.ClassName + levelZero +
-                    $"\nCOMBAT {character.CombatLevel}   ·   TRADE {character.TradeLevel}" +
-                    $"   ·   EXPLORE {character.ExploreLevel}" +
-                    $"\nSTART SECTOR  ·  {character.SectorName}";
-                if (GUI.Button(new Rect(rect.x + 24, rect.y + 91 + i * 68, 392, 63), caption, button))
+                Rect card = new Rect(0, i * 100, viewport.width - 19, 94);
+                if (GUI.Button(card, "", button))
                     client.ChooseCharacter(character.Slot);
+                Fill(new Rect(card.x + 1, card.y + 2, 3, card.height - 4), cyan);
+                GUI.Label(new Rect(card.x + 14, card.y + 9, 218, 25),
+                    character.Name, body);
+                GUI.Label(new Rect(card.x + 14, card.y + 35, 218, 22),
+                    character.ClassName.ToUpperInvariant(), section);
+                Fill(new Rect(card.x + 236, card.y + 8, 1, 49),
+                    new Color(.32f, .62f, .74f, .32f));
+                string[] tracks = { "COMBAT", "TRADE", "EXPLORE" };
+                uint[] levels = { character.CombatLevel, character.TradeLevel,
+                    character.ExploreLevel };
+                for (int track = 0; track < tracks.Length; track++)
+                {
+                    float column = card.x + 249 + track * 66;
+                    GUI.Label(new Rect(column, card.y + 9, 65, 18), tracks[track], small);
+                    GUI.Label(new Rect(column, card.y + 29, 65, 27),
+                        levels[track].ToString(), body);
+                }
+                Fill(new Rect(card.x + 13, card.y + 64, card.width - 26, 1),
+                    new Color(.31f, .58f, .68f, .3f));
+                GUI.Label(new Rect(card.x + 14, card.y + 70, card.width - 28, 20),
+                    "START AT   " + character.SectorName, small);
             }
-            if (GUI.Button(new Rect(rect.x + 24, rect.yMax - 54, 150, 32), "Back to login", button))
+            GUI.EndScrollView();
+            if (GUI.Button(new Rect(rect.x + 22, rect.yMax - 47, 150, 31), "Back to login", button))
                 client.ReturnToLogin();
+            GUI.Label(new Rect(rect.x + 207, rect.yMax - 42, 287, 24),
+                characters.Length + " PILOT" + (characters.Length == 1 ? "" : "S") + " AVAILABLE", small);
         }
 
         /// <summary>Show a compact command line for server chat and /d_ commands.</summary>
