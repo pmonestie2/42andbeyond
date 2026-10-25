@@ -192,6 +192,7 @@ pub struct Mob {
     pub last_high_fold: Option<crate::fold_space_high::MobFoldReceipt>,
     #[serde(default)]
     pub befriend: Vec<crate::befriend::BefriendEffect>,
+    #[serde(default)]
     pub bio: Vec<crate::biorepression::BioEffect>,
     #[serde(default)]
     pub death_generation: u64,
@@ -1257,9 +1258,11 @@ mod tests {
     fn legacy_sensors_default_empty_and_invalid_saved_membership_is_rejected() {
         let mut value = serde_json::to_value(Mob::new(definition())).unwrap();
         value.as_object_mut().unwrap().remove("sensors");
+        value.as_object_mut().unwrap().remove("bio");
         let mut mob = Mob::new(definition());
         mob.restore_from(serde_json::from_value(value.clone()).unwrap())
             .unwrap();
+        assert!(mob.bio.is_empty());
         value["sensors"] = serde_json::json!({"players":{"0":1}});
         assert!(mob
             .restore_from(serde_json::from_value(value).unwrap())
