@@ -3,7 +3,7 @@
 use crate::items::{ItemCatalog, ItemTemplate, Modifier};
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum FriendlyEffect {
     #[default]
     ScanBoost,
@@ -29,6 +29,16 @@ impl FriendlyEffect {
             Self::ScanBoost => "STAT_SCAN_RANGE",
             Self::RechargeShields => "STAT_SHIELD_RECHARGE",
             Self::RechargeReactor => "STAT_ENERGY_RECHARGE",
+        }
+    }
+
+    /// Returns:
+    ///     usize: Native ShipIndex.Buffs slot reserved for this ally effect.
+    pub fn slot(self) -> usize {
+        match self {
+            Self::ScanBoost => 1,
+            Self::RechargeShields => 2,
+            Self::RechargeReactor => 3,
         }
     }
 }

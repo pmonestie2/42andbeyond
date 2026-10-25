@@ -187,7 +187,7 @@ pub struct PlayerSession {
     weapon_cooldowns: [f32; 20],
     weapon_firing: [bool; 20],
     active_device: Option<session_equipment::ActiveDevice>,
-    peer_buff: Option<crate::peer_buffs::PeerBuff>,
+    peer_buffs: Vec<crate::peer_buffs::PeerBuff>,
     peer_buff_revision: u64,
     shield: f32,
     pub(crate) hull: f32,
@@ -375,7 +375,7 @@ impl PlayerSession {
             weapon_cooldowns: [0.; 20],
             weapon_firing: [false; 20],
             active_device: None,
-            peer_buff: None,
+            peer_buffs: Vec::new(),
             peer_buff_revision: 0,
             shield: stats.shield_capacity,
             hull: stats.hull_capacity,
@@ -1176,13 +1176,14 @@ impl PlayerSession {
         let mut active_modifiers = active_device
             .as_ref()
             .map_or_else(Vec::new, session_equipment::ActiveDevice::modifiers);
-        if let Some(buff) = self
-            .peer_buff
-            .as_ref()
-            .filter(|buff| buff.valid(&self.items, crate::resources::unix_ms(), self.session_epoch))
-        {
-            active_modifiers.push(buff.modifier());
-        }
+        active_modifiers.extend(
+            self.peer_buffs
+                .iter()
+                .filter(|buff| {
+                    buff.valid(&self.items, crate::resources::unix_ms(), self.session_epoch)
+                })
+                .map(crate::peer_buffs::PeerBuff::modifier),
+        );
         let equipment = EquipmentStats::derive_with_activated(
             &candidate,
             &self.items,
@@ -1519,7 +1520,7 @@ impl PlayerSession {
         self.pending.clear();
         self.stop_weapons();
         self.active_device = None;
-        self.peer_buff = None;
+        self.peer_buffs.clear();
         self.peer_buff_revision = 0;
         self.refresh_equipment()?;
         self.forget_session()?;
@@ -2655,9 +2656,9 @@ mod tests {
         ship.pending.clear();
         ship.publish_peer_buff_resume();
         assert!(ship.pending.iter().any(|frame| frame.opcode == 9));
-        ship.peer_buff.as_mut().unwrap().expires_at_ms = crate::resources::unix_ms() - 1;
+        ship.peer_buffs[0].expires_at_ms = crate::resources::unix_ms() - 1;
         ship.advance_peer_buff().unwrap();
-        assert!(ship.peer_buff.is_none());
+        assert!(ship.peer_buffs.is_empty());
         assert_eq!(ship.equipment.ship.scan_range, base);
         assert!(ship
             .pending
@@ -2718,9 +2719,9 @@ mod tests {
                 }
                 _ => unreachable!(),
             }
-            ship.peer_buff.as_mut().unwrap().expires_at_ms = crate::resources::unix_ms() - 1;
+            ship.peer_buffs[0].expires_at_ms = crate::resources::unix_ms() - 1;
             ship.advance_peer_buff().unwrap();
-            assert!(ship.peer_buff.is_none());
+            assert!(ship.peer_buffs.is_empty());
             assert_eq!(ship.equipment.ship.energy_recharge, base.energy_recharge);
             assert_eq!(ship.equipment.ship.shield_recharge, base.shield_recharge);
             assert!(ship
@@ -2728,6 +2729,81 @@ mod tests {
                 .iter()
                 .any(|frame| frame.opcode == 0x0f && frame.body == visual_id.to_le_bytes()));
         }
+    }
+
+    /// Expiring one ally status clears only its native slot and stat.
+    #[test]
+    fn concurrent_peer_buffs_expire_one_slot_without_erasing_the_other() {
+        let mut ship = session();
+        ship.logged_in = true;
+        let base = ship.equipment.ship;
+        let now = crate::resources::unix_ms();
+        for (revision, template, effect, value) in [
+            (1, 1813, crate::peer_buffs::FriendlyEffect::ScanBoost, 25.),
+            (
+                2,
+                1805,
+                crate::peer_buffs::FriendlyEffect::RechargeShields,
+                10.,
+            ),
+            (
+                3,
+                2172,
+                crate::peer_buffs::FriendlyEffect::RechargeReactor,
+                30.,
+            ),
+        ] {
+            ship.apply_peer_buff(crate::peer_buffs::PeerBuff {
+                revision,
+                source: ship.player_id() + 1,
+                target_epoch: ship.session_epoch,
+                template,
+                effect,
+                value,
+                operation: 2,
+                expires_at_ms: now + 20_000,
+            })
+            .unwrap();
+        }
+        assert!(ship.equipment.ship.scan_range > base.scan_range);
+        assert!(ship.equipment.ship.shield_recharge > base.shield_recharge);
+        assert!(ship.equipment.ship.energy_recharge > base.energy_recharge);
+        assert_eq!(ship.peer_buffs.len(), 3);
+        ship.pending.clear();
+        ship.publish_peer_buff_resume();
+        assert_eq!(
+            ship.pending
+                .iter()
+                .filter(|frame| frame.opcode == 9)
+                .count(),
+            3
+        );
+        ship.pending.clear();
+        ship.peer_buffs[0].expires_at_ms = now - 1;
+        ship.advance_peer_buff().unwrap();
+        assert_eq!(ship.peer_buffs.len(), 2);
+        assert!(ship
+            .peer_buffs
+            .iter()
+            .all(|buff| { buff.effect != crate::peer_buffs::FriendlyEffect::ScanBoost }));
+        assert_eq!(ship.equipment.ship.scan_range, base.scan_range);
+        assert!(ship.equipment.ship.shield_recharge > base.shield_recharge);
+        assert!(ship.equipment.ship.energy_recharge > base.energy_recharge);
+        assert!(ship
+            .pending
+            .contains(&packets::ship_active_buff_slot(ship.player_id(), 1, "", 0)));
+        assert!(!ship.pending.contains(&packets::ship_active_buff_slot(
+            ship.player_id(),
+            2,
+            "",
+            0
+        )));
+        assert!(!ship.pending.contains(&packets::ship_active_buff_slot(
+            ship.player_id(),
+            3,
+            "",
+            0
+        )));
     }
 
     #[test]

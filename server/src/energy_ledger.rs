@@ -21,6 +21,25 @@ struct TransferSequence {
     sequence: u32,
 }
 
+/// Old ledgers store one object per recipient; new ledgers store one per kind.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(untagged)]
+enum StoredPeerBuffs {
+    Legacy(PeerBuff),
+    Multiple(Vec<PeerBuff>),
+}
+
+impl StoredPeerBuffs {
+    /// Returns:
+    ///     &[PeerBuff]: Borrowed statuses in revision order after migration.
+    fn as_slice(&self) -> &[PeerBuff] {
+        match self {
+            Self::Legacy(buff) => std::slice::from_ref(buff),
+            Self::Multiple(buffs) => buffs,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct LedgerData {
     version: u32,
@@ -29,7 +48,7 @@ struct LedgerData {
     // Historical on-disk name; this also deduplicates peer-buff activations.
     last_transfer: BTreeMap<u32, TransferSequence>,
     #[serde(default)]
-    peer_buffs: BTreeMap<u32, PeerBuff>,
+    peer_buffs: BTreeMap<u32, StoredPeerBuffs>,
 }
 
 pub struct EnergyLedger {
@@ -64,14 +83,27 @@ impl EnergyLedger {
                 .last_transfer
                 .iter()
                 .any(|(player, last)| *player == 0 || last.epoch == 0 || last.sequence == 0)
-            || data.peer_buffs.iter().any(|(target, buff)| {
+            || data.peer_buffs.iter().any(|(target, stored)| {
+                let buffs = stored.as_slice();
                 *target == 0
-                    || buff.revision == 0
-                    || buff.revision > data.revision
-                    || buff.source == 0
-                    || buff.target_epoch == 0
-                    || !buff.value.is_finite()
-                    || buff.expires_at_ms == 0
+                    || buffs.is_empty()
+                    || buffs.len() > 3
+                    || buffs
+                        .windows(2)
+                        .any(|pair| pair[0].revision >= pair[1].revision)
+                    || buffs.iter().any(|buff| {
+                        buff.revision == 0
+                            || buff.revision > data.revision
+                            || buff.source == 0
+                            || buff.target_epoch == 0
+                            || !buff.value.is_finite()
+                            || buff.expires_at_ms == 0
+                    })
+                    || buffs.iter().enumerate().any(|(index, buff)| {
+                        buffs[..index]
+                            .iter()
+                            .any(|prior| prior.effect == buff.effect)
+                    })
             })
         {
             return Err(invalid("Invalid targeted energy transfer ledger."));
@@ -91,9 +123,18 @@ impl EnergyLedger {
         self.data.revision
     }
     /// Returns:
-    ///     Option<&PeerBuff>: The last atomic targeted buff for this pilot.
+    ///     &[PeerBuff]: Last atomic targeted buff of each kind for this pilot.
+    pub fn peer_buffs(&self, target: u32) -> &[PeerBuff] {
+        self.data
+            .peer_buffs
+            .get(&target)
+            .map_or(&[], StoredPeerBuffs::as_slice)
+    }
+
+    /// Returns:
+    ///     Option<&PeerBuff>: Latest targeted buff, for legacy callers.
     pub fn peer_buff(&self, target: u32) -> Option<&PeerBuff> {
-        self.data.peer_buffs.get(&target)
+        self.peer_buffs(target).last()
     }
 
     /// Returns:
@@ -207,7 +248,15 @@ impl EnergyLedger {
                 energy: source_energy,
             },
         );
-        next.peer_buffs.insert(target, buff);
+        let mut buffs = next
+            .peer_buffs
+            .get(&target)
+            .map_or_else(Vec::new, |stored| stored.as_slice().to_vec());
+        buffs.retain(|existing| existing.effect != buff.effect);
+        buffs.push(buff);
+        buffs.sort_by_key(|existing| existing.revision);
+        next.peer_buffs
+            .insert(target, StoredPeerBuffs::Multiple(buffs));
         next.last_transfer
             .insert(source, TransferSequence { epoch, sequence });
         let directory = self
@@ -255,6 +304,65 @@ mod tests {
             .unwrap()
             .peer_buff(2)
             .is_none());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    /// Old one-buff ledgers migrate when a second effect is committed.
+    #[test]
+    fn legacy_single_buff_checkpoint_accepts_a_second_kind_atomically() {
+        let root = std::env::temp_dir().join(format!("enb-buff-ledger-{}", rand::random::<u64>()));
+        fs::create_dir_all(&root).unwrap();
+        let path = root.join("energy_transfers.local.json");
+        let now = crate::resources::unix_ms();
+        let old = PeerBuff {
+            revision: 1,
+            source: 1,
+            target_epoch: 3,
+            template: 1813,
+            effect: crate::peer_buffs::FriendlyEffect::ScanBoost,
+            value: 25.,
+            operation: 2,
+            expires_at_ms: now + 100_000,
+        };
+        fs::write(
+            &path,
+            serde_json::to_vec(&serde_json::json!({
+                "version": 1,
+                "revision": 1,
+                "balances": {},
+                "last_transfer": {},
+                "peer_buffs": {"2": old},
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        let mut ledger = EnergyLedger::load(path.clone()).unwrap();
+        assert_eq!(ledger.peer_buffs(2).len(), 1);
+        let second = PeerBuff {
+            revision: 0,
+            source: 1,
+            target_epoch: 3,
+            template: 2172,
+            effect: crate::peer_buffs::FriendlyEffect::RechargeReactor,
+            value: 30.,
+            operation: 2,
+            expires_at_ms: now + 100_000,
+        };
+        let temporary = path.with_extension("json.tmp");
+        fs::create_dir(&temporary).unwrap();
+        assert!(ledger
+            .cast_peer_buff(1, 2, 7, 2, 100., second.clone())
+            .is_err());
+        assert_eq!(ledger.peer_buffs(2).len(), 1);
+        fs::remove_dir(&temporary).unwrap();
+        ledger.cast_peer_buff(1, 2, 7, 2, 100., second).unwrap();
+        let restored = EnergyLedger::load(path).unwrap();
+        assert_eq!(restored.peer_buffs(2).len(), 2);
+        assert_eq!(restored.peer_buffs(2)[0].effect, old.effect);
+        assert_eq!(
+            restored.peer_buffs(2)[1].effect,
+            crate::peer_buffs::FriendlyEffect::RechargeReactor
+        );
         fs::remove_dir_all(root).unwrap();
     }
 }

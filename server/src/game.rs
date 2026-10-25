@@ -150,7 +150,7 @@ impl GameState {
                 ));
             }
             if session.peer_buff_revision() > self.energy_ledger.revision()
-                || session.peer_buff_revision() > 0 && self.energy_ledger.peer_buff(id).is_none()
+                || session.peer_buff_revision() > 0 && self.energy_ledger.peer_buffs(id).is_empty()
             {
                 return Err(invalid(
                     "Player targeted buff revision exceeds the durable ledger.",
@@ -168,7 +168,7 @@ impl GameState {
             if !session.connected() {
                 session.synchronize_clock(clock);
             }
-            if let Some(buff) = self.energy_ledger.peer_buff(id) {
+            for buff in self.energy_ledger.peer_buffs(id) {
                 session.apply_peer_buff(buff.clone())?;
             }
             for (&peer, at) in &self.registrations {

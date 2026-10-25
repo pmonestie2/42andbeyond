@@ -217,7 +217,12 @@ mean the corresponding gameplay system is complete.
   and clear on expiry. Shield and reactor recipients gain their catalog
   regeneration modifier each ship tick; old Scan Boost receipts remain readable.
   Disposable two-client native packet and stale-checkpoint tests pass. Other
-  ally/hostile effects and concurrent targeted buff stacking remain pending.
+  ally/hostile effects remain pending. Different catalog ally effects now occupy
+  independent native buff slots and coexist on one recipient; the atomic ledger
+  migrates old single-buff records and replays each effect after replacement.
+  Recasting one kind refreshes only that kind, and expiry clears only its stat,
+  icon and visual. Disposable two-client restart and failure tests cover the
+  combined Scan Boost/Reactor Recharge state.
 - UDP send failures are logged per destination immediately, then summarized
   at most every 30 seconds until recovery, avoiding floods from unreachable
   resumed clients while retaining error counts.

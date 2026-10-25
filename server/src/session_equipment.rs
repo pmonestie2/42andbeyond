@@ -374,13 +374,14 @@ impl PlayerSession {
                 active.valid_for(&self.inventory, &self.items, crate::resources::unix_ms())
             })
             .map_or_else(Vec::new, ActiveDevice::modifiers);
-        if let Some(buff) = self
-            .peer_buff
-            .as_ref()
-            .filter(|buff| buff.valid(&self.items, crate::resources::unix_ms(), self.session_epoch))
-        {
-            modifiers.push(buff.modifier());
-        }
+        modifiers.extend(
+            self.peer_buffs
+                .iter()
+                .filter(|buff| {
+                    buff.valid(&self.items, crate::resources::unix_ms(), self.session_epoch)
+                })
+                .map(crate::peer_buffs::PeerBuff::modifier),
+        );
         self.equipment = EquipmentStats::derive_with_activated(
             &self.inventory,
             &self.items,

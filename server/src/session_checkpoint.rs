@@ -58,6 +58,8 @@ pub(super) struct Checkpoint {
     #[serde(default)]
     peer_buff: Option<crate::peer_buffs::PeerBuff>,
     #[serde(default)]
+    peer_buffs: Vec<crate::peer_buffs::PeerBuff>,
+    #[serde(default)]
     peer_buff_revision: u64,
     #[serde(default)]
     player_firing: bool,
@@ -172,6 +174,24 @@ impl PlayerSession {
             || saved.mob_visible.len() > 256
             || saved.replay.len() > 128
             || saved.inputs.len() > 256
+            || saved.peer_buffs.len() > 3
+            || saved
+                .peer_buffs
+                .windows(2)
+                .any(|pair| pair[0].revision >= pair[1].revision)
+            || saved.peer_buffs.iter().any(|buff| {
+                buff.revision > saved.peer_buff_revision
+                    || saved
+                        .peer_buffs
+                        .iter()
+                        .filter(|other| other.effect == buff.effect)
+                        .count()
+                        != 1
+            })
+            || saved
+                .peer_buff
+                .as_ref()
+                .is_some_and(|buff| buff.revision > saved.peer_buff_revision)
             || !mob_damage::valid_receipts(&saved.mob_damage_receipts)
             || saved
                 .workbench
@@ -247,9 +267,20 @@ impl PlayerSession {
         self.active_device = saved
             .active_device
             .filter(|active| active.valid_for(&self.inventory, &self.items, unix_ms()));
-        self.peer_buff = saved
-            .peer_buff
-            .filter(|buff| buff.valid(&self.items, unix_ms(), self.session_epoch));
+        self.peer_buffs = if saved.peer_buffs.is_empty() {
+            saved.peer_buff.into_iter().collect()
+        } else {
+            saved.peer_buffs
+        };
+        let mut expired_peer_buffs = Vec::new();
+        self.peer_buffs.retain(|buff| {
+            if buff.valid(&self.items, unix_ms(), self.session_epoch) {
+                true
+            } else {
+                expired_peer_buffs.push(buff.clone());
+                false
+            }
+        });
         self.peer_buff_revision = saved.peer_buff_revision;
         self.weapon_cooldowns = saved.weapon_cooldowns;
         self.weapon_firing = saved.weapon_firing;
@@ -366,6 +397,9 @@ impl PlayerSession {
         ));
         self.publish_active_device_resume();
         self.publish_peer_buff_resume();
+        for expired in expired_peer_buffs {
+            self.remove_peer_buff_presentation(&expired);
+        }
         self.pending
             .push(packets::incapacitated(self.player_id(), self.hull <= 0.));
         for index in 0..previous_mob_count.max(combat.actors.len()) {
@@ -459,7 +493,8 @@ impl PlayerSession {
             weapon_cooldowns: self.weapon_cooldowns,
             weapon_firing: self.weapon_firing,
             active_device: self.active_device.clone(),
-            peer_buff: self.peer_buff.clone(),
+            peer_buff: None,
+            peer_buffs: self.peer_buffs.clone(),
             peer_buff_revision: self.peer_buff_revision,
             player_firing: self.player_firing,
             following: self.following,

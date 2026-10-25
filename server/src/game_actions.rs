@@ -230,7 +230,13 @@ impl GameState {
         {
             crate::server_error!("Friendly device sender checkpoint retry for {source}: {error}");
         }
-        let buff = self.energy_ledger.peer_buff(target).unwrap().clone();
+        let buff = self
+            .energy_ledger
+            .peer_buffs(target)
+            .iter()
+            .find(|buff| buff.effect == offer.effect)
+            .ok_or_else(|| invalid("Committed friendly effect is unavailable."))?
+            .clone();
         if let Err(error) = self
             .sessions
             .get_mut(&target)

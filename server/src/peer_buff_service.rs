@@ -53,15 +53,9 @@ impl PlayerSession {
     }
 
     /// Returns:
-    ///     bool: Whether a new targeted buff can occupy the recipient's slot.
+    ///     bool: Whether this recipient can accept another ally effect.
     pub(crate) fn peer_buff_available(&self) -> bool {
-        self.logged_in
-            && self.hull > 0.
-            && self.sector.station.is_none()
-            && !self.warp.active()
-            && self.peer_buff.as_ref().is_none_or(|buff| {
-                !buff.valid(&self.items, crate::resources::unix_ms(), self.session_epoch)
-            })
+        self.logged_in && self.hull > 0. && self.sector.station.is_none() && !self.warp.active()
     }
 
     /// Apply a durable ledger revision to this recipient before presentation.
@@ -69,25 +63,39 @@ impl PlayerSession {
         if buff.revision <= self.peer_buff_revision {
             return Ok(());
         }
-        let previous = self.peer_buff.take();
+        let previous = self
+            .peer_buffs
+            .iter()
+            .find(|previous| previous.effect == buff.effect)
+            .cloned();
         if let Some(previous) = previous.as_ref() {
             self.remove_peer_buff_presentation(previous);
         }
+        self.peer_buffs
+            .retain(|previous| previous.effect != buff.effect);
         self.peer_buff_revision = buff.revision;
-        self.peer_buff = buff
-            .valid(&self.items, crate::resources::unix_ms(), self.session_epoch)
-            .then_some(buff);
+        let accepted = buff.valid(&self.items, crate::resources::unix_ms(), self.session_epoch);
+        if accepted {
+            self.peer_buffs.push(buff.clone());
+            self.peer_buffs.sort_by_key(|existing| existing.revision);
+        }
         let checkpoint = self.checkpoint_session(true);
         self.refresh_equipment()?;
-        self.publish_peer_buff_resume();
+        if accepted {
+            self.publish_one_peer_buff(&buff);
+        }
         checkpoint
     }
 
     /// Reaffirm a targeted friendly buff after a short transport replacement.
     pub(super) fn publish_peer_buff_resume(&mut self) {
-        let Some(buff) = self.peer_buff.as_ref() else {
-            return;
-        };
+        for buff in self.peer_buffs.clone() {
+            self.publish_one_peer_buff(&buff);
+        }
+    }
+
+    /// Replay one native status icon, visual and duration message.
+    fn publish_one_peer_buff(&mut self, buff: &PeerBuff) {
         let Ok(template) = self.items.get(buff.template) else {
             return;
         };
@@ -99,7 +107,7 @@ impl PlayerSession {
             .saturating_sub(crate::resources::unix_ms());
         self.pending.push(packets::ship_active_buff_slot(
             self.player_id(),
-            1,
+            buff.effect.slot(),
             &effect.buff_name,
             self.tick_ms().wrapping_add(remaining as u32),
         ));
@@ -122,9 +130,13 @@ impl PlayerSession {
     }
 
     /// Remove the native icon and object visual for an old recipient buff.
-    fn remove_peer_buff_presentation(&mut self, buff: &PeerBuff) {
-        self.pending
-            .push(packets::ship_active_buff_slot(self.player_id(), 1, "", 0));
+    pub(super) fn remove_peer_buff_presentation(&mut self, buff: &PeerBuff) {
+        self.pending.push(packets::ship_active_buff_slot(
+            self.player_id(),
+            buff.effect.slot(),
+            "",
+            0,
+        ));
         if self
             .items
             .get(buff.template)
@@ -139,17 +151,27 @@ impl PlayerSession {
 
     /// Expire target-derived stats and their native presentation together.
     pub(super) fn advance_peer_buff(&mut self) -> io::Result<()> {
-        if self.peer_buff.as_ref().is_some_and(|buff| {
-            !buff.valid(&self.items, crate::resources::unix_ms(), self.session_epoch)
+        let now = crate::resources::unix_ms();
+        let mut ended = Vec::new();
+        self.peer_buffs.retain(|buff| {
+            if !buff.valid(&self.items, now, self.session_epoch)
                 || self.hull <= 0.
                 || self.sector.station.is_some()
-        }) {
-            let old = self.peer_buff.take().unwrap();
+            {
+                ended.push(buff.clone());
+                false
+            } else {
+                true
+            }
+        });
+        if !ended.is_empty() {
             let checkpoint = self.checkpoint_session(true);
             self.refresh_equipment()?;
-            self.remove_peer_buff_presentation(&old);
-            self.pending
-                .push(packets::message(&format!("{} ended.", old.effect.label())));
+            for old in ended {
+                self.remove_peer_buff_presentation(&old);
+                self.pending
+                    .push(packets::message(&format!("{} ended.", old.effect.label())));
+            }
             checkpoint?;
         }
         Ok(())
