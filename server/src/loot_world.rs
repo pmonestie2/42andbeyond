@@ -225,7 +225,7 @@ impl LootWorld {
                     || award.death.generation == 0
                     || award.killer & 0xff000000 != 0x40000000
                     || award.source_killer != 0 && award.source_killer & 0xff000000 != 0x40000000
-                    || !(1..=100).contains(&award.level)
+                    || award.level > 100
                     || award.amount.is_some_and(|amount| amount > 8000)
                     || state
                         .deaths
@@ -242,7 +242,7 @@ impl LootWorld {
                 || corpse.name.len() > 80
                 || !corpse.name.is_ascii()
                 || corpse.position.iter().any(|value| !value.is_finite())
-                || !(1..=100).contains(&corpse.level)
+                || corpse.level > 100
                 || corpse.death.spawn == 0
                 || corpse.death.generation == 0
                 || corpse.killer & 0xff000000 != 0x40000000
@@ -405,7 +405,7 @@ impl LootWorld {
         if birth.death.spawn == 0
             || birth.death.generation == 0
             || birth.now_ms == 0
-            || !(1..=100).contains(&birth.level)
+            || birth.level > 100
             || birth.killer & 0xff000000 != 0x40000000
         {
             return Err(invalid("Invalid authoritative combat kill."));
@@ -466,7 +466,7 @@ impl LootWorld {
             || birth.death.spawn == 0
             || birth.death.generation == 0
             || birth.now_ms == 0
-            || !(1..=100).contains(&birth.level)
+            || birth.level > 100
             || birth.name.len() > 70
             || !birth.name.is_ascii()
             || birth.position.iter().any(|value| !value.is_finite())
@@ -857,6 +857,23 @@ mod tests {
             .unwrap()
             .pending_awards(ALICE)
             .is_empty());
+        fs::remove_file(&path).unwrap();
+        fs::remove_dir(path.parent().unwrap()).unwrap();
+    }
+
+    /// Public level-zero starter enemies retain both corpse stock and combat awards.
+    #[test]
+    fn level_zero_mob_birth_and_award_survive_world_reload() {
+        let items = ItemCatalog::load().unwrap();
+        let path = path();
+        let mut world = LootWorld::load(path.clone(), 1076, &items).unwrap();
+        let mut defeated = birth(1);
+        defeated.level = 0;
+        let corpse_id = world.spawn(defeated, &catalog(), &items).unwrap().unwrap();
+        assert_eq!(world.get(corpse_id).unwrap().level, 0);
+        let restored = LootWorld::load(path.clone(), 1076, &items).unwrap();
+        assert_eq!(restored.get(corpse_id).unwrap().level, 0);
+        assert_eq!(restored.pending_awards(ALICE)[0].level, 0);
         fs::remove_file(&path).unwrap();
         fs::remove_dir(path.parent().unwrap()).unwrap();
     }

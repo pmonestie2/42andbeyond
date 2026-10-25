@@ -22,7 +22,7 @@ impl PlayerSession {
             || !(1..20_000).contains(&award.sector)
             || award.death.spawn == 0
             || award.death.generation == 0
-            || !(1..=100).contains(&award.level)
+            || award.level > 100
             || award.amount.is_some_and(|amount| amount > 8000)
             || award.source_killer != 0 && award.source_killer & 0xff000000 != 0x40000000
         {

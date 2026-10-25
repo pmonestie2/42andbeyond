@@ -4573,6 +4573,127 @@ mod tests {
         std::fs::remove_dir_all(root).unwrap();
     }
 
+    /// A fresh Privateer earns the authored Critter-kill rewards without duplicate receipts.
+    #[test]
+    fn native_privateer_cleaner_combat_reward_retries_and_survives_restart() {
+        let root = std::env::temp_dir().join(format!("enb-pp-cleaner-{}", rand::random::<u64>()));
+        let directory = crate::accounts::AccountDirectory::new(&root);
+        let stored = directory
+            .create_class_progression(
+                "privateer".into(),
+                "pass",
+                "Privateer".into(),
+                crate::classes::CharacterClass::parse("pp").unwrap(),
+            )
+            .unwrap();
+        let initial = SectorCatalog::load().unwrap().sector(1076).unwrap();
+        let mut ship = PlayerSession::new(
+            initial.clone(),
+            Ipv4Addr::LOCALHOST,
+            stored.directory.clone(),
+        )
+        .unwrap();
+        let mut prior = ship.inventory.clone();
+        prior.missions.completed.insert(48); // Durable prerequisite from Waste Disposal.
+        ship.commit_inventory(prior).unwrap();
+        assert_eq!(ship.skill_catalog.level(40), 0);
+        let initial_credits = ship.inventory.credits;
+        let initial_faction = ship.reputation.standing(5);
+        ship.logged_in = true;
+        enter_npc_room(&mut ship, 372);
+        ship.open_npc(372).unwrap();
+        assert_eq!(ship.npc_interaction.as_ref().unwrap().mission, Some(59));
+        npc_choice(&mut ship, 2).unwrap();
+        npc_choice(&mut ship, 3).unwrap();
+        assert_eq!(ship.inventory.missions.active[0].stage, 1);
+        ship.station_request(10371, 1).unwrap();
+        ship.logged_in = true;
+        assert_eq!(ship.sector.id, 1037);
+        let outsider = directory
+            .create_class_progression(
+                "outsider".into(),
+                "pass",
+                "Outsider".into(),
+                crate::classes::CharacterClass::parse("pp").unwrap(),
+            )
+            .unwrap();
+        let mut peer =
+            PlayerSession::new(initial.clone(), Ipv4Addr::LOCALHOST, outsider.directory).unwrap();
+        peer.sector = peer.sectors.sector(1037).unwrap();
+        peer.logged_in = true;
+        let peer_award = crate::loot_world::KillAward {
+            sector: 1037,
+            death: crate::loot_world::MobDeath {
+                spawn: 13600,
+                generation: 1,
+            },
+            killer: peer.player_id(),
+            level: 0,
+            amount: Some(100),
+            source_killer: peer.player_id(),
+            template: 136,
+        };
+        peer.settle_kill_award(&peer_award).unwrap();
+        assert_eq!(ship.inventory.missions.active[0].stage, 1);
+        drop(peer);
+        for generation in 2..=6 {
+            let award = crate::loot_world::KillAward {
+                sector: 1037,
+                death: crate::loot_world::MobDeath {
+                    spawn: 13600,
+                    generation,
+                },
+                killer: ship.player_id(),
+                level: 0,
+                amount: Some(100),
+                source_killer: ship.player_id(),
+                template: 136,
+            };
+            ship.settle_kill_award(&award).unwrap();
+            ship.settle_kill_award(&award).unwrap();
+        }
+        assert_eq!(ship.inventory.missions.active[0].stage, 2);
+        let state = ship.state_dir.clone();
+        drop(ship);
+        let mut resumed = PlayerSession::new(initial, Ipv4Addr::LOCALHOST, state).unwrap();
+        assert_eq!(resumed.inventory.missions.active[0].stage, 2);
+        resumed.transfer_sector(10371, false).unwrap();
+        resumed.logged_in = true;
+        enter_npc_room(&mut resumed, 372);
+        resumed.open_npc(372).unwrap();
+        let before = resumed.inventory.clone();
+        let temporary = resumed.state_dir.join("inventory.json.tmp");
+        std::fs::create_dir(&temporary).unwrap();
+        assert!(npc_choice(&mut resumed, 2).is_err());
+        assert_eq!(resumed.inventory, before);
+        std::fs::remove_dir(&temporary).unwrap();
+        npc_choice(&mut resumed, 2).unwrap();
+        assert!(resumed.inventory.missions.completed.contains(&59));
+        assert_eq!(resumed.inventory.credits, initial_credits + 2500);
+        assert_eq!(resumed.reputation.standing(5), initial_faction + 200.);
+        assert_eq!(resumed.skill_catalog.level(40), 1);
+        assert_eq!(resumed.inventory.spent_skill_points, 0);
+        assert!(resumed
+            .inventory
+            .cargo
+            .iter()
+            .flatten()
+            .any(|item| item.template == 3023));
+        assert!(resumed
+            .inventory
+            .cargo
+            .iter()
+            .flatten()
+            .any(|item| item.template == 515));
+        let saved: Inventory = serde_json::from_slice(
+            &std::fs::read(resumed.state_dir.join("inventory.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(saved, resumed.inventory);
+        drop(resumed);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     #[test]
     fn npc_dialogue_and_vendor_require_the_npcs_room_after_a_room_change() {
         let mut ship = session();

@@ -201,8 +201,8 @@ mean the corresponding gameplay system is complete.
   the class ceiling instead of the pilot's current rank, allowing a supported
   mission to grant its first rank durably.
 - The public mission catalog loads all 364 imported definitions; the runtime
-  currently offers sixteen wired NPC missions: Finer Points of Negotiation
-  (3), Reactor Leak (5), Supply Run (6), Waste Disposal (48),
+  currently offers seventeen wired NPC missions: Finer Points of Negotiation
+  (3), Reactor Leak (5), Supply Run (6), Waste Disposal (48), The Cleaner (59),
   Defense of the Sharim (81), Going for
   Repairs (90), Basic Shooting Range (102), its
   prerequisite-gated sequel Kill Scuttle Larva (104), repeatable Eliminate
@@ -222,7 +222,15 @@ mean the corresponding gameplay system is complete.
   Disposal Station nav within 5,000 m of its surface, presents the public
   space dialogue through native 0x54/0x55, and persists stage progress before
   station turn-in. A fresh Privateer launch, range boundary, restart and
-  turn-in test passes; Unity graphical verification remains pending.
+  turn-in test and disposable Unity space-dialogue capture pass.
+  The Cleaner follows that mission at a separate Arx Bursa contact, counts
+  five public level-zero Mars Gamma Critter kills through the durable combat
+  receipt, and
+  atomically grants its public credits, faction, items and first Projectile
+  Weapon skill rank. A second pilot's kills, duplicate receipts and failed
+  final inventory writes cannot advance or multiply the reward.
+  Corpse/XP validation now admits public level-zero MOBs, preserving their
+  death generation, loot stock and combat awards across world reload.
   Skill unlocks are recorded durably, while the sandbox class catalog still grants
   those skills at their ceiling. Defense of the Sharim now runs three public
   MOB kill stages with archived dialogue, permanent-decline branch and a final
