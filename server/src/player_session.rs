@@ -4420,6 +4420,53 @@ mod tests {
         assert!(ship.inventory.missions.completed.contains(&90));
     }
 
+    /// A fresh Enforcer earns the quested repair skill at rank one after payment.
+    #[test]
+    fn native_progression_repair_mission_unlocks_untrained_skill_durably() {
+        let root = std::env::temp_dir().join(format!("enb-cadet-repair-{}", rand::random::<u64>()));
+        let stored = crate::accounts::AccountDirectory::new(&root)
+            .create_class_progression(
+                "cadet".into(),
+                "pass",
+                "Cadet".into(),
+                crate::classes::CharacterClass::parse("te").unwrap(),
+            )
+            .unwrap();
+        let initial = SectorCatalog::load().unwrap().sector(1076).unwrap();
+        let mut ship =
+            PlayerSession::new(initial, Ipv4Addr::LOCALHOST, stored.directory.clone()).unwrap();
+        assert_eq!(ship.skill_catalog.level(47), 0);
+        let mut earned = ship.inventory.clone();
+        earned.combat_xp = 2_000_000;
+        earned.credits = 10_000;
+        ship.commit_inventory(earned).unwrap();
+        ship.sector = ship.sectors.sector(10601).unwrap();
+        ship.logged_in = true;
+        enter_npc_room(&mut ship, 28);
+        ship.open_npc(28).unwrap();
+        npc_choice(&mut ship, 2).unwrap();
+        ship.close_npc();
+        ship.open_npc(28).unwrap();
+        for choice in [2, 3, 4, 5] {
+            npc_choice(&mut ship, choice).unwrap();
+        }
+        assert_eq!(ship.skill_catalog.level(47), 1);
+        assert!(ship.inventory.mission_awarded_skills.contains(&47));
+        assert_eq!(ship.inventory.spent_skill_points, 0);
+        let saved = ship.state_dir.clone();
+        drop(ship);
+        let resumed = PlayerSession::new(
+            SectorCatalog::load().unwrap().sector(1076).unwrap(),
+            Ipv4Addr::LOCALHOST,
+            saved,
+        )
+        .unwrap();
+        assert_eq!(resumed.skill_catalog.level(47), 1);
+        assert!(resumed.inventory.missions.completed.contains(&90));
+        drop(resumed);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     #[test]
     fn npc_dialogue_and_vendor_require_the_npcs_room_after_a_room_change() {
         let mut ship = session();

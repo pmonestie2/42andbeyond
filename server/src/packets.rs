@@ -1810,7 +1810,7 @@ pub fn login_world(
             starbase_set(station.id, 0),
             station_layout(station),
             message(&format!(
-                "Welcome aboard {}. Station services are under development.",
+                "Welcome aboard {}. Explore the concourse for contacts and station services.",
                 station.name
             )),
             Frame::new(5, (profile.game_id & 0xffffff).to_le_bytes().to_vec()),

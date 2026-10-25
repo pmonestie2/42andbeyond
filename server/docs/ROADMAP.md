@@ -186,13 +186,20 @@ mean the corresponding gameplay system is complete.
   prior sandbox pilots retain their stage-six gear. Stage capacity and the hull
   stage publish through ship inventory and player RPG AUX. Explicit
   `--native-progression` account creation now starts at level zero with stage-zero
-  hull and the archived free rank-one core skills. Native 0x57 purchases use
+  hull and the archived free rank-one core skills. Fresh accounts persist a
+  class-specific hosted starting station before becoming visible to login.
+  The archived starts for TS 10251, JE 10521 and PS 10301 have no rooms in the
+  public station import, so these classes explicitly fall back to same-race
+  hosted stations 10201, 10551 and 10361 respectively. Creation logs that
+  fallback; the other six classes use their archived station IDs. Native 0x57 purchases use
   earned-minus-spent skill points, class ceilings, XML track/level schemes and
   quest unlocks. Ranks, spent points and derived gear/combat stats commit in one
   inventory replacement and republish native player/ship AUX. Existing sandbox
   and demo pilots retain their maxed skills. Twenty public class-skill pairs
   lack an archived XML rule and remain upgrade-gated; ordinary in-client
-  character creation and skill training UI verification remain open.
+  character creation remains open. Low-rank quested skill rewards now check
+  the class ceiling instead of the pilot's current rank, allowing a supported
+  mission to grant its first rank durably.
 - The public mission catalog loads all 364 imported definitions; the runtime
   currently offers fifteen wired NPC missions: Finer Points of Negotiation
   (3), Reactor Leak (5), Supply Run (6), Defense of the Sharim (81), Going for

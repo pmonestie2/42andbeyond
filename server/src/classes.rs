@@ -50,6 +50,28 @@ impl CharacterClass {
     pub fn faction(self) -> u32 {
         [6, 11, 10, 18, 17, 16, 3, 5, 15][self.0]
     }
+    /// Returns:
+    ///     u32: Archived first station sector for this race and profession.
+    pub fn starting_station(self) -> u32 {
+        [
+            10151, 10201, 10251, 10551, 10401, 10521, 10361, 10371, 10301,
+        ][self.0]
+    }
+    /// Returns:
+    ///     Option<u32>: Hosted same-race station when the archived start lacks public rooms.
+    pub fn starting_station_fallback(self) -> Option<u32> {
+        [
+            None,
+            None,
+            Some(10201),
+            None,
+            None,
+            Some(10551),
+            None,
+            None,
+            Some(10361),
+        ][self.0]
+    }
     pub fn base_scan_range(self) -> f32 {
         if self.profession() == 2 {
             5000.

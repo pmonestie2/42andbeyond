@@ -333,7 +333,10 @@ impl PlayerSession {
                 9 => {
                     let skill = u32::try_from(amount)
                         .map_err(|_| invalid("Mission skill reward is invalid."))?;
-                    if self.skill_catalog.level(skill) == 0 {
+                    if crate::skills::SkillCatalog::for_profile(&self.account.character)?
+                        .level(skill)
+                        == 0
+                    {
                         return Err(invalid(
                             "Mission rewards a skill unavailable to this class.",
                         ));
