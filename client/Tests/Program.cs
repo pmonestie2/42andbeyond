@@ -28,6 +28,7 @@ internal static class Program
         else if (args.Length == 2 && args[0] == "--roster-server") CharacterRosterChecks.Live(args[1]);
         else if (args.Length == 2 && args[0] == "--space-mission-server") SpaceMissionChecks.Live(args[1]);
         else if (args.Length == 2 && args[0] == "--space-turnin-server") SpaceMissionChecks.TurnIn(args[1]);
+        else if (args.Length == 2 && args[0] == "--cleaner-turnin-server") SpaceMissionChecks.CleanerTurnIn(args[1]);
         else if (args.Length != 0) throw new ArgumentException("Usage: ProtocolChecks [--server PRIVATE_IP|--recharge-server PRIVATE_IP|--support-server PRIVATE_IP|--enemy-ability-server PRIVATE_IP|--skill-server PRIVATE_IP|--skill-resume-server PRIVATE_IP]");
     }
 

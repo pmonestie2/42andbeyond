@@ -76,11 +76,16 @@ namespace FortyTwoAndBeyond.Client
             Vector2 point = new Vector2(Input.mousePosition.x / flightHud.Scale,
                 (Screen.height - Input.mousePosition.y) / flightHud.Scale);
             return ButtonRect().Contains(point) ||
-                (open ? PanelRect().Contains(point) : QuickbarRect().Contains(point));
+                (open ? PanelRect().Contains(point) :
+                    client.CurrentSnapshot?.Station == null && QuickbarRect().Contains(point));
         }
 
         /// <returns>Rect: Bounds of the ability panel's persistent toolbar button.</returns>
-        private Rect ButtonRect() { return new Rect(CanvasWidth - 550, 25, 110, 28); }
+        private Rect ButtonRect()
+        {
+            return client.CurrentSnapshot?.Station != null ? new Rect(350, 120, 125, 30) :
+                new Rect(CanvasWidth - 550, 25, 110, 28);
+        }
 
         /// <returns>Rect: Bounds of the scrollable ability panel.</returns>
         private Rect PanelRect()
@@ -249,10 +254,10 @@ namespace FortyTwoAndBeyond.Client
         }
 
         /// <summary>Show native trained ranks and one-rank-at-a-time purchase controls.</summary>
-        private void DrawTraining(Snapshot snapshot, Rect panel)
+        private void DrawTraining(Snapshot snapshot, Rect panel, float top = 300)
         {
-            GUILayout.BeginArea(new Rect(panel.x + 18, panel.y + 300,
-                panel.width - 36, panel.height - 349));
+            GUILayout.BeginArea(new Rect(panel.x + 18, panel.y + top,
+                panel.width - 36, panel.height - top - 49));
             scroll = GUILayout.BeginScrollView(scroll);
             if (snapshot.Skills.Length == 0)
                 GUILayout.Label("Waiting for server skill ranks…", flightHud.SmallStyle);
@@ -278,11 +283,32 @@ namespace FortyTwoAndBeyond.Client
             GUILayout.EndScrollView(); GUILayout.EndArea();
         }
 
+        /// <summary>Keep server-owned pilot training accessible while docked.</summary>
+        private void DrawDockedTraining(Snapshot snapshot)
+        {
+            if (GUI.Button(ButtonRect(), open ? "Close skills" : "Skills", flightHud.ButtonStyle))
+                open = !open;
+            if (!open) return;
+            Rect panel = PanelRect(); flightHud.Panel(panel);
+            GUI.Label(new Rect(panel.x + 18, panel.y + 15, panel.width - 72, 28),
+                "CLASS SKILLS", flightHud.BodyStyle);
+            if (GUI.Button(new Rect(panel.xMax - 48, panel.y + 12, 30, 28), "×", flightHud.ButtonStyle))
+            { open = false; return; }
+            GUI.Label(new Rect(panel.x + 18, panel.y + 47, panel.width - 36, 40),
+                "Train one rank at a time. The server sets costs and requirements.",
+                flightHud.SmallStyle);
+            DrawExperience(panel, snapshot.Experience);
+            DrawTraining(snapshot, panel, 218);
+            GUI.Label(new Rect(panel.x + 18, panel.yMax - 43, panel.width - 36, 35),
+                client.Status, flightHud.SmallStyle);
+        }
+
         /// <summary>Show only abilities that this character received in native RPG packets.</summary>
         public void Draw(Snapshot snapshot)
         {
-            if (snapshot == null || snapshot.Station != null) { open = false; return; }
+            if (snapshot == null) { open = false; return; }
             LoadSlots(snapshot.PlayerId);
+            if (snapshot.Station != null) { DrawDockedTraining(snapshot); return; }
             if (GUI.Button(ButtonRect(), open ? "Close skills" : "Skills", flightHud.ButtonStyle))
                 open = !open;
             if (!open) { Quickbar(snapshot); return; }
