@@ -584,6 +584,225 @@ fn advance(game: &mut GameState, seconds: f32) {
     }
 }
 
+/// A selected ally's mounted item and the caster's reactor settle once across two failures.
+#[test]
+fn equipment_repair_toggle_is_atomic_and_replays_without_free_ally_structure() {
+    let root = std::env::temp_dir().join(format!("enb-equip-repair-{}", rand::random::<u64>()));
+    let accounts = AccountDirectory::new(&root);
+    let alice = accounts
+        .create_class(
+            "alice".into(),
+            "example",
+            "Alice".into(),
+            crate::classes::CharacterClass::parse("te").unwrap(),
+        )
+        .unwrap()
+        .account
+        .character
+        .game_id;
+    let bob_account = accounts
+        .create("bob".into(), "example", "Bob".into())
+        .unwrap();
+    let bob = bob_account.account.character.game_id;
+    let items = crate::items::ItemCatalog::load().unwrap();
+    let mut inventory =
+        crate::inventory::Inventory::starter_for(&bob_account.account.character, &items).unwrap();
+    inventory.equipped[0].as_mut().unwrap().structure = 0.4;
+    fs::write(
+        root.join("accounts/bob/inventory.json"),
+        serde_json::to_vec(&inventory).unwrap(),
+    )
+    .unwrap();
+    let sector: Sector = serde_json::from_str(include_str!("../data/sector.json")).unwrap();
+    let bind = Ipv4Addr::new(127, 0, 0, 2);
+    let mut game = GameState::new(sector.clone(), bind, root.clone()).unwrap();
+    login(&mut game, alice, 23201, "alice");
+    login(&mut game, bob, 23202, "bob");
+    game.update_views();
+    activate(&mut game, alice, bob, 94);
+    assert_eq!(
+        game.sessions[&alice].equipment_repair_target_for_test(),
+        Some(bob)
+    );
+    game.sessions
+        .get_mut(&alice)
+        .unwrap()
+        .equipment_repair_due_for_test();
+    let blocked = root.join("energy_transfers.local.json.tmp");
+    fs::create_dir(&blocked).unwrap();
+    assert!(game.advance(0.1).is_err());
+    assert_eq!(game.energy_ledger.revision(), 0);
+    assert!(game.sessions[&alice].pending_equipment_repair().is_some());
+    fs::remove_dir(&blocked).unwrap();
+    let energy_before = game.sessions[&alice].energy_balance().0;
+    let torn_recipient = root.join("accounts/bob/inventory.json.tmp");
+    fs::create_dir(&torn_recipient).unwrap();
+    assert!(game.deliver_equipment_repairs().is_err());
+    assert_eq!(game.energy_ledger.revision(), 1);
+    fs::remove_dir(&torn_recipient).unwrap();
+    drop(game);
+    let mut restored = GameState::new(sector, bind, root.clone()).unwrap();
+    assert!(
+        (restored.sessions[&bob].inventory.equipped[0]
+            .as_ref()
+            .unwrap()
+            .structure
+            - 0.43)
+            .abs()
+            < 0.0001
+    );
+    assert_eq!(
+        restored.sessions[&alice].energy_balance().0,
+        energy_before - crate::equipment_repair::ENERGY_PER_TICK
+    );
+    restored.deliver_equipment_repairs().unwrap();
+    assert_eq!(restored.energy_ledger.revision(), 1);
+    assert!(restored.sessions[&alice]
+        .pending_equipment_repair()
+        .is_none());
+    activate(&mut restored, alice, bob, 94); // switch off without another debit
+    assert_eq!(
+        restored.sessions[&alice].equipment_repair_target_for_test(),
+        None
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+/// Native self and area tiers use distinct structure rates and bounded recipients.
+#[test]
+fn equipment_repair_self_and_area_tiers_only_touch_eligible_pilots() {
+    let root = std::env::temp_dir().join(format!("enb-equip-area-{}", rand::random::<u64>()));
+    let accounts = AccountDirectory::new(&root);
+    let alice = accounts
+        .create_class(
+            "alice".into(),
+            "example",
+            "Alice".into(),
+            crate::classes::CharacterClass::parse("te").unwrap(),
+        )
+        .unwrap()
+        .account
+        .character
+        .game_id;
+    let others: Vec<_> = ["bob", "carol", "dave"]
+        .into_iter()
+        .map(|username| {
+            accounts
+                .create(username.into(), "example", username.into())
+                .unwrap()
+        })
+        .collect();
+    let ids: Vec<_> = others
+        .iter()
+        .map(|stored| stored.account.character.game_id)
+        .collect();
+    let items = crate::items::ItemCatalog::load().unwrap();
+    for (directory, profile) in std::iter::once((
+        root.as_path(),
+        crate::account::Account::load(&root).unwrap().character,
+    ))
+    .chain(
+        others
+            .iter()
+            .map(|stored| (stored.directory.as_path(), stored.account.character.clone())),
+    ) {
+        let mut inventory = crate::inventory::Inventory::starter_for(&profile, &items).unwrap();
+        inventory.equipped[0].as_mut().unwrap().structure = 0.4;
+        fs::write(
+            directory.join("inventory.json"),
+            serde_json::to_vec(&inventory).unwrap(),
+        )
+        .unwrap();
+    }
+    let sector: Sector = serde_json::from_str(include_str!("../data/sector.json")).unwrap();
+    let bind = Ipv4Addr::new(127, 0, 0, 2);
+    let mut game = GameState::new(sector, bind, root.clone()).unwrap();
+    for (id, port, name) in [
+        (alice, 23211, "alice"),
+        (ids[0], 23212, "bob"),
+        (ids[1], 23213, "carol"),
+        (ids[2], 23214, "dave"),
+    ] {
+        login(&mut game, id, port, name);
+    }
+    game.sessions.get_mut(&ids[0]).unwrap().position = [1000., 0., 0.];
+    game.sessions.get_mut(&ids[1]).unwrap().position = [1800., 0., 0.];
+    game.sessions.get_mut(&ids[2]).unwrap().position = [5000., 0., 0.];
+    game.update_views();
+    activate(&mut game, alice, ids[0], 8);
+    game.sessions
+        .get_mut(&alice)
+        .unwrap()
+        .equipment_repair_due_for_test();
+    game.advance(0.1).unwrap();
+    for (id, expected) in [(alice, 0.46), (ids[0], 0.7), (ids[1], 0.46), (ids[2], 0.4)] {
+        assert!(
+            (game.sessions[&id].inventory.equipped[0]
+                .as_ref()
+                .unwrap()
+                .structure
+                - expected)
+                .abs()
+                < 0.0001
+        );
+    }
+    activate(&mut game, alice, ids[0], 8); // toggle area stream off
+    assert_eq!(
+        game.sessions[&alice].equipment_repair_target_for_test(),
+        None
+    );
+    activate(&mut game, alice, ids[0], 90); // rank one ignores selected peer
+    assert_eq!(
+        game.sessions[&alice].equipment_repair_target_for_test(),
+        Some(alice)
+    );
+    game.sessions
+        .get_mut(&alice)
+        .unwrap()
+        .equipment_repair_due_for_test();
+    game.advance(0.1).unwrap();
+    assert!(
+        (game.sessions[&alice].inventory.equipped[0]
+            .as_ref()
+            .unwrap()
+            .structure
+            - 0.47)
+            .abs()
+            < 0.0001
+    );
+    assert!(
+        (game.sessions[&ids[0]].inventory.equipped[0]
+            .as_ref()
+            .unwrap()
+            .structure
+            - 0.7)
+            .abs()
+            < 0.0001
+    );
+    activate(&mut game, alice, ids[0], 90); // switch self stream off
+    game.sessions
+        .get_mut(&alice)
+        .unwrap()
+        .set_energy_for_test(0.);
+    activate(&mut game, alice, alice, 90);
+    assert_eq!(
+        game.sessions[&alice].equipment_repair_target_for_test(),
+        None
+    );
+    game.sessions
+        .get_mut(&alice)
+        .unwrap()
+        .set_energy_for_test(100.);
+    game.sessions.get_mut(&ids[0]).unwrap().position = [5000., 0., 0.];
+    game.update_views();
+    activate(&mut game, alice, ids[0], 94);
+    assert_eq!(
+        game.sessions[&alice].equipment_repair_target_for_test(),
+        None
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
 fn land_npc_shots(game: &mut GameState) {
     let deadline = game
         .combats

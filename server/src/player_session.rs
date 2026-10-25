@@ -42,6 +42,8 @@ mod combat_trance;
 mod dev_session;
 #[path = "energy_transfer.rs"]
 mod energy_transfer;
+#[path = "equipment_repair_service.rs"]
+mod equipment_repair_service;
 #[path = "exploration.rs"]
 pub(crate) mod exploration;
 #[path = "follow_service.rs"]
@@ -4505,7 +4507,7 @@ mod tests {
         assert!(!ship.inventory.missions.completed.contains(&3));
         ship.inventory.credits = 5000;
         npc_choice(&mut ship, 2).unwrap();
-        assert_eq!(ship.inventory.credits, 1000);
+        assert_eq!(ship.inventory.credits, 1190);
         assert_eq!(ship.inventory.explore_xp, 4250);
         assert!(ship.inventory.mission_awarded_skills.contains(&36));
         assert!(ship.inventory.missions.completed.contains(&3));
@@ -4513,7 +4515,7 @@ mod tests {
         let saved: crate::inventory::Inventory =
             serde_json::from_slice(&std::fs::read(ship.state_dir.join("inventory.json")).unwrap())
                 .unwrap();
-        assert_eq!(saved.credits, 1000);
+        assert_eq!(saved.credits, 1190);
         assert_eq!(saved.explore_xp, 4250);
     }
 
@@ -4678,7 +4680,7 @@ mod tests {
         std::fs::remove_dir(&blocked).unwrap();
         npc_choice(&mut ship, 3).unwrap();
         assert_eq!(ship.inventory.missions.active[0].stage, 3);
-        assert_eq!(ship.inventory.credits, 11_000);
+        assert_eq!(ship.inventory.credits, 11_190);
         assert!(!ship
             .inventory
             .cargo

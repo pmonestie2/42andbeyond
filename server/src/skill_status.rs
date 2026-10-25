@@ -80,5 +80,6 @@ impl PlayerSession {
         self.publish_cloak_status(true);
         self.publish_environment_status(true);
         self.publish_combat_cloak_status();
+        self.publish_equipment_repair_resume();
     }
 }

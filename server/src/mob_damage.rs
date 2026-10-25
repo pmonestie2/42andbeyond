@@ -11,6 +11,14 @@ pub(super) struct MobDamageReceipt {
     pub(super) sector: u32,
     pub(super) sequence: u64,
     reflection: f32,
+    #[serde(default)]
+    wear: Option<EquipmentWear>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct EquipmentWear {
+    slot: usize,
+    amount: f32,
 }
 
 pub(super) fn valid_receipts(receipts: &[MobDamageReceipt]) -> bool {
@@ -21,6 +29,12 @@ pub(super) fn valid_receipts(receipts: &[MobDamageReceipt]) -> bool {
                 && receipt.sequence > 0
                 && receipt.reflection.is_finite()
                 && (0. ..=50.).contains(&receipt.reflection)
+                && receipt.sequence < (1u64 << 48)
+                && receipt.wear.as_ref().is_none_or(|wear| {
+                    wear.slot < crate::inventory::EQUIPMENT_SLOTS
+                        && wear.amount.is_finite()
+                        && (0. ..=0.03).contains(&wear.amount)
+                })
                 && identities.insert((receipt.sector, receipt.sequence))
         })
 }
@@ -32,10 +46,12 @@ pub(super) struct DamagePlan {
     pub(super) motion: Motion,
     pub(super) warp: Warp,
     pub(super) warp_event: Option<WarpEvent>,
+    wear: Option<EquipmentWear>,
 }
 
 impl PlayerSession {
-    fn plan_mob_damage(&self, damage: f32, kind: DamageType) -> io::Result<DamagePlan> {
+    fn plan_mob_damage(&self, hit: &MobHit, kind: DamageType) -> io::Result<DamagePlan> {
+        let damage = hit.damage;
         let mut reduced = damage;
         let mut energy = self.energy;
         let mut reflection = 0.;
@@ -81,6 +97,30 @@ impl PlayerSession {
         if result.hull == 0. {
             motion.stop();
         }
+        // The original manual permits equipment wear after shields fall. The
+        // archived combat branch has no executable wear formula; choose one
+        // deterministic mounted item and locally tune wear to hull damage.
+        let mounted: Vec<usize> = self
+            .inventory
+            .equipped
+            .iter()
+            .enumerate()
+            .filter_map(|(slot, item)| {
+                item.as_ref()
+                    .filter(|item| item.structure > 0.)
+                    .map(|_| slot)
+            })
+            .collect();
+        let wear = if result.hull_damage > 0. && !mounted.is_empty() {
+            let slot = mounted[(hit.sequence as usize + hit.attacker_index) % mounted.len()];
+            Some(EquipmentWear {
+                slot,
+                amount: (result.hull_damage / self.equipment.ship.hull_capacity * 0.15)
+                    .clamp(0.001, 0.03),
+            })
+        } else {
+            None
+        };
         Ok(DamagePlan {
             result,
             energy,
@@ -88,6 +128,7 @@ impl PlayerSession {
             motion,
             warp,
             warp_event,
+            wear,
         })
     }
 
@@ -102,6 +143,8 @@ impl PlayerSession {
             .iter()
             .find(|receipt| receipt.sector == hit.sector && receipt.sequence == hit.sequence)
         {
+            let receipt = receipt.clone();
+            self.settle_mob_equipment_wear(&receipt)?;
             return Ok(receipt.reflection);
         }
         if !self.logged_in
@@ -117,11 +160,12 @@ impl PlayerSession {
             ));
         }
         let kind = DamageType::from_index(hit.damage_type)?;
-        let plan = self.plan_mob_damage(hit.damage, kind)?;
+        let plan = self.plan_mob_damage(hit, kind)?;
         let receipt = MobDamageReceipt {
             sector: hit.sector,
             sequence: hit.sequence,
             reflection: plan.reflection,
+            wear: plan.wear.clone(),
         };
         // Acquire the sole external cleanup dependency before committing. No
         // mutation, packet, mining cancellation or reflection precedes the write.
@@ -132,12 +176,13 @@ impl PlayerSession {
             None
         };
         self.checkpoint_mob_damage(&plan, &receipt)?;
-        self.mob_damage_receipts.push(receipt);
+        self.mob_damage_receipts.push(receipt.clone());
         self.shield = plan.result.shield;
         self.hull = plan.result.hull;
         self.energy = plan.energy;
         self.warp = plan.warp;
         self.motion = plan.motion;
+        self.settle_mob_equipment_wear(&receipt)?;
         if let Some(cast) = self.mining.take() {
             field
                 .as_mut()
@@ -177,6 +222,32 @@ impl PlayerSession {
             Some(self.hull),
         ));
         Ok(plan.reflection)
+    }
+
+    /// Persist one hull-hit wear receipt without applying it twice on retry.
+    fn settle_mob_equipment_wear(&mut self, receipt: &MobDamageReceipt) -> io::Result<()> {
+        let Some(wear) = &receipt.wear else {
+            return Ok(());
+        };
+        let key = (u64::from(receipt.sector) << 48) | receipt.sequence;
+        if self.inventory.applied_equipment_wear.contains(&key) {
+            return Ok(());
+        }
+        let mut candidate = self.inventory.clone();
+        let item = candidate.equipped[wear.slot]
+            .as_mut()
+            .ok_or_else(|| invalid("Equipment disappeared before hull-hit wear settled."))?;
+        item.structure = (item.structure - wear.amount).max(0.);
+        candidate.applied_equipment_wear.insert(key);
+        self.commit_inventory(candidate)
+    }
+
+    /// Apply any durable hit wear left between a checkpoint and inventory write.
+    pub(super) fn restore_mob_equipment_wear(&mut self) -> io::Result<()> {
+        for receipt in self.mob_damage_receipts.clone() {
+            self.settle_mob_equipment_wear(&receipt)?;
+        }
+        Ok(())
     }
 
     /// Called only after the authoritative sector has durably retired the shot.
@@ -294,6 +365,48 @@ mod tests {
         assert_eq!((ship.shield, ship.energy), (36., 10.45));
     }
 
+    /// A hull-hit receipt replays one mounted-item wear after a torn inventory write.
+    #[test]
+    fn hull_hit_equipment_wear_survives_restart_without_repeating() {
+        let mut ship = ship();
+        ship.shield = 0.;
+        ship.save().unwrap();
+        let pristine = ship.inventory.equipped.clone();
+        let shot = hit(&ship, 41);
+        let blocked = ship.state_dir.join("inventory.json.tmp");
+        fs::create_dir(&blocked).unwrap();
+        assert!(ship.receive_mob_hit(&shot).is_err());
+        assert_eq!(ship.hull, 90.);
+        assert_eq!(ship.mob_damage_receipts.len(), 1);
+        assert!(ship.inventory.applied_equipment_wear.is_empty());
+        fs::remove_dir(blocked).unwrap();
+
+        let mut restored =
+            PlayerSession::new(ship.sector.clone(), ship.bind, ship.state_dir.clone()).unwrap();
+        assert_eq!(restored.hull, 90.);
+        assert_eq!(restored.inventory.applied_equipment_wear.len(), 1);
+        let worn = restored.inventory.equipped.clone();
+        assert_ne!(worn, pristine);
+        let pending = restored.pending.len();
+        restored.receive_mob_hit(&shot).unwrap();
+        assert_eq!(restored.inventory.equipped, worn);
+        assert_eq!(restored.inventory.applied_equipment_wear.len(), 1);
+        assert_eq!(restored.pending.len(), pending);
+        let again =
+            PlayerSession::new(ship.sector.clone(), ship.bind, ship.state_dir.clone()).unwrap();
+        assert_eq!(again.inventory.equipped, worn);
+    }
+
+    /// A shield-only impact leaves mounted structure and the wear journal intact.
+    #[test]
+    fn shield_only_mob_hit_does_not_wear_equipment() {
+        let mut ship = ship();
+        let initial = ship.inventory.equipped.clone();
+        ship.receive_mob_hit(&hit(&ship, 42)).unwrap();
+        assert_eq!(ship.inventory.equipped, initial);
+        assert!(ship.inventory.applied_equipment_wear.is_empty());
+    }
+
     #[test]
     fn forged_identity_wrong_sector_and_invalid_receipts_do_not_damage_a_player() {
         let mut ship = ship();
@@ -309,6 +422,7 @@ mod tests {
             sector: 1076,
             sequence: 1,
             reflection: 0.,
+            wear: None,
         };
         assert!(!valid_receipts(&[receipt.clone(), receipt]));
     }

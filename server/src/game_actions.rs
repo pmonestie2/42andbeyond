@@ -510,6 +510,116 @@ impl GameState {
         Ok(())
     }
 
+    /// Settle one equipment-repair stream tick across the caster and area recipients.
+    pub(super) fn deliver_equipment_repairs(&mut self) -> io::Result<()> {
+        let sources: Vec<u32> = self
+            .sessions
+            .iter()
+            .filter_map(|(id, session)| session.pending_equipment_repair().map(|_| *id))
+            .collect();
+        for source in sources {
+            let tick = self.sessions[&source].pending_equipment_repair().unwrap();
+            if !tick.valid() {
+                return Err(invalid("Invalid saved equipment repair tick."));
+            }
+            self.sessions
+                .get_mut(&source)
+                .unwrap()
+                .checkpoint_session(true)?;
+            let epoch = self.sessions[&source].shield_recharge_epoch();
+            if !self
+                .energy_ledger
+                .equipment_repair_seen(source, epoch, tick.sequence)
+            {
+                self.update_views();
+                let caster = &self.sessions[&source];
+                let target = self.sessions.get(&tick.target);
+                let eligible = target.is_some_and(|target| {
+                    caster.shield_recharge_available()
+                        && target.shield_recharge_available()
+                        && target.sector.id == caster.sector.id
+                        && distance(target.position, caster.position) <= tick.range
+                        && caster.can_recharge_peer(tick.target)
+                });
+                if !eligible {
+                    self.sessions
+                        .get_mut(&source)
+                        .unwrap()
+                        .stop_equipment_repair("Equipment repair target left range.")?;
+                    continue;
+                }
+                let center = self.sessions[&tick.target].position;
+                let sector = caster.sector.id;
+                let energy = caster.energy_balance().0;
+                if energy < crate::equipment_repair::ENERGY_PER_TICK {
+                    self.sessions
+                        .get_mut(&source)
+                        .unwrap()
+                        .stop_equipment_repair("Equipment repair stopped: reactor depleted.")?;
+                    continue;
+                }
+                let mut targets = BTreeMap::new();
+                for (&id, recipient) in &self.sessions {
+                    let primary = id == tick.target;
+                    if !primary
+                        && (tick.radius == 0.
+                            || recipient.sector.id != sector
+                            || !recipient.shield_recharge_available()
+                            || distance(recipient.position, center) > tick.radius)
+                    {
+                        continue;
+                    }
+                    let mut equipped = recipient.equipped_for_repair();
+                    let amount = crate::equipment_repair::structure_per_tick(tick.rank, primary);
+                    let mut changed = false;
+                    for item in equipped.iter_mut().flatten() {
+                        if item.structure < 1. {
+                            item.structure = (item.structure + amount).min(1.);
+                            changed = true;
+                        }
+                    }
+                    if changed {
+                        targets.insert(id, equipped);
+                    }
+                }
+                if targets.is_empty() {
+                    self.sessions
+                        .get_mut(&source)
+                        .unwrap()
+                        .stop_equipment_repair("All nearby equipment is repaired.")?;
+                    continue;
+                }
+                self.energy_ledger.repair_equipment(
+                    source,
+                    epoch,
+                    tick.sequence,
+                    energy - crate::equipment_repair::ENERGY_PER_TICK,
+                    targets,
+                )?;
+            }
+            let balance = self.energy_ledger.balance(source).unwrap();
+            self.sessions
+                .get_mut(&source)
+                .unwrap()
+                .apply_energy_balance(balance)?;
+            let recipients: Vec<u32> = self.sessions.keys().copied().collect();
+            for id in recipients {
+                if let Some(balance) = self.energy_ledger.equipment_balance(id) {
+                    let balance = balance.clone();
+                    self.sessions
+                        .get_mut(&id)
+                        .unwrap()
+                        .apply_equipment_balance(&balance)?;
+                }
+            }
+            self.sessions
+                .get_mut(&source)
+                .unwrap()
+                .clear_equipment_repair_tick()?;
+        }
+        Ok(())
+    }
+
     fn group_action(&mut self, source: u32, action: u32, target: u32) -> io::Result<()> {
         if (action == 11 || action == 12) && self.jumpstart_offers.contains_key(&source) {
             return self.answer_jumpstart(source, action == 11);

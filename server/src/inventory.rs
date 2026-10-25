@@ -101,6 +101,12 @@ pub struct Inventory {
     #[serde(default)]
     pub cargo_capacity: usize,
     pub equipped: Vec<Option<ItemInstance>>,
+    /// Latest atomic world revision applied to mounted-item structure.
+    #[serde(default)]
+    pub equipment_repair_revision: u64,
+    /// Hull-hit identities already applied to mounted structure.
+    #[serde(default)]
+    pub applied_equipment_wear: std::collections::BTreeSet<u64>,
     #[serde(default = "empty_ammunition")]
     pub ammunition: Vec<Option<ItemInstance>>,
     #[serde(default = "empty_vault")]
@@ -334,6 +340,8 @@ impl Inventory {
             hull_upgrade: crate::ship_progression::SANDBOX_HULL_UPGRADE,
             cargo_capacity: 32,
             equipped: vec![None; EQUIPMENT_SLOTS],
+            equipment_repair_revision: 0,
+            applied_equipment_wear: std::collections::BTreeSet::new(),
             ammunition: empty_ammunition(),
             vault: empty_vault(),
             credits: starting_credits(),
@@ -510,6 +518,9 @@ impl Inventory {
             || self.vault.len() != VAULT_SLOTS
         {
             return Err(invalid("invalid inventory dimensions"));
+        }
+        if self.applied_equipment_wear.len() > 100_000 {
+            return Err(invalid("Too many equipment wear receipts."));
         }
         if self.harvests.len() > 50_000
             || self.harvests.iter().any(|(id, receipt)| {

@@ -36,6 +36,9 @@ impl PlayerSession {
         if !self.logged_in || self.sector.station.is_some() {
             return Err(invalid("Enter space before using an ability."));
         }
+        if ability.kind == AbilityKind::EquipmentRepair {
+            return self.toggle_equipment_repair(&ability, requested_target);
+        }
         if ability.kind == AbilityKind::Cloak && self.skills.cloak_rank > 0 {
             self.stop_cloak();
             return Ok(());
@@ -142,6 +145,7 @@ impl PlayerSession {
             AbilityKind::RechargeShields => 733,
             AbilityKind::HullPatch => 733,
             AbilityKind::Rally => 0,
+            AbilityKind::EquipmentRepair => unreachable!("toggle handled before charged cast"),
         };
         if ability.kind == AbilityKind::Jumpstart {
             self.pending.push(packets::weapon_effect(
@@ -611,6 +615,9 @@ impl PlayerSession {
                     tactic,
                     skill_rank: self.skill_catalog.level(44),
                 });
+            }
+            AbilityKind::EquipmentRepair => {
+                return Err(invalid("Repair Equipment has no charged cast."));
             }
         }
         drop(combat);

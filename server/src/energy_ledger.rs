@@ -1,6 +1,7 @@
 //! One atomic world file commits targeted reactor transfers and friendly buffs.
 //! Session checkpoints may lag that file; revisions decide which resource or
 //! status value wins after a process crash or short server replacement.
+use crate::inventory::{ItemInstance, EQUIPMENT_SLOTS};
 use crate::peer_buffs::PeerBuff;
 use crate::protocol::invalid;
 use crate::rally::RallyBuff;
@@ -26,6 +27,12 @@ pub struct ShieldBalance {
 pub struct HullBalance {
     pub revision: u64,
     pub hull: f32,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct EquipmentBalance {
+    pub revision: u64,
+    pub equipped: Vec<Option<ItemInstance>>,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
@@ -69,6 +76,10 @@ struct LedgerData {
     #[serde(default)]
     last_hull_repair: BTreeMap<u32, TransferSequence>,
     #[serde(default)]
+    equipment: BTreeMap<u32, EquipmentBalance>,
+    #[serde(default)]
+    last_equipment_repair: BTreeMap<u32, TransferSequence>,
+    #[serde(default)]
     peer_buffs: BTreeMap<u32, StoredPeerBuffs>,
     #[serde(default)]
     rally_buffs: BTreeMap<u32, RallyBuff>,
@@ -97,6 +108,8 @@ impl EnergyLedger {
                 last_transfer: BTreeMap::new(),
                 last_recharge: BTreeMap::new(),
                 last_hull_repair: BTreeMap::new(),
+                equipment: BTreeMap::new(),
+                last_equipment_repair: BTreeMap::new(),
                 peer_buffs: BTreeMap::new(),
                 rally_buffs: BTreeMap::new(),
                 last_rally: BTreeMap::new(),
@@ -135,6 +148,21 @@ impl EnergyLedger {
                     || balance.revision > data.revision
                     || !balance.hull.is_finite()
                     || !(0. ..=1_000_000_000.).contains(&balance.hull)
+            })
+            || data
+                .last_equipment_repair
+                .iter()
+                .any(|(player, last)| *player == 0 || last.epoch == 0 || last.sequence == 0)
+            || data.equipment.iter().any(|(player, balance)| {
+                *player == 0
+                    || balance.revision == 0
+                    || balance.revision > data.revision
+                    || balance.equipped.len() != EQUIPMENT_SLOTS
+                    || balance.equipped.iter().flatten().any(|item| {
+                        item.quantity != 1
+                            || !item.structure.is_finite()
+                            || !(0. ..=1.).contains(&item.structure)
+                    })
             })
             || data.peer_buffs.iter().any(|(target, stored)| {
                 let buffs = stored.as_slice();
@@ -194,6 +222,90 @@ impl EnergyLedger {
     ///     Option<HullBalance>: Last committed cross-session hull level.
     pub fn hull_balance(&self, player: u32) -> Option<HullBalance> {
         self.data.hulls.get(&player).copied()
+    }
+
+    /// Returns:
+    ///     Option<&EquipmentBalance>: Latest committed equipped-structure snapshot.
+    pub fn equipment_balance(&self, player: u32) -> Option<&EquipmentBalance> {
+        self.data.equipment.get(&player)
+    }
+
+    /// Returns:
+    ///     bool: Whether this stream tick already entered the durable world ledger.
+    pub fn equipment_repair_seen(&self, player: u32, epoch: u64, sequence: u32) -> bool {
+        self.data
+            .last_equipment_repair
+            .get(&player)
+            .is_some_and(|last| last.epoch == epoch && sequence <= last.sequence)
+    }
+
+    /// Commit the caster's reactor and every repaired target in one world file.
+    ///
+    /// Returns:
+    ///     u64: Shared revision for the paid stream tick.
+    pub fn repair_equipment(
+        &mut self,
+        source: u32,
+        epoch: u64,
+        sequence: u32,
+        source_energy: f32,
+        targets: BTreeMap<u32, Vec<Option<ItemInstance>>>,
+    ) -> io::Result<u64> {
+        if source == 0
+            || epoch == 0
+            || sequence == 0
+            || self.equipment_repair_seen(source, epoch, sequence)
+            || !source_energy.is_finite()
+            || !(0. ..=1_000_000_000.).contains(&source_energy)
+            || targets.is_empty()
+            || targets.len() > 32
+            || targets.iter().any(|(target, slots)| {
+                *target == 0
+                    || slots.len() != EQUIPMENT_SLOTS
+                    || slots.iter().flatten().any(|item| {
+                        item.quantity != 1
+                            || !item.structure.is_finite()
+                            || !(0. ..=1.).contains(&item.structure)
+                    })
+            })
+        {
+            return Err(invalid("Invalid or repeated equipment repair tick."));
+        }
+        let mut next = self.data.clone();
+        next.revision = next
+            .revision
+            .checked_add(1)
+            .ok_or_else(|| invalid("Equipment repair revision exhausted."))?;
+        next.balances.insert(
+            source,
+            EnergyBalance {
+                revision: next.revision,
+                energy: source_energy,
+            },
+        );
+        for (target, equipped) in targets {
+            next.equipment.insert(
+                target,
+                EquipmentBalance {
+                    revision: next.revision,
+                    equipped,
+                },
+            );
+        }
+        next.last_equipment_repair
+            .insert(source, TransferSequence { epoch, sequence });
+        let directory = self
+            .path
+            .parent()
+            .ok_or_else(|| invalid("Equipment repair ledger has no directory."))?;
+        fs::create_dir_all(directory)?;
+        let temporary = self.path.with_extension("json.tmp");
+        let mut file = File::create(&temporary)?;
+        file.write_all(&serde_json::to_vec_pretty(&next)?)?;
+        file.sync_all()?;
+        fs::rename(temporary, &self.path)?;
+        self.data = next;
+        Ok(self.data.revision)
     }
 
     /// Returns:

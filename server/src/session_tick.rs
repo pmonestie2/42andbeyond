@@ -117,6 +117,7 @@ impl PlayerSession {
         self.advance_mining(dt)?;
         self.advance_looting(dt)?;
         self.advance_ship_resources(dt);
+        self.advance_equipment_repair()?;
         self.fire_weapons()?;
         self.refresh_target_verbs(false);
         Ok(())

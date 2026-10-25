@@ -127,6 +127,20 @@ mean the corresponding gameplay system is complete.
   and [Net-7 Combat Trance](https://net7wiki.bmsite.net/index.php?title=Combat_Trance).
   Visual descriptors: installed Windows client's Data/client/ini/effect.ini
   (SHA-256 D192E0E25A385EDD47D12E9802CAAF9180AE4F228E72A44086D4A043C457BBF6).
+- Repair Equipment skill 47 now toggles native tiers 90/94/30/8/62 for
+  trained Enforcers, Defenders and Warriors. It repairs owned mounted-item
+  structure for self, selected peer or nearby area; each streamed tick commits
+  reactor energy and all affected equipment in one durable world receipt.
+  Native ship AUX slot 10 advertises the active toggle and clears on stop,
+  while resume replays it. NPC hull hits now cause deterministic bounded wear
+  on one mounted item, journaled with the incoming hit so retry/replacement
+  cannot double-apply it. Tests cover selected-peer and area rates, rejection,
+  torn writes and restart reconciliation. The original [Player Guide](https://www.earthnbeyond.com/game_info/skills.progen_w.html)
+  establishes the toggle and reactor drain; [Net-7](https://net7wiki.bmsite.net/index.php?title=Repair_Equipment)
+  documents rank tiers/ranges. The archived C++ handler is absent, so the
+  1%/second base repair, 5-energy tick and hull-wear rate are local tuning.
+  The archived visual 178 is not verified against the installed client, so no
+  0x09 visual is published yet. Native client icon testing remains open.
 - Persistent cargo/equipment/vault inventory and credits, split/merge/swap
   transfers, mount/class/skill/quantity validation, trade/no-store vault rules,
   atomic replacement before publication and restart reconciliation.

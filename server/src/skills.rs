@@ -29,6 +29,7 @@ pub enum AbilityKind {
     Leech,
     RechargeShields,
     HullPatch,
+    EquipmentRepair,
     Rally,
     Unsupported,
 }
@@ -465,6 +466,10 @@ pub struct SkillState {
     pub pending_hull_repair: Option<PendingHullRepair>,
     #[serde(default)]
     pub pending_rally: Option<crate::rally::PendingRally>,
+    #[serde(default)]
+    pub equipment_repair: Option<crate::equipment_repair::ActiveEquipmentRepair>,
+    #[serde(default)]
+    pub pending_equipment_repair: Option<crate::equipment_repair::PendingEquipmentRepair>,
 }
 
 #[derive(Clone, Debug)]
