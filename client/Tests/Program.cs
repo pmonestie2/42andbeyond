@@ -26,6 +26,7 @@ internal static class Program
         else if (args.Length == 2 && args[0] == "--skill-server") SkillTrainingChecks.Live(args[1], false);
         else if (args.Length == 2 && args[0] == "--skill-resume-server") SkillTrainingChecks.Live(args[1], true);
         else if (args.Length == 2 && args[0] == "--roster-server") CharacterRosterChecks.Live(args[1]);
+        else if (args.Length == 2 && args[0] == "--space-mission-server") SpaceMissionChecks.Live(args[1]);
         else if (args.Length != 0) throw new ArgumentException("Usage: ProtocolChecks [--server PRIVATE_IP|--recharge-server PRIVATE_IP|--support-server PRIVATE_IP|--enemy-ability-server PRIVATE_IP|--skill-server PRIVATE_IP|--skill-resume-server PRIVATE_IP]");
     }
 
@@ -239,6 +240,11 @@ internal static class Program
         world.Apply(new Frame(0x54, tree), 1);
         Assert(world.Dialogue.MissionKind == MissionDialogueKind.Offer && world.Dialogue.Choices[0].Node == 2,
             "Talk-tree delivery erased the mission offer or its advertised choice.");
+        var space = new World();
+        space.Apply(new Frame(0x54, tree), 1);
+        Assert(space.Station == null && space.Dialogue != null &&
+            space.Dialogue.Choices[0].Node == 2,
+            "An authoritative space conversation required a station identity.");
         notice("Mission Basic Shooting Range: stage 1.");
         Assert(world.Dialogue.MissionKind == MissionDialogueKind.Updated && world.Dialogue.MissionStage == 1 &&
             offered.MissionKind == MissionDialogueKind.Offer,

@@ -312,13 +312,13 @@ namespace FortyTwoAndBeyond.Protocol
             Status = "Talking to station contact";
         }
 
-        /// <summary>Choose only a branch offered by the current NPC talk tree.</summary>
+        /// <summary>Choose only a branch offered by an authoritative talk tree.</summary>
         public void ChooseNpc(byte node)
         {
-            if (!Ready || World.Station == null || World.Dialogue == null ||
+            if (!Ready || World.Dialogue == null ||
                 node != 230 && !World.Dialogue.Choices.Any(choice => choice.Node == node)) return;
             Send(0x55, Wire.Body(w => { w.Write(Player); w.Write(node); }));
-            Status = node == 0 || node == 230 ? "Conversation closed" : "Waiting for station contact";
+            Status = node == 0 || node == 230 ? "Conversation closed" : "Waiting for contact";
         }
 
         /// <summary>Buy a bounded quantity from a server-listed vendor slot.</summary>

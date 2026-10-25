@@ -410,6 +410,7 @@ namespace FortyTwoAndBeyond.Client
                 float x = CanvasWidth * .5f, y = CanvasHeight * .5f;
                 Fill(new Rect(x - 12, y, 8, 1), cyan); Fill(new Rect(x + 4, y, 8, 1), cyan); Fill(new Rect(x, y - 12, 1, 8), cyan); Fill(new Rect(x, y + 4, 1, 8), cyan);
             }
+            if (snapshot.Dialogue != null) StationDialogue(snapshot);
             Settings();
         }
 
@@ -564,17 +565,22 @@ namespace FortyTwoAndBeyond.Client
         /// <summary>Present only branches sent by the active server conversation.</summary>
         private void StationDialogue(Snapshot snapshot)
         {
+            EnsureNpcNames();
             DialogueState dialogue = snapshot.Dialogue;
             bool trading = dialogue.VendorOpen;
             float width = Mathf.Min(trading ? 700 : 660, CanvasWidth - 630), x = (CanvasWidth - width) * .5f;
             float height = trading ? CanvasHeight - 140 : 300;
-            float top = trading ? 116 : CanvasHeight - height - 24;
+            float top = trading ? 116 : snapshot.Station == null ?
+                Mathf.Max(90, (CanvasHeight - height) * .5f - 40) : CanvasHeight - height - 24;
             Panel(new Rect(x, top, width, height));
-            string title = npcNames.TryGetValue(dialogue.NpcId, out string name) ? name : "Station contact";
+            string title = npcNames.TryGetValue(dialogue.NpcId, out string name) ? name :
+                snapshot.Station == null ? snapshot.Objects.FirstOrDefault(item =>
+                    item.Id == snapshot.SelectedTargetId)?.Name ?? "Space contact" : "Station contact";
             Fill(new Rect(x + 1, top + 2, 4, 48), cyan);
             GUI.Label(new Rect(x + 19, top + 12, width - 130, 27), title.ToUpperInvariant(), body);
             GUI.Label(new Rect(x + 20, top + 38, width - 130, 19),
-                trading ? "STATION CONTACT   /   TRADE" : "STATION CONTACT   /   CONVERSATION", dialogueMeta);
+                trading ? "STATION CONTACT   /   TRADE" : snapshot.Station == null ?
+                "SPACE CONTACT   /   CONVERSATION" : "STATION CONTACT   /   CONVERSATION", dialogueMeta);
             if (GUI.Button(new Rect(x + width - 104, top + 15, 86, 29), "CLOSE", button)) client.ChooseNpc(230);
             Fill(new Rect(x + 18, top + 61, width - 36, 1), new Color(.24f, .55f, .68f, .45f));
             GUILayout.BeginArea(new Rect(x + 18, top + 70, width - 36, trading ? 108 : height - 84));
