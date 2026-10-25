@@ -18,6 +18,7 @@ namespace FortyTwoAndBeyond.Editor
         private static bool connected;
         private static int stage;
         private static bool uiSmoke;
+        private static bool smallUiSmoke;
         private static bool productionSmoke;
         private static ClientWorker peer;
 
@@ -27,6 +28,7 @@ namespace FortyTwoAndBeyond.Editor
             if (Array.IndexOf(Environment.GetCommandLineArgs(), "--42andbeyond-visual-smoke") < 0 &&
                 Array.IndexOf(Environment.GetCommandLineArgs(), "--42andbeyond-production-smoke") < 0) return;
             uiSmoke = Array.IndexOf(Environment.GetCommandLineArgs(), "--42andbeyond-ui-smoke") >= 0;
+            smallUiSmoke = Array.IndexOf(Environment.GetCommandLineArgs(), "--42andbeyond-small-ui-smoke") >= 0;
             productionSmoke = Array.IndexOf(Environment.GetCommandLineArgs(), "--42andbeyond-production-smoke") >= 0;
             deadline = EditorApplication.timeSinceStartup + (uiSmoke || productionSmoke ? 90 : 300);
             EditorApplication.update += Tick;
@@ -43,8 +45,16 @@ namespace FortyTwoAndBeyond.Editor
                 Type gameView = typeof(EditorWindow).Assembly.GetType("UnityEditor.GameView");
                 if (gameView != null)
                 {
-                    EditorWindow window = EditorWindow.GetWindow(gameView);
-                    window.maximized = true; window.Focus();
+                    EditorWindow window = smallUiSmoke ?
+                        ScriptableObject.CreateInstance(gameView) as EditorWindow :
+                        EditorWindow.GetWindow(gameView);
+                    if (smallUiSmoke)
+                    {
+                        window.Show();
+                        window.position = new Rect(80, 75, 1180, 700);
+                    }
+                    else window.maximized = true;
+                    window.Focus();
                 }
                 EditorApplication.EnterPlaymode(); return;
             }
@@ -204,14 +214,14 @@ namespace FortyTwoAndBeyond.Editor
             Directory.CreateDirectory("Builds/verification");
             if (stage == 1)
             {
-                ScreenCapture.CaptureScreenshot("Builds/verification/mob-target.png");
+                ScreenCapture.CaptureScreenshot(UiCaptureName("mob-target"));
                 captureAt = EditorApplication.timeSinceStartup + 1;
                 stage = 2;
                 return;
             }
             if (stage == 2)
             {
-                if (!File.Exists("Builds/verification/mob-target.png")) { Fail("Missing mob target capture."); return; }
+                if (!File.Exists(UiCaptureName("mob-target"))) { Fail("Missing mob target capture."); return; }
                 FieldInfo field = typeof(SpaceClient).GetField("hud", BindingFlags.Instance | BindingFlags.NonPublic);
                 FlightHud hud = field?.GetValue(client) as FlightHud;
                 if (hud == null) { Fail("UI smoke could not find flight HUD."); return; }
@@ -224,14 +234,14 @@ namespace FortyTwoAndBeyond.Editor
             }
             if (stage == 3)
             {
-                ScreenCapture.CaptureScreenshot("Builds/verification/equipment.png");
+                ScreenCapture.CaptureScreenshot(UiCaptureName("equipment"));
                 captureAt = EditorApplication.timeSinceStartup + 1;
                 stage = 4;
                 return;
             }
             if (stage == 4)
             {
-                if (!File.Exists("Builds/verification/equipment.png")) { Fail("Missing equipment capture."); return; }
+                if (!File.Exists(UiCaptureName("equipment"))) { Fail("Missing equipment capture."); return; }
                 FieldInfo field = typeof(SpaceClient).GetField("hud", BindingFlags.Instance | BindingFlags.NonPublic);
                 (field?.GetValue(client) as FlightHud)?.ToggleEquipment();
                 client.SetChart(true);
@@ -245,16 +255,20 @@ namespace FortyTwoAndBeyond.Editor
                 Vector3 point = client.Project(marker.Position);
                 client.SelectAtPointer(new Vector2(point.x, point.y));
                 if (client.Target?.Id != marker.Id) { Fail("Chart marker did not select its destination."); return; }
-                ScreenCapture.CaptureScreenshot("Builds/verification/ui-chart.png");
+                ScreenCapture.CaptureScreenshot(UiCaptureName("ui-chart"));
                 captureAt = EditorApplication.timeSinceStartup + 1;
                 stage = 6;
                 return;
             }
-            if (!File.Exists("Builds/verification/ui-chart.png")) { Fail("Missing chart capture."); return; }
+            if (!File.Exists(UiCaptureName("ui-chart"))) { Fail("Missing chart capture."); return; }
             Debug.Log("PASS: tactical target, equipment and chart panels captured.");
             EditorApplication.update -= Tick;
             EditorApplication.Exit(0);
         }
+
+        /// <returns>string: The standard or small Game View capture path for one HUD view.</returns>
+        private static string UiCaptureName(string stem)
+        { return "Builds/verification/" + stem + (smallUiSmoke ? "-small" : "") + ".png"; }
 
         /// <summary>Close the disposable second client before leaving Play mode.</summary>
         private static void ClosePeer()
