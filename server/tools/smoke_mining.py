@@ -24,7 +24,9 @@ from beyond_protocol.session import SpaceSession
 from beyond_protocol.wire import Frame
 
 
-def exercise(binary: Path, host: str, *, surface_boundary: bool = False) -> None:
+def exercise(binary: Path, host: str, *, surface_boundary: bool = False,
+             overlap: bool = False) -> None:
+    """Exercise native two-pilot mining and optional prospect/tractor overlap."""
     with tempfile.TemporaryDirectory(prefix='enb-mining-') as temporary:
         folder = Path(temporary)
         state, log = folder/'state', folder/'server.log'
@@ -38,8 +40,13 @@ def exercise(binary: Path, host: str, *, surface_boundary: bool = False) -> None
         position = [0., 0., 0.]
         if surface_boundary:
             assert node['radius'] > 0.
-        node['position'] = [2499. + node['radius'] if surface_boundary else 100., 0., 0.]
-        content['resources'], content['mobs'] = [node], []
+        node['position'] = [2499. + node['radius'] if surface_boundary or overlap else 100., 0., 0.]
+        second = None
+        if overlap:
+            second = next(other for other in content['resources']
+                          if other['id'] != node['id'] and other['level'] == 6 and other['ore_items'])
+            second['position'] = [2499. + second['radius'], 0., 0.]
+        content['resources'], content['mobs'] = [node] + ([second] if second else []), []
         content_file = folder/'sector.json'
         content_file.write_text(json.dumps(content))
         for directory in (state, state/'accounts/bob'):
@@ -60,6 +67,16 @@ def exercise(binary: Path, host: str, *, surface_boundary: bool = False) -> None
         def harvested() -> bool:
             inventory = json.loads((state/'inventory.json').read_text())
             return str(node['id']) in inventory.get('harvests', {})
+
+        def delivered() -> bool:
+            """Returns: bool: Whether all claimed ore reached cargo exactly once."""
+            inventory = json.loads((state/'inventory.json').read_text())
+            receipts = inventory.get('harvests', {})
+            required = [node['id']] + ([second['id']] if second else [])
+            if any(str(resource) not in receipts for resource in required) or inventory.get('pending_mining'):
+                return False
+            quantity = sum(sum(receipts[str(resource)]['quantities']) for resource in required)
+            return sum(item['quantity'] for item in inventory['cargo'] if item) == quantity
 
         try:
             process = start_server(binary, host, state, content_file, log)
@@ -88,9 +105,24 @@ def exercise(binary: Path, host: str, *, surface_boundary: bool = False) -> None
             process = start_server(binary, host, state, content_file, log)
             pump(sessions, lambda: harvested() and seen(0, 0x2013) and seen(1, 0x2013), 35, observed)
             assert endpoints == [session.sector.getsockname() for session in sessions]
+            if second:
+                owner = sessions[0].ticket.player_id
+                observed.clear()
+                sessions[0].send(0x17, struct.pack('<II', owner, second['id']))
+                sessions[0].send(0x2c, struct.pack('<4I', owner, 17, second['id'], 0))
+                pump(sessions, lambda: any(index == 0 and frame.opcode == 0x66
+                                             for index, frame in observed), 5, observed)
+                sessions[0].send(0x27, struct.pack('>6I', owner, 18, 0, 0, 0, 0))
+                pump(sessions, lambda: seen(0, 0x2012), 5, observed)
+                assert json.loads((state/'inventory.json').read_text()).get('pending_mining')
+                print('PASS: next native prospect starts while previous ore tractor is owned', flush=True)
+                (state/'stop.request').write_text('restart\n')
+                process.wait(timeout=5)
+                process = start_server(binary, host, state, content_file, log)
+                pump(sessions, lambda: str(second['id']) in json.loads((state/'inventory.json').read_text()).get('harvests', {}), 35, observed)
+            pump(sessions, delivered, 45, observed)
             inventory = json.loads((state/'inventory.json').read_text())
-            receipt = inventory['harvests'][str(node['id'])]
-            quantity = sum(receipt['quantities'])
+            quantity = sum(sum(receipt['quantities']) for receipt in inventory['harvests'].values())
             assert quantity > 0 and inventory['explore_xp'] > 0
             assert sum(item['quantity'] for item in inventory['cargo'] if item) == quantity
             bob = json.loads((state/'accounts/bob/inventory.json').read_text())
@@ -120,10 +152,13 @@ def main() -> None:
     parser.add_argument('--server', default='127.0.0.10')
     parser.add_argument('--surface-boundary', action='store_true',
                         help='Mine near the native surface limit while outside center-distance range')
+    parser.add_argument('--overlap', action='store_true',
+                        help='Prospect a second node while first ore is in tractor transit')
     args = parser.parse_args()
     host = sandbox_address(args.server)
     if registered(host): raise SystemExit('Use an unused disposable server address')
-    exercise(args.binary.resolve(), host, surface_boundary=args.surface_boundary)
+    exercise(args.binary.resolve(), host, surface_boundary=args.surface_boundary,
+             overlap=args.overlap)
 
 
 if __name__ == '__main__': main()

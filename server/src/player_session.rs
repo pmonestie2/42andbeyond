@@ -138,6 +138,7 @@ pub struct PlayerSession {
     last_loot_publish: Option<Instant>,
     world_root: PathBuf,
     mining: Option<mining::MiningCast>,
+    tractor_mining: Option<mining::MiningCast>,
     harvest_visuals: Vec<harvest_visuals::HarvestVisual>,
     resource_window: Option<u32>,
     resource_revision: Option<(u32, u64, Vec<u32>)>,
@@ -324,6 +325,7 @@ impl PlayerSession {
             last_loot_publish: None,
             world_root,
             mining: None,
+            tractor_mining: None,
             harvest_visuals: Vec::new(),
             resource_window: None,
             resource_revision: None,
@@ -413,7 +415,7 @@ impl PlayerSession {
         );
         if let Err(error) = session.restore_session() {
             crate::server_error!("Session recovery skipped: {error}");
-            session.cancel_mining("Session recovery could not complete.")?;
+            session.abort_all_mining("Session recovery could not complete.")?;
             session.cancel_looting("Session recovery could not complete.")?;
             session.logged_in = false;
             session.selected_peer = None;
@@ -1055,7 +1057,7 @@ impl PlayerSession {
                     .push(ClientEvent::Formation { action, target });
             }
             3 | 0xb9 => {
-                self.cancel_mining("Logged out.")?;
+                self.abort_all_mining("Logged out.")?;
                 self.cancel_looting("Logged out.")?;
                 self.pending.push(Frame::new(0xba, vec![]));
                 self.logged_in = false;
@@ -1480,7 +1482,7 @@ impl PlayerSession {
         self.stop_following();
         self.finish_transition()?;
         self.cancel_looting("Logged out.")?;
-        self.cancel_mining("Logged out.")?;
+        self.abort_all_mining("Logged out.")?;
         self.resource_window = None;
         self.npc_interaction = None;
         self.save()?;
@@ -2914,7 +2916,187 @@ mod tests {
     }
 
     #[test]
-    fn mining_cancellation_and_disk_failure_leave_ore_unawarded_and_release_claims() {
+    fn prospect_overlaps_prior_tractor_on_same_node_and_recovers_both_awards() {
+        let mut ship = mining_ship();
+        let chosen = (0x20000001..0x20000100)
+            .find_map(|id| {
+                let mut sector = ship.sector.clone();
+                sector.resources[0].object.id = id;
+                let field = ResourceField::load(
+                    &sector,
+                    &ship.items,
+                    ship.state_dir.join("resources/1076.json"),
+                )
+                .ok()?;
+                (field.get(id).ok()?.contents.iter().flatten().count() >= 2)
+                    .then_some((sector, field, id))
+            })
+            .unwrap();
+        ship.sector = chosen.0;
+        ship.resource_field = Arc::new(Mutex::new(chosen.1));
+        ship.target = chosen.2;
+        ship.open_resource_window(ship.target).unwrap();
+        ship.selected_peer = Some("127.0.0.1".parse().unwrap());
+        ship.endpoint = Some("127.0.0.1:22091".parse().unwrap());
+        let quantities = {
+            let field = lock_resources(&ship.resource_field).unwrap();
+            let node = field.get(ship.target).unwrap();
+            [
+                node.contents[0].as_ref().unwrap().quantity,
+                node.contents[1].as_ref().unwrap().quantity,
+            ]
+        };
+        mine_slot(&mut ship, 0).unwrap();
+        ship.advance_mining(100.).unwrap();
+        assert!(ship.mining.is_none());
+        assert!(ship.tractor_mining.is_some());
+        assert!(ship.inventory.pending_mining.is_some());
+        let tractor_effect = ship.tractor_mining.as_ref().unwrap().effect;
+        assert!(ship
+            .harvest_visuals
+            .iter()
+            .any(|frame| frame.frame.opcode == 0x2013
+                && frame.frame.body[8..12] == tractor_effect.to_le_bytes()));
+        assert_eq!(
+            ship.inventory.harvests[&ship.target].quantities[0],
+            quantities[0]
+        );
+        mine_slot(&mut ship, 1).unwrap();
+        assert!(ship.mining.is_some() && ship.tractor_mining.is_some());
+        assert!(
+            ship.mining.as_ref().unwrap().remaining
+                >= ship.tractor_mining.as_ref().unwrap().remaining + 0.099
+        );
+
+        let mut other = mining_ship();
+        other.account.character.game_id += 1;
+        other.sector = ship.sector.clone();
+        other.target = ship.target;
+        other
+            .attach_resource_field(Arc::clone(&ship.resource_field))
+            .unwrap();
+        other.open_resource_window(other.target).unwrap();
+        assert!(mine_slot(&mut other, 1).is_err());
+
+        ship.save().unwrap();
+        ship.checkpoint_session(true).unwrap();
+        let mut restored =
+            PlayerSession::new(ship.sector.clone(), ship.bind, ship.state_dir.clone()).unwrap();
+        assert!(restored.mining.is_some() && restored.tractor_mining.is_some());
+        let replay = restored
+            .harvest_visuals
+            .iter()
+            .map(|frame| frame.frame.opcode)
+            .collect::<Vec<_>>();
+        assert!(
+            replay.iter().position(|opcode| *opcode == 0x2013).unwrap()
+                < replay.iter().position(|opcode| *opcode == 0x2012).unwrap()
+        );
+        for _ in 0..100 {
+            restored.advance_mining(0.25).unwrap();
+        }
+        assert!(restored.mining.is_none() && restored.tractor_mining.is_none());
+        assert!(restored.inventory.pending_mining.is_none());
+        assert_eq!(
+            restored.inventory.harvests[&restored.target].quantities[..2],
+            quantities
+        );
+        let ore: u32 = restored
+            .inventory
+            .cargo
+            .iter()
+            .flatten()
+            .map(|item| item.quantity)
+            .sum();
+        assert_eq!(ore, quantities.iter().sum::<u32>());
+        other
+            .attach_resource_field(Arc::clone(&restored.resource_field))
+            .unwrap();
+        assert!(mine_slot(&mut other, 0).is_err());
+        assert!(mine_slot(&mut other, 1).is_err());
+    }
+
+    #[test]
+    fn mining_escrow_recovers_after_inventory_rename_beats_phase_checkpoint() {
+        let mut ship = mining_ship();
+        ship.selected_peer = Some("127.0.0.1".parse().unwrap());
+        ship.endpoint = Some("127.0.0.1:22092".parse().unwrap());
+        mine_slot(&mut ship, 0).unwrap();
+        ship.save().unwrap();
+        ship.checkpoint_session(true).unwrap(); // Old prospect phase stays on disk.
+        ship.advance_mining(100.).unwrap();
+        let earned = ship.inventory.explore_xp;
+        let quantity = ship
+            .inventory
+            .pending_mining
+            .as_ref()
+            .unwrap()
+            .item
+            .quantity;
+        let mut restored =
+            PlayerSession::new(ship.sector.clone(), ship.bind, ship.state_dir.clone()).unwrap();
+        assert!(restored.mining.is_none());
+        assert!(restored.tractor_mining.is_some());
+        restored.advance_mining(100.).unwrap();
+        assert!(restored.inventory.pending_mining.is_none());
+        assert_eq!(restored.inventory.explore_xp, earned);
+        assert_eq!(
+            restored
+                .inventory
+                .cargo
+                .iter()
+                .flatten()
+                .map(|item| item.quantity)
+                .sum::<u32>(),
+            quantity
+        );
+        let repeated =
+            PlayerSession::new(ship.sector.clone(), ship.bind, ship.state_dir.clone()).unwrap();
+        assert!(repeated.mining.is_none() && repeated.tractor_mining.is_none());
+        assert_eq!(repeated.inventory.explore_xp, earned);
+        assert_eq!(
+            repeated
+                .inventory
+                .cargo
+                .iter()
+                .flatten()
+                .map(|item| item.quantity)
+                .sum::<u32>(),
+            quantity
+        );
+    }
+
+    #[test]
+    fn cancelling_new_prospect_keeps_previous_tractor_owned_and_deliverable() {
+        let mut ship = mining_ship();
+        mine_slot(&mut ship, 0).unwrap();
+        ship.advance_mining(100.).unwrap();
+        let quantity = ship
+            .inventory
+            .pending_mining
+            .as_ref()
+            .unwrap()
+            .item
+            .quantity;
+        assert!(ship.tractor_mining.is_some());
+        ship.cancel_mining("Target changed.").unwrap();
+        assert!(ship.tractor_mining.is_some());
+        ship.advance_mining(100.).unwrap();
+        assert!(ship.tractor_mining.is_none());
+        assert!(ship.inventory.pending_mining.is_none());
+        assert_eq!(
+            ship.inventory
+                .cargo
+                .iter()
+                .flatten()
+                .map(|item| item.quantity)
+                .sum::<u32>(),
+            quantity
+        );
+    }
+
+    #[test]
+    fn mining_cancellation_and_disk_failure_keep_committed_ore_in_escrow() {
         let mut ship = mining_ship();
         let before = ship.inventory.clone();
         mine_slot(&mut ship, 0).unwrap();
@@ -2926,20 +3108,32 @@ mod tests {
         mine_slot(&mut ship, 0).unwrap();
         ship.advance_mining(100.).unwrap(); // enter tractor phase
         fs::create_dir_all(&ship.state_dir).unwrap();
+        let original_dir = ship.state_dir.clone();
         let blocked = ship.state_dir.join("blocked");
         fs::write(&blocked, b"file, not directory").unwrap();
         ship.state_dir = blocked;
         ship.advance_mining(100.).unwrap();
         assert!(ship.mining.is_none());
-        assert_eq!(ship.inventory, before);
+        assert!(ship.inventory.pending_mining.is_some());
+        assert_eq!(ship.inventory.harvests[&ship.target].quantities[0], 4);
         assert!(lock_resources(&ship.resource_field)
             .unwrap()
             .get(ship.target)
             .unwrap()
             .contents[0]
-            .is_some());
-        mine_slot(&mut ship, 0).unwrap(); // failed collection released its claim
-        ship.cancel_mining("Test cleanup.").unwrap();
+            .is_none());
+        ship.state_dir = original_dir;
+        ship.advance_mining(0.).unwrap();
+        assert!(ship.inventory.pending_mining.is_none());
+        assert_eq!(
+            ship.inventory
+                .cargo
+                .iter()
+                .flatten()
+                .map(|item| item.quantity)
+                .sum::<u32>(),
+            4
+        );
     }
 
     #[test]

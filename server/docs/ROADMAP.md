@@ -29,6 +29,11 @@ mean the corresponding gameplay system is complete.
   claims, prospect/tractor effects, cargo and exploration XP. Durable harvest
   receipts rebuild depletion; ordinary nodes respawn after 15 minutes and hulks
   stay depleted. Active casts survive short server replacements.
+  One prospect may now run while previously claimed ore is in tractor transit,
+  including a second slot of the same node. The prospect commit atomically
+  records depletion, exploration XP and owned ore escrow; tractor completion
+  moves that escrow to cargo once. Checkpoint recovery rebuilds the tractor
+  from escrow, and a failed cargo write retries without restoring depleted ore.
 - MOB death attribution and persistent corpse births, native corpse actors and
   loot inventories, killer/group permission checks, credits, timed tractor pickup,
   shared claims, atomic cargo/receipts and cast/depletion recovery after restart.

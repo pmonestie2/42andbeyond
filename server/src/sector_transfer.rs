@@ -142,7 +142,7 @@ impl PlayerSession {
             self.world_root.join(format!("resources/{}.json", next.id)),
         )?;
         resources.register_receipts(self.player_id(), &self.inventory.harvests)?;
-        self.cancel_mining("Sector transition.")?;
+        self.abort_all_mining("Sector transition.")?;
         self.cancel_looting("Sector transition.")?;
         let mut loot = LootWorld::load(
             self.world_root.join(format!("loot/{}.json", next.id)),

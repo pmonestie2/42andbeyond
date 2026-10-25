@@ -40,7 +40,7 @@ impl PlayerSession {
         if self.skills.cast.is_some() {
             return Err(invalid("Finish the current ability before gating."));
         }
-        self.cancel_mining("Gate activated.")?;
+        self.abort_all_mining("Gate activated.")?;
         self.cancel_looting("Gate activated.")?;
         self.detach_formation();
         self.stop_following();

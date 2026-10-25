@@ -86,6 +86,8 @@ pub(super) struct Checkpoint {
     #[serde(default)]
     mining: Option<mining::MiningCast>,
     #[serde(default)]
+    tractor_mining: Option<mining::MiningCast>,
+    #[serde(default)]
     loot_cast: Option<looting::LootCast>,
     #[serde(default)]
     loot_window: Option<u32>,
@@ -269,6 +271,7 @@ impl PlayerSession {
         self.station_pose = saved.station_pose;
         self.station_peers = saved.station_peers;
         self.mining = saved.mining;
+        self.tractor_mining = saved.tractor_mining;
         self.loot_cast = saved.loot_cast;
         self.loot_window = saved.loot_window;
         self.visible_corpses = saved.corpse_ids;
@@ -471,6 +474,7 @@ impl PlayerSession {
             station_pose: self.station_pose.clone(),
             station_peers: self.station_peers.clone(),
             mining: self.mining.clone(),
+            tractor_mining: self.tractor_mining.clone(),
             loot_cast: self.loot_cast.clone(),
             loot_window: self.loot_window,
             corpse_ids: self.visible_corpses.clone(),

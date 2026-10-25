@@ -118,7 +118,7 @@ impl PlayerSession {
         if self.loot_window != Some(self.target) {
             return Err(invalid("Open the loot window first."));
         }
-        if self.loot_cast.is_some() || self.mining.is_some() {
+        if self.loot_cast.is_some() || self.mining.is_some() || self.tractor_mining.is_some() {
             return Err(invalid("Tractor beam already in use."));
         }
         let shared = Arc::clone(&self.loot_world);

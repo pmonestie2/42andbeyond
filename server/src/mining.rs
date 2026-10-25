@@ -35,8 +35,8 @@ impl MiningCast {
         self.slot < crate::resources::RESOURCE_SLOTS
             && self.quantity > 0
             && self.remaining.is_finite()
-            // Prospecting caps at 100s; a heavily debuffed tractor may take
-            // longer (maximum range / minimum supported speed).
+            // A new prospect waits for the previous tractor when needed;
+            // a heavily debuffed tractor may take longer than 100 seconds.
             && (0.0..=2500.).contains(&self.remaining)
             && self.energy_left.is_finite()
             && self.energy_left >= 0.
@@ -71,6 +71,40 @@ impl PlayerSession {
     }
 
     pub(super) fn restore_mining_claim(&mut self) -> io::Result<()> {
+        if let Some(escrow) = self.inventory.pending_mining.clone() {
+            if self
+                .mining
+                .as_ref()
+                .is_some_and(|cast| cast.phase == MiningPhase::Tractor)
+            {
+                self.mining = None;
+            }
+            if self.tractor_mining.as_ref().is_none_or(|cast| {
+                cast.phase != MiningPhase::Tractor
+                    || cast.node != escrow.node
+                    || cast.generation != escrow.generation
+                    || cast.slot != escrow.slot
+                    || cast.quantity != escrow.item.quantity
+            }) {
+                self.tractor_mining = Some(MiningCast {
+                    node: escrow.node,
+                    generation: escrow.generation,
+                    slot: escrow.slot,
+                    quantity: escrow.item.quantity,
+                    template: escrow.item.template,
+                    before_harvested: 0,
+                    remaining: (escrow.deadline_ms.saturating_sub(unix_ms()) as f32 / 1000.)
+                        .min(2500.),
+                    energy_left: 0.,
+                    effect: self.next_effect,
+                    article: None,
+                    phase: MiningPhase::Tractor,
+                });
+                self.next_effect = self.next_effect.wrapping_add(1);
+            }
+        } else {
+            self.tractor_mining = None;
+        }
         let Some(cast) = self.mining.clone() else {
             return Ok(());
         };
@@ -78,6 +112,19 @@ impl PlayerSession {
             || self.already_harvested(cast.node, cast.generation, cast.slot)
                 != cast.before_harvested
         {
+            if self
+                .inventory
+                .pending_mining
+                .as_ref()
+                .is_some_and(|escrow| {
+                    escrow.node == cast.node
+                        && escrow.generation == cast.generation
+                        && escrow.slot == cast.slot
+                })
+            {
+                self.mining = None; // Inventory rename beat the phase checkpoint.
+                return Ok(());
+            }
             return self
                 .cancel_mining("A completed or incompatible mining checkpoint was discarded.");
         }
@@ -98,9 +145,18 @@ impl PlayerSession {
     }
 
     pub(super) fn resume_mining_visuals(&mut self) -> io::Result<()> {
-        let Some(mut cast) = self.mining.clone() else {
-            return Ok(());
-        };
+        if let Some(cast) = self.tractor_mining.clone() {
+            self.tractor_mining = Some(self.resume_mining_visual(cast)?);
+        }
+        if let Some(cast) = self.mining.clone() {
+            self.mining = Some(self.resume_mining_visual(cast)?);
+        }
+        Ok(())
+    }
+
+    /// Returns:
+    ///     MiningCast: The resumed phase with fresh native visual identities.
+    fn resume_mining_visual(&mut self, mut cast: MiningCast) -> io::Result<MiningCast> {
         self.emit_harvest_visual(Frame::new(0xf, cast.effect.to_le_bytes().to_vec()));
         if let Some(article) = cast.article {
             self.emit_harvest_visual(Frame::new(7, article.to_le_bytes().to_vec()));
@@ -118,11 +174,16 @@ impl PlayerSession {
         } else {
             cast.article = Some(self.next_effect);
             self.next_effect = self.next_effect.wrapping_add(1);
-            let position = lock_resources(&self.resource_field)?
-                .get(cast.node)?
-                .definition
-                .object
-                .position;
+            let position = self.inventory.pending_mining.as_ref().map_or_else(
+                || {
+                    lock_resources(&self.resource_field).and_then(|field| {
+                        field
+                            .get(cast.node)
+                            .map(|node| node.definition.object.position)
+                    })
+                },
+                |escrow| Ok(escrow.position),
+            )?;
             self.emit_harvest_visual(packets::tractor_ore(&packets::OreTractor {
                 player: self.player_id(),
                 article: cast.article.unwrap(),
@@ -134,8 +195,7 @@ impl PlayerSession {
                 item: self.items.get(cast.template)?,
             }));
         }
-        self.mining = Some(cast);
-        Ok(())
+        Ok(cast)
     }
 
     fn check_mining_position(&self, id: u32) -> io::Result<()> {
@@ -226,7 +286,14 @@ impl PlayerSession {
             .received(item.template, quantity, u32::MAX as usize, &self.items)?;
         let template = item.template;
         let generation = node.generation;
-        let remaining = (cost * quantity as f32 / 25.).clamp(0.1, 100.);
+        let remaining = (cost * quantity as f32 / 25.)
+            .clamp(0.1, 100.)
+            .max(
+                self.tractor_mining
+                    .as_ref()
+                    .map_or(0., |cast| cast.remaining + 0.1),
+            )
+            .min(2500.);
         let before_harvested =
             self.already_harvested(self.target, generation, transfer.source_slot);
         field.claim(
@@ -286,7 +353,40 @@ impl PlayerSession {
         Ok(())
     }
 
+    /// Stop both beams when the ship leaves the sector or authenticated life.
+    pub(super) fn abort_all_mining(&mut self, reason: &str) -> io::Result<()> {
+        self.cancel_mining(reason)?;
+        if let Some(cast) = self.tractor_mining.take() {
+            self.emit_harvest_visual(Frame::new(0xf, cast.effect.to_le_bytes().to_vec()));
+            if let Some(article) = cast.article {
+                self.emit_harvest_visual(Frame::new(7, article.to_le_bytes().to_vec()));
+            }
+            // The ore is already depleted and owned in the inventory escrow.
+            // A failed cargo write leaves that escrow intact for later retry.
+            if let Err(error) = self.deliver_mining_escrow() {
+                crate::server_error!(
+                    "Mining escrow delivery deferred for {}: {error}",
+                    self.player_id()
+                );
+            }
+            self.pending.push(packets::message(reason));
+        }
+        Ok(())
+    }
+
     pub(super) fn advance_mining(&mut self, dt: f32) -> io::Result<()> {
+        if let Some(mut cast) = self.tractor_mining.clone() {
+            cast.remaining = (cast.remaining - dt).max(0.);
+            self.tractor_mining = Some(cast.clone());
+            if cast.remaining == 0. && self.deliver_mining_escrow().is_ok() {
+                if let Some(article) = cast.article {
+                    self.emit_harvest_visual(Frame::new(7, article.to_le_bytes().to_vec()));
+                }
+                self.tractor_mining = None;
+            }
+        } else if self.inventory.pending_mining.is_some() {
+            self.deliver_mining_escrow()?;
+        }
         let Some(cast) = self.mining.as_ref() else {
             return self.refresh_resource_target(false);
         };
@@ -309,6 +409,9 @@ impl PlayerSession {
             return Ok(());
         }
         if cast.phase == MiningPhase::Prospect {
+            if self.inventory.pending_mining.is_some() {
+                return Ok(()); // Prior tractor must commit before this escrow replaces it.
+            }
             let position = lock_resources(&self.resource_field)?
                 .get(cast.node)?
                 .definition
@@ -316,11 +419,15 @@ impl PlayerSession {
                 .position;
             let speed = self.equipment.ship.tractor_speed;
             cast.remaining = (distance(self.position, position) / speed - 0.2).max(0.1);
+            if let Err(error) = self.escrow_mined_item(&cast, position) {
+                return self.cancel_mining(&format!("Mining collection stopped: {error}"));
+            }
             cast.phase = MiningPhase::Tractor;
             cast.article = Some(self.next_effect);
             self.next_effect = self.next_effect.wrapping_add(1);
             let effect = self.next_effect;
             self.next_effect = self.next_effect.wrapping_add(1);
+            self.emit_harvest_visual(Frame::new(0xf, cast.effect.to_le_bytes().to_vec()));
             self.emit_harvest_visual(packets::tractor_ore(&packets::OreTractor {
                 player: self.player_id(),
                 article: cast.article.unwrap(),
@@ -331,8 +438,10 @@ impl PlayerSession {
                 position,
                 item: self.items.get(cast.template)?,
             }));
-            self.mining = Some(cast);
-            return Ok(());
+            cast.effect = effect;
+            self.tractor_mining = Some(cast);
+            self.mining = None;
+            return self.refresh_resource_target(true);
         }
         match self.collect_mined_item(&cast) {
             Ok(()) => {
@@ -341,6 +450,80 @@ impl PlayerSession {
             }
             Err(error) => self.cancel_mining(&format!("Mining collection stopped: {error}")),
         }
+    }
+
+    /// Commit depletion, XP and owned ore escrow before broadcasting a tractor.
+    fn escrow_mined_item(&mut self, cast: &MiningCast, position: [f32; 3]) -> io::Result<()> {
+        let shared = Arc::clone(&self.resource_field);
+        let mut field = lock_resources(&shared)?;
+        let mutation = field.prepare_harvest(
+            cast.node,
+            cast.generation,
+            &MiningClaim {
+                owner: self.player_id(),
+                slot: cast.slot,
+                quantity: cast.quantity,
+            },
+            unix_ms(),
+        )?;
+        let mut candidate = self.inventory.clone();
+        candidate
+            .harvests
+            .insert(cast.node, mutation.receipt.clone());
+        candidate.pending_mining = Some(crate::inventory::MiningEscrow {
+            node: cast.node,
+            generation: cast.generation,
+            slot: cast.slot,
+            item: crate::inventory::ItemInstance::stock(cast.template, cast.quantity),
+            position,
+            deadline_ms: unix_ms().saturating_add((cast.remaining * 1000.) as u64),
+        });
+        let explore_level =
+            crate::experience::track(candidate.xp_start_level, candidate.explore_xp)?.level;
+        let xp = crate::experience::mining_xp(
+            u32::from(self.items.get(cast.template)?.level),
+            cast.quantity,
+            explore_level,
+        );
+        let xp = self.record_explore_award(
+            &mut candidate,
+            xp,
+            &format!(
+                "Prospected {} {}",
+                cast.quantity,
+                self.items.get(cast.template)?.name
+            ),
+        )?;
+        self.commit_inventory(candidate)?;
+        field.commit_harvest(mutation);
+        self.pending.push(self.items.get(cast.template)?.packet());
+        self.pending.push(packets::message(&format!(
+            "Prospected {} {} (+{xp} exploration XP).",
+            cast.quantity,
+            self.items.get(cast.template)?.name
+        )));
+        Ok(())
+    }
+
+    /// Move one already-owned ore escrow into cargo exactly once.
+    fn deliver_mining_escrow(&mut self) -> io::Result<()> {
+        let Some(escrow) = self.inventory.pending_mining.clone() else {
+            return Ok(());
+        };
+        let mut candidate = self.inventory.received(
+            escrow.item.template,
+            escrow.item.quantity,
+            u32::MAX as usize,
+            &self.items,
+        )?;
+        candidate.pending_mining = None;
+        self.commit_inventory(candidate)?;
+        self.pending.push(packets::message(&format!(
+            "Picked up {} {}.",
+            escrow.item.quantity,
+            self.items.get(escrow.item.template)?.name
+        )));
+        Ok(())
     }
 
     fn collect_mined_item(&mut self, cast: &MiningCast) -> io::Result<()> {

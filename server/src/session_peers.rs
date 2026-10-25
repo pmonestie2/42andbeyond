@@ -60,7 +60,7 @@ impl PlayerSession {
             {
                 return Err(invalid("Formed ship cannot engage its warp drive."));
             }
-            self.cancel_mining("Formation warp started.")?;
+            self.abort_all_mining("Formation warp started.")?;
             self.cancel_looting("Formation warp started.")?;
             self.stop_following();
             if self.skills.cloak_rank > 0 && self.skills.cloak_rank < 6 {

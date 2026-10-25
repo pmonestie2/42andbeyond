@@ -47,7 +47,7 @@ fn large_resource_is_mineable_at_surface_limit_but_tractor_uses_center_distance(
     ship.mining.as_mut().unwrap().remaining = 0.;
     ship.mining.as_mut().unwrap().energy_left = 0.;
     ship.advance_mining(0.).unwrap();
-    let cast = ship.mining.as_ref().unwrap();
+    let cast = ship.tractor_mining.as_ref().unwrap();
     assert_eq!(cast.phase, MiningPhase::Tractor);
     let expected = (3300. / ship.equipment.ship.tractor_speed - 0.2).max(0.1);
     assert!((cast.remaining - expected).abs() < 0.001);

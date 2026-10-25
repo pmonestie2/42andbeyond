@@ -1,7 +1,8 @@
 //! Shared, deterministic resource contents and exclusive mining claims.
 //!
 //! Successful harvest counters live in the SAME atomic file as the miner's
-//! cargo. A field rebuilds depletion from every account's counters on startup;
+//! cargo or pending tractor escrow. A field rebuilds depletion from every
+//! account's counters on startup;
 //! no second write can lose depletion after awarding ore. Only respawn generation
 //! changes need a separate world file, persisted before exposing new stock.
 use crate::content::{ResourceNode, Sector};

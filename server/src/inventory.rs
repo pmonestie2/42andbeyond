@@ -63,6 +63,37 @@ impl ItemInstance {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct MiningEscrow {
+    pub node: u32,
+    pub generation: u64,
+    pub slot: usize,
+    pub item: ItemInstance,
+    pub position: [f32; 3],
+    pub deadline_ms: u64,
+}
+
+impl MiningEscrow {
+    /// Returns:
+    ///     bool: Whether this pending ore matches a durable harvest receipt.
+    pub fn valid(&self, inventory: &Inventory, templates: &ItemCatalog) -> bool {
+        self.node != 0
+            && self.slot < crate::resources::RESOURCE_SLOTS
+            && self.item.quantity > 0
+            && self.item.quantity <= 1_000_000
+            && templates.get(self.item.template).is_ok()
+            && self
+                .position
+                .iter()
+                .all(|coordinate| coordinate.is_finite())
+            && self.deadline_ms != 0
+            && inventory.harvests.get(&self.node).is_some_and(|receipt| {
+                receipt.generation == self.generation
+                    && receipt.quantities[self.slot] >= self.item.quantity
+            })
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Inventory {
     pub cargo: Vec<Option<ItemInstance>>,
     pub equipped: Vec<Option<ItemInstance>>,
@@ -80,6 +111,8 @@ pub struct Inventory {
     pub pending_launch: Option<crate::projectiles::LaunchJournal>,
     #[serde(default)]
     pub harvests: BTreeMap<u32, crate::resources::HarvestReceipt>,
+    #[serde(default)]
+    pub pending_mining: Option<MiningEscrow>,
     #[serde(default)]
     pub combat_xp: u64,
     /// Latest credited death generation per sector and public spawn.
@@ -240,6 +273,7 @@ impl Inventory {
             shot_sequence: 0,
             pending_launch: None,
             harvests: BTreeMap::new(),
+            pending_mining: None,
             combat_xp: 0,
             combat_awards: BTreeMap::new(),
             explore_xp: 0,
@@ -290,6 +324,13 @@ impl Inventory {
     }
 
     pub fn validate(&self, templates: &ItemCatalog) -> io::Result<()> {
+        if self
+            .pending_mining
+            .as_ref()
+            .is_some_and(|escrow| !escrow.valid(self, templates))
+        {
+            return Err(invalid("Invalid pending mining escrow."));
+        }
         self.missions
             .validate(&crate::missions::MissionCatalog::load()?)?;
         if self.mission_awarded_skills.len() > 64
