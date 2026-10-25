@@ -12,10 +12,47 @@ namespace FortyTwoAndBeyond.Protocol
     {
         public readonly int Slot;
         public readonly string Name;
+        public readonly string ClassName;
+        public readonly uint CombatLevel, TradeLevel, ExploreLevel;
+        private static readonly string[] Classes =
+        {
+            "Terran Enforcer", "Terran Trader", "Terran Scout",
+            "Jenquai Defender", "Jenquai Seeker", "Jenquai Explorer",
+            "Progen Warrior", "Progen Privateer", "Progen Sentinel",
+        };
 
-        /// <summary>Keep the wire slot beside its displayed character name.</summary>
-        public CharacterInfo(int slot, string name)
-        { Slot = slot; Name = name; }
+        /// <summary>Keep the server's character identity and earned tracks immutable.</summary>
+        public CharacterInfo(int slot, string name, uint race, uint profession,
+            uint combatLevel, uint tradeLevel, uint exploreLevel)
+        {
+            if (race > 2 || profession > 2)
+                throw new InvalidDataException("Invalid native character class.");
+            Slot = slot; Name = name; ClassName = Classes[race * 3 + profession];
+            CombatLevel = combatLevel; TradeLevel = tradeLevel; ExploreLevel = exploreLevel;
+        }
+
+        /// <returns>CharacterInfo[]: The occupied slots in one native character roster.</returns>
+        public static CharacterInfo[] DecodeRoster(byte[] body)
+        {
+            if (body == null || body.Length < 1874)
+                throw new InvalidDataException("Character list is incomplete.");
+            uint count = Wire.U32(body, 8, true);
+            if (count > 5 || 133 + count * 374 > body.Length)
+                throw new InvalidDataException("Invalid character list.");
+            var found = new System.Collections.Generic.List<CharacterInfo>();
+            for (int slot = 0; slot < count; slot++)
+            {
+                int record = slot * 374;
+                int avatar = 133 + record;
+                string name = Wire.Text(body, avatar, 20);
+                if (name.Length == 0) continue;
+                found.Add(new CharacterInfo(slot, name,
+                    Wire.U32(body, avatar + 46), Wire.U32(body, avatar + 50),
+                    Wire.U32(body, record + 40, true), Wire.U32(body, record + 44, true),
+                    Wire.U32(body, record + 48, true)));
+            }
+            return found.ToArray();
+        }
     }
 
     /// <summary>Authenticate and read the available characters without entering one.</summary>
@@ -107,17 +144,9 @@ namespace FortyTwoAndBeyond.Protocol
                 Frame response = ReadFrame();
                 if (response.Opcode != 0x70 || response.Body.Length < 1874)
                     throw new InvalidDataException("Character list rejected.");
-                uint count = Wire.U32(response.Body, 8, true);
-                if (count > 5 || 133 + count * 374 > response.Body.Length)
-                    throw new InvalidDataException("Invalid character list.");
-                var found = new System.Collections.Generic.List<CharacterInfo>();
-                for (int slot = 0; slot < count; slot++)
-                {
-                    string name = Wire.Text(response.Body, 133 + slot * 374, 20);
-                    if (name.Length > 0) found.Add(new CharacterInfo(slot, name));
-                }
-                if (found.Count == 0) throw new InvalidOperationException("This account has no characters.");
-                Volatile.Write(ref characters, found.ToArray());
+                CharacterInfo[] found = CharacterInfo.DecodeRoster(response.Body);
+                if (found.Length == 0) throw new InvalidOperationException("This account has no characters.");
+                Volatile.Write(ref characters, found);
             }
             catch (OperationCanceledException) { }
             catch (Exception exception)

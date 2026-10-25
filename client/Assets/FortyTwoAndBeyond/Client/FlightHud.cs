@@ -660,16 +660,24 @@ namespace FortyTwoAndBeyond.Client
         private void CharacterSelection()
         {
             CharacterRecord[] characters = client.Characters;
-            var rect = new Rect(CanvasWidth / 2 - 220, CanvasHeight / 2 - 170, 440, 340);
-            Panel(rect); GUI.Label(new Rect(rect.x + 24, rect.y + 20, 390, 34), "CHOOSE YOUR TOON", heading);
-            GUI.Label(new Rect(rect.x + 24, rect.y + 58, 390, 24), "Characters on this account", small);
+            float height = Mathf.Max(340, 158 + characters.Length * 52);
+            var rect = new Rect(CanvasWidth / 2 - 220, CanvasHeight / 2 - height / 2, 440, height);
+            Panel(rect); GUI.Label(new Rect(rect.x + 24, rect.y + 20, 390, 34), "CHOOSE YOUR PILOT", heading);
+            GUI.Label(new Rect(rect.x + 24, rect.y + 58, 390, 24),
+                "Server-owned combat, trade and explore levels", small);
             for (int i = 0; i < characters.Length; i++)
             {
                 CharacterRecord character = characters[i];
-                if (GUI.Button(new Rect(rect.x + 24, rect.y + 96 + i * 48, 392, 40), character.Name, button))
+                string levelZero = character.CombatLevel + character.TradeLevel +
+                    character.ExploreLevel == 0 ? "  ·  LEVEL 0" : "";
+                string caption = character.Name + "  ·  " + character.ClassName + levelZero +
+                    $"\nCOMBAT {character.CombatLevel}   ·   TRADE {character.TradeLevel}" +
+                    $"   ·   EXPLORE {character.ExploreLevel}";
+                if (GUI.Button(new Rect(rect.x + 24, rect.y + 93 + i * 52, 392, 47), caption, button))
                     client.ChooseCharacter(character.Slot);
             }
-            if (GUI.Button(new Rect(rect.x + 24, rect.y + 286, 150, 32), "Back to login", button)) client.ReturnToLogin();
+            if (GUI.Button(new Rect(rect.x + 24, rect.yMax - 54, 150, 32), "Back to login", button))
+                client.ReturnToLogin();
         }
 
         /// <summary>Show a compact command line for server chat and /d_ commands.</summary>

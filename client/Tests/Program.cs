@@ -16,7 +16,7 @@ internal static class Program
         CheckDamageResults(); CheckCombatEngagement(); CheckAttackerSelection(); CheckShotPresentation(); CheckContactSelection(); CheckTargetVerbs(); CheckDeviceEffects();
         CheckNativeDeviceBuff(); CheckPeerScanBuff(); CheckConcurrentRecipientBuffs(); CheckSupportObjectEffects(); CheckShipDefense();
         CheckAmmunitionTransfer(); CheckVaultStackPlacement(); CheckEquippedEffects(); CheckFlightThrottle(); CheckFormationAnchor();
-        CheckAbilityTargets(); CheckSkillTraining();
+        CheckAbilityTargets(); CheckSkillTraining(); CheckCharacterRoster();
         CheckStationLayout(); CheckStationWalk(); CheckDemoRoster(); CheckAddress(); PeerChecks.Decode();
         Console.WriteLine("PASS: framing, ordering, fragmentation, duplicates, bounds, world decoding, private addresses");
         if (args.Length == 2 && args[0] == "--server") { PeerChecks.Live(args[1]); CheckServer(args[1]); }
@@ -25,6 +25,7 @@ internal static class Program
         else if (args.Length == 2 && args[0] == "--enemy-ability-server") EnemyAbilityChecks.Live(args[1]);
         else if (args.Length == 2 && args[0] == "--skill-server") SkillTrainingChecks.Live(args[1], false);
         else if (args.Length == 2 && args[0] == "--skill-resume-server") SkillTrainingChecks.Live(args[1], true);
+        else if (args.Length == 2 && args[0] == "--roster-server") CharacterRosterChecks.Live(args[1]);
         else if (args.Length != 0) throw new ArgumentException("Usage: ProtocolChecks [--server PRIVATE_IP|--recharge-server PRIVATE_IP|--support-server PRIVATE_IP|--enemy-ability-server PRIVATE_IP|--skill-server PRIVATE_IP|--skill-resume-server PRIVATE_IP]");
     }
 
@@ -63,6 +64,21 @@ internal static class Program
             before.Skills.First(skill => skill.Id == 1).Rank == 1 &&
             before.Experience.AvailableSkillPoints == 1,
             "Training AUX lost rank/point update or changed an earlier immutable snapshot.");
+    }
+
+    /// <summary>Decode a server-encoded level-one native progression roster.</summary>
+    private static void CheckCharacterRoster()
+    {
+        byte[] body = FixtureBytes("je-roster-progression.hex");
+        CharacterInfo[] characters = CharacterInfo.DecodeRoster(body);
+        Assert(characters.Length == 1 && characters[0].Slot == 0 &&
+            characters[0].ClassName == "Jenquai Explorer" &&
+            characters[0].CombatLevel == 1 && characters[0].TradeLevel == 0 &&
+            characters[0].ExploreLevel == 0,
+            "Native roster lost class or earned track levels.");
+        byte[] invalidClass = (byte[])body.Clone(); invalidClass[179] = 3;
+        Reject(() => CharacterInfo.DecodeRoster(invalidClass));
+        Reject(() => CharacterInfo.DecodeRoster(new byte[20]));
     }
 
     /// <summary>Fail with a useful behavior description.</summary>
