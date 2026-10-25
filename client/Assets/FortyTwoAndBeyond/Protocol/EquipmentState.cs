@@ -6,6 +6,23 @@ using System.Text.RegularExpressions;
 
 namespace FortyTwoAndBeyond.Protocol
 {
+    /// <summary>Immutable server-published typed damage deflection percentages.</summary>
+    public sealed class ShipDefenseState
+    {
+        public static readonly ShipDefenseState Unknown = new ShipDefenseState(false, new int[7]);
+        public readonly bool Known;
+        public readonly IReadOnlyList<int> Deflects;
+
+        /// <summary>Copy all seven native damage channels for a Unity-thread snapshot.</summary>
+        public ShipDefenseState(bool known, int[] deflects)
+        {
+            if (deflects == null || deflects.Length != 7)
+                throw new ArgumentException("Seven native damage channels are required.", nameof(deflects));
+            Known = known;
+            Deflects = Array.AsReadOnly((int[])deflects.Clone());
+        }
+    }
+
     /// <summary>An immutable public equipped effect supplied in a native item template.</summary>
     public sealed class ItemEffectInfo
     {
@@ -138,6 +155,7 @@ namespace FortyTwoAndBeyond.Protocol
     {
         public ItemState[] Cargo = new ItemState[40], Mounted = new ItemState[20], Ammo = new ItemState[20], Vault = new ItemState[96];
         public uint CargoCapacity;
+        public ShipDefenseState Defense = ShipDefenseState.Unknown;
         public float Energy = -1, Shield = -1, Hull = -1, MaxEnergy = -1, MaxShield = -1, MaxHull = -1;
         public uint WeaponMounts, DeviceMounts, TargetId;
         public bool Firing;

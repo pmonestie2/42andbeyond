@@ -127,7 +127,7 @@ namespace FortyTwoAndBeyond.Protocol
             var reader = new AuxState(body); Flags fields = reader.Mask(58);
             uint? privateWarp = null, globalWarp = null;
             buffRevisions = new TimedDeviceBuff[5];
-            for (int i = 0; i <= 42; i++)
+            for (int i = 0; i <= 45; i++)
             {
                 if (!fields.Present[i] && fields.Default[i] && (i == 4 || i == 6 || i >= 35 && i <= 41))
                 { if (reader.Byte() != 5) throw new InvalidDataException("Invalid nested AUX reset."); continue; }
@@ -136,6 +136,12 @@ namespace FortyTwoAndBeyond.Protocol
                     if (reader.Byte() != 5) throw new InvalidDataException("Invalid buff reset.");
                     for (int slot = 0; slot < buffRevisions.Length; slot++)
                         buffRevisions[slot] = TimedDeviceBuff.Empty;
+                    continue;
+                }
+                if (!fields.Present[i] && fields.Default[i] && (i == 44 || i == 45))
+                {
+                    if (reader.Byte() != 5) throw new InvalidDataException("Invalid ship stats reset.");
+                    equipment.Defense = ShipDefenseState.Unknown;
                     continue;
                 }
                 if (!fields.Present[i]) continue;
@@ -156,12 +162,39 @@ namespace FortyTwoAndBeyond.Protocol
                     case 32: globalWarp = reader.UInt(); break;
                     case 36: reader.Inventory(equipment); break;
                     case 42: reader.ReadBuff(buffRevisions); break;
+                    case 44: case 45: equipment.Defense = reader.ReadDefense(equipment.Defense); break;
                     default: return null;
                 }
             }
             if (privateWarp.HasValue != globalWarp.HasValue)
                 throw new InvalidDataException("Incomplete native warp phase.");
             return privateWarp.HasValue ? WarpState.Decode(privateWarp.Value, globalWarp.Value) : null;
+        }
+
+        /// <summary>
+        /// Returns:
+        ///     ShipDefenseState: A retained typed-deflect revision from nested ship stats.
+        /// </summary>
+        private ShipDefenseState ReadDefense(ShipDefenseState previous)
+        {
+            Flags stats = Mask(15);
+            var deflects = new int[7];
+            for (int channel = 0; channel < deflects.Length; channel++)
+                deflects[channel] = previous.Deflects[channel];
+            bool known = previous.Known;
+            for (int field = 0; field < 15; field++)
+            {
+                if (stats.Present[field])
+                {
+                    int value = unchecked((int)UInt());
+                    if (field >= 8) { deflects[field - 8] = value; known = true; }
+                }
+                else if (stats.Default[field])
+                {
+                    if (field >= 8) { deflects[field - 8] = 0; known = true; }
+                }
+            }
+            return new ShipDefenseState(known, deflects);
         }
 
         /// <summary>Read independent self and recipient revisions from native slots zero through four.</summary>

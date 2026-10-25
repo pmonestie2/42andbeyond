@@ -14,7 +14,7 @@ internal static class Program
         CheckReassembly(); CheckWorld(); CheckMissionJournal(); CheckMissionDialogue();
         CheckExperience(); CheckHullProgression(); CheckReputation(); CheckMiningPhases(); CheckLootTractor(); CheckLootSweep(); CheckWarpPhases(); CheckNavigationSelection(); CheckWarpTargets(); CheckWeaponReady();
         CheckDamageResults(); CheckCombatEngagement(); CheckAttackerSelection(); CheckShotPresentation(); CheckContactSelection(); CheckTargetVerbs(); CheckDeviceEffects();
-        CheckNativeDeviceBuff(); CheckPeerScanBuff(); CheckConcurrentRecipientBuffs(); CheckSupportObjectEffects();
+        CheckNativeDeviceBuff(); CheckPeerScanBuff(); CheckConcurrentRecipientBuffs(); CheckSupportObjectEffects(); CheckShipDefense();
         CheckAmmunitionTransfer(); CheckVaultStackPlacement(); CheckEquippedEffects(); CheckFlightThrottle(); CheckFormationAnchor();
         CheckStationLayout(); CheckStationWalk(); CheckDemoRoster(); CheckAddress(); PeerChecks.Decode();
         Console.WriteLine("PASS: framing, ordering, fragmentation, duplicates, bounds, world decoding, private addresses");
@@ -1119,6 +1119,26 @@ internal static class Program
             "The immutable equipment snapshot lost the catalog effect label.");
         byte[] truncated = FixtureBytes("item986.hex").Skip(4).Take(70).ToArray();
         Reject(() => ItemTemplateInfo.Decode(truncated));
+    }
+
+    /// <summary>Decode native typed deflects without predicting damage reduction locally.</summary>
+    private static void CheckShipDefense()
+    {
+        byte[] frame = FixtureBytes("deflect_ship_parameters.hex");
+        Assert(Wire.U16(frame, 2) == 0x1b, "Ship defense fixture is not native AUX.");
+        var world = new World();
+        world.Apply(new Frame(0x1b, Wire.Slice(frame, 4, frame.Length - 4)), 0x40000001);
+        Snapshot snapshot = new Snapshot(world, "ready", true);
+        Assert(snapshot.Defense.Known && snapshot.Defense.Deflects.SequenceEqual(
+            new[] { 13, 19, 25, 31, 37, 43, 49 }),
+            "Native ship stats 44/45 typed deflects or their damage order were lost.");
+        Assert(snapshot.MaxEnergy == 1000 && snapshot.MaxShield == 500 && snapshot.Hull == 900,
+            "Defense parsing displaced preceding authoritative ship resources.");
+        int[] original = { 1, 2, 3, 4, 5, 6, 7 };
+        var immutable = new ShipDefenseState(true, original);
+        original[0] = 99;
+        Assert(immutable.Deflects[0] == 1,
+            "The Unity defense snapshot retained mutable worker-owned values.");
     }
 
     /// <summary>Decode and rotate the native leader-relative formation offset.</summary>

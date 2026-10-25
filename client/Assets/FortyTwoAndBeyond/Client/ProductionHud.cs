@@ -32,7 +32,9 @@ namespace FortyTwoAndBeyond.Client
                 wrappedBody = new GUIStyle(flightHud.BodyStyle) { wordWrap = true };
                 wrappedSmall = new GUIStyle(flightHud.SmallStyle) { wordWrap = true };
             }
-            Rect toggle = new Rect((CanvasWidth - 180) * .5f + 100, 27, 180, 30);
+            bool compact = CanvasWidth < 1450;
+            Rect toggle = compact ? new Rect(CanvasWidth * .5f - 84, 27, 160, 30) :
+                new Rect((CanvasWidth - 180) * .5f + 100, 27, 180, 30);
             if (GUI.Button(toggle, open ? "CLOSE BENCH" : "WORKBENCH", flightHud.ButtonStyle))
             {
                 open = !open;

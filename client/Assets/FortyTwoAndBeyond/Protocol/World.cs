@@ -1075,6 +1075,7 @@ namespace FortyTwoAndBeyond.Protocol
         public readonly string[] Messages;
         public readonly bool Ready, HasPosition;
         public readonly float Speed, Energy, Shield, Hull, MaxEnergy, MaxShield, MaxHull;
+        public readonly ShipDefenseState Defense;
         public readonly float TargetSpeed, Acceleration, AngularY, AngularZ;
         public readonly ItemView[] Cargo, Mounted, Ammo, Vault;
         public readonly ProductionView Production;
@@ -1155,6 +1156,7 @@ namespace FortyTwoAndBeyond.Protocol
             EquipmentState equipment = world.Equipment;
             Energy = equipment.Energy; Shield = equipment.Shield; Hull = equipment.Hull;
             MaxEnergy = equipment.MaxEnergy; MaxShield = equipment.MaxShield; MaxHull = equipment.MaxHull;
+            Defense = equipment.Defense;
             WeaponMounts = equipment.WeaponMounts; DeviceMounts = equipment.DeviceMounts;
             CargoCapacity = equipment.CargoCapacity;
             SelectedTargetId = equipment.TargetId;

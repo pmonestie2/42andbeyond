@@ -29,6 +29,7 @@ namespace FortyTwoAndBeyond.Client
         private ProductionHud productionHud;
         private MissionHud missionHud;
         private TurboHud turboHud;
+        private DefenseHud defenseHud;
         private readonly FlightThrottle flightThrottle = new FlightThrottle();
         private readonly StationWalkState stationWalk = new StationWalkState();
         private readonly LootSweep lootSweep = new LootSweep();
@@ -97,6 +98,7 @@ namespace FortyTwoAndBeyond.Client
             productionHud = new ProductionHud(this, hud);
             missionHud = new MissionHud(this, hud);
             turboHud = new TurboHud(this, hud);
+            defenseHud = new DefenseHud(hud);
             worldRoot = new GameObject("Server world").transform; worldRoot.SetParent(transform, false);
             remoteShips = new RemoteShips(art, worldRoot);
             ship = art.Ship(transform); combatEffects = new CombatEffects(transform, ship, remoteShips); ship.localScale = Vector3.one * .25f;
@@ -323,7 +325,7 @@ namespace FortyTwoAndBeyond.Client
                 if (bindings.Pressed(ControlAction.Follow)) FollowSelected();
             }
             else { previousYaw = previousPitch = 0; flightThrottle.Reset(); }
-            if (!hud.ContainsPointer() && !miningHud.ContainsPointer() &&
+            if (!hud.ContainsPointer() && !defenseHud.ContainsPointer(snapshot) && !miningHud.ContainsPointer() &&
                 !abilityHud.ContainsPointer() && !missionHud.ContainsPointer())
             {
                 if (Input.GetMouseButton(1) && !chart)
@@ -979,6 +981,9 @@ namespace FortyTwoAndBeyond.Client
             try
             {
                 hud.Draw(ref host, ref username, ref password);
+                if (!hud.SettingsOpen && !hud.EquipmentOpen && !AbilitiesOpen && !Incapacitated)
+                    defenseHud.Draw(snapshot);
+                else defenseHud.Close();
                 if (!hud.SettingsOpen && !hud.EquipmentOpen)
                 {
                     if (productionHud.IsOpen) vaultHud.Close();
@@ -1004,6 +1009,7 @@ namespace FortyTwoAndBeyond.Client
             worker?.Dispose(); worker = null; snapshot = null; sector = ""; navigationSelection.Reset(); pendingNavigationTarget = 0; positioned = false;
             authoritativePoseAt = lastSnapshotAt = 0;
             picker?.Dispose(); picker = null; characters = null;
+            defenseHud?.Close();
             previousYaw = previousPitch = 0; flightThrottle.Reset(); ClearWorld(); status = "Disconnected";
         }
 
