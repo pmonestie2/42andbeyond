@@ -25,6 +25,7 @@ pub struct ShipStats {
     pub turn_rate: f32,
     pub prospect_bonus: f32,
     pub tractor_speed: f32,
+    pub tractor_range: f32,
     pub deflects: [f32; 9],
 }
 
@@ -61,6 +62,9 @@ impl EquippedModifiers {
             // Public handling effects use the singular spelling while the
             // archived player stat and weapon calculation use the plural.
             "STAT_PROJECTILE_ACCURACY" => "STAT_PROJECTILES_ACCURACY",
+            // SQL effect names differ from the C++ tractor/critical stat keys.
+            "STAT_TRACTORBEAM_SPEED" => "STAT_TRACTORBEAM",
+            "STAT_CRITICAL_HIT" => "STAT_CRITICAL_RATE",
             value => value,
         };
         if !(1..=4).contains(&modifier.operation) {
@@ -211,6 +215,9 @@ impl EquipmentStats {
             turn_rate: modifiers.apply("STAT_TURN", 45.),
             prospect_bonus: modifiers.apply("STAT_SKILL_PROSPECT", 0.),
             tractor_speed: modifiers.apply("STAT_TRACTORBEAM", 200.).max(1.),
+            // Long Tractor Beam has a catalog range modifier. The archived
+            // fixed range ignored it; retain the current 2 km base.
+            tractor_range: modifiers.apply("STAT_TRACTORBEAM_RANGE", 2000.).max(1.),
             deflects,
         };
         let mut weapons = Vec::new();
@@ -285,7 +292,8 @@ impl EquipmentStats {
                 + modifiers.apply_signed("STAT_SKILL_CRITICAL_TARGETING", 0.))
             .max(0.);
             let hit_chances = crate::weapon_accuracy::HitChances::from_bonuses(
-                modifiers.chance_bonus(accuracy_stat),
+                modifiers.chance_bonus(accuracy_stat)
+                    + modifiers.chance_bonus("STAT_WEAPON_ACCURACY"),
                 modifiers.chance_bonus("STAT_CRITICAL_RATE") + critical_skill * 10.,
             )?;
             let turbo = (modifiers.apply("STAT_WEAPON_TURBO", 0.)
@@ -524,5 +532,51 @@ mod tests {
             });
         }
         assert_eq!(modifiers.apply("STAT_IMPULSE", 100.), 155.);
+    }
+
+    #[test]
+    fn public_tractor_and_critical_passives_change_authoritative_stats() {
+        let catalog = ItemCatalog::load().unwrap();
+        let skills = SkillCatalog::load().unwrap();
+        let mut inventory = Inventory::starter(&catalog).unwrap();
+        let base = EquipmentStats::derive(&inventory, &catalog, &skills).unwrap();
+        inventory.equipped[3] = Some(crate::inventory::ItemInstance::stock(813, 1));
+        inventory.equipped[9] = Some(crate::inventory::ItemInstance::stock(1758, 1));
+        let changed = EquipmentStats::derive(&inventory, &catalog, &skills).unwrap();
+        assert_eq!(base.ship.tractor_speed, 200.);
+        assert_eq!(changed.ship.tractor_speed, 304.);
+        assert_eq!(base.ship.tractor_range, 2000.);
+        assert!((changed.ship.tractor_range - 2640.).abs() < 0.001);
+
+        inventory.equipped[3] = Some(crate::inventory::ItemInstance::stock(802, 1));
+        let critical = EquipmentStats::derive(&inventory, &catalog, &skills).unwrap();
+        let hit = |chances| {
+            crate::weapon_accuracy::roll_weapon_damage(10., 9400, chances)
+                .unwrap()
+                .outcome
+        };
+        assert_eq!(
+            hit(base.weapons[0].hit_chances),
+            crate::weapon_accuracy::HitOutcome::Hit
+        );
+        assert_eq!(
+            hit(critical.weapons[0].hit_chances),
+            crate::weapon_accuracy::HitOutcome::Critical
+        );
+        inventory.equipped[10] = Some(crate::inventory::ItemInstance::stock(5266, 1));
+        let accurate = EquipmentStats::derive(&inventory, &catalog, &skills).unwrap();
+        let roll = |chances| {
+            crate::weapon_accuracy::roll_weapon_damage(10., 100, chances)
+                .unwrap()
+                .outcome
+        };
+        assert_eq!(
+            roll(critical.weapons[0].hit_chances),
+            crate::weapon_accuracy::HitOutcome::Miss
+        );
+        assert_eq!(
+            roll(accurate.weapons[0].hit_chances),
+            crate::weapon_accuracy::HitOutcome::Hit
+        );
     }
 }

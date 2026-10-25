@@ -67,6 +67,12 @@ mean the corresponding gameplay system is complete.
 - Public catalog of 4,568 item templates with effects, restrictions, stacks,
   recipes/refine targets and weapon/reactor/shield/engine data. Starting mounts
   are separate from templates. Only owned item metadata is sent on login.
+- Equipped Fast Tractor Beam and Long Tractor Beam catalog effects now change
+  actual ore/wreck tractor speed and wreck collection range; the range is
+  checked both when collection starts and while it runs. Public critical-hit
+  and general weapon-accuracy effects now change authoritative hit rolls.
+  Equipped stat reconciliation and a shared wreck claim across replacement
+  are covered by disposable tests.
 - Persistent cargo/equipment/vault inventory and credits, split/merge/swap
   transfers, mount/class/skill/quantity validation, trade/no-store vault rules,
   atomic replacement before publication and restart reconciliation.

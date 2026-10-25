@@ -114,7 +114,7 @@ impl PlayerSession {
     }
 
     pub(super) fn begin_looting(&mut self, slot: usize) -> io::Result<()> {
-        self.check_loot_position(self.target, 2000.)?;
+        self.check_loot_position(self.target, self.equipment.ship.tractor_range)?;
         if self.loot_window != Some(self.target) {
             return Err(invalid("Open the loot window first."));
         }
@@ -237,7 +237,10 @@ impl PlayerSession {
 
     pub(super) fn advance_looting(&mut self, dt: f32) -> io::Result<()> {
         if let Some(mut cast) = self.loot_cast.clone() {
-            if self.check_loot_position(cast.corpse, 2000.).is_err() {
+            if self
+                .check_loot_position(cast.corpse, self.equipment.ship.tractor_range)
+                .is_err()
+            {
                 return self.cancel_looting("Loot interrupted by ship state, target or range.");
             }
             cast.remaining = (cast.remaining - dt).max(0.);

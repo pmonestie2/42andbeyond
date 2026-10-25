@@ -2518,6 +2518,78 @@ mod tests {
     }
 
     #[test]
+    fn equipped_tractor_range_and_speed_gate_real_shared_loot_across_replacement() {
+        let mut ship = looting_ship();
+        let corpse = ship.target;
+        let corpse_position = lock_loot(&ship.loot_world)
+            .unwrap()
+            .get(corpse)
+            .unwrap()
+            .position;
+        ship.position[0] = corpse_position[0] - 2400.;
+        let range = lock_loot(&ship.loot_world)
+            .unwrap()
+            .get(corpse)
+            .unwrap()
+            .range_to(ship.position)
+            .unwrap();
+        assert!(range > 2000. && range < 2640.);
+        ship.open_loot().unwrap();
+        assert!(ship.begin_looting(0).is_err());
+        let mut candidate = ship.inventory.clone();
+        candidate.equipped[3] = Some(crate::inventory::ItemInstance::stock(813, 1));
+        candidate.equipped[9] = Some(crate::inventory::ItemInstance::stock(1758, 1));
+        ship.commit_inventory(candidate).unwrap();
+        ship.begin_looting(0).unwrap();
+        let expected_duration =
+            (distance(ship.position, corpse_position) / ship.equipment.ship.tractor_speed - 0.15)
+                .max(0.1);
+        let tractor = ship
+            .pending
+            .iter()
+            .rev()
+            .find(|frame| frame.opcode == 0x2014)
+            .unwrap();
+        let name_length = u16::from_le_bytes(tractor.body[18..20].try_into().unwrap()) as usize;
+        let duration_at = 20 + name_length;
+        let milliseconds = u32::from_le_bytes(
+            tractor.body[duration_at..duration_at + 4]
+                .try_into()
+                .unwrap(),
+        );
+        assert!((milliseconds as f32 / 1000. - expected_duration).abs() < 0.001);
+
+        let mut other = session();
+        other.account.character.game_id += 1;
+        other.logged_in = true;
+        other
+            .attach_loot_world(Arc::clone(&ship.loot_world))
+            .unwrap();
+        other.publish_corpses().unwrap();
+        other.target = corpse;
+        assert!(other.open_loot().is_err());
+
+        ship.selected_peer = Some("127.0.0.1".parse().unwrap());
+        ship.endpoint = Some("127.0.0.1:22091".parse().unwrap());
+        ship.save().unwrap();
+        ship.checkpoint_session(true).unwrap();
+        let mut restored =
+            PlayerSession::new(ship.sector.clone(), ship.bind, ship.state_dir.clone()).unwrap();
+        assert_eq!(
+            restored.equipment.ship.tractor_speed,
+            ship.equipment.ship.tractor_speed
+        );
+        assert_eq!(
+            restored.equipment.ship.tractor_range,
+            ship.equipment.ship.tractor_range
+        );
+        assert!(restored.loot_cast.is_some());
+        restored.advance_looting(100.).unwrap();
+        assert_eq!(restored.inventory.cargo[0].as_ref().unwrap().template, 2837);
+        assert!(other.inventory.cargo.iter().all(Option::is_none));
+    }
+
+    #[test]
     fn loot_cancel_and_inventory_write_failure_preserve_stock_and_release_claim() {
         let mut ship = looting_ship();
         ship.open_loot().unwrap();
