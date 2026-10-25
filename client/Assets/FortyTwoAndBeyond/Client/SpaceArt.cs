@@ -27,6 +27,7 @@ namespace FortyTwoAndBeyond.Client
             mineral, metalSeam, hydrocarbon, gasVapor, rock, oreRock, field;
         private readonly Material gateArmor, gateInset, gateCircuit;
         private readonly Material stationDeck, stationWall, stationFrame, stationRecess, stationBlue, stationAmber;
+        private readonly Material suitShell, suitJoint, suitVisor;
         public Material Sky { get; }
         public Material EffectLine { get; }
 
@@ -48,6 +49,12 @@ namespace FortyTwoAndBeyond.Client
                 new Color(.01f, .15f, .24f));
             stationAmber = Surface(new Color(.61f, .28f, .065f), .47f, .48f,
                 new Color(.22f, .085f, .012f));
+            suitShell = Surface(new Color(.67f, .76f, .82f), .72f, .5f);
+            suitJoint = Surface(new Color(.045f, .083f, .12f), .44f, .25f);
+            suitVisor = Surface(new Color(.025f, .18f, .23f), .82f, .84f,
+                new Color(.01f, .075f, .11f));
+            suitShell.SetTexture("_DetailTex", plating);
+            suitShell.SetFloat("_TextureStrength", .5f);
             gateArmor = Surface(new Color(.28f, .39f, .49f), .78f, .4f);
             gateInset = Surface(new Color(.035f, .075f, .12f), .61f, .34f);
             gateCircuit = Surface(new Color(.025f, .2f, .34f), .52f, .45f,
@@ -496,48 +503,63 @@ namespace FortyTwoAndBeyond.Client
             light.shadows = LightShadows.None;
         }
 
-        /// <returns>A segmented station pilot suit with a visible pack and helmet silhouette.</returns>
-        public Transform StationAvatar(Transform parent)
+        /// <returns>Transform: A layered station suit, accented for a pilot or contact.</returns>
+        public Transform StationAvatar(Transform parent, bool contact = false)
         {
-            Transform root = Root(parent, "Station pilot");
-            Model(root, suitArmor, stationWall, new Vector3(0, .79f, 0),
-                new Vector3(.45f, 1.01f, .3f));
-            Model(root, suitArmor, stationFrame, new Vector3(0, 1.04f, -.35f),
-                new Vector3(.33f, .55f, .17f));
-            Part(root, PrimitiveType.Cube, new Vector3(0, 1.28f, -.37f),
-                new Vector3(.3f, .34f, .1f), stationRecess);
-            Part(root, PrimitiveType.Cube, new Vector3(0, 1.43f, -.43f),
-                new Vector3(.13f, .18f, .025f), stationBlue);
-            Part(root, PrimitiveType.Cylinder, new Vector3(0, 1.77f, 0),
-                new Vector3(.39f, .11f, .37f), stationFrame);
-            Part(root, PrimitiveType.Sphere, new Vector3(0, 2.04f, 0),
-                new Vector3(.48f, .44f, .46f), stationFrame);
-            Part(root, PrimitiveType.Sphere, new Vector3(0, 2.08f, .14f),
-                new Vector3(.37f, .27f, .33f), glass);
-            Part(root, PrimitiveType.Cube, new Vector3(0, 2.3f, -.08f),
-                new Vector3(.25f, .035f, .38f), stationWall);
-            Part(root, PrimitiveType.Cube, new Vector3(0, 2.05f, -.38f),
-                new Vector3(.27f, .08f, .045f), stationBlue);
-            Part(root, PrimitiveType.Cube, new Vector3(0, 1.7f, .28f),
-                new Vector3(.42f, .12f, .07f), stationBlue);
-            Part(root, PrimitiveType.Cube, new Vector3(0, .73f, -.02f),
-                new Vector3(.55f, .16f, .45f), stationFrame);
+            Transform root = Root(parent, contact ? "Station contact suit" : "Station pilot suit");
+            Material accent = contact ? stationAmber : stationBlue;
+            Model(root, suitArmor, suitJoint, new Vector3(0, .82f, 0),
+                new Vector3(.43f, 1.02f, .32f));
+            Model(root, suitArmor, suitShell, new Vector3(0, 1.06f, .18f),
+                new Vector3(.38f, .66f, .2f));
+            Part(root, PrimitiveType.Cube, new Vector3(0, 1.5f, .32f),
+                new Vector3(.46f, .12f, .06f), suitShell);
+            Part(root, PrimitiveType.Cube, new Vector3(0, 1.26f, .39f),
+                new Vector3(.24f, .11f, .025f), accent);
+            Model(root, suitArmor, stationFrame, new Vector3(0, 1.0f, -.35f),
+                new Vector3(.29f, .6f, .19f));
+            Part(root, PrimitiveType.Cube, new Vector3(0, 1.34f, -.52f),
+                new Vector3(.42f, .5f, .12f), suitShell);
+            Part(root, PrimitiveType.Cube, new Vector3(0, 1.38f, -.6f),
+                new Vector3(.18f, .32f, .025f), accent);
+            Part(root, PrimitiveType.Cylinder, new Vector3(0, 1.72f, 0),
+                new Vector3(.4f, .1f, .39f), stationFrame);
+            Part(root, PrimitiveType.Sphere, new Vector3(0, 2.03f, 0),
+                new Vector3(.46f, .43f, .46f), suitShell);
+            Part(root, PrimitiveType.Sphere, new Vector3(0, 2.04f, .22f),
+                new Vector3(.36f, .25f, .29f), suitVisor);
+            Part(root, PrimitiveType.Cube, new Vector3(0, 2.3f, .22f),
+                new Vector3(.61f, .045f, .12f), stationFrame);
+            Part(root, PrimitiveType.Cube, new Vector3(0, 1.85f, .37f),
+                new Vector3(.48f, .035f, .08f), accent);
+            Part(root, PrimitiveType.Cube, new Vector3(0, 2.07f, -.43f),
+                new Vector3(.3f, .07f, .08f), accent);
+            Part(root, PrimitiveType.Cube, new Vector3(0, .75f, 0),
+                new Vector3(.53f, .15f, .44f), stationFrame);
             for (int side = -1; side <= 1; side += 2)
             {
-                Transform shoulder = Model(root, suitArmor, stationFrame,
-                    new Vector3(side * .44f, 1.48f, 0), new Vector3(.22f, .23f, .25f));
+                Transform shoulder = Model(root, suitArmor, suitShell,
+                    new Vector3(side * .48f, 1.48f, 0), new Vector3(.26f, .25f, .27f));
                 shoulder.localRotation = Quaternion.Euler(0, 0, side * -15);
-                Transform arm = Model(root, suitArmor, stationWall,
-                    new Vector3(side * .52f, .79f, 0), new Vector3(.16f, .69f, .18f));
+                Transform arm = Model(root, suitArmor, suitJoint,
+                    new Vector3(side * .53f, .81f, 0), new Vector3(.17f, .68f, .18f));
                 arm.localRotation = Quaternion.Euler(0, 0, side * -7);
-                Part(root, PrimitiveType.Cube, new Vector3(side * .5f, .75f, .01f),
-                    new Vector3(.21f, .15f, .25f), stationFrame);
-                Model(root, suitArmor, stationWall, new Vector3(side * .2f, .08f, 0),
-                    new Vector3(.21f, .69f, .22f));
-                Part(root, PrimitiveType.Cube, new Vector3(side * .2f, .14f, .14f),
-                    new Vector3(.29f, .16f, .43f), stationFrame);
-                Part(root, PrimitiveType.Cube, new Vector3(side * .33f, 1.31f, -.24f),
-                    new Vector3(.055f, .27f, .035f), stationBlue);
+                Part(root, PrimitiveType.Cube, new Vector3(side * .55f, 1.05f, .17f),
+                    new Vector3(.2f, .38f, .06f), suitShell);
+                Part(root, PrimitiveType.Cube, new Vector3(side * .55f, .67f, .04f),
+                    new Vector3(.24f, .2f, .26f), suitShell);
+                Part(root, PrimitiveType.Cube, new Vector3(side * .56f, .52f, .07f),
+                    new Vector3(.15f, .06f, .17f), accent);
+                Model(root, suitArmor, suitJoint, new Vector3(side * .21f, .08f, 0),
+                    new Vector3(.2f, .69f, .21f));
+                Part(root, PrimitiveType.Cube, new Vector3(side * .21f, .43f, .18f),
+                    new Vector3(.25f, .33f, .08f), suitShell);
+                Part(root, PrimitiveType.Cube, new Vector3(side * .21f, .13f, .2f),
+                    new Vector3(.28f, .2f, .39f), stationFrame);
+                Part(root, PrimitiveType.Cube, new Vector3(side * .35f, 1.48f, -.26f),
+                    new Vector3(.07f, .28f, .04f), accent);
+                Part(root, PrimitiveType.Cube, new Vector3(side * .34f, 2.04f, 0),
+                    new Vector3(.12f, .22f, .12f), stationFrame);
             }
             return root;
         }

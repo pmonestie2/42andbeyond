@@ -39,6 +39,7 @@ namespace FortyTwoAndBeyond.Client
         private Transform ship, worldRoot, environment, hangar, concourse, ownStationAvatar;
         private readonly Dictionary<uint, Transform> bodies = new Dictionary<uint, Transform>();
         private readonly Dictionary<uint, Transform> stationBodies = new Dictionary<uint, Transform>();
+        private StationCharacters stationCharacters;
         private string host = "192.168.47.1", username = "", password = "", status = "Ready to connect", sector = "";
         private readonly NavigationSelection navigationSelection = new NavigationSelection();
         private uint pendingNavigationTarget;
@@ -91,7 +92,8 @@ namespace FortyTwoAndBeyond.Client
             Application.runInBackground = true;
             QualitySettings.vSyncCount = 0;
             Application.targetFrameRate = 120;
-            art = new SpaceArt(); hud = new FlightHud(this); miningHud = new MiningHud(this, hud);
+            art = new SpaceArt(); stationCharacters = new StationCharacters(art, transform);
+            hud = new FlightHud(this); miningHud = new MiningHud(this, hud);
             abilityHud = new AbilityHud(this, hud);
             recoveryHud = new RecoveryHud(this, hud);
             vaultHud = new VaultHud(this, hud);
@@ -246,6 +248,7 @@ namespace FortyTwoAndBeyond.Client
                     navigationSelection.TargetId == pendingNavigationTarget)
                 { SelectWorldObject(pendingNavigationTarget); pendingNavigationTarget = 0; }
                 ApplyStationAvatars(next);
+                stationCharacters.Apply(next.Station);
                 remoteShips.Apply(next.Players.Concat(next.Mobs).ToArray(), next.Group,
                     next.SelectedTargetId, next.Position);
                 combatEffects.Apply(next);
@@ -1022,6 +1025,7 @@ namespace FortyTwoAndBeyond.Client
             hud?.ResetTargetSelection();
             stationWalk.EnterRoom(uint.MaxValue); nextStationPoseAt = 0;
             combatEffects?.Clear(); remoteShips?.Clear(); miningHud?.Clear();
+            stationCharacters?.Clear();
             foreach (Transform body in bodies.Values) Destroy(body.gameObject);
             foreach (Transform body in stationBodies.Values) Destroy(body.gameObject);
             bodies.Clear(); stationBodies.Clear(); renderedObjects = System.Array.Empty<MapObject>();

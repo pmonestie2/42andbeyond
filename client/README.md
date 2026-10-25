@@ -263,8 +263,10 @@ instructions update when the server publishes mission progress. NPC conversation
 show server-announced mission offers, active objectives, acceptance, and completion;
 the response buttons are the choices advertised by that NPC. The journal entry
 remains the authority for the current stage and is removed on completion.
-Models are placeholders rather than the original NPC assets. Station interiors
-and the full original combat and equipment UI remain unfinished.
+Station pilots and visible contacts use original, repo-native layered suit geometry
+in `SpaceArt.cs`; contact placement follows the server's room list. These are
+authored replacements, not the original NPC models. Station interiors and the
+full original combat and equipment UI remain unfinished.
 
 ## Implementation boundaries
 
@@ -379,6 +381,10 @@ length 240 bytes. The extracted DDS SHA-256 is
 Keep the extracted DDS bytes unchanged; Unity creates its local `.meta` file.
 
 ### Scene art sources
+
+The station pilot and contact suits are original procedural meshes and materials
+authored in `SpaceArt.cs` for this project. They use the existing project hull
+detail texture; no external character model or character texture is bundled.
 
 The distant ringed planet uses NASA's [Saturn 3D texture](https://science.nasa.gov/3d-resources/saturn/),
 an illustrative map by Don Davis for JPL/Caltech, with NASA acknowledged as the
