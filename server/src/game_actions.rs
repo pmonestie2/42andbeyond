@@ -331,6 +331,84 @@ impl GameState {
         Ok(())
     }
 
+    /// Settle native Hull Patch and Repair Hull through the same durable world file.
+    pub(super) fn deliver_hull_repairs(&mut self) -> io::Result<()> {
+        let sources: Vec<u32> = self
+            .sessions
+            .iter()
+            .filter_map(|(id, session)| session.pending_hull_repair().map(|_| *id))
+            .collect();
+        for source in sources {
+            let cast = self.sessions[&source].pending_hull_repair().unwrap();
+            if !cast.valid() {
+                return Err(invalid("Invalid saved Hull Patch cast."));
+            }
+            self.sessions
+                .get_mut(&source)
+                .unwrap()
+                .checkpoint_session(true)?;
+            let epoch = self.sessions[&source].shield_recharge_epoch();
+            if !self
+                .energy_ledger
+                .hull_repair_seen(source, epoch, cast.effect)
+            {
+                self.update_views();
+                let caster = &self.sessions[&source];
+                let recipient = self.sessions.get(&cast.target);
+                let eligible = recipient.is_some_and(|target| {
+                    target.shield_recharge_available()
+                        && caster.shield_recharge_available()
+                        && target.sector.id == caster.sector.id
+                        && distance(target.position, caster.position) <= cast.range
+                        && caster.can_recharge_peer(cast.target)
+                });
+                if !eligible {
+                    let caster = self.sessions.get_mut(&source).unwrap();
+                    caster.clear_hull_repair()?;
+                    caster.message("Hull repair target left range before completion.");
+                    continue;
+                }
+                let recipient = &self.sessions[&cast.target];
+                let (hull, capacity) = recipient.hull_balance();
+                let target_after = (hull + cast.amount).min(capacity);
+                let source_energy = caster.energy_balance().0;
+                self.energy_ledger.repair_hull(
+                    source,
+                    cast.target,
+                    epoch,
+                    cast.effect,
+                    source_energy,
+                    target_after,
+                )?;
+            }
+            let energy = self.energy_ledger.balance(source).unwrap();
+            if let Err(error) = self
+                .sessions
+                .get_mut(&source)
+                .unwrap()
+                .apply_energy_balance(energy)
+            {
+                crate::server_error!("Hull repair sender checkpoint retry for {source}: {error}");
+            }
+            let hull = self.energy_ledger.hull_balance(cast.target).unwrap();
+            if let Err(error) = self
+                .sessions
+                .get_mut(&cast.target)
+                .unwrap()
+                .apply_hull_balance(hull)
+            {
+                crate::server_error!(
+                    "Hull repair recipient checkpoint retry for {}: {error}",
+                    cast.target
+                );
+            }
+            let caster = self.sessions.get_mut(&source).unwrap();
+            caster.clear_hull_repair()?;
+            caster.publish_hull_repair(cast.target, cast.effect, cast.range == 0.);
+        }
+        Ok(())
+    }
+
     fn group_action(&mut self, source: u32, action: u32, target: u32) -> io::Result<()> {
         if (action == 11 || action == 12) && self.jumpstart_offers.contains_key(&source) {
             return self.answer_jumpstart(source, action == 11);

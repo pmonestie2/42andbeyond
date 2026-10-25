@@ -52,6 +52,8 @@ pub(super) struct Checkpoint {
     #[serde(default)]
     shield_revision: u64,
     #[serde(default)]
+    hull_revision: u64,
+    #[serde(default)]
     weapon_cooldowns: [f32; 20],
     #[serde(default)]
     weapon_firing: [bool; 20],
@@ -220,6 +222,11 @@ impl PlayerSession {
                 .pending_shield_recharge
                 .as_ref()
                 .is_some_and(|recharge| !recharge.valid())
+            || saved
+                .skills
+                .pending_hull_repair
+                .as_ref()
+                .is_some_and(|repair| !repair.valid())
             || saved.loot_cast.as_ref().is_some_and(|cast| !cast.valid())
             || saved.corpse_ids.len() > 4096
             || saved.corpse_ids.iter().any(|(id, position)| {
@@ -279,6 +286,7 @@ impl PlayerSession {
         self.energy = saved.energy;
         self.energy_revision = saved.energy_revision;
         self.shield_revision = saved.shield_revision;
+        self.hull_revision = saved.hull_revision;
         self.active_device = saved
             .active_device
             .filter(|active| active.valid_for(&self.inventory, &self.items, unix_ms()));
@@ -507,6 +515,7 @@ impl PlayerSession {
             energy: self.energy,
             energy_revision: self.energy_revision,
             shield_revision: self.shield_revision,
+            hull_revision: self.hull_revision,
             weapon_cooldowns: self.weapon_cooldowns,
             weapon_firing: self.weapon_firing,
             active_device: self.active_device.clone(),

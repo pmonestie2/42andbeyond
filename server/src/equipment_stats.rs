@@ -28,6 +28,7 @@ pub struct ShipStats {
     pub turn_rate: f32,
     pub prospect_bonus: f32,
     pub recharge_shields_skill: f32,
+    pub hull_patch_skill: f32,
     pub tractor_speed: f32,
     pub tractor_range: f32,
     pub deflects: [f32; 9],
@@ -262,6 +263,13 @@ impl EquipmentStats {
             } else {
                 0.
             },
+            hull_patch_skill: if skills.level(27) > 0 {
+                modifiers
+                    .apply_signed("SKILL_HULL_PATCH", skills.level(27) as f32)
+                    .clamp(0., 9.)
+            } else {
+                0.
+            },
             tractor_speed: modifiers.apply("STAT_TRACTORBEAM", 200.).max(1.),
             // Long Tractor Beam has a catalog range modifier. The archived
             // fixed range ignored it; retain the current 2 km base.
@@ -390,9 +398,9 @@ impl EquipmentStats {
 mod tests {
     use super::*;
 
-    /// Public beam gear raises the native Recharge Shields skill above rank.
+    /// Public weapon gear raises the native shield and hull repair skills.
     #[test]
-    fn recharge_shields_uses_public_skill_gear() {
+    fn support_repairs_use_public_skill_gear() {
         let catalog = ItemCatalog::load().unwrap();
         let mut profile = crate::account::Account::create("pilot".into(), "pass", "Pilot".into())
             .unwrap()
@@ -413,6 +421,22 @@ mod tests {
         });
         let equipped = EquipmentStats::derive(&inventory, &catalog, &skills).unwrap();
         assert!((equipped.ship.recharge_shields_skill - 7.87).abs() < 0.001);
+
+        let class = crate::classes::CharacterClass::parse("tt").unwrap();
+        profile.race = class.race();
+        profile.profession = class.profession();
+        let skills = SkillCatalog::for_profile(&profile).unwrap();
+        let mut inventory = Inventory::starter_for(&profile, &catalog).unwrap();
+        assert_eq!(
+            EquipmentStats::derive(&inventory, &catalog, &skills)
+                .unwrap()
+                .ship
+                .hull_patch_skill,
+            7.
+        );
+        inventory.equipped[3] = Some(crate::inventory::ItemInstance::stock(793, 1));
+        let equipped = EquipmentStats::derive(&inventory, &catalog, &skills).unwrap();
+        assert!((equipped.ship.hull_patch_skill - 7.87).abs() < 0.001);
     }
     #[test]
     fn native_class_scan_and_signature_include_skill_and_engine_once() {

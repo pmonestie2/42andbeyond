@@ -157,6 +157,12 @@ impl GameState {
                     "Player shield revision exceeds the durable ledger.",
                 ));
             }
+            if session.hull_repair_revision() > self.energy_ledger.revision()
+                || session.hull_repair_revision() > 0
+                    && self.energy_ledger.hull_balance(id).is_none()
+            {
+                return Err(invalid("Player hull revision exceeds the durable ledger."));
+            }
             if session.peer_buff_revision() > self.energy_ledger.revision()
                 || session.peer_buff_revision() > 0 && self.energy_ledger.peer_buffs(id).is_empty()
             {
@@ -169,6 +175,9 @@ impl GameState {
             }
             if let Some(balance) = self.energy_ledger.shield_balance(id) {
                 session.apply_shield_balance(balance)?;
+            }
+            if let Some(balance) = self.energy_ledger.hull_balance(id) {
+                session.apply_hull_balance(balance)?;
             }
             let clock = self
                 .sessions
@@ -616,6 +625,7 @@ impl GameState {
             self.attach_session(*id)?;
         }
         self.deliver_shield_recharges()?;
+        self.deliver_hull_repairs()?;
         self.deliver_support()?;
         for id in &ids {
             self.attach_session(*id)?;

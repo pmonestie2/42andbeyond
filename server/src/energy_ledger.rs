@@ -22,6 +22,12 @@ pub struct ShieldBalance {
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+pub struct HullBalance {
+    pub revision: u64,
+    pub hull: f32,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 struct TransferSequence {
     epoch: u64,
     sequence: u32,
@@ -53,10 +59,14 @@ struct LedgerData {
     balances: BTreeMap<u32, EnergyBalance>,
     #[serde(default)]
     shields: BTreeMap<u32, ShieldBalance>,
+    #[serde(default)]
+    hulls: BTreeMap<u32, HullBalance>,
     // Historical on-disk name; this also deduplicates peer-buff activations.
     last_transfer: BTreeMap<u32, TransferSequence>,
     #[serde(default)]
     last_recharge: BTreeMap<u32, TransferSequence>,
+    #[serde(default)]
+    last_hull_repair: BTreeMap<u32, TransferSequence>,
     #[serde(default)]
     peer_buffs: BTreeMap<u32, StoredPeerBuffs>,
 }
@@ -78,8 +88,10 @@ impl EnergyLedger {
                 revision: 0,
                 balances: BTreeMap::new(),
                 shields: BTreeMap::new(),
+                hulls: BTreeMap::new(),
                 last_transfer: BTreeMap::new(),
                 last_recharge: BTreeMap::new(),
+                last_hull_repair: BTreeMap::new(),
                 peer_buffs: BTreeMap::new(),
             }
         };
@@ -99,12 +111,23 @@ impl EnergyLedger {
                 .last_recharge
                 .iter()
                 .any(|(player, last)| *player == 0 || last.epoch == 0 || last.sequence == 0)
+            || data
+                .last_hull_repair
+                .iter()
+                .any(|(player, last)| *player == 0 || last.epoch == 0 || last.sequence == 0)
             || data.shields.iter().any(|(player, balance)| {
                 *player == 0
                     || balance.revision == 0
                     || balance.revision > data.revision
                     || !balance.shield.is_finite()
                     || !(0. ..=1_000_000_000.).contains(&balance.shield)
+            })
+            || data.hulls.iter().any(|(player, balance)| {
+                *player == 0
+                    || balance.revision == 0
+                    || balance.revision > data.revision
+                    || !balance.hull.is_finite()
+                    || !(0. ..=1_000_000_000.).contains(&balance.hull)
             })
             || data.peer_buffs.iter().any(|(target, stored)| {
                 let buffs = stored.as_slice();
@@ -144,6 +167,86 @@ impl EnergyLedger {
     ///     Option<ShieldBalance>: Last committed cross-session shield level.
     pub fn shield_balance(&self, player: u32) -> Option<ShieldBalance> {
         self.data.shields.get(&player).copied()
+    }
+
+    /// Returns:
+    ///     Option<HullBalance>: Last committed cross-session hull level.
+    pub fn hull_balance(&self, player: u32) -> Option<HullBalance> {
+        self.data.hulls.get(&player).copied()
+    }
+
+    /// Returns:
+    ///     bool: Whether this Hull Patch cast already settled.
+    pub fn hull_repair_seen(&self, player: u32, epoch: u64, effect: u32) -> bool {
+        self.data
+            .last_hull_repair
+            .get(&player)
+            .is_some_and(|last| last.epoch == epoch && effect <= last.sequence)
+    }
+
+    /// Atomically commit the caster's reactor and recipient's repaired hull.
+    ///
+    /// Returns:
+    ///     u64: World revision shared by both resources.
+    pub fn repair_hull(
+        &mut self,
+        source: u32,
+        target: u32,
+        epoch: u64,
+        effect: u32,
+        source_energy: f32,
+        target_hull: f32,
+    ) -> io::Result<u64> {
+        if source == 0
+            || target == 0
+            || epoch == 0
+            || effect == 0
+            || self.hull_repair_seen(source, epoch, effect)
+            || !source_energy.is_finite()
+            || !(0. ..=1_000_000_000.).contains(&source_energy)
+            || !target_hull.is_finite()
+            || !(0. ..=1_000_000_000.).contains(&target_hull)
+        {
+            return Err(invalid("Invalid or repeated Hull Patch cast."));
+        }
+        let mut next = self.data.clone();
+        next.revision = next
+            .revision
+            .checked_add(1)
+            .ok_or_else(|| invalid("Hull repair revision exhausted."))?;
+        next.balances.insert(
+            source,
+            EnergyBalance {
+                revision: next.revision,
+                energy: source_energy,
+            },
+        );
+        next.hulls.insert(
+            target,
+            HullBalance {
+                revision: next.revision,
+                hull: target_hull,
+            },
+        );
+        next.last_hull_repair.insert(
+            source,
+            TransferSequence {
+                epoch,
+                sequence: effect,
+            },
+        );
+        let directory = self
+            .path
+            .parent()
+            .ok_or_else(|| invalid("Hull repair ledger has no directory."))?;
+        fs::create_dir_all(directory)?;
+        let temporary = self.path.with_extension("json.tmp");
+        let mut file = File::create(&temporary)?;
+        file.write_all(&serde_json::to_vec_pretty(&next)?)?;
+        file.sync_all()?;
+        fs::rename(temporary, &self.path)?;
+        self.data = next;
+        Ok(self.data.revision)
     }
 
     /// Returns:
@@ -401,6 +504,28 @@ mod tests {
         assert_eq!(restored.shield_balance(2).unwrap().shield, 420.);
         assert!(restored.recharge_shields(1, 2, 7, 300, 75., 840.).is_err());
         assert_eq!(restored.shield_balance(2).unwrap().shield, 420.);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    /// Hull Patch shares the world revision without changing shield receipts.
+    #[test]
+    fn hull_repair_is_atomic_and_replays_legacy_ledgers() {
+        let root = std::env::temp_dir().join(format!("enb-hull-ledger-{}", rand::random::<u64>()));
+        fs::create_dir_all(&root).unwrap();
+        let path = root.join("energy_transfers.local.json");
+        let mut ledger = EnergyLedger::load(path.clone()).unwrap();
+        let temporary = path.with_extension("json.tmp");
+        fs::create_dir(&temporary).unwrap();
+        assert!(ledger.repair_hull(1, 2, 7, 300, 75., 420.).is_err());
+        assert_eq!(ledger.revision(), 0);
+        fs::remove_dir(&temporary).unwrap();
+        assert_eq!(ledger.repair_hull(1, 2, 7, 300, 75., 420.).unwrap(), 1);
+        let mut restored = EnergyLedger::load(path).unwrap();
+        assert!(restored.hull_repair_seen(1, 7, 300));
+        assert_eq!(restored.balance(1).unwrap().energy, 75.);
+        assert_eq!(restored.hull_balance(2).unwrap().hull, 420.);
+        assert!(restored.repair_hull(1, 2, 7, 300, 75., 840.).is_err());
+        assert_eq!(restored.hull_balance(2).unwrap().hull, 420.);
         fs::remove_dir_all(root).unwrap();
     }
 

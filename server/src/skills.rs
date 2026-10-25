@@ -27,6 +27,7 @@ pub enum AbilityKind {
     Jumpstart,
     Leech,
     RechargeShields,
+    HullPatch,
     Unsupported,
 }
 
@@ -127,6 +128,8 @@ pub struct Cast {
     pub jumpstart: Option<JumpstartPlan>,
     #[serde(default)]
     pub recharge_amount: Option<f32>,
+    #[serde(default)]
+    pub hull_repair_amount: Option<f32>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -135,6 +138,28 @@ pub struct PendingShieldRecharge {
     pub effect: u32,
     pub amount: f32,
     pub range: f32,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PendingHullRepair {
+    pub target: u32,
+    pub effect: u32,
+    pub amount: f32,
+    pub range: f32,
+}
+
+impl PendingHullRepair {
+    /// Returns:
+    ///     bool: Whether this frozen repair can be settled after replacement.
+    pub fn valid(&self) -> bool {
+        self.target != 0
+            && self.effect != 0
+            && self.amount.is_finite()
+            && self.amount > 0.
+            && self.amount <= 51_840.
+            && self.range.is_finite()
+            && (0. ..=10_000.).contains(&self.range)
+    }
 }
 
 impl PendingShieldRecharge {
@@ -161,6 +186,11 @@ impl Cast {
             && self.recharge_amount.is_none_or(|amount| {
                 self.ability == 89 && amount.is_finite() && (1. ..=3240.).contains(&amount)
             })
+            && self.hull_repair_amount.is_none_or(|amount| {
+                matches!(self.ability, 77 | 95)
+                    && amount.is_finite()
+                    && (1. ..=3240.).contains(&amount)
+            })
     }
 }
 
@@ -182,6 +212,8 @@ pub struct SkillState {
     pub temporary_effects: BTreeMap<u32, f32>,
     #[serde(default)]
     pub pending_shield_recharge: Option<PendingShieldRecharge>,
+    #[serde(default)]
+    pub pending_hull_repair: Option<PendingHullRepair>,
 }
 
 #[derive(Clone, Debug)]

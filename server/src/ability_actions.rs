@@ -2,7 +2,9 @@
 //! these methods validate target/range, charge energy, advance its cast and
 //! apply effects. Group support is queued for the shared-world coordinator.
 use super::*;
-use crate::skills::{AbilityDefinition, AbilityKind, Cast, PendingShieldRecharge, SupportAction};
+use crate::skills::{
+    AbilityDefinition, AbilityKind, Cast, PendingHullRepair, PendingShieldRecharge, SupportAction,
+};
 
 impl PlayerSession {
     pub(super) fn begin_ability(&mut self, index: u32) -> io::Result<()> {
@@ -20,6 +22,10 @@ impl PlayerSession {
             ));
         }
         let ability = self.skill_catalog.ability(index)?;
+        let durable_repair = matches!(
+            ability.kind,
+            AbilityKind::RechargeShields | AbilityKind::HullPatch
+        );
         if ability.kind == AbilityKind::Jumpstart {
             self.jumpstart_definition()?;
         }
@@ -41,6 +47,9 @@ impl PlayerSession {
         {
             return Err(invalid("Previous shield recharge is still settling."));
         }
+        if ability.kind == AbilityKind::HullPatch && self.skills.pending_hull_repair.is_some() {
+            return Err(invalid("Previous hull repair is still settling."));
+        }
         let self_jumpstart = ability.kind == AbilityKind::Jumpstart
             && (requested_target == self.player_id() || requested_target == u32::MAX);
         if self.hull <= 0. && !self_jumpstart {
@@ -51,8 +60,8 @@ impl PlayerSession {
         if self.warp.active() && !(ability.kind == AbilityKind::Cloak && ability.rank >= 6) {
             return Err(invalid("Leave warp before activating this ability."));
         }
-        if ability.kind == AbilityKind::RechargeShields && self.mining.is_some() {
-            return Err(invalid("Stop prospecting before using Recharge Shields."));
+        if durable_repair && self.mining.is_some() {
+            return Err(invalid("Stop prospecting before using repair abilities."));
         }
         if self
             .skills
@@ -73,8 +82,16 @@ impl PlayerSession {
             .map_or(ability.energy, |plan| plan.energy);
         let recharge_amount = (ability.kind == AbilityKind::RechargeShields)
             .then_some(self.equipment.ship.recharge_shields_skill * 360.);
-        let charge = if ability.kind == AbilityKind::RechargeShields {
-            (5. - (self.equipment.ship.recharge_shields_skill - ability.rank as f32)).clamp(0., 5.)
+        let hull_repair_amount = (ability.kind == AbilityKind::HullPatch).then_some(
+            self.equipment.ship.hull_patch_skill * if ability.rank < 3 { 90. } else { 360. },
+        );
+        let charge = if durable_repair {
+            let trained = if ability.kind == AbilityKind::HullPatch {
+                self.equipment.ship.hull_patch_skill
+            } else {
+                self.equipment.ship.recharge_shields_skill
+            };
+            (5. - (trained - ability.rank as f32)).clamp(0., 5.)
         } else {
             jumpstart
                 .as_ref()
@@ -110,6 +127,7 @@ impl PlayerSession {
             }
             AbilityKind::Leech => 1059,
             AbilityKind::RechargeShields => 733,
+            AbilityKind::HullPatch => 733,
         };
         if ability.kind == AbilityKind::Jumpstart {
             self.pending.push(packets::weapon_effect(
@@ -147,8 +165,9 @@ impl PlayerSession {
             effect,
             jumpstart,
             recharge_amount,
+            hull_repair_amount,
         });
-        if ability.kind == AbilityKind::RechargeShields {
+        if durable_repair {
             if let Err(error) = self.checkpoint_session(true) {
                 self.energy += energy;
                 self.skills.cast = None;
@@ -185,6 +204,24 @@ impl PlayerSession {
                 || distance(contact.position, self.position) > ability.range as f32
             {
                 return Err(invalid("Recharge Shields target is dead or out of range."));
+            }
+            return Ok(requested_target);
+        }
+        if ability.kind == AbilityKind::HullPatch {
+            if ability.rank == 1
+                || requested_target == self.player_id()
+                || requested_target == u32::MAX
+            {
+                return Ok(self.player_id());
+            }
+            let contact = self
+                .peer_contacts
+                .get(&requested_target)
+                .ok_or_else(|| invalid("Select a visible pilot for Repair Hull."))?;
+            if contact.incapacitated
+                || distance(contact.position, self.position) > ability.range as f32
+            {
+                return Err(invalid("Repair Hull target is dead or out of range."));
             }
             return Ok(requested_target);
         }
@@ -293,11 +330,13 @@ impl PlayerSession {
                     || self.gate_transit.is_some()
                     || !self.logged_in
                     || self.sector.station.is_some());
-            let invalid_recharge = definition.kind == AbilityKind::RechargeShields
-                && (self.warp.active()
-                    || self.gate_transit.is_some()
-                    || self.sector.station.is_some()
-                    || self.mining.is_some());
+            let invalid_recharge = matches!(
+                definition.kind,
+                AbilityKind::RechargeShields | AbilityKind::HullPatch
+            ) && (self.warp.active()
+                || self.gate_transit.is_some()
+                || self.sector.station.is_some()
+                || self.mining.is_some());
             if (self.hull <= 0. && !self_jumpstart)
                 || invalid_jumpstart
                 || invalid_recharge
@@ -337,6 +376,7 @@ impl PlayerSession {
                     cast.effect,
                     cast.jumpstart.as_ref(),
                     cast.recharge_amount,
+                    cast.hull_repair_amount,
                 ) {
                     self.pending.push(packets::message(&error.to_string()));
                 } else {
@@ -358,6 +398,7 @@ impl PlayerSession {
         effect: u32,
         jumpstart: Option<&crate::skills::JumpstartPlan>,
         recharge_amount: Option<f32>,
+        hull_repair_amount: Option<f32>,
     ) -> io::Result<()> {
         let shared = Arc::clone(&self.combat);
         let mut combat = lock_combat(&shared)?;
@@ -516,9 +557,24 @@ impl PlayerSession {
                     range: ability.range as f32,
                 });
             }
+            AbilityKind::HullPatch => {
+                let amount = hull_repair_amount.unwrap_or(
+                    self.equipment.ship.hull_patch_skill
+                        * if ability.rank < 3 { 90. } else { 360. },
+                );
+                self.skills.pending_hull_repair = Some(PendingHullRepair {
+                    target,
+                    effect,
+                    amount,
+                    range: ability.range as f32,
+                });
+            }
         }
         drop(combat);
-        if ability.kind == AbilityKind::RechargeShields {
+        if matches!(
+            ability.kind,
+            AbilityKind::RechargeShields | AbilityKind::HullPatch
+        ) {
             self.checkpoint_session(true)?;
         }
         self.pending.push(packets::ship_resources(

@@ -48,6 +48,8 @@ mod follow_service;
 mod gating_service;
 #[path = "harvest_visuals.rs"]
 mod harvest_visuals;
+#[path = "hull_repair.rs"]
+mod hull_repair;
 #[path = "looting.rs"]
 mod looting;
 #[path = "mining.rs"]
@@ -106,6 +108,8 @@ struct SavedPlayer {
     energy_revision: u64,
     #[serde(default)]
     shield_revision: u64,
+    #[serde(default)]
+    hull_revision: u64,
 }
 fn default_home_station() -> u32 {
     10761
@@ -201,6 +205,7 @@ pub struct PlayerSession {
     energy: f32,
     energy_revision: u64,
     shield_revision: u64,
+    hull_revision: u64,
     skill_catalog: SkillCatalog,
     skills: SkillState,
     group_contacts: Vec<GroupContact>,
@@ -277,6 +282,7 @@ impl PlayerSession {
         let mut home_station = default_home_station();
         let mut energy_revision = 0;
         let mut shield_revision = 0;
+        let mut hull_revision = 0;
         if path.exists() {
             let saved: SavedPlayer = serde_json::from_slice(&fs::read(path)?)
                 .map_err(|_| invalid("invalid saved player JSON"))?;
@@ -290,6 +296,7 @@ impl PlayerSession {
             home_station = saved.home_station;
             energy_revision = saved.energy_revision;
             shield_revision = saved.shield_revision;
+            hull_revision = saved.hull_revision;
         }
         let mobs = sector
             .mobs
@@ -393,6 +400,7 @@ impl PlayerSession {
             energy: stats.energy_capacity,
             energy_revision,
             shield_revision,
+            hull_revision,
             skill_catalog,
             skills: SkillState::default(),
             group_contacts: Vec::new(),
@@ -1552,6 +1560,7 @@ impl PlayerSession {
             home_station: self.home_station,
             energy_revision: self.energy_revision,
             shield_revision: self.shield_revision,
+            hull_revision: self.hull_revision,
         })?;
         let temporary = self.state_dir.join("player.json.tmp");
         fs::write(&temporary, bytes)?;

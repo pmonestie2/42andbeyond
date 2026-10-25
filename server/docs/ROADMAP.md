@@ -63,6 +63,14 @@ mean the corresponding gameplay system is complete.
   energy with recipient shields; failed writes and short replacement retry
   without a duplicate heal. Higher Recharge Shields ranks and other class
   abilities remain pending.
+- Terran Traders and Terran Scouts now have native rank-one Patch Hull and
+  rank-three Repair Hull. The first always repairs self; the second repairs a
+  selected visible pilot within the archived 3,004-unit code range. Public
+  Hull Patch skill gear changes the frozen repair amount and charge time.
+  Reactor cost, hull gain and authenticated cast identity settle through the
+  same atomic world file and saved outbox as Recharge Shields. Disposable
+  self/peer, range, failed-write and replacement tests cover exactly-once
+  repair. Higher area hull ranks remain gated pending native area behavior.
 - Nine race/profession identities, public SQL class skill ceilings, racial starter
   gear, class ship models and weapon/device mount limits. Shared implemented
   abilities respect class ownership; other class ability handlers remain pending.

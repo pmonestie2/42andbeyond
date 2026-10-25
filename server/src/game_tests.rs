@@ -207,6 +207,124 @@ fn recharge_shields_is_durable_for_two_pilots() {
     fs::remove_dir_all(root).unwrap();
 }
 
+/// Hull Patch and peer Repair Hull survive a failed commit and replacement.
+#[test]
+fn hull_patch_repairs_self_and_peer_once_after_restart() {
+    let root = std::env::temp_dir().join(format!("enb-hull-ability-{}", rand::random::<u64>()));
+    let accounts = AccountDirectory::new(&root);
+    let alice = accounts
+        .create_class(
+            "alice".into(),
+            "example",
+            "Alice".into(),
+            crate::classes::CharacterClass::parse("tt").unwrap(),
+        )
+        .unwrap()
+        .account
+        .character
+        .game_id;
+    let bob = accounts
+        .create("bob".into(), "example", "Bob".into())
+        .unwrap()
+        .account
+        .character
+        .game_id;
+    let sector: Sector = serde_json::from_str(include_str!("../data/sector.json")).unwrap();
+    let bind = Ipv4Addr::new(127, 0, 0, 2);
+    let mut game = GameState::new(sector.clone(), bind, root.clone()).unwrap();
+    login(&mut game, alice, 22911, "alice");
+    login(&mut game, bob, 22912, "bob");
+    let self_capacity = game.sessions[&alice].hull_balance().1;
+    let peer_capacity = game.sessions[&bob].hull_balance().1;
+    game.sessions
+        .get_mut(&alice)
+        .unwrap()
+        .set_hull_for_test(self_capacity * 0.25);
+    game.sessions
+        .get_mut(&alice)
+        .unwrap()
+        .checkpoint_session(true)
+        .unwrap();
+    game.update_views();
+    let self_energy = game.sessions[&alice].energy_balance().0;
+    activate(&mut game, alice, bob, 77); // Rank one always repairs self.
+    assert_eq!(game.sessions[&alice].energy_balance().0, self_energy - 50.);
+    advance(&mut game, 0.2);
+    assert_eq!(game.energy_ledger.revision(), 1);
+    assert!(game.sessions[&alice].hull_balance().0 > self_capacity * 0.25);
+    assert_eq!(game.sessions[&bob].hull_balance().0, peer_capacity);
+
+    game.sessions
+        .get_mut(&bob)
+        .unwrap()
+        .set_hull_for_test(peer_capacity * 0.25);
+    game.sessions
+        .get_mut(&bob)
+        .unwrap()
+        .checkpoint_session(true)
+        .unwrap();
+    let full_reactor = game.sessions[&alice].energy_balance().1;
+    game.sessions
+        .get_mut(&alice)
+        .unwrap()
+        .set_energy_for_test(full_reactor);
+    game.sessions
+        .get_mut(&alice)
+        .unwrap()
+        .checkpoint_session(true)
+        .unwrap();
+    game.update_views();
+    activate(&mut game, alice, bob, 95);
+    assert_eq!(
+        game.sessions[&alice].energy_balance().0,
+        full_reactor - 125.
+    );
+    let temporary = root.join("energy_transfers.local.json.tmp");
+    fs::create_dir(&temporary).unwrap();
+    assert!(game.advance(1.2).is_err());
+    assert_eq!(game.energy_ledger.revision(), 1);
+    assert!(game.sessions[&alice].pending_hull_repair().is_some());
+    fs::remove_dir(&temporary).unwrap();
+    drop(game);
+    let mut restored = GameState::new(sector.clone(), bind, root.clone()).unwrap();
+    restored.deliver_hull_repairs().unwrap();
+    assert_eq!(restored.energy_ledger.revision(), 2);
+    assert_eq!(
+        restored.sessions[&bob].hull_balance().0,
+        (peer_capacity * 0.25 + 2520.).min(peer_capacity)
+    );
+    assert!(restored.sessions[&alice].pending_hull_repair().is_none());
+
+    let recipient_path = root.join("accounts/bob/session.local.json");
+    let mut stale: serde_json::Value =
+        serde_json::from_slice(&fs::read(&recipient_path).unwrap()).unwrap();
+    stale["hull"] = serde_json::json!(peer_capacity * 0.25);
+    stale["hull_revision"] = serde_json::json!(0);
+    fs::write(&recipient_path, serde_json::to_vec(&stale).unwrap()).unwrap();
+    drop(restored);
+    let mut replayed = GameState::new(sector, bind, root.clone()).unwrap();
+    assert_eq!(
+        replayed.sessions[&bob].hull_balance().0,
+        (peer_capacity * 0.25 + 2520.).min(peer_capacity)
+    );
+    replayed.deliver_hull_repairs().unwrap();
+    assert_eq!(replayed.energy_ledger.revision(), 2);
+
+    // A visible pilot just beyond the archived 3004m code range costs nothing.
+    replayed.sessions.get_mut(&bob).unwrap().position = [3005., 0., 0.];
+    let full_reactor = replayed.sessions[&alice].energy_balance().1;
+    replayed
+        .sessions
+        .get_mut(&alice)
+        .unwrap()
+        .set_energy_for_test(full_reactor);
+    replayed.update_views();
+    activate(&mut replayed, alice, bob, 95);
+    assert_eq!(replayed.sessions[&alice].energy_balance().0, full_reactor);
+    assert!(replayed.sessions[&alice].pending_hull_repair().is_none());
+    fs::remove_dir_all(root).unwrap();
+}
+
 fn advance(game: &mut GameState, seconds: f32) {
     for _ in 0..(seconds / 0.1).ceil() as usize {
         game.advance(0.1).unwrap();
