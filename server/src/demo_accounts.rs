@@ -338,7 +338,9 @@ pub fn upgrade_published_devices(root: &Path) -> io::Result<Vec<String>> {
         let profile = &stored.account.character;
         let skills = SkillCatalog::for_profile(profile)?;
         let path = stored.directory.join("inventory.json");
-        let current: Inventory = serde_json::from_slice(&fs::read(&path)?)?;
+        let mut current: Inventory = serde_json::from_slice(&fs::read(&path)?)?;
+        let original = current.clone();
+        current.migrate_cargo_for_profile(profile)?;
         current.validate_for_profile(profile, &items, &skills)?;
         let baseline = legacy_inventory(profile, &items)?;
         let mut candidate = current.clone();
@@ -406,7 +408,7 @@ pub fn upgrade_published_devices(root: &Path) -> io::Result<Vec<String>> {
             }
             candidate.equipped[slot] = Some(ItemInstance::stock(template_id, 1));
         }
-        if candidate != current {
+        if candidate != original {
             candidate.validate_for_profile(profile, &items, &skills)?;
             crate::durable_json::replace(&path, &candidate)?;
             changed.push(code);
@@ -665,6 +667,44 @@ mod tests {
             .unwrap()
             .contains(&"te".to_owned()));
         assert_eq!(fs::read(&te_path).unwrap(), parked_bytes);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    /// Older published inventories migrate before device validation and upgrade.
+    #[test]
+    fn skill_device_upgrade_migrates_legacy_cargo_before_validating() {
+        let root = std::env::temp_dir().join(format!(
+            "beyond-demo-legacy-devices-{}",
+            rand::random::<u64>()
+        ));
+        seed(&root).unwrap();
+        let path = root.join("accounts/pjd/inventory.json");
+        let mut saved: serde_json::Value =
+            serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        let object = saved.as_object_mut().unwrap();
+        object.remove("hull_upgrade");
+        object.remove("cargo_capacity");
+        object
+            .get_mut("cargo")
+            .unwrap()
+            .as_array_mut()
+            .unwrap()
+            .truncate(22);
+        fs::write(&path, serde_json::to_vec(&saved).unwrap()).unwrap();
+        let changed = upgrade_published_devices(&root).unwrap();
+        assert!(changed.contains(&"jd".to_owned()));
+        let migrated: Inventory = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        assert_eq!(migrated.cargo.len(), crate::inventory::CARGO_SLOTS);
+        assert_eq!(
+            migrated.cargo_capacity,
+            crate::ship_progression::progression(CharacterClass::parse("jd").unwrap(), 6)
+                .unwrap()
+                .cargo_capacity
+        );
+        assert!(migrated.equipped[9..]
+            .iter()
+            .flatten()
+            .any(|item| item.template == 6135));
         fs::remove_dir_all(root).unwrap();
     }
 }
