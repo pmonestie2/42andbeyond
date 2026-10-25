@@ -146,7 +146,9 @@ impl EquipmentStats {
                 None => Ok(0.),
             }
         };
-        let navigate = skills.level(35) as f32;
+        let navigate = modifiers
+            .apply_signed("SKILL_NAVIGATE", skills.level(35) as f32)
+            .max(0.);
         let has_engine = inventory.equipped[2]
             .as_ref()
             .is_some_and(|item| item.structure > 0.);
@@ -179,8 +181,9 @@ impl EquipmentStats {
         }
         let class = crate::classes::CharacterClass(skills.class_index);
         let progression = crate::ship_progression::progression(class, inventory.hull_upgrade)?;
-        let scan_skill =
-            (skills.level(49) as f32 + modifiers.apply_signed("STAT_SKILL_SCAN", 0.)).max(0.);
+        let scan_skill = modifiers
+            .apply_signed("SKILL_SCAN", skills.level(49) as f32)
+            .max(0.);
         let scan_bonus = if scan_skill > 0. {
             1000. + 250. * scan_skill
         } else {
@@ -214,7 +217,7 @@ impl EquipmentStats {
             scan_range: modifiers.apply("STAT_SCAN_RANGE", class.base_scan_range() + scan_bonus),
             signature: modifiers.apply("STAT_SIGNATURE", class.base_signature() + field(2, 29)?),
             turn_rate: modifiers.apply("STAT_TURN", 45.),
-            prospect_bonus: modifiers.apply("STAT_SKILL_PROSPECT", 0.),
+            prospect_bonus: modifiers.apply_signed("SKILL_PROSPECT", 0.),
             tractor_speed: modifiers.apply("STAT_TRACTORBEAM", 200.).max(1.),
             // Long Tractor Beam has a catalog range modifier. The archived
             // fixed range ignored it; retain the current 2 km base.
@@ -283,15 +286,25 @@ impl EquipmentStats {
             } else {
                 template.number(19)
             };
-            let skill_bonus = 1. + (skills.level(skill) as f32 - 1.).max(0.) * 0.25;
+            // Public catalog abbreviates the archived skill stat names, but
+            // the modifier is an effective rank before the native 25% band.
+            let skill_stat = match template.item_type {
+                14 => "SKILL_BEAM",
+                15 => "SKILL_MISSILE",
+                _ => "SKILL_PROJECTILE",
+            };
+            let effective_skill = modifiers
+                .apply_signed(skill_stat, skills.level(skill) as f32)
+                .max(0.);
+            let skill_bonus = 1. + (effective_skill - 1.).max(0.) * 0.25;
             let accuracy_stat = match template.item_type {
                 14 => "STAT_BEAM_ACCURACY",
                 15 => "STAT_MISSILE_ACCURACY",
                 _ => "STAT_PROJECTILES_ACCURACY",
             };
-            let critical_skill = (skills.level(16) as f32
-                + modifiers.apply_signed("STAT_SKILL_CRITICAL_TARGETING", 0.))
-            .max(0.);
+            let critical_skill = modifiers
+                .apply_signed("SKILL_CRITICAL_TARGETING", skills.level(16) as f32)
+                .max(0.);
             let hit_chances = crate::weapon_accuracy::HitChances::from_bonuses(
                 modifiers.chance_bonus(accuracy_stat)
                     + modifiers.chance_bonus("STAT_WEAPON_ACCURACY"),
@@ -371,6 +384,42 @@ mod tests {
                 .unwrap()
                 .number_at_quality(29, engine.quality)
         );
+    }
+
+    #[test]
+    fn public_skill_gear_changes_beam_projectile_damage_and_prospect_cost() {
+        let catalog = ItemCatalog::load().unwrap();
+        let skills = SkillCatalog::load().unwrap();
+        let mut inventory = Inventory::starter(&catalog).unwrap();
+        inventory.equipped[3] = Some(crate::inventory::ItemInstance::stock(986, 1));
+        let beam = EquipmentStats::derive(&inventory, &catalog, &skills).unwrap();
+        let beam_rank = skills.level(1) as f32 + 2.3;
+        let raw_beam = catalog.get(986).unwrap().number_at_quality(5, 1.);
+        assert!((beam.weapons[0].damage - raw_beam * (1. + (beam_rank - 1.) * 0.25)).abs() < 0.001);
+
+        inventory.equipped[3] = Some(crate::inventory::ItemInstance::stock(3022, 1));
+        inventory.ammunition[3] = Some(crate::inventory::ItemInstance::stock(512, 1));
+        let ordinary = EquipmentStats::derive(&inventory, &catalog, &skills).unwrap();
+        inventory.equipped[9] = Some(crate::inventory::ItemInstance::stock(2089, 1));
+        let boosted = EquipmentStats::derive(&inventory, &catalog, &skills).unwrap();
+        let old_rank = skills.level(40) as f32;
+        let new_rank = old_rank + 2.2;
+        let multiplier = |rank: f32| 1. + (rank - 1.).max(0.) * 0.25;
+        assert!(
+            (boosted.weapons[0].damage / ordinary.weapons[0].damage
+                - multiplier(new_rank) / multiplier(old_rank))
+            .abs()
+                < 0.001
+        );
+
+        inventory.equipped[3] = Some(crate::inventory::ItemInstance::stock(844, 1));
+        inventory.equipped[9] = None;
+        inventory.ammunition[3] = None;
+        let miner = EquipmentStats::derive(&inventory, &catalog, &skills).unwrap();
+        assert_eq!(miner.ship.prospect_bonus, 1.33);
+        let rank = skills.level(41) as f32;
+        let energy_cost = |bonus: f32| 42.5 * 2f32.powi(3) / 2f32.powf(rank + bonus - 1.);
+        assert!(energy_cost(miner.ship.prospect_bonus) < energy_cost(0.));
     }
     #[test]
     fn chance_modifiers_keep_percent_operations_at_zero_base_and_strongest_effects() {

@@ -83,6 +83,11 @@ mean the corresponding gameplay system is complete.
   and general weapon-accuracy effects now change authoritative hit rolls.
   Equipped stat reconciliation and a shared wreck claim across replacement
   are covered by disposable tests.
+- Public equipped Beam and Projectile Weapon skill modifiers now raise the
+  effective rank used by native weapon damage bands. Prospect Skill gear
+  changes actual ore reactor cost and admission, with saved equipment restoring
+  the same benefit after server replacement. Catalog values use the strongest
+  modifier per operation, as in the archived stat engine.
 - Persistent cargo/equipment/vault inventory and credits, split/merge/swap
   transfers, mount/class/skill/quantity validation, trade/no-store vault rules,
   atomic replacement before publication and restart reconciliation.

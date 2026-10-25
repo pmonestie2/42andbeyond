@@ -1557,6 +1557,25 @@ impl PlayerSession {
 mod tests {
     use super::*;
 
+    #[test]
+    fn equipped_prospect_skill_bonus_survives_replacement_without_affecting_other_pilots() {
+        let mut miner = session();
+        let other = session();
+        let baseline = other.equipment.ship.prospect_bonus;
+        let mut candidate = miner.inventory.clone();
+        candidate.equipped[9] = Some(crate::inventory::ItemInstance::stock(1760, 1));
+        miner.commit_inventory(candidate).unwrap();
+        assert_eq!(miner.equipment.ship.prospect_bonus, 0.53);
+        assert_eq!(other.equipment.ship.prospect_bonus, baseline);
+        miner.save().unwrap();
+        miner.checkpoint_session(true).unwrap();
+        let restored =
+            PlayerSession::new(miner.sector.clone(), miner.bind, miner.state_dir.clone()).unwrap();
+        assert_eq!(restored.inventory.equipped[9], miner.inventory.equipped[9]);
+        assert_eq!(restored.equipment.ship.prospect_bonus, 0.53);
+        assert_eq!(other.equipment.ship.prospect_bonus, baseline);
+    }
+
     pub(super) fn journal_ship() -> PlayerSession {
         let mut ship = gate_ship();
         ship.selected_peer = Some("127.0.0.1".parse().unwrap());
@@ -2915,6 +2934,40 @@ mod tests {
             destination_slot: 0,
             quantity: 0,
         })
+    }
+
+    #[test]
+    fn public_prospect_device_changes_actual_reactor_admission() {
+        let mut ordinary = mining_ship();
+        let mut equipped = mining_ship();
+        for ship in [&mut ordinary, &mut equipped] {
+            ship.skill_catalog
+                .skills
+                .iter_mut()
+                .find(|skill| skill.id == 41)
+                .unwrap()
+                .level = 1;
+        }
+        let mut candidate = equipped.inventory.clone();
+        candidate.equipped[9] = Some(crate::inventory::ItemInstance::stock(1760, 1));
+        equipped.commit_inventory(candidate).unwrap();
+        let level = {
+            let field = lock_resources(&ordinary.resource_field).unwrap();
+            let ore = field.get(ordinary.target).unwrap().contents[0]
+                .as_ref()
+                .unwrap();
+            ordinary.items.get(ore.template).unwrap().level
+        };
+        let rank = ordinary.skill_catalog.level(41) as f32;
+        let cost = |bonus: f32| {
+            (42.5 * 2f32.powi(i32::from(level)) / 2f32.powf(rank + bonus - 1.)).max(10.)
+        };
+        let between = (cost(0.) + cost(equipped.equipment.ship.prospect_bonus)) / 2.;
+        ordinary.energy = between;
+        equipped.energy = between;
+        assert!(mine_slot(&mut ordinary, 0).is_err());
+        mine_slot(&mut equipped, 0).unwrap();
+        assert!(equipped.mining.is_some());
     }
 
     #[test]
