@@ -20,6 +20,26 @@ const TURBO_WARRIOR: u32 = 2363;
 const TURBO_JENQUAI_EXPLORER: u32 = 2412;
 const TURBO_GENERAL: u32 = 2265;
 
+/// Public, class-legal devices whose implemented equipped or activated rules
+/// let each demo pilot exercise its trained space skills. Turbo stays mounted.
+const CLASS_DEVICES: [&[(u32, &str)]; 9] = [
+    &[(2341, "SKILL_RALLY")],
+    &[(2346, "SKILL_BEFRIEND")],
+    &[(2419, "STAT_TRACTORBEAM_SPEED")],
+    &[(6135, "SKILL_SUMMON"), (2492, "STAT_FOLD_SPACE_DISTANCE")],
+    &[
+        (2447, "SKILL_RECHARGE_SHIELDS"),
+        (2409, "Scan Boost (Activated)"),
+    ],
+    &[
+        (2491, "SKILL_ENVIRONMENT_SHIELD"),
+        (2484, "STAT_WORMHOLE_CREATION_TIME"),
+    ],
+    &[(2384, "SKILL_SELF_DESTRUCT")],
+    &[(2349, "SKILL_RECHARGE_SHIELDS")],
+    &[(2471, "SKILL_POWERDOWN"), (2468, "SKILL_GRAVITY_LINK")],
+];
+
 #[derive(Serialize, Deserialize)]
 struct DemoRoster {
     version: u32,
@@ -294,6 +314,107 @@ pub fn seed(root: &Path) -> io::Result<Vec<String>> {
     published_codes(root)
 }
 
+/// Upgrade published demo mounts before sessions load, preserving earned gear.
+///
+/// Returns:
+///     Vec<String>: Class codes whose durable inventory changed.
+///
+/// Raises:
+///     io::Error: A published account, catalog item or inventory is invalid.
+pub fn upgrade_published_devices(root: &Path) -> io::Result<Vec<String>> {
+    let published = published_codes(root)?;
+    if published.is_empty() {
+        return Ok(Vec::new());
+    }
+    let items = ItemCatalog::load()?;
+    let accounts = AccountDirectory::new(root).load()?;
+    let mut changed = Vec::new();
+    for code in published {
+        let username = format!("p{code}");
+        let stored = accounts
+            .iter()
+            .find(|entry| entry.account.username == username)
+            .ok_or_else(|| invalid("Published demo account disappeared."))?;
+        let profile = &stored.account.character;
+        let skills = SkillCatalog::for_profile(profile)?;
+        let path = stored.directory.join("inventory.json");
+        let current: Inventory = serde_json::from_slice(&fs::read(&path)?)?;
+        current.validate_for_profile(profile, &items, &skills)?;
+        let baseline = legacy_inventory(profile, &items)?;
+        let mut candidate = current.clone();
+        for &(template_id, expected_effect) in CLASS_DEVICES[profile.class().0] {
+            let template = items.get(template_id)?;
+            if template.item_type != 11
+                || !template.equipped.iter().any(|effect| {
+                    effect
+                        .modifiers
+                        .iter()
+                        .any(|modifier| modifier.stat == expected_effect)
+                }) && !template
+                    .activated
+                    .iter()
+                    .any(|effect| effect.description == expected_effect)
+            {
+                return Err(invalid(
+                    "Demo skill device no longer matches public catalog.",
+                ));
+            }
+            template
+                .check_requirements(profile, &skills, [50, 50, 50])
+                .map_err(|error| invalid(&format!("Demo {code} item {template_id}: {error}")))?;
+            // An owner may intentionally unequip the grant after the first run.
+            // Its presence in cargo or the vault still marks it as provisioned.
+            if candidate
+                .equipped
+                .iter()
+                .chain(candidate.cargo.iter())
+                .chain(candidate.vault.iter())
+                .flatten()
+                .any(|item| item.template == template_id)
+            {
+                continue;
+            }
+            let mut mounts = 9..9 + profile.class().devices();
+            let safe_slot = mounts
+                .clone()
+                .find(|&slot| candidate.equipped[slot].is_none())
+                .or_else(|| {
+                    mounts.find(|&slot| {
+                        candidate.equipped[slot] == baseline.equipped[slot]
+                            && candidate.equipped[slot].as_ref().is_some_and(|item| {
+                                items.get(item.template).is_ok_and(|stock| {
+                                    stock.activated.iter().all(|effect| {
+                                        effect.description != "Turbo Weapons (Activated)"
+                                    })
+                                })
+                            })
+                    })
+                });
+            let Some(slot) = safe_slot else {
+                crate::server_log!("Demo {username}: no unchanged stock or empty device mount; preserving owned gear.");
+                continue;
+            };
+            if let Some(old) = candidate.equipped[slot].as_ref() {
+                let Some(vault_slot) = candidate.vault.iter_mut().find(|value| value.is_none())
+                else {
+                    crate::server_log!(
+                        "Demo {username}: vault full; preserving stock mount {slot}."
+                    );
+                    continue;
+                };
+                *vault_slot = Some(old.clone());
+            }
+            candidate.equipped[slot] = Some(ItemInstance::stock(template_id, 1));
+        }
+        if candidate != current {
+            candidate.validate_for_profile(profile, &items, &skills)?;
+            crate::durable_json::replace(&path, &candidate)?;
+            changed.push(code);
+        }
+    }
+    Ok(changed)
+}
+
 /// Read only explicitly published, present demo accounts for the login menu.
 ///
 /// Returns:
@@ -349,7 +470,12 @@ mod tests {
         assert!(published_codes(&root).unwrap().is_empty());
         assert_eq!(seed(&root).unwrap(), CODES.map(str::to_owned));
         assert_eq!(published_codes(&root).unwrap(), CODES.map(str::to_owned));
+        assert_eq!(
+            upgrade_published_devices(&root).unwrap(),
+            CODES.map(str::to_owned)
+        );
         let items = ItemCatalog::load().unwrap();
+        let mut equipped_bytes = Vec::new();
         for code in CODES {
             let username = format!("p{code}");
             let stored = accounts
@@ -367,6 +493,7 @@ mod tests {
             let inventory: Inventory =
                 serde_json::from_slice(&fs::read(stored.directory.join("inventory.json")).unwrap())
                     .unwrap();
+            equipped_bytes.push(fs::read(stored.directory.join("inventory.json")).unwrap());
             let skills = SkillCatalog::for_profile(&stored.account.character).unwrap();
             let stats = EquipmentStats::derive(&inventory, &items, &skills).unwrap();
             assert_eq!(
@@ -387,6 +514,12 @@ mod tests {
                 .iter()
                 .flatten()
                 .any(|item| item.template == turbo));
+            for &(template, _) in CLASS_DEVICES[stored.account.character.class().0] {
+                assert!(inventory.equipped[9..]
+                    .iter()
+                    .flatten()
+                    .any(|item| item.template == template));
+            }
             if stored.account.character.race != 1 {
                 assert!(stats.weapons.iter().all(|weapon| weapon.rounds > 0));
                 assert!(inventory.ammunition[3..3 + stats.weapons.len()]
@@ -402,6 +535,13 @@ mod tests {
                     2
                 );
             }
+        }
+        assert!(upgrade_published_devices(&root).unwrap().is_empty());
+        for (code, bytes) in CODES.into_iter().zip(equipped_bytes) {
+            assert_eq!(
+                fs::read(root.join(format!("accounts/p{code}/inventory.json"))).unwrap(),
+                bytes
+            );
         }
         let te_inventory = root.join("accounts/pte/inventory.json");
         let te_profile = accounts
@@ -477,6 +617,54 @@ mod tests {
         assert!(seed(&root).is_err());
         assert_eq!(fs::read(root.join("account.local.json")).unwrap(), before);
         assert!(!roster_path(&root).exists());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    /// A startup upgrade moves only untouched stock devices and never evicts earned gear.
+    #[test]
+    fn skill_device_upgrade_preserves_changed_mounts_turbo_and_private_state() {
+        let root =
+            std::env::temp_dir().join(format!("beyond-demo-devices-{}", rand::random::<u64>()));
+        let accounts = AccountDirectory::new(&root);
+        accounts
+            .create("private".into(), "secret", "Private".into())
+            .unwrap();
+        seed(&root).unwrap();
+        let private = fs::read(root.join("account.local.json")).unwrap();
+        let te_path = root.join("accounts/pte/inventory.json");
+        let mut te: Inventory = serde_json::from_slice(&fs::read(&te_path).unwrap()).unwrap();
+        let stock_ten = te.equipped[10].clone().unwrap();
+        let turbo = te.equipped[12].clone();
+        te.equipped[9].as_mut().unwrap().structure = 0.8;
+        te.credits = 77;
+        fs::write(&te_path, serde_json::to_vec(&te).unwrap()).unwrap();
+        let tt_path = root.join("accounts/ptt/inventory.json");
+        let mut tt: Inventory = serde_json::from_slice(&fs::read(&tt_path).unwrap()).unwrap();
+        for slot in 9..13 {
+            tt.equipped[slot].as_mut().unwrap().quality = 1.5;
+        }
+        let tt_bytes = serde_json::to_vec(&tt).unwrap();
+        fs::write(&tt_path, &tt_bytes).unwrap();
+        let updated = upgrade_published_devices(&root).unwrap();
+        assert!(updated.contains(&"te".to_owned()));
+        assert!(!updated.contains(&"tt".to_owned()));
+        let after: Inventory = serde_json::from_slice(&fs::read(&te_path).unwrap()).unwrap();
+        assert_eq!(after.equipped[9], te.equipped[9]);
+        assert_eq!(after.equipped[10].as_ref().unwrap().template, 2341);
+        assert_eq!(after.equipped[12], turbo);
+        assert!(after.vault.iter().flatten().any(|item| item == &stock_ten));
+        assert_eq!(after.credits, 77);
+        assert_eq!(fs::read(&tt_path).unwrap(), tt_bytes);
+        assert_eq!(fs::read(root.join("account.local.json")).unwrap(), private);
+        let mut parked = after;
+        let grant = parked.equipped[10].take();
+        *parked.cargo.iter_mut().find(|slot| slot.is_none()).unwrap() = grant;
+        let parked_bytes = serde_json::to_vec(&parked).unwrap();
+        fs::write(&te_path, &parked_bytes).unwrap();
+        assert!(!upgrade_published_devices(&root)
+            .unwrap()
+            .contains(&"te".to_owned()));
+        assert_eq!(fs::read(&te_path).unwrap(), parked_bytes);
         fs::remove_dir_all(root).unwrap();
     }
 }

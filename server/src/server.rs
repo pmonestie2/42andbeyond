@@ -357,6 +357,13 @@ fn accept_connections(
 
 pub fn run(config: Config, stop: Arc<AtomicBool>) -> io::Result<()> {
     let _state_lock = lock_state_directory(&config.state_dir)?;
+    let upgraded = crate::demo_accounts::upgrade_published_devices(&config.state_dir)?;
+    if !upgraded.is_empty() {
+        crate::server_log!(
+            "Demo skill devices provisioned before account load: {}",
+            upgraded.join(", ")
+        );
+    }
     let stop_request = config.state_dir.join("stop.request");
     let status_path = config.state_dir.join("server.local.json");
     // A request belongs to one process lifetime; a previous stop must not stop
