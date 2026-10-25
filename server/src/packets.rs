@@ -584,6 +584,13 @@ pub fn object_effect(id: u32, effect_id: u32, asset: u16, tick: u32) -> Frame {
 /// Returns:
 ///     Frame: Native ship buff slot update used by the legacy status icons.
 pub fn ship_active_buff(id: u32, name: &str, removal_tick: u32) -> Frame {
+    ship_active_buff_slot(id, 0, name, removal_tick)
+}
+
+/// Returns:
+///     Frame: Native ship buff update for one of sixteen display slots.
+pub fn ship_active_buff_slot(id: u32, slot: usize, name: &str, removal_tick: u32) -> Frame {
+    assert!(slot < 16);
     let buff = aux_diff(
         5,
         BTreeMap::from([
@@ -594,7 +601,7 @@ pub fn ship_active_buff(id: u32, name: &str, removal_tick: u32) -> Frame {
     );
     ship_diff(
         id,
-        BTreeMap::from([(42, aux_diff(16, BTreeMap::from([(0, buff)])))]),
+        BTreeMap::from([(42, aux_diff(16, BTreeMap::from([(slot, buff)])))]),
     )
 }
 
@@ -2159,6 +2166,30 @@ mod tests {
             reader.take(25).unwrap(); // header, flags, locks and private/global state
             assert_eq!(reader.u32().unwrap(), 2); // Q must remain usable in warp
         }
+    }
+
+    #[test]
+    fn targeted_buff_updates_second_ship_slot_without_resetting_first() {
+        let applied = ship_active_buff_slot(FIRST_PLAYER_ID + 1, 1, "Increase Scan Range", 5000);
+        let cleared = ship_active_buff_slot(FIRST_PLAYER_ID + 1, 1, "", 0);
+        assert_eq!(applied.opcode, 0x1b);
+        assert_eq!(cleared.opcode, 0x1b);
+        assert_eq!(
+            applied
+                .body
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect::<String>(),
+            "020000402800010200000000400000220000d2001300496e637265617365205363616e2052616e67650088130000"
+        );
+        assert_eq!(
+            cleared
+                .body
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect::<String>(),
+            "020000401500010200000000400000220000d20000000000000000"
+        );
     }
 
     #[test]

@@ -56,6 +56,8 @@ mod mob_damage;
 mod native_jumpstart;
 #[path = "npc_services.rs"]
 mod npc_services;
+#[path = "peer_buff_service.rs"]
+mod peer_buff_service;
 #[path = "production_service.rs"]
 mod production_service;
 #[path = "recovery.rs"]
@@ -184,6 +186,8 @@ pub struct PlayerSession {
     weapon_cooldowns: [f32; 20],
     weapon_firing: [bool; 20],
     active_device: Option<session_equipment::ActiveDevice>,
+    peer_buff: Option<crate::peer_buffs::PeerBuff>,
+    peer_buff_revision: u64,
     shield: f32,
     pub(crate) hull: f32,
     energy: f32,
@@ -368,6 +372,8 @@ impl PlayerSession {
             weapon_cooldowns: [0.; 20],
             weapon_firing: [false; 20],
             active_device: None,
+            peer_buff: None,
+            peer_buff_revision: 0,
             shield: stats.shield_capacity,
             hull: stats.hull_capacity,
             energy: stats.energy_capacity,
@@ -1157,9 +1163,16 @@ impl PlayerSession {
             .as_ref()
             .filter(|active| active.valid_for(&candidate, &self.items, crate::resources::unix_ms()))
             .cloned();
-        let active_modifiers = active_device
+        let mut active_modifiers = active_device
             .as_ref()
             .map_or_else(Vec::new, session_equipment::ActiveDevice::modifiers);
+        if let Some(buff) = self
+            .peer_buff
+            .as_ref()
+            .filter(|buff| buff.valid(&self.items, crate::resources::unix_ms(), self.session_epoch))
+        {
+            active_modifiers.push(buff.modifier());
+        }
         let equipment = EquipmentStats::derive_with_activated(
             &candidate,
             &self.items,
@@ -1484,6 +1497,8 @@ impl PlayerSession {
         self.pending.clear();
         self.stop_weapons();
         self.active_device = None;
+        self.peer_buff = None;
+        self.peer_buff_revision = 0;
         self.refresh_equipment()?;
         self.forget_session()?;
         self.skills = SkillState::default();
@@ -2587,6 +2602,43 @@ mod tests {
         restored.advance_looting(100.).unwrap();
         assert_eq!(restored.inventory.cargo[0].as_ref().unwrap().template, 2837);
         assert!(other.inventory.cargo.iter().all(Option::is_none));
+    }
+
+    #[test]
+    fn received_scan_buff_expires_stats_icon_and_object_effect() {
+        let mut ship = session();
+        ship.logged_in = true;
+        let base = ship.equipment.ship.scan_range;
+        let buff = crate::peer_buffs::PeerBuff {
+            revision: 1,
+            source: ship.player_id() + 1,
+            target_epoch: ship.session_epoch,
+            template: 1813,
+            value: 25.,
+            expires_at_ms: crate::resources::unix_ms() + 10_000,
+        };
+        let effect_id = buff.visual_id(ship.player_id());
+        ship.apply_peer_buff(buff).unwrap();
+        assert!(ship.equipment.ship.scan_range > base);
+        assert!(ship.pending.iter().any(|frame| frame.opcode == 9));
+        assert!(ship.pending.iter().any(|frame| {
+            frame.opcode == 0x1b
+                && frame
+                    .body
+                    .windows(b"Increase Scan Range".len())
+                    .any(|bytes| bytes == b"Increase Scan Range")
+        }));
+        ship.pending.clear();
+        ship.publish_peer_buff_resume();
+        assert!(ship.pending.iter().any(|frame| frame.opcode == 9));
+        ship.peer_buff.as_mut().unwrap().expires_at_ms = crate::resources::unix_ms() - 1;
+        ship.advance_peer_buff().unwrap();
+        assert!(ship.peer_buff.is_none());
+        assert_eq!(ship.equipment.ship.scan_range, base);
+        assert!(ship
+            .pending
+            .iter()
+            .any(|frame| { frame.opcode == 0x0f && frame.body == effect_id.to_le_bytes() }));
     }
 
     #[test]

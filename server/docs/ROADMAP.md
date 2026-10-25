@@ -197,8 +197,13 @@ mean the corresponding gameplay system is complete.
   stale checkpoints once after process replacement, reject duplicate requests,
   and preserve ordinary full-energy login after acknowledged logout. Disposable
   two-client tests cover range, write failure, stale checkpoints and replay.
-  Other activated families, ally/hostile
-  targeting and concurrent buff stacking remain pending.
+  Twelve single-effect Scan Boost devices now apply to a selected grouped
+  friendly peer through the same 0x5d request. One atomic ledger revision
+  couples caster energy with recipient status; the recipient's scan stat,
+  second native buff slot and catalog visual replay across short replacement
+  and clear on expiry. Disposable two-client native packet and stale-checkpoint
+  tests pass. Other ally/hostile effects and concurrent targeted buff stacking
+  remain pending.
 - UDP send failures are logged per destination immediately, then summarized
   at most every 30 seconds until recovery, avoiding floods from unreachable
   resumed clients while retaining error counts.

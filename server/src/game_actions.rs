@@ -37,6 +37,12 @@ impl GameState {
                 epoch,
                 sequence,
             } => self.transfer_reactor_energy(source, target, slot, epoch, sequence),
+            ClientEvent::PeerScanBoost {
+                target,
+                slot,
+                epoch,
+                sequence,
+            } => self.cast_peer_scan_boost(source, target, slot, epoch, sequence),
             ClientEvent::Chat { channel, text } => self.chat(source, channel, &text),
             ClientEvent::Formation { action, target } => {
                 match action {
@@ -164,6 +170,79 @@ impl GameState {
             .get_mut(&target)
             .unwrap()
             .message("Reactor energy received from a nearby pilot.");
+        Ok(())
+    }
+
+    /// Commit sender reactor cost and a friendly scan buff in one world file.
+    fn cast_peer_scan_boost(
+        &mut self,
+        source: u32,
+        target: u32,
+        slot: u8,
+        epoch: u64,
+        sequence: u32,
+    ) -> io::Result<()> {
+        if sequence == 0 || epoch != self.sessions[&source].energy_transfer_epoch() {
+            return Err(invalid("Stale Scan Boost activation."));
+        }
+        if self.energy_ledger.seen(source, epoch, sequence) {
+            self.sessions
+                .get_mut(&source)
+                .unwrap()
+                .message("Scan Boost sent.");
+            return Ok(());
+        }
+        self.update_views();
+        if !self.groups.together(source, target) {
+            return Err(invalid("Scan Boost requires a grouped friendly pilot."));
+        }
+        let sender = &self.sessions[&source];
+        let offer = sender.peer_scan_offer(target, slot)?;
+        let recipient = self
+            .sessions
+            .get(&target)
+            .ok_or_else(|| invalid("Scan Boost recipient is unavailable."))?;
+        if !recipient.peer_scan_available()
+            || recipient.sector.id != sender.sector.id
+            || distance(sender.position, recipient.position) > offer.range
+        {
+            return Err(invalid(
+                "Friendly pilot is busy or outside Scan Boost range.",
+            ));
+        }
+        let source_after = sender.energy_balance().0 - offer.cost;
+        let buff = crate::peer_buffs::PeerBuff {
+            revision: 0,
+            source,
+            target_epoch: recipient.energy_transfer_epoch(),
+            template: sender.peer_scan_template(slot)?,
+            value: offer.value,
+            expires_at_ms: crate::resources::unix_ms().saturating_add(offer.duration_ms),
+        };
+        self.energy_ledger
+            .cast_peer_buff(source, target, epoch, sequence, source_after, buff)?;
+        let balance = self.energy_ledger.balance(source).unwrap();
+        if let Err(error) = self
+            .sessions
+            .get_mut(&source)
+            .unwrap()
+            .apply_energy_balance(balance)
+        {
+            crate::server_error!("Scan Boost sender checkpoint retry for {source}: {error}");
+        }
+        let buff = self.energy_ledger.peer_buff(target).unwrap().clone();
+        if let Err(error) = self
+            .sessions
+            .get_mut(&target)
+            .unwrap()
+            .apply_peer_buff(buff)
+        {
+            crate::server_error!("Scan Boost recipient checkpoint retry for {target}: {error}");
+        }
+        self.sessions
+            .get_mut(&source)
+            .unwrap()
+            .message("Scan Boost sent.");
         Ok(())
     }
 

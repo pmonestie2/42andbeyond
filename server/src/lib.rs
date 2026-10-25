@@ -23,6 +23,7 @@ pub mod mob;
 pub mod motion;
 pub mod npcs;
 pub mod packets;
+pub mod peer_buffs;
 pub mod peers;
 pub mod player_session;
 pub mod production;

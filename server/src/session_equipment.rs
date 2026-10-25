@@ -367,13 +367,20 @@ impl PlayerSession {
     }
 
     pub(super) fn refresh_equipment(&mut self) -> io::Result<()> {
-        let modifiers = self
+        let mut modifiers = self
             .active_device
             .as_ref()
             .filter(|active| {
                 active.valid_for(&self.inventory, &self.items, crate::resources::unix_ms())
             })
             .map_or_else(Vec::new, ActiveDevice::modifiers);
+        if let Some(buff) = self
+            .peer_buff
+            .as_ref()
+            .filter(|buff| buff.valid(&self.items, crate::resources::unix_ms(), self.session_epoch))
+        {
+            modifiers.push(buff.modifier());
+        }
         self.equipment = EquipmentStats::derive_with_activated(
             &self.inventory,
             &self.items,
@@ -579,6 +586,18 @@ impl PlayerSession {
                     epoch: self.session_epoch,
                     // The accepted datagram sequence is retained before this
                     // handler runs, and is the durable retry identity.
+                    sequence: self.inputs.back().copied().unwrap_or(0),
+                });
+                return Ok(());
+            }
+            if crate::peer_buffs::scan_offer(template).is_some()
+                && self.target != self.player_id()
+                && self.peer_ids.contains(&self.target)
+            {
+                self.client_events.push(ClientEvent::PeerScanBoost {
+                    target: self.target,
+                    slot: slot as u8,
+                    epoch: self.session_epoch,
                     sequence: self.inputs.back().copied().unwrap_or(0),
                 });
                 return Ok(());

@@ -56,6 +56,10 @@ pub(super) struct Checkpoint {
     #[serde(default)]
     active_device: Option<session_equipment::ActiveDevice>,
     #[serde(default)]
+    peer_buff: Option<crate::peer_buffs::PeerBuff>,
+    #[serde(default)]
+    peer_buff_revision: u64,
+    #[serde(default)]
     player_firing: bool,
     #[serde(default)]
     following: bool,
@@ -241,6 +245,10 @@ impl PlayerSession {
         self.active_device = saved
             .active_device
             .filter(|active| active.valid_for(&self.inventory, &self.items, unix_ms()));
+        self.peer_buff = saved
+            .peer_buff
+            .filter(|buff| buff.valid(&self.items, unix_ms(), self.session_epoch));
+        self.peer_buff_revision = saved.peer_buff_revision;
         self.weapon_cooldowns = saved.weapon_cooldowns;
         self.weapon_firing = saved.weapon_firing;
         self.player_firing = saved.player_firing;
@@ -354,6 +362,7 @@ impl PlayerSession {
             Some(self.hull),
         ));
         self.publish_active_device_resume();
+        self.publish_peer_buff_resume();
         self.pending
             .push(packets::incapacitated(self.player_id(), self.hull <= 0.));
         for index in 0..previous_mob_count.max(combat.actors.len()) {
@@ -447,6 +456,8 @@ impl PlayerSession {
             weapon_cooldowns: self.weapon_cooldowns,
             weapon_firing: self.weapon_firing,
             active_device: self.active_device.clone(),
+            peer_buff: self.peer_buff.clone(),
+            peer_buff_revision: self.peer_buff_revision,
             player_firing: self.player_firing,
             following: self.following,
             last_launch: self.last_launch,

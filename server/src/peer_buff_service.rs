@@ -1,0 +1,153 @@
+//! Recipient-owned targeted Scan Boost presentation and stat reconciliation.
+use super::*;
+use crate::peer_buffs::{scan_offer, PeerBuff, ScanOffer};
+
+impl PlayerSession {
+    /// Returns:
+    ///     u64: Last targeted status revision saved in this session.
+    pub(crate) fn peer_buff_revision(&self) -> u64 {
+        self.peer_buff_revision
+    }
+
+    /// Returns:
+    ///     ScanOffer: Selected visible peer, legal mount and available energy.
+    pub(crate) fn peer_scan_offer(&self, target: u32, slot: u8) -> io::Result<ScanOffer> {
+        if !self.logged_in
+            || self.hull <= 0.
+            || self.sector.station.is_some()
+            || self.warp.active()
+            || target == self.player_id()
+            || target != self.target
+            || !self.peer_ids.contains(&target)
+            || !(9..20).contains(&usize::from(slot))
+        {
+            return Err(invalid("Select a visible friendly ship before Scan Boost."));
+        }
+        let item = self.inventory.equipped[usize::from(slot)]
+            .as_ref()
+            .ok_or_else(|| invalid("No equipped Scan Boost device in this mount."))?;
+        if item.structure <= 0. {
+            return Err(invalid("Damaged Scan Boost device cannot be activated."));
+        }
+        let offer = scan_offer(self.items.get(item.template)?)
+            .ok_or_else(|| invalid("This device cannot boost another ship's scan range."))?;
+        if self.energy < offer.cost {
+            return Err(invalid("Insufficient reactor energy for Scan Boost."));
+        }
+        Ok(offer)
+    }
+
+    /// Returns:
+    ///     u32: Public item template mounted for this Scan Boost request.
+    /// Raises:
+    ///     io::Error: The requested device mount is empty or invalid.
+    pub(crate) fn peer_scan_template(&self, slot: u8) -> io::Result<u32> {
+        self.inventory
+            .equipped
+            .get(usize::from(slot))
+            .and_then(Option::as_ref)
+            .map(|item| item.template)
+            .ok_or_else(|| invalid("No equipped Scan Boost device in this mount."))
+    }
+
+    /// Returns:
+    ///     bool: Whether a new targeted buff can occupy the recipient's slot.
+    pub(crate) fn peer_scan_available(&self) -> bool {
+        self.logged_in
+            && self.hull > 0.
+            && self.sector.station.is_none()
+            && !self.warp.active()
+            && self.peer_buff.as_ref().is_none_or(|buff| {
+                !buff.valid(&self.items, crate::resources::unix_ms(), self.session_epoch)
+            })
+    }
+
+    /// Apply a durable ledger revision to this recipient before presentation.
+    pub(crate) fn apply_peer_buff(&mut self, buff: PeerBuff) -> io::Result<()> {
+        if buff.revision <= self.peer_buff_revision {
+            return Ok(());
+        }
+        let previous = self.peer_buff.take();
+        if let Some(previous) = previous.as_ref() {
+            self.remove_peer_buff_presentation(previous);
+        }
+        self.peer_buff_revision = buff.revision;
+        self.peer_buff = buff
+            .valid(&self.items, crate::resources::unix_ms(), self.session_epoch)
+            .then_some(buff);
+        let checkpoint = self.checkpoint_session(true);
+        self.refresh_equipment()?;
+        self.publish_peer_buff_resume();
+        checkpoint
+    }
+
+    /// Reaffirm a targeted friendly buff after a short transport replacement.
+    pub(super) fn publish_peer_buff_resume(&mut self) {
+        let Some(buff) = self.peer_buff.as_ref() else {
+            return;
+        };
+        let Ok(template) = self.items.get(buff.template) else {
+            return;
+        };
+        let Some(effect) = template.activated.first() else {
+            return;
+        };
+        let remaining = buff
+            .expires_at_ms
+            .saturating_sub(crate::resources::unix_ms());
+        self.pending.push(packets::ship_active_buff_slot(
+            self.player_id(),
+            1,
+            &effect.buff_name,
+            self.tick_ms().wrapping_add(remaining as u32),
+        ));
+        if let Some(visual) = scan_offer(template)
+            .map(|offer| offer.visual)
+            .filter(|id| *id != 0)
+        {
+            self.pending.push(packets::object_effect(
+                self.player_id(),
+                buff.visual_id(self.player_id()),
+                visual,
+                self.tick_ms(),
+            ));
+        }
+        self.pending.push(packets::message(&format!(
+            "Scan Boost received for {} seconds.",
+            remaining.div_ceil(1000)
+        )));
+    }
+
+    /// Remove the native icon and object visual for an old recipient buff.
+    fn remove_peer_buff_presentation(&mut self, buff: &PeerBuff) {
+        self.pending
+            .push(packets::ship_active_buff_slot(self.player_id(), 1, "", 0));
+        if self
+            .items
+            .get(buff.template)
+            .ok()
+            .and_then(scan_offer)
+            .is_some_and(|offer| offer.visual != 0)
+        {
+            self.pending
+                .push(packets::remove_effect(buff.visual_id(self.player_id())));
+        }
+    }
+
+    /// Expire target-derived stats and their native presentation together.
+    pub(super) fn advance_peer_buff(&mut self) -> io::Result<()> {
+        if self.peer_buff.as_ref().is_some_and(|buff| {
+            !buff.valid(&self.items, crate::resources::unix_ms(), self.session_epoch)
+                || self.hull <= 0.
+                || self.sector.station.is_some()
+        }) {
+            let old = self.peer_buff.take().unwrap();
+            let checkpoint = self.checkpoint_session(true);
+            self.refresh_equipment()?;
+            self.remove_peer_buff_presentation(&old);
+            self.pending.push(packets::message("Scan Boost ended."));
+            checkpoint?;
+        }
+        Ok(())
+    }
+}

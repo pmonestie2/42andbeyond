@@ -59,6 +59,7 @@ impl PlayerSession {
             return Ok(());
         }
         self.advance_active_device()?;
+        self.advance_peer_buff()?;
         self.advance_gating()?;
         if !self.logged_in {
             return Ok(());

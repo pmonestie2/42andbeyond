@@ -1,6 +1,7 @@
-//! One atomic world file commits both sides of a targeted reactor transfer.
-//! Session checkpoints may lag that file; their transfer revision decides which
-//! resource value wins after a process crash or a short server replacement.
+//! One atomic world file commits targeted reactor transfers and friendly buffs.
+//! Session checkpoints may lag that file; revisions decide which resource or
+//! status value wins after a process crash or short server replacement.
+use crate::peer_buffs::PeerBuff;
 use crate::protocol::invalid;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -25,7 +26,10 @@ struct LedgerData {
     version: u32,
     revision: u64,
     balances: BTreeMap<u32, EnergyBalance>,
+    // Historical on-disk name; this also deduplicates peer-buff activations.
     last_transfer: BTreeMap<u32, TransferSequence>,
+    #[serde(default)]
+    peer_buffs: BTreeMap<u32, PeerBuff>,
 }
 
 pub struct EnergyLedger {
@@ -45,6 +49,7 @@ impl EnergyLedger {
                 revision: 0,
                 balances: BTreeMap::new(),
                 last_transfer: BTreeMap::new(),
+                peer_buffs: BTreeMap::new(),
             }
         };
         if data.version != 1
@@ -59,6 +64,15 @@ impl EnergyLedger {
                 .last_transfer
                 .iter()
                 .any(|(player, last)| *player == 0 || last.epoch == 0 || last.sequence == 0)
+            || data.peer_buffs.iter().any(|(target, buff)| {
+                *target == 0
+                    || buff.revision == 0
+                    || buff.revision > data.revision
+                    || buff.source == 0
+                    || buff.target_epoch == 0
+                    || !buff.value.is_finite()
+                    || buff.expires_at_ms == 0
+            })
         {
             return Err(invalid("Invalid targeted energy transfer ledger."));
         }
@@ -75,6 +89,11 @@ impl EnergyLedger {
     ///     u64: Latest atomic transfer revision in this world file.
     pub fn revision(&self) -> u64 {
         self.data.revision
+    }
+    /// Returns:
+    ///     Option<&PeerBuff>: The last atomic targeted buff for this pilot.
+    pub fn peer_buff(&self, target: u32) -> Option<&PeerBuff> {
+        self.data.peer_buffs.get(&target)
     }
 
     /// Returns:
@@ -146,6 +165,64 @@ impl EnergyLedger {
         self.data = next;
         Ok(self.data.revision)
     }
+
+    /// Commit sender energy and a target status under one replay identity.
+    ///
+    /// Returns:
+    ///     u64: Durable revision shared by energy and the recipient buff.
+    pub fn cast_peer_buff(
+        &mut self,
+        source: u32,
+        target: u32,
+        epoch: u64,
+        sequence: u32,
+        source_energy: f32,
+        mut buff: PeerBuff,
+    ) -> io::Result<u64> {
+        if source == 0
+            || target == 0
+            || source == target
+            || epoch == 0
+            || sequence == 0
+            || self.seen(source, epoch, sequence)
+            || !source_energy.is_finite()
+            || !(0. ..=1_000_000_000.).contains(&source_energy)
+            || buff.source != source
+            || buff.target_epoch == 0
+            || !buff.value.is_finite()
+            || buff.expires_at_ms == 0
+        {
+            return Err(invalid("Invalid or repeated targeted device buff."));
+        }
+        let mut next = self.data.clone();
+        next.revision = next
+            .revision
+            .checked_add(1)
+            .ok_or_else(|| invalid("Targeted device revision exhausted."))?;
+        buff.revision = next.revision;
+        next.balances.insert(
+            source,
+            EnergyBalance {
+                revision: next.revision,
+                energy: source_energy,
+            },
+        );
+        next.peer_buffs.insert(target, buff);
+        next.last_transfer
+            .insert(source, TransferSequence { epoch, sequence });
+        let directory = self
+            .path
+            .parent()
+            .ok_or_else(|| invalid("Targeted device ledger has no directory."))?;
+        fs::create_dir_all(directory)?;
+        let temporary = self.path.with_extension("json.tmp");
+        let mut file = File::create(&temporary)?;
+        file.write_all(&serde_json::to_vec_pretty(&next)?)?;
+        file.sync_all()?;
+        fs::rename(temporary, &self.path)?;
+        self.data = next;
+        Ok(self.data.revision)
+    }
 }
 
 #[cfg(test)]
@@ -170,6 +247,14 @@ mod tests {
         assert_eq!(restored.transfer(1, 2, 7, 11, 80., 220.).unwrap(), 2);
         assert_eq!(restored.balance(1).unwrap().revision, 2);
         assert_eq!(restored.balance(2).unwrap().revision, 2);
+        let mut legacy: serde_json::Value =
+            serde_json::from_slice(&fs::read(&restored.path).unwrap()).unwrap();
+        legacy.as_object_mut().unwrap().remove("peer_buffs");
+        fs::write(&restored.path, serde_json::to_vec(&legacy).unwrap()).unwrap();
+        assert!(EnergyLedger::load(restored.path.clone())
+            .unwrap()
+            .peer_buff(2)
+            .is_none());
         fs::remove_dir_all(root).unwrap();
     }
 }
