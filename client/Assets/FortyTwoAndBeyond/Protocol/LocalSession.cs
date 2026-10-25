@@ -554,26 +554,34 @@ namespace FortyTwoAndBeyond.Protocol
             Status = "Returning analyzer sample";
         }
 
-        /// <summary>Store a full cargo stack in the first available server vault slot.</summary>
+        /// <summary>Store cargo in a compatible vault stack or an empty server slot.</summary>
         public void StoreCargo(int slot)
         {
             if (!Ready || World.Station == null || slot < 0 || slot >= World.Equipment.Cargo.Length ||
                 World.Equipment.Cargo[slot]?.Present != true) return;
-            int destination = Array.FindIndex(World.Equipment.Vault, item => item?.Present != true);
-            if (destination < 0) { Status = "Vault is full"; return; }
-            SendInventoryTransfer(1, (uint)slot, 3, (uint)destination, World.Equipment.Cargo[slot].Quantity);
-            Status = "Storing cargo in vault";
+            ItemState source = World.Equipment.Cargo[slot];
+            World.ItemCatalog.TryGetValue(source.Template, out ItemTemplateInfo template);
+            InventoryTransferPlan? plan = InventoryTransferPlan.Choose(source,
+                World.Equipment.Vault, (uint)World.Equipment.Vault.Length, template);
+            if (!plan.HasValue) { Status = "Vault has no compatible stack space"; return; }
+            SendInventoryTransfer(1, (uint)slot, 3, (uint)plan.Value.Slot, plan.Value.Quantity);
+            Status = plan.Value.Merge ? $"Merging {plan.Value.Quantity} of {source.Quantity} cargo into vault" :
+                "Storing cargo in vault";
         }
 
-        /// <summary>Return a full vault stack to the first available cargo slot.</summary>
+        /// <summary>Retrieve vault stock into a compatible or empty unlocked cargo slot.</summary>
         public void RetrieveVault(int slot)
         {
             if (!Ready || World.Station == null || slot < 0 || slot >= World.Equipment.Vault.Length ||
                 World.Equipment.Vault[slot]?.Present != true) return;
-            int destination = Array.FindIndex(World.Equipment.Cargo, item => item?.Present != true);
-            if (destination < 0) { Status = "Cargo hold is full"; return; }
-            SendInventoryTransfer(3, (uint)slot, 1, (uint)destination, World.Equipment.Vault[slot].Quantity);
-            Status = "Retrieving vault item";
+            ItemState source = World.Equipment.Vault[slot];
+            World.ItemCatalog.TryGetValue(source.Template, out ItemTemplateInfo template);
+            InventoryTransferPlan? plan = InventoryTransferPlan.Choose(source,
+                World.Equipment.Cargo, World.Equipment.CargoCapacity, template);
+            if (!plan.HasValue) { Status = "Cargo hold has no compatible stack space"; return; }
+            SendInventoryTransfer(3, (uint)slot, 1, (uint)plan.Value.Slot, plan.Value.Quantity);
+            Status = plan.Value.Merge ? $"Merging {plan.Value.Quantity} of {source.Quantity} vault items into cargo" :
+                "Retrieving vault item";
         }
 
         /// <summary>Select a visible actor or world object to receive native target verbs.</summary>

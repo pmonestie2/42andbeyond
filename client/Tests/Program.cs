@@ -15,7 +15,7 @@ internal static class Program
         CheckExperience(); CheckHullProgression(); CheckReputation(); CheckMiningPhases(); CheckLootTractor(); CheckLootSweep(); CheckWarpPhases(); CheckNavigationSelection(); CheckWarpTargets(); CheckWeaponReady();
         CheckDamageResults(); CheckCombatEngagement(); CheckAttackerSelection(); CheckShotPresentation(); CheckContactSelection(); CheckTargetVerbs(); CheckDeviceEffects();
         CheckNativeDeviceBuff(); CheckPeerScanBuff(); CheckConcurrentRecipientBuffs(); CheckSupportObjectEffects();
-        CheckAmmunitionTransfer(); CheckFlightThrottle(); CheckFormationAnchor();
+        CheckAmmunitionTransfer(); CheckVaultStackPlacement(); CheckFlightThrottle(); CheckFormationAnchor();
         CheckStationLayout(); CheckStationWalk(); CheckDemoRoster(); CheckAddress(); PeerChecks.Decode();
         Console.WriteLine("PASS: framing, ordering, fragmentation, duplicates, bounds, world decoding, private addresses");
         if (args.Length == 2 && args[0] == "--server") { PeerChecks.Live(args[1]); CheckServer(args[1]); }
@@ -1053,6 +1053,47 @@ internal static class Program
         var device = new ItemTemplateInfo(101, 11, "Test device", "");
         Assert(cargo.EquipQuantity(ammunition) == 120 && cargo.EquipQuantity(device) == 1,
             "Cargo-to-mount transfer would load only one round or install an entire equipment stack.");
+    }
+
+    /// <summary>Choose native-compatible full and partial stack transfers without an empty slot.</summary>
+    private static void CheckVaultStackPlacement()
+    {
+        byte[] craftedFrame = FixtureBytes("crafted_cargo_aux.hex");
+        var craftedWorld = new World();
+        craftedWorld.Apply(new Frame(0x1b, Wire.Slice(craftedFrame, 4, craftedFrame.Length - 4)),
+            0x40000001);
+        Snapshot craftedSnapshot = new Snapshot(craftedWorld, "ready", true);
+        ItemView crafted = craftedSnapshot.Cargo[0];
+        Assert(craftedSnapshot.CargoCapacity == 25,
+            "The crafted cargo fixture did not publish its authoritative hull capacity.");
+        Assert(crafted?.BuilderName == "Third" && crafted.Template == 2505 &&
+            crafted.Structure == .5f && crafted.Quality == 1.25f,
+            "Native crafted-item builder was lost from the cargo AUX record.");
+        ItemTemplateInfo ammunition = ItemTemplateInfo.Decode(FixtureBytes("ammo507.hex"));
+        Assert(ammunition.MaxStack == 50, "Native item max-stack metadata was not decoded.");
+        var source = new ItemState { Template = ammunition.Id, Quantity = 20,
+            Quality = 1, Structure = 1, BuilderName = "Third" };
+        var cargo = Enumerable.Range(0, 40).Select(_ => new ItemState
+            { Template = 9000, Quantity = 1 }).ToArray();
+        cargo[4] = new ItemState { Template = ammunition.Id, Quantity = 35,
+            Quality = 1, Structure = 1, BuilderName = "Third" };
+        InventoryTransferPlan? partial = InventoryTransferPlan.Choose(source, cargo, 25, ammunition);
+        Assert(partial.HasValue && partial.Value.Slot == 4 && partial.Value.Quantity == 15 &&
+            partial.Value.Merge, "A full cargo hold could not accept a bounded compatible merge.");
+        cargo[4].Quantity = 25;
+        InventoryTransferPlan? full = InventoryTransferPlan.Choose(source, cargo, 25, ammunition);
+        Assert(full.HasValue && full.Value.Slot == 4 && full.Value.Quantity == 20,
+            "A full-stack merge was not preferred over a new slot.");
+        cargo[4].BuilderName = "Another crafter";
+        Assert(!InventoryTransferPlan.Choose(source, cargo, 25, ammunition).HasValue,
+            "Different crafted builders were merged into one item stack.");
+        cargo[26] = null;
+        Assert(!InventoryTransferPlan.Choose(source, cargo, 25, ammunition).HasValue,
+            "A locked cargo slot beyond the hull capacity was selected.");
+        cargo[3] = null;
+        InventoryTransferPlan? empty = InventoryTransferPlan.Choose(source, cargo, 25, ammunition);
+        Assert(empty.HasValue && empty.Value.Slot == 3 && empty.Value.Quantity == 20 && !empty.Value.Merge,
+            "An empty unlocked slot was not used for an incompatible stack.");
     }
 
     /// <summary>Decode and rotate the native leader-relative formation offset.</summary>

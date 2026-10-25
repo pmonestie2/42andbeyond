@@ -4,7 +4,7 @@ using UnityEngine;
 
 namespace FortyTwoAndBeyond.Client
 {
-    /// <summary>Show server-owned station storage and request full-stack moves.</summary>
+    /// <summary>Show server-owned station storage and bounded stack moves.</summary>
     public sealed class VaultHud
     {
         private readonly SpaceClient client;
@@ -35,22 +35,22 @@ namespace FortyTwoAndBeyond.Client
             flightHud.Panel(panel);
             GUI.Label(new Rect(panel.x + 18, panel.y + 14, 660, 28), "STATION VAULT", flightHud.BodyStyle);
             GUI.Label(new Rect(panel.x + 18, panel.y + 44, 660, 21),
-                "The server owns each move. Select a stack to store or retrieve it.", flightHud.SmallStyle);
+                "Compatible stacks merge. A partial move leaves the rest to transfer again.", flightHud.SmallStyle);
             float columnHeight = panel.height - 92;
             GUILayout.BeginArea(new Rect(panel.x + 18, panel.y + 74, 330, columnHeight));
-            GUILayout.Label($"CARGO HOLD   {snapshot.Cargo.Count(item => item != null)}/{snapshot.Cargo.Length}",
+            GUILayout.Label($"CARGO HOLD · STORE   {snapshot.Cargo.Take((int)snapshot.CargoCapacity).Count(item => item != null)}/{snapshot.CargoCapacity}",
                 flightHud.BodyStyle);
             cargoScroll = GUILayout.BeginScrollView(cargoScroll);
             foreach (ItemView item in snapshot.Cargo.Where(item => item != null))
-                if (GUILayout.Button($"STORE  {item.Slot:00}  {item.Name} ×{item.Quantity}",
+                if (GUILayout.Button($"{item.Slot:00}  {item.Name} ×{item.Quantity}",
                     flightHud.ButtonStyle, GUILayout.Height(29))) client.StoreCargo(item.Slot);
             GUILayout.EndScrollView(); GUILayout.EndArea();
             GUILayout.BeginArea(new Rect(panel.x + 372, panel.y + 74, 330, columnHeight));
-            GUILayout.Label($"VAULT   {snapshot.Vault.Count(item => item != null)}/{snapshot.Vault.Length}",
+            GUILayout.Label($"VAULT · RETRIEVE   {snapshot.Vault.Count(item => item != null)}/{snapshot.Vault.Length}",
                 flightHud.BodyStyle);
             vaultScroll = GUILayout.BeginScrollView(vaultScroll);
             foreach (ItemView item in snapshot.Vault.Where(item => item != null))
-                if (GUILayout.Button($"RETRIEVE  {item.Slot:00}  {item.Name} ×{item.Quantity}",
+                if (GUILayout.Button($"{item.Slot:00}  {item.Name} ×{item.Quantity}",
                     flightHud.ButtonStyle, GUILayout.Height(29))) client.RetrieveVault(item.Slot);
             GUILayout.EndScrollView(); GUILayout.EndArea();
         }
