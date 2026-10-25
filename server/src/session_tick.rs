@@ -58,6 +58,7 @@ impl PlayerSession {
         if !self.logged_in {
             return Ok(());
         }
+        self.advance_power_down()?;
         self.advance_active_device()?;
         self.advance_peer_buff()?;
         self.advance_rally_buff()?;
@@ -176,10 +177,32 @@ impl PlayerSession {
                     .push(packets::message("Warp ended: reactor depleted."));
             }
         } else if !self.mining_drains_energy() {
-            self.energy = (self.energy + stats.energy_recharge * dt).min(stats.energy_capacity);
+            let recharge = self
+                .skills
+                .power_down_ability
+                .and_then(|ability| crate::power_down::tier(ability, self.skill_catalog.level(37)))
+                .map_or(stats.energy_recharge, |tier| {
+                    crate::power_down::recharge_rate(
+                        stats.energy_recharge,
+                        stats.energy_recharge_base,
+                        tier.reactor_recharge_fraction,
+                    )
+                });
+            self.energy = (self.energy + recharge * dt).min(stats.energy_capacity);
         }
         if self.hull > 0. {
-            self.shield = (self.shield + stats.shield_recharge * dt).min(stats.shield_capacity);
+            let recharge = self
+                .skills
+                .power_down_ability
+                .and_then(|ability| crate::power_down::tier(ability, self.skill_catalog.level(37)))
+                .map_or(stats.shield_recharge, |tier| {
+                    crate::power_down::recharge_rate(
+                        stats.shield_recharge,
+                        stats.shield_recharge_base,
+                        tier.shield_recharge_fraction,
+                    )
+                });
+            self.shield = (self.shield + recharge * dt).min(stats.shield_capacity);
         }
         self.resource_sync -= dt;
         if self.resource_sync <= 0. {
@@ -199,7 +222,7 @@ impl PlayerSession {
             id: self.player_id(),
             session_epoch: self.session_epoch,
             position: self.position,
-            visible: self.logged_in && self.hull > 0.,
+            visible: self.logged_in && self.hull > 0. && self.skills.power_down_ability.is_none(),
             signature: self.equipment.ship.signature,
             stealth: self.cloak_stealth(),
             factions: Arc::clone(&self.reputation),

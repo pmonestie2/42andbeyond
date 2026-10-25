@@ -68,6 +68,8 @@ mod native_jumpstart;
 mod npc_services;
 #[path = "peer_buff_service.rs"]
 mod peer_buff_service;
+#[path = "power_down_service.rs"]
+mod power_down_service;
 #[path = "production_service.rs"]
 mod production_service;
 #[path = "rally_service.rs"]
@@ -860,12 +862,16 @@ impl PlayerSession {
                     return Err(invalid("movement owner mismatch or sector not started"));
                 }
                 if opcode == 0x14 && body.get(4) == Some(&12) {
+                    self.stop_power_down()?;
                     if let Err(error) = self.begin_following() {
                         self.pending.push(packets::message(&error.to_string()));
                     }
                     return Ok(());
                 }
                 self.stop_following();
+                if opcode == 0x14 && matches!(body.get(4), Some(0..=3)) {
+                    self.stop_power_down()?;
+                }
                 // Steering or thrust is an explicit request to fly independently.
                 self.detach_formation();
                 if opcode == 0x14 && body.get(4) == Some(&4) && self.warp.active() {
@@ -981,6 +987,7 @@ impl PlayerSession {
                 if count > 64 || reader.rest().len() != count * 4 {
                     return Err(invalid("invalid warp waypoint count"));
                 }
+                self.stop_power_down()?;
                 self.detach_formation();
                 if self.warp.active() {
                     let event = self.warp.finish(FinishReason::Cancelled, &mut self.motion);
@@ -1085,6 +1092,7 @@ impl PlayerSession {
                         .client_events
                         .push(ClientEvent::JumpstartOffer { target }),
                     9 => {
+                        self.stop_power_down()?;
                         if self.skills.cloak_rank > 0 {
                             self.stop_cloak();
                         }

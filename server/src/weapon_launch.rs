@@ -307,6 +307,7 @@ impl PlayerSession {
         if self.hull <= 0.
             || self.warp.active()
             || self.skills.cloak_rank > 0
+            || self.skills.power_down_ability.is_some()
             || self.gate_transit.is_some()
             || self.sector.station.is_some()
         {

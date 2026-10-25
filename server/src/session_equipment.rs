@@ -579,6 +579,7 @@ impl PlayerSession {
         if owner != self.player_id() || inventory != 2 || slot >= 20 {
             return Err(invalid("Invalid equipment activation owner or slot."));
         }
+        self.stop_power_down()?;
         if self
             .equipment
             .weapons

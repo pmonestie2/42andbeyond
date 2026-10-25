@@ -34,6 +34,7 @@ pub enum AbilityKind {
     Rally,
     ReactorOptimization,
     ShieldSap,
+    PowerDown,
     Unsupported,
 }
 
@@ -505,6 +506,8 @@ pub struct SkillState {
         Option<crate::reactor_optimization::PendingReactorOptimization>,
     #[serde(default)]
     pub equipment_repair: Option<crate::equipment_repair::ActiveEquipmentRepair>,
+    #[serde(default)]
+    pub power_down_ability: Option<u32>,
     #[serde(default)]
     pub pending_equipment_repair: Option<crate::equipment_repair::PendingEquipmentRepair>,
 }

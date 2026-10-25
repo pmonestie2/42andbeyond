@@ -1,5 +1,5 @@
 //! Native ship status presentation for sustained class abilities. Equipment,
-//! peer-device and Rally slots occupy 0–5; skill statuses occupy 6–8.
+//! peer-device and Rally slots occupy 0–5; class statuses occupy 6–12.
 use super::*;
 
 pub(super) const CLOAK_SLOT: usize = 6;
@@ -81,5 +81,6 @@ impl PlayerSession {
         self.publish_environment_status(true);
         self.publish_combat_cloak_status();
         self.publish_equipment_repair_resume();
+        self.publish_power_down_resume();
     }
 }

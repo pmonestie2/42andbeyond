@@ -28,6 +28,7 @@ pub mod packets;
 pub mod peer_buffs;
 pub mod peers;
 pub mod player_session;
+pub mod power_down;
 pub mod production;
 pub mod protocol;
 pub mod rally;

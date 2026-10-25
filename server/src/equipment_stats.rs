@@ -16,8 +16,12 @@ pub struct ShipStats {
     pub hull_capacity: f32,
     pub energy_capacity: f32,
     pub energy_recharge: f32,
+    /// Native reactor base recharge, before equipped percentage bonuses.
+    pub energy_recharge_base: f32,
     pub shield_capacity: f32,
     pub shield_recharge: f32,
+    /// Native shield base recharge, before equipped percentage bonuses.
+    pub shield_recharge_base: f32,
     pub impulse_speed: f32,
     pub warp_speed: f32,
     pub warp_drain: f32,
@@ -267,6 +271,7 @@ impl EquipmentStats {
                 };
                 (modifiers.apply_signed("STAT_ENERGY_RECHARGE", base) + base * trance_bonus).max(0.)
             },
+            energy_recharge_base: field(1, 20)?,
             shield_capacity: modifiers.apply("STAT_SHIELD", field(0, 24)?),
             shield_recharge: {
                 let base = field(0, 26)?;
@@ -274,6 +279,7 @@ impl EquipmentStats {
                     + if trance >= 7. { base } else { 0. })
                 .max(0.)
             },
+            shield_recharge_base: field(0, 26)?,
             impulse_speed: if has_engine {
                 modifiers.apply("STAT_IMPULSE", field(2, 31)? + impulse_bonus)
             } else {
