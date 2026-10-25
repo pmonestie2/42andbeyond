@@ -871,6 +871,16 @@ namespace FortyTwoAndBeyond.Client
                 worker.Submit(new ClientCommand(CommandKind.ActivateAbility, id));
         }
 
+        /// <summary>Queue a Recharge Shields cast for a specific visible pilot or self.</summary>
+        public void ActivateAbilityFor(uint id, uint recipient)
+        {
+            if (!Ready || snapshot.Station != null || id != 89 ||
+                !snapshot.AvailableAbilities.Contains(id) ||
+                recipient != snapshot.PlayerId && !snapshot.Players.Any(actor =>
+                    actor.Id == recipient && actor.HasPosition)) return;
+            worker.Submit(new ClientCommand(CommandKind.ActivateAbilityFor, recipient, slot: (int)id));
+        }
+
         /// <summary>Ask the server for choices after the ship is incapacitated.</summary>
         public void RequestRescue()
         { if (Ready && Incapacitated) worker.Submit(new ClientCommand(CommandKind.RequestRescue)); }

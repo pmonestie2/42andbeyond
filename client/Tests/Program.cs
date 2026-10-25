@@ -19,7 +19,8 @@ internal static class Program
         CheckStationLayout(); CheckStationWalk(); CheckDemoRoster(); CheckAddress(); PeerChecks.Decode();
         Console.WriteLine("PASS: framing, ordering, fragmentation, duplicates, bounds, world decoding, private addresses");
         if (args.Length == 2 && args[0] == "--server") { PeerChecks.Live(args[1]); CheckServer(args[1]); }
-        else if (args.Length != 0) throw new ArgumentException("Usage: ProtocolChecks [--server PRIVATE_IP]");
+        else if (args.Length == 2 && args[0] == "--recharge-server") RechargeAbilityChecks.Live(args[1]);
+        else if (args.Length != 0) throw new ArgumentException("Usage: ProtocolChecks [--server PRIVATE_IP|--recharge-server PRIVATE_IP]");
     }
 
     /// <summary>Fail with a useful behavior description.</summary>

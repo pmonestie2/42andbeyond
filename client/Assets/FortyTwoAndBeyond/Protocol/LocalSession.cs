@@ -26,6 +26,8 @@ namespace FortyTwoAndBeyond.Protocol
         private uint pendingDeviceTemplate;
         private int pendingDeviceSlot = -1;
         private double pendingDeviceAt;
+        private uint pendingAbilityTarget, pendingAbilityId;
+        private double pendingAbilityAt;
         private double combatTargetAt, followTargetAt, pendingLootAt, pendingResourceAt, selfJumpstartAt, rescueRequestAt;
         private bool gateActivated, gateCamera, gateFinished, dockRequested, lootRequested, selfJumpstartPending, rescuePending, disposed, failed;
         private byte[] handoff;
@@ -176,6 +178,7 @@ namespace FortyTwoAndBeyond.Protocol
             stream = new SectorStream(Player); World = new World(); sequence = 1; Ready = false;
             gate = dock = followTarget = pendingResource = pendingDeviceTarget = 0;
             pendingDeviceSlot = -1; pendingDeviceTemplate = 0;
+            pendingAbilityTarget = pendingAbilityId = 0;
             selfJumpstartPending = rescuePending = false; handoff = null;
             byte[] body = Wire.Body(w =>
             {
@@ -588,6 +591,7 @@ namespace FortyTwoAndBeyond.Protocol
         public void SelectTarget(uint target)
         {
             pendingDeviceTarget = pendingDeviceTemplate = 0; pendingDeviceSlot = -1;
+            pendingAbilityTarget = pendingAbilityId = 0;
             bool selectableObject = World.Objects.TryGetValue(target, out MapObject item) &&
                 (item.Navigable || item.Kind == 25 || item.Kind == 38);
             if (!Ready || gate != 0 || (target != Player && !World.Mobs.ContainsKey(target) &&
@@ -702,10 +706,35 @@ namespace FortyTwoAndBeyond.Protocol
         /// <summary>Activate an ability listed in this character's authoritative RPG state.</summary>
         public void ActivateAbility(uint id)
         {
+            if (id == 89)
+            {
+                uint selected = World.Equipment.TargetId;
+                ActivateAbilityFor(id, World.Players.TryGetValue(selected, out ShipActor peer) &&
+                    peer.HasPosition ? selected : Player);
+                return;
+            }
             if (!Ready || gate != 0 || World.Station != null ||
                 !World.AvailableAbilities.Contains(id)) return;
             Send(0x58, Wire.Body(w => { w.Write(Player); w.Write(0u); w.Write(id); }));
             Status = "Activating ability " + id;
+        }
+
+        /// <summary>Cast Recharge Shields only after the selected recipient is acknowledged.</summary>
+        public void ActivateAbilityFor(uint id, uint target)
+        {
+            if (id != 89 || !Ready || gate != 0 || World.Station != null ||
+                World.Equipment.Hull <= 0 || !World.AvailableAbilities.Contains(id)) return;
+            if (target != Player && (!World.Players.TryGetValue(target, out ShipActor peer) ||
+                !peer.HasPosition))
+            { Status = "Recharge Shields recipient is no longer visible"; return; }
+            pendingAbilityTarget = pendingAbilityId = 0;
+            if (World.Equipment.TargetId == target)
+            { Send(0x58, Wire.Body(w => { w.Write(Player); w.Write(0u); w.Write(id); }));
+              Status = "Charging Recharge Shields"; return; }
+            SelectTarget(target);
+            pendingAbilityTarget = target; pendingAbilityId = id;
+            pendingAbilityAt = clock.Elapsed.TotalSeconds;
+            Status = "Waiting for Recharge Shields target acknowledgment";
         }
 
         /// <summary>Ask rescue control for the native incapacitation choices.</summary>
@@ -781,6 +810,18 @@ namespace FortyTwoAndBeyond.Protocol
                     if (rescuePending) { rescuePending = false; Status = "Rescue options received"; }
                     break;
                 case 0x19:
+                    if (b.Length == 8 && pendingAbilityId != 0 &&
+                        Wire.U32(b, 0) == pendingAbilityTarget && Wire.U32(b, 4) == uint.MaxValue)
+                    {
+                        uint target = pendingAbilityTarget, ability = pendingAbilityId;
+                        pendingAbilityTarget = pendingAbilityId = 0;
+                        if (Ready && gate == 0 && World.Station == null && World.Equipment.Hull > 0 &&
+                            World.AvailableAbilities.Contains(ability) &&
+                            (target == Player || World.Players.TryGetValue(target, out ShipActor recipient) &&
+                             recipient.HasPosition))
+                        { Send(0x58, Wire.Body(w => { w.Write(Player); w.Write(0u); w.Write(ability); }));
+                          Status = "Charging Recharge Shields"; }
+                    }
                     if (b.Length == 8 && pendingDeviceSlot >= 0 &&
                         Wire.U32(b, 0) == pendingDeviceTarget && Wire.U32(b, 4) == uint.MaxValue)
                     {
@@ -899,6 +940,9 @@ namespace FortyTwoAndBeyond.Protocol
                 if (pendingDeviceSlot >= 0 && now - pendingDeviceAt > 5)
                 { pendingDeviceSlot = -1; pendingDeviceTarget = pendingDeviceTemplate = 0;
                   Status = "Device target did not acknowledge; activation cancelled"; }
+                if (pendingAbilityId != 0 && now - pendingAbilityAt > 5)
+                { pendingAbilityTarget = pendingAbilityId = 0;
+                  Status = "Ability target did not acknowledge; cast cancelled"; }
                 if (gate != 0)
                 {
                     double elapsed = now - gateAt;
