@@ -34,6 +34,7 @@ namespace FortyTwoAndBeyond.Client
             public readonly LineRenderer Ring;
             public readonly LineRenderer ShieldArc;
             public readonly LineRenderer[] Sparks;
+            public readonly Light Flash;
             public readonly Color Color;
             public readonly bool Critical;
             public readonly bool? Shielded;
@@ -41,10 +42,11 @@ namespace FortyTwoAndBeyond.Client
 
             /// <summary>Track a ring spawned only by a confirmed server damage event.</summary>
             public Impact(uint target, LineRenderer ring, LineRenderer shieldArc, LineRenderer[] sparks,
-                Color color, bool critical, bool? shielded)
+                Light flash, Color color, bool critical, bool? shielded)
             {
                 Target = target; Ring = ring; ShieldArc = shieldArc; Sparks = sparks;
-                Color = color; Critical = critical; Shielded = shielded; Started = Time.unscaledTime;
+                Flash = flash; Color = color; Critical = critical; Shielded = shielded;
+                Started = Time.unscaledTime;
             }
         }
 
@@ -198,7 +200,20 @@ namespace FortyTwoAndBeyond.Client
                     sparks[index].useWorldSpace = false;
                     sparks[index].enabled = false;
                 }
-                impacts.Add(new Impact(damage.Target, ring, shieldArc, sparks, tint, critical, shielded));
+                Light flash = null;
+                if (impacts.Count(impact => impact.Flash != null) < 4)
+                {
+                    var source = new GameObject("Confirmed impact light", typeof(Light));
+                    source.transform.SetParent(parent, false);
+                    flash = source.GetComponent<Light>();
+                    flash.type = LightType.Point; flash.color = tint;
+                    flash.range = critical ? 4f : 2.8f;
+                    flash.intensity = critical ? 3.5f : 2.4f;
+                    flash.shadows = LightShadows.None;
+                    flash.renderMode = LightRenderMode.ForceVertex;
+                }
+                impacts.Add(new Impact(damage.Target, ring, shieldArc, sparks,
+                    flash, tint, critical, shielded));
                 if (impacts.Count > 24) RemoveImpact(0);
             }
             reportedShields.Clear();
@@ -366,6 +381,12 @@ namespace FortyTwoAndBeyond.Client
                 bool ownImpact = impact.Target == playerId;
                 impact.Ring.transform.position = ownImpact ? position : position + facing *
                     (impact.Shielded == true ? 1.05f : impact.Shielded == false ? .85f : .7f);
+                if (impact.Flash != null)
+                {
+                    impact.Flash.transform.position = position;
+                    impact.Flash.intensity = (impact.Critical ? 3.5f : 2.4f) *
+                        Mathf.Pow(1 - age / .48f, 2);
+                }
                 if (camera != null) impact.Ring.transform.rotation = camera.transform.rotation;
                 float radius = ownImpact ? .1f + age * .3f :
                     impact.Shielded == true ? .45f + age * 1.25f :
@@ -862,7 +883,10 @@ namespace FortyTwoAndBeyond.Client
 
         /// <summary>Destroy one expired impact ring.</summary>
         private void RemoveImpact(int index)
-        { Object.Destroy(impacts[index].Ring.gameObject); impacts.RemoveAt(index); }
+        {
+            if (impacts[index].Flash != null) Object.Destroy(impacts[index].Flash.gameObject);
+            Object.Destroy(impacts[index].Ring.gameObject); impacts.RemoveAt(index);
+        }
 
         /// <summary>Clear effects on sector travel or logout.</summary>
         public void Clear()

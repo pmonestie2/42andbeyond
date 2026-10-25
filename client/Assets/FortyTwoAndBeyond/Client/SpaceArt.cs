@@ -18,11 +18,13 @@ namespace FortyTwoAndBeyond.Client
         private readonly Material[] proteronSurfaces = new Material[5];
         private readonly Material[] hostileProteronSurfaces = new Material[5];
         private readonly GameObject[] moonRockHigh = new GameObject[2], moonRockLow = new GameObject[2];
-        private readonly Material[] moonStone = new Material[2], moonOre = new Material[2];
+        private readonly Material[] moonStone = new Material[2], moonOre = new Material[2],
+            moonMetal = new Material[2], moonHydrocarbon = new Material[2];
         private readonly Material corvetteSurface, frigateSurface, destroyerSurface, cruiserSurface, carrierSurface;
         private readonly Material hostileFrigateSurface, hostileDestroyerSurface, hostileCruiserSurface,
             hostileCarrierSurface;
-        private readonly Material hull, trim, dark, glass, glow, amber, hostile, crewSignal, mineral, rock, oreRock, field;
+        private readonly Material hull, trim, dark, glass, glow, amber, hostile, crewSignal,
+            mineral, metalSeam, hydrocarbon, gasVapor, rock, oreRock, field;
         private readonly Material gateArmor, gateInset, gateCircuit;
         private readonly Material stationDeck, stationWall, stationFrame, stationRecess, stationBlue, stationAmber;
         public Material Sky { get; }
@@ -57,7 +59,20 @@ namespace FortyTwoAndBeyond.Client
             amber = Surface(new Color(.8f, .35f, .06f), .4f, .3f, new Color(1.3f, .35f, .04f));
             hostile = Surface(new Color(.7f, .045f, .035f), .25f, .5f, new Color(1.9f, .08f, .03f));
             crewSignal = Surface(new Color(.08f, .7f, .36f), .2f, .45f, new Color(.12f, 1.5f, .6f));
-            mineral = Surface(new Color(.04f, .62f, .72f), .35f, .65f, new Color(.08f, 1.15f, 1.4f));
+            mineral = Surface(new Color(.07f, .51f, .63f), .35f, .65f,
+                new Color(.04f, .55f, .72f));
+            metalSeam = Surface(new Color(.64f, .32f, .12f), .66f, .51f,
+                new Color(.22f, .065f, .018f));
+            hydrocarbon = Surface(new Color(.15f, .095f, .14f), .18f, .86f,
+                new Color(.09f, .025f, .075f));
+            Shader cloudShader = Resources.Load<Shader>("ResourceCloud");
+            if (cloudShader != null)
+            {
+                gasVapor = new Material(cloudShader);
+                gasVapor.SetColor("_Tint", new Color(.19f, .64f, .88f));
+                gasVapor.SetFloat("_Opacity", .34f);
+                materials.Add(gasVapor);
+            }
             Texture2D oreDetail = LoadDetail("OreRock");
             rock = Surface(new Color(.48f, .42f, .37f), .04f, .08f);
             rock.SetTexture("_DetailTex", oreDetail);
@@ -100,8 +115,13 @@ namespace FortyTwoAndBeyond.Client
                 string name = index == 0 ? "moon_rock_01" : "moon_rock_03";
                 moonRockHigh[index] = Resources.Load<GameObject>("MoonRocks/" + name + "_high");
                 moonRockLow[index] = Resources.Load<GameObject>("MoonRocks/" + name + "_low");
-                moonStone[index] = MoonSurface(name, false);
-                moonOre[index] = MoonSurface(name, true);
+                moonStone[index] = MoonSurface(name, new Color(.62f, .63f, .7f), Color.clear, 0f);
+                moonOre[index] = MoonSurface(name, new Color(.45f, .65f, .77f),
+                    new Color(.19f, .82f, 1f), .9f);
+                moonMetal[index] = MoonSurface(name, new Color(.58f, .54f, .49f),
+                    new Color(1f, .51f, .2f), .57f);
+                moonHydrocarbon[index] = MoonSurface(name, new Color(.28f, .23f, .29f),
+                    new Color(.92f, .31f, .38f), .72f);
             }
             ring = Torus(1, .12f, 48, 8); meshes.Add(ring);
             gateArc = GateArc(); meshes.Add(gateArc);
@@ -239,16 +259,16 @@ namespace FortyTwoAndBeyond.Client
             return surface;
         }
 
-        /// <returns>Material: A UV-mapped moon-rock surface with an optional mineral accent.</returns>
-        private Material MoonSurface(string assetName, bool mineralized)
+        /// <returns>Material: A UV-mapped moon-rock surface tinted for one resource family.</returns>
+        private Material MoonSurface(string assetName, Color tint, Color accent, float strength)
         {
             Shader shader = Resources.Load<Shader>("StylizedRock");
             Texture2D diffuse = Resources.Load<Texture2D>("MoonRocks/" + assetName + "_diff");
             if (shader == null || diffuse == null) return null;
             var surface = new Material(shader); materials.Add(surface);
-            surface.SetColor("_Tint", mineralized ? new Color(.56f, .7f, .8f) :
-                new Color(.62f, .63f, .7f));
-            surface.SetFloat("_AccentStrength", mineralized ? .72f : 0f);
+            surface.SetColor("_Tint", tint);
+            surface.SetColor("_AccentColor", accent);
+            surface.SetFloat("_AccentStrength", strength);
             surface.SetTexture("_MainTex", diffuse);
             surface.SetTexture("_BumpMap", Resources.Load<Texture2D>("MoonRocks/" + assetName + "_normal"));
             surface.SetTexture("_ArmMap", Resources.Load<Texture2D>("MoonRocks/" + assetName + "_arm"));
@@ -577,13 +597,13 @@ namespace FortyTwoAndBeyond.Client
             if (item.Kind == 11) Gate(root);
             else if (item.Kind == 12) Station(root);
             else if (item.Kind == 25) { Wreck(root); root.localScale *= .015f; }
-            else if (item.Kind == 38) { ResourceRock(root, item.Id); root.localScale *= .72f; }
+            else if (item.Kind == 38) { ResourceRock(root, item); root.localScale *= .72f; }
             else if (item.Asset == 412 || item.Asset == 377) { Station(root); root.localScale *= .03f; }
             else if (item.Asset == 127) { Beacon(root); root.localScale *= .2f; }
             else
             {
                 float radius = item.Navigable ? .4f : item.Asset == 491 ? 3.8f : item.Asset == 490 ? 2.7f : 1.6f;
-                if (!MoonRock(root, item.Id, false,
+                if (!MoonRock(root, item.Id, moonStone,
                         new Vector3(radius * .68f, radius * .55f, radius * .78f)))
                 {
                     int variant = (int)(item.Id % (uint)rocks.Length);
@@ -612,46 +632,103 @@ namespace FortyTwoAndBeyond.Client
             Part(root, PrimitiveType.Sphere, new Vector3(.3f, 0, -.2f), new Vector3(.3f, .25f, .3f), amber);
         }
 
-        /// <summary>Expose bright mineral seams and facets on mineable asteroids.</summary>
-        private void ResourceRock(Transform root, uint id)
+        private enum ResourceFamily { Metallic, Crystalline, Hydrocarbon, Gas, Hulk }
+
+        /// <returns>ResourceFamily: The native resource family conveyed by its public object name.</returns>
+        private static ResourceFamily ResourceFamilyOf(MapObject item)
         {
-            if (!MoonRock(root, id, true, new Vector3(1.35f, 1.05f, 1.3f)))
-                Model(root, rocks[(int)(id % (uint)rocks.Length)], oreRock, Vector3.zero,
-                    new Vector3(2.1f, 1.5f, 1.9f));
-            for (int i = 0; i < 5; i++)
+            if (item.Name.StartsWith("Crystalline", StringComparison.OrdinalIgnoreCase))
+                return ResourceFamily.Crystalline;
+            if (item.Name.StartsWith("Hydrocarbon", StringComparison.OrdinalIgnoreCase))
+                return ResourceFamily.Hydrocarbon;
+            if (item.Name.StartsWith("Gas Cloud", StringComparison.OrdinalIgnoreCase))
+                return ResourceFamily.Gas;
+            if (item.Name.StartsWith("Hulk", StringComparison.OrdinalIgnoreCase))
+                return ResourceFamily.Hulk;
+            return ResourceFamily.Metallic;
+        }
+
+        /// <summary>Give each server resource family a readable material and silhouette.</summary>
+        private void ResourceRock(Transform root, MapObject item)
+        {
+            uint id = item.Id;
+            ResourceFamily family = ResourceFamilyOf(item);
+            if (family == ResourceFamily.Gas)
             {
-                float angle = (i * 72 + id % 31) * Mathf.Deg2Rad;
-                Vector3 position = new Vector3(Mathf.Cos(angle) * 1.2f, Mathf.Sin(angle * 1.7f) * .55f, Mathf.Sin(angle) * 1.1f);
-                Transform shard = Part(root, PrimitiveType.Cube, position, new Vector3(.2f, .14f, .85f), mineral);
-                shard.localRotation = Quaternion.Euler(20 + i * 13, i * 73, 25 + i * 19);
-                if (i < 2)
+                if (gasVapor != null)
+                    for (int layer = 0; layer < 2; layer++)
+                    {
+                        Transform cloud = Part(root, PrimitiveType.Sphere,
+                            new Vector3(layer == 0 ? -.28f : .34f, layer == 0 ? .06f : -.08f, 0),
+                            layer == 0 ? new Vector3(2.35f, 1.2f, 1.5f) :
+                                new Vector3(1.65f, 1.4f, 2.05f), gasVapor);
+                        cloud.localRotation = Quaternion.Euler(22 + layer * 39, id % 91, layer * 57);
+                    }
+                else MoonRock(root, id, moonOre, new Vector3(1.2f, .8f, 1.1f));
+                for (int spark = 0; spark < 3; spark++)
+                {
+                    float angle = (spark * 120 + id % 53) * Mathf.Deg2Rad;
+                    Part(root, PrimitiveType.Sphere,
+                        new Vector3(Mathf.Cos(angle) * .8f, Mathf.Sin(angle) * .42f,
+                            Mathf.Sin(angle * 1.4f) * .72f), Vector3.one * .1f, mineral);
+                }
+                return;
+            }
+            if (family == ResourceFamily.Hulk)
+            {
+                for (int piece = 0; piece < 4; piece++)
+                {
+                    float angle = (piece * 89 + id % 37) * Mathf.Deg2Rad;
+                    Transform debris = Part(root, PrimitiveType.Cube,
+                        new Vector3(Mathf.Cos(angle) * .66f, Mathf.Sin(angle) * .35f,
+                            Mathf.Sin(angle * 1.5f) * .62f),
+                        new Vector3(1.1f - piece * .13f, .14f, .65f),
+                        piece == 0 ? metalSeam : stationFrame);
+                    debris.localRotation = Quaternion.Euler(piece * 31, piece * 67, piece * 23);
+                }
+                Part(root, PrimitiveType.Sphere, Vector3.zero, Vector3.one * .28f, amber);
+                return;
+            }
+            Material[] surface = family == ResourceFamily.Crystalline ? moonOre :
+                family == ResourceFamily.Hydrocarbon ? moonHydrocarbon : moonMetal;
+            Vector3 scale = family == ResourceFamily.Hydrocarbon ?
+                new Vector3(1.45f, .85f, 1.35f) : new Vector3(1.35f, 1.05f, 1.3f);
+            if (!MoonRock(root, id, surface, scale))
+                Model(root, rocks[(int)(id % (uint)rocks.Length)], surface[0] ?? oreRock,
+                    Vector3.zero, new Vector3(2.1f, 1.5f, 1.9f));
+            int features = family == ResourceFamily.Crystalline ? 5 : 3;
+            Material accent = family == ResourceFamily.Crystalline ? mineral :
+                family == ResourceFamily.Hydrocarbon ? hydrocarbon : metalSeam;
+            for (int i = 0; i < features; i++)
+            {
+                float angle = (i * 360f / features + id % 31) * Mathf.Deg2Rad;
+                Vector3 position = new Vector3(Mathf.Cos(angle) * 1.2f,
+                    Mathf.Sin(angle * 1.7f) * .55f, Mathf.Sin(angle) * 1.1f);
+                Transform seam = Part(root, family == ResourceFamily.Hydrocarbon ?
+                    PrimitiveType.Sphere : PrimitiveType.Cube, position,
+                    family == ResourceFamily.Crystalline ? new Vector3(.17f, .12f, .62f) :
+                    family == ResourceFamily.Hydrocarbon ? new Vector3(.48f, .08f, .31f) :
+                        new Vector3(.3f, .11f, .52f), accent);
+                seam.localRotation = Quaternion.Euler(20 + i * 13, i * 73, 25 + i * 19);
+                if (family == ResourceFamily.Crystalline && i < 2)
                 {
                     Transform crystal = Part(root, PrimitiveType.Capsule, position * 1.16f,
-                        new Vector3(.17f, .42f + i * .035f, .17f), mineral);
+                        new Vector3(.14f, .31f + i * .025f, .14f), mineral);
                     crystal.localRotation = Quaternion.Euler(i * 31, i * 67, 24 + i * 9);
                 }
-            }
-            for (int fragment = 0; fragment < 3; fragment++)
-            {
-                float angle = (fragment * 117 + id % 47) * Mathf.Deg2Rad;
-                Vector3 offset = new Vector3(Mathf.Cos(angle) * 1.9f,
-                    Mathf.Sin(angle * 1.4f) * .7f, Mathf.Sin(angle) * 1.7f);
-                Transform chip = Model(root, rocks[(int)((id + (uint)fragment + 3) % (uint)rocks.Length)],
-                    oreRock, offset, Vector3.one * (.35f + fragment * .08f));
-                chip.localRotation = Quaternion.Euler(fragment * 26, fragment * 71, fragment * 39);
             }
         }
 
         /// <returns>bool: Whether a textured moon-rock model was available and placed.</returns>
-        private bool MoonRock(Transform root, uint id, bool mineralized, Vector3 scale)
+        private bool MoonRock(Transform root, uint id, Material[] surfaces, Vector3 scale)
         {
             int variant = (int)(id % (uint)moonRockHigh.Length);
-            Material material = mineralized ? moonOre[variant] : moonStone[variant];
+            Material material = surfaces[variant];
             Transform detailed = Imported(root, moonRockHigh[variant], "Faceted moon rock",
                 scale, material);
             if (detailed == null) return false;
             Transform silhouette = Imported(root, moonRockLow[variant], "Moon rock distant LOD",
-                scale, mineralized ? oreRock : rock);
+                scale, material);
             SetLod(root, detailed, silhouette, .07f);
             return true;
         }
