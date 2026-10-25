@@ -1,0 +1,106 @@
+﻿asset_id,description,category,file,name
+0,Old Old Terran Fighter,Terran\Generic,TVF01A.w3d,TVF01A
+1,Generic Pirate Fighter 2,Ship Hulls\Pirate,PVS06.w3d,PVS06
+2,Generic Pirate Fighter 3,Ship Hulls\Pirate,PVS07.w3d,PVS07
+3,Old Old Terran Explorer,Terran\Generic,TVE01A.w3d,TVE01A
+4,Generic Pirate Fighter 4,Ship Hulls\Pirate,PVS08.w3d,PVS08
+5,Generic Pirate Fighter 5,Ship Hulls\Pirate,PVS09.w3d,PVS09
+6,Old Old Terran Trader,Terran\Generic,TVT01A.w3d,TVT01A
+7,Generic Pirate Fighter 6,Ship Hulls\Pirate,PVS10.w3d,PVS10
+8,Generic Pirate Fighter 7,Ship Hulls\Pirate,PVS11.w3d,PVS11
+9,Old Old Jenquai Fighter,Jenquai\Generic,JVF01A.w3d,JVF01A
+10,Generic Pirate Missile Frigate 1,Ship Hulls\Pirate,PVS12.w3d,PVS12
+11,Generic Pirate Missile Frigate 2,Ship Hulls\Pirate,PVS13.w3d,PVS13
+12,Old Old Jenquai Explorer,Jenquai\Generic,JVE01A.w3d,JVE01A
+13,Generic Pirate Missile Frigate 3,Ship Hulls\Pirate,PVS14.w3d,PVS14
+15,Old Old Jenquai Trader,Jenquai\Generic,JVT01A.w3d,JVT01A
+18,Old Old Progen Fighter,Progen\Generic,PVF01A.w3d,PVF01A
+21,Old Old Progen Explorer,Progen\Generic,PVE01A.w3d,PVE01A
+24,Old Old Progen Trader,Progen\Generic,PVT01A.w3d,PVT01A
+123,Jenquai Cap Ship 3,Capital Ships\Jenquai,,
+124,Progen Cap Ship 01,Capital Ships\Progen,,
+128,Progen Cap Ship 03,Capital Ships\Progen,,
+138,Progen Capital Ship 2,Capital Ships\Progen,,
+161,Jenquai Cap Ship 1,Capital Ships\Jenquai,,
+162,Jenquai Cap Ship 2,Capital Ships\Jenquai,,
+164,Terran Cap Ship 1,Capital Ships\Terran,,
+165,Terran Cap Ship 2,Capital Ships\Terran,,
+166,Terran Cap Ship 3,Capital Ships\Terran,,
+313,Old Terran Explorer,Terran\Generic,PTVE01A.W3D,PTVE01A
+314,Old Terran Fighter,Terran\Generic,PTVF01A.W3D,PTVF01A
+315,Old Terran Trader,Terran\Generic,PTVT01A.W3D,PTVT01A
+316,Old Progen Explorer,Progen\Generic,PPVE01A.W3D,PPVE01A
+317,Old Progen Fighter,Progen\Generic,PPVF01A.W3D,PPVF01A
+318,Old Progen Trader,Progen\Generic,PPVT01.W3D,PPVT01
+319,Old Jenquai Explorer,Jenquai\Generic,PJVE01A.W3D,PJVE01A
+320,Old Jenquai Fighter,Jenquai\Generic,PJVF01A.W3D,PJVF01A
+321,Old Jenquai Trader,Jenquai\Generic,PJVT01A.W3D,PJVT01A
+423,SolSec Capital Ship Large,Capital Ships\SolSec,SOL02.W3D,SOL02
+424,SolSec Capital Ship Small,Capital Ships\SolSec,SOL03.W3D,SOL03
+425,SolSec Patrol Ship 1,Ship Hulls\SolSec,SOL04.W3D,SOL04
+426,SolSec Patrol Ship 2,Ship Hulls\SolSec,SOL05.W3D,SOL05
+427,SolSec Patrol Ship 3,Ship Hulls\SolSec,SOL06.W3D,SOL06
+428,Shadow Cabinet Capital Ship Large,Capital Ships\Shadow Cabinet,SCV01.W3D,SCV01
+429,Shadow Cabinet Capital Ship Small,Capital Ships\Shadow Cabinet,SCV02.W3D,SCV02
+430,Shadow Cabinet Fighter 1,Ship Hulls\Shadow Cabinet,SCV03.W3D,SCV03
+431,Shadow Cabinet Fighter 2,Ship Hulls\Shadow Cabinet,SCV04.W3D,SCV04
+433,Generic Pirate Scout,Ship Hulls\Pirate,PVS01.W3D,PVS01
+434,Generic Pirate Fighter,Ship Hulls\Pirate,PVS02.W3D,PVS02
+435,Generic Pirate Corvette,Capital Ships\Pirate,PVS03.W3D,PVS03
+436,Generic Pirate Capital Ship,Capital Ships\Pirate,PVS04.W3D,PVS04
+1022,Red Dragon Fighter Advanced,Ship Hulls\Red Dragon,npc01.w3d,npc01
+1023,Red Dragon Fighter Small,Ship Hulls\Red Dragon,npc02.w3d,npc02
+1024,Terran Psionic Fighter,Ship Hulls\Psionics,npc03.w3d,npc03
+1025,Terran Psionic Cap Ship,Capital Ships\Psionics,npc04.w3d,npc04
+1026,Malefari Fighter,Ship Hulls\Malefari,npc05.w3d,npc05
+1027,Malefari Fighter Advanced,Ship Hulls\Malefari,npc09.w3d,npc09
+1028,Pleasure Yacht,Capital Ships\Terran,npc08.w3d,npc08
+1029,Black 11 Fighter,Ship Hulls\Black 11,npc10.w3d,npc10
+1030,Express Runner,Ship Hulls\Highport Authority,npc11.w3d,npc11
+1031,Jenquai Capital Ship 4,Capital Ships\Jenquai,jvc04.w3d,jvc04
+1032,Jenquai Capital Ship 5,Capital Ships\Jenquai,jvc05.w3d,jvc05
+1033,Progen Capital Ship 4,Capital Ships\Progen,pvc04.w3d,pvc04
+1034,Progen Cap Ship 5,Capital Ships\Progen,pvc05.w3d,pvc05
+1035,Terran Cap Ship 4,Capital Ships\Terran,tvc04.w3d,tvc04
+1036,Terran Cap Ship 5,Capital Ships\Terran,tvc05.w3d,tvc05
+1037,Red Dragon Cap Ship,Capital Ships\Red Dragon,rvc01.w3d,rvc01
+1038,Malefari Cap Ship,Capital Ships\Malefari,rvc02.w3d,rvc02
+1136,Net 7 Explorer Large,Ship Hulls\Net 7,npc07.w3d,npc07
+1137,Net 7 Explorer Small,Ship Hulls\Net 7,npc12.w3d,npc12
+1138,Paxis Fighter,Ship Hulls\Paxis,npc13.w3d,npc13
+1140,Paxis Capital Ship,Capital Ships\Paxis,pvc06.w3d,pvc06
+1537,Ancient Guard 01,Ship Hulls\Ancient,MOB_01.w3d,MOB_01
+1538,Ancient Guard 02,Ship Hulls\Ancient,MOB_02.w3d,MOB_02
+1539,Ancient Guard 03,Ship Hulls\Ancient,MOB_03.w3d,MOB_03
+1575,VRix Fighter,Ship Hulls\VRix,VrixFi_01-a.w3d,VrixFi_01-a
+1576,VRix Scout,Ship Hulls\VRix,VrixFi_02-a.w3d,VrixFi_02-a
+2089,Destroyed Red Dragon Cap Ship,Capital Ships\Red Dragon,tdcap04.w3d,tdcap04
+2112,Khan's Ship,Capital Ships\Progen,pvc07.w3d,pvc07
+2129,New Good Psionic Fighter,Ship Hulls\Psionics,terpsi_g_01.w3d,terpsi_g_01
+2130,New Bad Psionic Fighter,Ship Hulls\Psionics,terpsi_e_01.w3d,terpsi_e_01
+2133,V'rix Warrior,Ship Hulls\VRix,,
+2194,New Red Dragon Fighter 1,Ship Hulls\Red Dragon,npc14.w3d,npc14
+2195,New Red Dragon Fighter 2,Ship Hulls\Red Dragon,npc15.w3d,npc15
+2196,Red Dragon Cruiser,Ship Hulls\Red Dragon,rvc03.w3d,rvc03
+2239,V'rix Cruiser,Ship Hulls\VRix,vrix_cr.w3d,vrix_cr
+2240,V'rix Hybrid,Ship Hulls\VRix,vhyb01.w3d,vhyb01
+2300,Quetzacoatl Fighter,Jenquai\Generic,quetz_F_01.w3d,quetz_F_01
+2305,Progen Capital Ship 6,Capital Ships\Progen,pvc08a.w3d,pvc08a
+2334,Bogeril Fighter 1,Ship Hulls\Bogeril,bog_fight01a.w3d,bog_fight01a
+2335,Bogeril Fighter 2,Ship Hulls\Bogeril,bog_fight02a.w3d,bog_fight02a
+2377,Bogeril Double Wide,Ship Hulls\Bogeril,dfbog01a.w3d,dfbog01
+2413,Terran Trader02,Terran\Generic,TVT02A.w3d,TVT02A
+2414,Terran Trader03,Terran\Generic,TVT03A.w3d,TVT03A
+2415,Progen Fighter02,Progen\Generic,PVF02A.w3d,PVF02A
+2416,Progen Fighter03,Progen\Generic,PVF03A.w3d,PVF03A
+2417,Jenquai Explorer02,Jenquai\Generic,JVE02A.w3d,JVE02A
+2418,Jenquai Explorer03,Jenquai\Generic,JVE03A.w3d,JVE03A
+2427,Red Dragon Cruiser B,Ship Hulls\Red Dragon,rvc04.w3d,rvc04
+2429,New Terran Fighter SDX 01,Terran\Generic,sdx01a.w3d,SDX01A
+2434,Communications Array,Ship Hulls\Red Dragon,npc17.w3d,npc17
+2474,PVC09A Black Capital,Capital Ships\Progen,PVC09A.w3d,PVC09A
+2478,PVT04A Black Old Explorer Style,Progen\Generic,PVT04A.w3d,PVT04A
+2846,New Terran Fighter SDX 02,Terran\Generic,sdx02a.w3d,SDX02A
+3046,Chavez Capital Ship - Gray,Capital Ships\Pirate,pcv00.w3d,pcv00
+3047,Chavez Capital Ship - Black,Capital Ships\Pirate,pcv01.w3d,pcv01
+3048,Chavez Capital Ship - Red,Capital Ships\Pirate,pcv02.w3d,pcv02
