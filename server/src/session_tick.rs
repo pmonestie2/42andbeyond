@@ -63,6 +63,7 @@ impl PlayerSession {
         self.advance_peer_buff()?;
         self.advance_rally_buff()?;
         self.advance_reactor_optimization_buff()?;
+        self.advance_shield_charging_buff()?;
         self.advance_gating()?;
         if !self.logged_in {
             return Ok(());

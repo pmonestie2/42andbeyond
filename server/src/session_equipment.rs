@@ -406,6 +406,17 @@ impl PlayerSession {
                 &mut self.equipment.ship.energy_recharge,
             );
         }
+        if let Some(buff) = self
+            .shield_charging_buff
+            .as_ref()
+            .filter(|buff| buff.valid(crate::resources::unix_ms(), self.session_epoch))
+        {
+            buff.apply(
+                &mut self.equipment.ship.shield_capacity,
+                &mut self.equipment.ship.shield_recharge,
+                &mut self.equipment.ship.deflects,
+            );
+        }
         self.reputation = self.factions.reactions(
             self.account.character.class(),
             &self.inventory.faction_standings,

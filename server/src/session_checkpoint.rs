@@ -74,6 +74,10 @@ pub(super) struct Checkpoint {
     #[serde(default)]
     reactor_optimization_revision: u64,
     #[serde(default)]
+    shield_charging_buff: Option<crate::shield_charging::ShieldChargingBuff>,
+    #[serde(default)]
+    shield_charging_revision: u64,
+    #[serde(default)]
     combat_trance: combat_trance::CombatTrance,
     #[serde(default)]
     player_firing: bool,
@@ -204,6 +208,10 @@ impl PlayerSession {
                         || crate::reactor_optimization::tier(buff.ability, buff.trained_rank)
                             .is_none()
                 })
+            || saved.shield_charging_buff.as_ref().is_some_and(|buff| {
+                buff.revision > saved.shield_charging_revision
+                    || crate::shield_charging::tier(buff.ability, buff.trained_rank).is_none()
+            })
             || saved
                 .peer_buffs
                 .windows(2)
@@ -267,6 +275,11 @@ impl PlayerSession {
                 .pending_reactor_optimization
                 .as_ref()
                 .is_some_and(|optimization| !optimization.valid())
+            || saved
+                .skills
+                .pending_shield_charging
+                .as_ref()
+                .is_some_and(|charging| !charging.valid())
             || saved
                 .skills
                 .pending_shield_sap
@@ -358,6 +371,10 @@ impl PlayerSession {
             .reactor_optimization_buff
             .filter(|buff| buff.valid(unix_ms(), self.session_epoch));
         self.reactor_optimization_revision = saved.reactor_optimization_revision;
+        self.shield_charging_buff = saved
+            .shield_charging_buff
+            .filter(|buff| buff.valid(unix_ms(), self.session_epoch));
+        self.shield_charging_revision = saved.shield_charging_revision;
         self.combat_trance = saved.combat_trance;
         let trance_was_active = self.combat_trance.active;
         self.combat_trance.reconcile_replacement(
@@ -505,6 +522,7 @@ impl PlayerSession {
         self.publish_peer_buff_resume();
         self.publish_rally_resume();
         self.publish_reactor_optimization_resume();
+        self.publish_shield_charging_resume();
         self.publish_skill_status_resume();
         self.publish_combat_trance_resume();
         for expired in expired_peer_buffs {
@@ -612,6 +630,8 @@ impl PlayerSession {
             rally_revision: self.rally_revision,
             reactor_optimization_buff: self.reactor_optimization_buff.clone(),
             reactor_optimization_revision: self.reactor_optimization_revision,
+            shield_charging_buff: self.shield_charging_buff.clone(),
+            shield_charging_revision: self.shield_charging_revision,
             combat_trance: self.combat_trance.clone(),
             player_firing: self.player_firing,
             following: self.following,

@@ -197,6 +197,14 @@ impl GameState {
                     "Player Reactor Optimization revision exceeds the durable ledger.",
                 ));
             }
+            if session.shield_charging_revision() > self.energy_ledger.revision()
+                || session.shield_charging_revision() > 0
+                    && self.energy_ledger.shield_charging_buff(id).is_none()
+            {
+                return Err(invalid(
+                    "Player Shield Charging revision exceeds the durable ledger.",
+                ));
+            }
             if let Some(balance) = self.energy_ledger.balance(id) {
                 session.apply_energy_balance(balance)?;
             }
@@ -226,6 +234,9 @@ impl GameState {
             }
             if let Some(buff) = self.energy_ledger.reactor_optimization_buff(id) {
                 session.apply_reactor_optimization_buff(buff.clone())?;
+            }
+            if let Some(buff) = self.energy_ledger.shield_charging_buff(id) {
+                session.apply_shield_charging_buff(buff.clone())?;
             }
             for (&peer, at) in &self.registrations {
                 if at.elapsed() < Duration::from_secs(600) {
@@ -665,6 +676,7 @@ impl GameState {
         self.deliver_equipment_repairs()?;
         self.deliver_rallies()?;
         self.deliver_reactor_optimizations()?;
+        self.deliver_shield_chargings()?;
         self.deliver_shield_saps()?;
         self.deliver_support()?;
         for id in &ids {

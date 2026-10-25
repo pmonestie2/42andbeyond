@@ -28,6 +28,7 @@ impl PlayerSession {
         );
         let durable_rally = ability.kind == AbilityKind::Rally;
         let durable_optimization = ability.kind == AbilityKind::ReactorOptimization;
+        let durable_shield_charging = ability.kind == AbilityKind::ShieldCharging;
         let durable_sap = ability.kind == AbilityKind::ShieldSap;
         let durable_gravity = ability.kind == AbilityKind::GravityLink;
         if ability.kind == AbilityKind::Jumpstart {
@@ -66,6 +67,9 @@ impl PlayerSession {
         if durable_optimization && self.skills.pending_reactor_optimization.is_some() {
             return Err(invalid("Previous Reactor Optimization is still settling."));
         }
+        if durable_shield_charging && self.skills.pending_shield_charging.is_some() {
+            return Err(invalid("Previous Shield Charging is still settling."));
+        }
         if durable_sap && self.skills.pending_shield_sap.is_some() {
             return Err(invalid("Previous Shield Sap is still settling."));
         }
@@ -98,6 +102,11 @@ impl PlayerSession {
             && crate::reactor_optimization::tier(ability.id, self.skill_catalog.level(43)).is_none()
         {
             return Err(invalid("Reactor Optimization rank is not trained."));
+        }
+        if durable_shield_charging
+            && crate::shield_charging::tier(ability.id, self.skill_catalog.level(51)).is_none()
+        {
+            return Err(invalid("Shield Charging rank is not trained."));
         }
         if durable_sap
             && crate::shield_sap::tier(ability.id, self.skill_catalog.level(54)).is_none()
@@ -183,6 +192,7 @@ impl PlayerSession {
             AbilityKind::HullPatch => 733,
             AbilityKind::Rally => 0,
             AbilityKind::ReactorOptimization => 0,
+            AbilityKind::ShieldCharging => 0,
             AbilityKind::GravityLink => 0,
             AbilityKind::ShieldSap => 733,
             AbilityKind::EquipmentRepair => unreachable!("toggle handled before charged cast"),
@@ -228,7 +238,12 @@ impl PlayerSession {
             gravity_generation,
             sap_generation,
         });
-        if durable_repair || durable_rally || durable_gravity || durable_optimization || durable_sap
+        if durable_repair
+            || durable_rally
+            || durable_gravity
+            || durable_optimization
+            || durable_shield_charging
+            || durable_sap
         {
             if let Err(error) = self.checkpoint_session(true) {
                 self.energy += energy;
@@ -274,6 +289,24 @@ impl PlayerSession {
                 return Err(invalid(
                     "Reactor Optimization target is dead or out of range.",
                 ));
+            }
+            return Ok(requested_target);
+        }
+        if ability.kind == AbilityKind::ShieldCharging {
+            if ability.rank < 5
+                || requested_target == self.player_id()
+                || requested_target == u32::MAX
+            {
+                return Ok(self.player_id());
+            }
+            let contact = self
+                .peer_contacts
+                .get(&requested_target)
+                .ok_or_else(|| invalid("Select a visible pilot for Shield Charging."))?;
+            if contact.incapacitated
+                || distance(contact.position, self.position) > ability.range as f32
+            {
+                return Err(invalid("Shield Charging target is dead or out of range."));
             }
             return Ok(requested_target);
         }
@@ -442,6 +475,7 @@ impl PlayerSession {
                 AbilityKind::RechargeShields
                     | AbilityKind::HullPatch
                     | AbilityKind::ReactorOptimization
+                    | AbilityKind::ShieldCharging
             ) && (self.warp.active()
                 || self.gate_transit.is_some()
                 || self.sector.station.is_some()
@@ -751,6 +785,15 @@ impl PlayerSession {
                         trained_rank: self.skill_catalog.level(43),
                     });
             }
+            AbilityKind::ShieldCharging => {
+                self.skills.pending_shield_charging =
+                    Some(crate::shield_charging::PendingShieldCharging {
+                        target,
+                        effect,
+                        ability: ability.id,
+                        trained_rank: self.skill_catalog.level(51),
+                    });
+            }
             AbilityKind::ShieldSap => {
                 self.skills.pending_shield_sap = Some(crate::shield_sap::PendingShieldSap {
                     target,
@@ -780,6 +823,7 @@ impl PlayerSession {
                 | AbilityKind::HullPatch
                 | AbilityKind::Rally
                 | AbilityKind::ReactorOptimization
+                | AbilityKind::ShieldCharging
                 | AbilityKind::ShieldSap
         ) {
             self.checkpoint_session(true)?;

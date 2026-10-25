@@ -6,6 +6,7 @@ use crate::peer_buffs::PeerBuff;
 use crate::protocol::invalid;
 use crate::rally::RallyBuff;
 use crate::reactor_optimization::ReactorOptimizationBuff;
+use crate::shield_charging::ShieldChargingBuff;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fs::{self, File};
@@ -91,6 +92,10 @@ struct LedgerData {
     #[serde(default)]
     last_reactor_optimization: BTreeMap<u32, TransferSequence>,
     #[serde(default)]
+    shield_charging_buffs: BTreeMap<u32, ShieldChargingBuff>,
+    #[serde(default)]
+    last_shield_charging: BTreeMap<u32, TransferSequence>,
+    #[serde(default)]
     last_shield_sap: BTreeMap<u32, TransferSequence>,
 }
 
@@ -122,6 +127,8 @@ impl EnergyLedger {
                 last_rally: BTreeMap::new(),
                 reactor_optimization_buffs: BTreeMap::new(),
                 last_reactor_optimization: BTreeMap::new(),
+                shield_charging_buffs: BTreeMap::new(),
+                last_shield_charging: BTreeMap::new(),
                 last_shield_sap: BTreeMap::new(),
             }
         };
@@ -215,6 +222,10 @@ impl EnergyLedger {
                 .iter()
                 .any(|(source, last)| *source == 0 || last.epoch == 0 || last.sequence == 0)
             || data
+                .last_shield_charging
+                .iter()
+                .any(|(source, last)| *source == 0 || last.epoch == 0 || last.sequence == 0)
+            || data
                 .last_shield_sap
                 .iter()
                 .any(|(source, last)| *source == 0 || last.epoch == 0 || last.sequence == 0)
@@ -231,6 +242,15 @@ impl EnergyLedger {
                             .is_none()
                         || buff.expires_at_ms == 0
                 })
+            || data.shield_charging_buffs.iter().any(|(target, buff)| {
+                *target == 0
+                    || buff.revision == 0
+                    || buff.revision > data.revision
+                    || buff.source == 0
+                    || buff.target_epoch == 0
+                    || crate::shield_charging::tier(buff.ability, buff.trained_rank).is_none()
+                    || buff.expires_at_ms == 0
+            })
         {
             return Err(invalid("Invalid targeted energy transfer ledger."));
         }
@@ -706,6 +726,83 @@ impl EnergyLedger {
             .path
             .parent()
             .ok_or_else(|| invalid("Reactor Optimization ledger has no directory."))?;
+        fs::create_dir_all(directory)?;
+        let temporary = self.path.with_extension("json.tmp");
+        let mut file = File::create(&temporary)?;
+        file.write_all(&serde_json::to_vec_pretty(&next)?)?;
+        file.sync_all()?;
+        fs::rename(temporary, &self.path)?;
+        self.data = next;
+        Ok(self.data.revision)
+    }
+
+    /// Returns:
+    ///     Option<&ShieldChargingBuff>: Last committed timed reactor status.
+    pub fn shield_charging_buff(&self, target: u32) -> Option<&ShieldChargingBuff> {
+        self.data.shield_charging_buffs.get(&target)
+    }
+
+    /// Returns:
+    ///     bool: Whether an authenticated Shield Charging cast was settled.
+    pub fn shield_charging_seen(&self, source: u32, epoch: u64, effect: u32) -> bool {
+        self.data
+            .last_shield_charging
+            .get(&source)
+            .is_some_and(|last| last.epoch == epoch && effect <= last.sequence)
+    }
+
+    /// Atomically commit the caster's charged energy and one recipient's status.
+    ///
+    /// Returns:
+    ///     u64: Shared durable world revision for the cast.
+    pub fn cast_shield_charging(
+        &mut self,
+        source: u32,
+        epoch: u64,
+        effect: u32,
+        source_energy: f32,
+        target: u32,
+        mut buff: ShieldChargingBuff,
+    ) -> io::Result<u64> {
+        if source == 0
+            || epoch == 0
+            || effect == 0
+            || self.shield_charging_seen(source, epoch, effect)
+            || target == 0
+            || buff.source != source
+            || buff.target_epoch == 0
+            || buff.expires_at_ms == 0
+            || crate::shield_charging::tier(buff.ability, buff.trained_rank).is_none()
+            || !source_energy.is_finite()
+            || !(0. ..=1_000_000_000.).contains(&source_energy)
+        {
+            return Err(invalid("Invalid or repeated Shield Charging cast."));
+        }
+        let mut next = self.data.clone();
+        next.revision = next
+            .revision
+            .checked_add(1)
+            .ok_or_else(|| invalid("Shield Charging revision exhausted."))?;
+        next.balances.insert(
+            source,
+            EnergyBalance {
+                revision: next.revision,
+                energy: source_energy,
+            },
+        );
+        buff.revision = next.revision;
+        next.shield_charging_buffs.insert(target, buff);
+        next.last_shield_charging.insert(
+            source,
+            TransferSequence {
+                epoch,
+                sequence: effect,
+            },
+        );
+        let directory = self
+            .path
+            .parent()
+            .ok_or_else(|| invalid("Shield Charging ledger has no directory."))?;
         fs::create_dir_all(directory)?;
         let temporary = self.path.with_extension("json.tmp");
         let mut file = File::create(&temporary)?;

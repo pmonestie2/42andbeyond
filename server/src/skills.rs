@@ -33,6 +33,7 @@ pub enum AbilityKind {
     GravityLink,
     Rally,
     ReactorOptimization,
+    ShieldCharging,
     ShieldSap,
     PowerDown,
     Unsupported,
@@ -504,6 +505,8 @@ pub struct SkillState {
     #[serde(default)]
     pub pending_reactor_optimization:
         Option<crate::reactor_optimization::PendingReactorOptimization>,
+    #[serde(default)]
+    pub pending_shield_charging: Option<crate::shield_charging::PendingShieldCharging>,
     #[serde(default)]
     pub equipment_repair: Option<crate::equipment_repair::ActiveEquipmentRepair>,
     #[serde(default)]

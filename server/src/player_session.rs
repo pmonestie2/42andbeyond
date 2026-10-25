@@ -96,6 +96,8 @@ mod session_peers;
 mod session_resources;
 #[path = "session_tick.rs"]
 mod session_tick;
+#[path = "shield_charging_service.rs"]
+mod shield_charging_service;
 #[path = "shield_recharge.rs"]
 mod shield_recharge;
 #[path = "shield_sap_service.rs"]
@@ -225,6 +227,8 @@ pub struct PlayerSession {
     rally_revision: u64,
     reactor_optimization_buff: Option<crate::reactor_optimization::ReactorOptimizationBuff>,
     reactor_optimization_revision: u64,
+    shield_charging_buff: Option<crate::shield_charging::ShieldChargingBuff>,
+    shield_charging_revision: u64,
     combat_trance: combat_trance::CombatTrance,
     shield: f32,
     pub(crate) hull: f32,
@@ -426,6 +430,8 @@ impl PlayerSession {
             rally_revision: 0,
             reactor_optimization_buff: None,
             reactor_optimization_revision: 0,
+            shield_charging_buff: None,
+            shield_charging_revision: 0,
             combat_trance: combat_trance::CombatTrance::default(),
             shield: stats.shield_capacity,
             hull: stats.hull_capacity,
@@ -1341,6 +1347,17 @@ impl PlayerSession {
                 &mut equipment.ship.energy_recharge,
             );
         }
+        if let Some(buff) = self
+            .shield_charging_buff
+            .as_ref()
+            .filter(|buff| buff.valid(crate::resources::unix_ms(), self.session_epoch))
+        {
+            buff.apply(
+                &mut equipment.ship.shield_capacity,
+                &mut equipment.ship.shield_recharge,
+                &mut equipment.ship.deflects,
+            );
+        }
         let prices = self.vendor_prices(&candidate)?;
         let reputation = if candidate.faction_standings == self.inventory.faction_standings
             && self.reputation.class_faction == self.account.character.class().faction()
@@ -1680,6 +1697,8 @@ impl PlayerSession {
         self.rally_revision = 0;
         self.reactor_optimization_buff = None;
         self.reactor_optimization_revision = 0;
+        self.shield_charging_buff = None;
+        self.shield_charging_revision = 0;
         self.combat_trance = combat_trance::CombatTrance::default();
         self.refresh_equipment()?;
         self.forget_session()?;
@@ -3251,6 +3270,109 @@ mod tests {
             .contains(&packets::ship_active_buff_slot(id, 11, "", 0)));
     }
 
+    /// Shield Charging changes real defenses and only clears its own buff slot.
+    #[test]
+    fn shield_charging_changes_capacity_recharge_and_all_resistances() {
+        let mut ship = session();
+        ship.logged_in = true;
+        let baseline = ship.equipment.ship;
+        let id = ship.player_id();
+        ship.apply_shield_charging_buff(crate::shield_charging::ShieldChargingBuff {
+            revision: 1,
+            source: id,
+            target_epoch: ship.session_epoch,
+            ability: 74,
+            trained_rank: 7,
+            expires_at_ms: crate::resources::unix_ms() + 10_000,
+        })
+        .unwrap();
+        assert!(
+            (ship.equipment.ship.shield_capacity - baseline.shield_capacity * 1.25).abs() < 0.01
+        );
+        assert!(
+            (ship.equipment.ship.shield_recharge - baseline.shield_recharge * 1.2).abs() < 0.01
+        );
+        for (before, after) in baseline.deflects.iter().zip(ship.equipment.ship.deflects) {
+            assert_eq!(after, (*before + 10.).min(50.));
+        }
+        let token = b"Shield_Charging";
+        assert!(ship.pending.iter().any(|frame| frame.opcode == 0x1b
+            && frame.body.windows(token.len()).any(|bytes| bytes == token)));
+        assert!(!ship.pending.iter().any(|frame| frame.opcode == 0x09));
+        ship.apply_reactor_optimization_buff(
+            crate::reactor_optimization::ReactorOptimizationBuff {
+                revision: 2,
+                source: id,
+                target_epoch: ship.session_epoch,
+                ability: 86,
+                trained_rank: 7,
+                expires_at_ms: crate::resources::unix_ms() + 10_000,
+            },
+        )
+        .unwrap();
+        let reactor_capacity = ship.equipment.ship.energy_capacity;
+        assert!((reactor_capacity - baseline.energy_capacity * 1.25).abs() < 0.01);
+        assert!(ship.pending.iter().any(|frame| frame.opcode == 0x1b
+            && frame
+                .body
+                .windows(b"Reactor_Optimization".len())
+                .any(|bytes| bytes == b"Reactor_Optimization")));
+        ship.shield = ship.equipment.ship.shield_capacity;
+        ship.pending.clear();
+        ship.shield_charging_buff.as_mut().unwrap().expires_at_ms = crate::resources::unix_ms() - 1;
+        ship.advance_shield_charging_buff().unwrap();
+        assert_eq!(
+            ship.equipment.ship.shield_capacity,
+            baseline.shield_capacity
+        );
+        assert_eq!(
+            ship.equipment.ship.shield_recharge,
+            baseline.shield_recharge
+        );
+        assert_eq!(ship.equipment.ship.deflects, baseline.deflects);
+        assert_eq!(ship.shield, baseline.shield_capacity);
+        assert_eq!(ship.equipment.ship.energy_capacity, reactor_capacity);
+        assert!(ship
+            .pending
+            .contains(&packets::ship_active_buff_slot(id, 13, "", 0)));
+    }
+
+    /// A short process replacement replays one timed native recipient status.
+    #[test]
+    fn shield_charging_status_replays_from_disposable_checkpoint() {
+        let mut ship = session();
+        ship.logged_in = true;
+        let peer = SocketAddr::from(([127, 0, 0, 9], 22960));
+        ship.endpoint = Some(peer);
+        ship.selected_peer = Some(peer.ip());
+        let base = ship.equipment.ship.shield_capacity;
+        let id = ship.player_id();
+        ship.apply_shield_charging_buff(crate::shield_charging::ShieldChargingBuff {
+            revision: 1,
+            source: id,
+            target_epoch: ship.session_epoch,
+            ability: 74,
+            trained_rank: 7,
+            expires_at_ms: crate::resources::unix_ms() + 60_000,
+        })
+        .unwrap();
+        ship.checkpoint_session(true).unwrap();
+        let root = ship.state_dir.clone();
+        let sector = ship.sector.clone();
+        let bind = ship.bind;
+        drop(ship);
+        let restored = PlayerSession::new(sector, bind, root.clone()).unwrap();
+        assert!(restored.shield_charging_buff.is_some());
+        assert!((restored.equipment.ship.shield_capacity - base * 1.25).abs() < 0.01);
+        assert!(restored.pending.iter().any(|frame| frame.opcode == 0x1b
+            && frame
+                .body
+                .windows(b"Shield_Charging".len())
+                .any(|bytes| bytes == b"Shield_Charging")));
+        assert!(!restored.pending.iter().any(|frame| frame.opcode == 0x09));
+        fs::remove_dir_all(root).unwrap();
+    }
+
     /// Each JS tier charges its authored local cost and freezes its trained rank.
     #[test]
     fn seeker_reactor_optimization_five_tiers_charge_and_queue_once() {
@@ -3278,6 +3400,43 @@ mod tests {
             assert_eq!(pending.target, ship.player_id());
             assert_eq!(pending.trained_rank, 7);
             ship.skills.cooldowns.remove(&43);
+        }
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    /// Each TT tier charges its authored local cost and freezes its trained rank.
+    #[test]
+    fn tradesman_shield_charging_five_tiers_charge_and_queue_once() {
+        let root =
+            std::env::temp_dir().join(format!("enb-shield-charge-tiers-{}", rand::random::<u64>()));
+        let mut account = Account::create("tradesman".into(), "pass", "Tradesman".into()).unwrap();
+        account.character.race = 0;
+        account.character.profession = 1;
+        account.save_new(&root).unwrap();
+        let mut ship = PlayerSession::new(
+            serde_json::from_str(include_str!("../data/sector.json")).unwrap(),
+            Ipv4Addr::new(127, 0, 0, 2),
+            root.clone(),
+        )
+        .unwrap();
+        ship.logged_in = true;
+        assert_eq!(ship.skill_catalog.level(51), 7);
+        for (ability, energy) in [
+            (121, 75.),
+            (129, 100.),
+            (122, 125.),
+            (130, 150.),
+            (74, 200.),
+        ] {
+            ship.energy = 500.;
+            ship.begin_ability_for(ability, ship.player_id()).unwrap();
+            assert_eq!(ship.energy, 500. - energy);
+            ship.advance_abilities(2.1).unwrap();
+            let pending = ship.skills.pending_shield_charging.take().unwrap();
+            assert_eq!(pending.ability, ability);
+            assert_eq!(pending.target, ship.player_id());
+            assert_eq!(pending.trained_rank, 7);
+            ship.skills.cooldowns.remove(&51);
         }
         fs::remove_dir_all(root).unwrap();
     }

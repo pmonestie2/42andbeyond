@@ -101,6 +101,98 @@ impl GameState {
         Ok(())
     }
 
+    /// Settle one selected Shield Charging status in the atomic world ledger.
+    pub(super) fn deliver_shield_chargings(&mut self) -> io::Result<()> {
+        let sources: Vec<u32> = self
+            .sessions
+            .iter()
+            .filter_map(|(id, session)| session.pending_shield_charging().map(|_| *id))
+            .collect();
+        for source in sources {
+            let pending = self.sessions[&source].pending_shield_charging().unwrap();
+            if !pending.valid() {
+                return Err(invalid("Invalid saved Shield Charging cast."));
+            }
+            self.sessions
+                .get_mut(&source)
+                .unwrap()
+                .checkpoint_session(true)?;
+            let epoch = self.sessions[&source].energy_transfer_epoch();
+            if !self
+                .energy_ledger
+                .shield_charging_seen(source, epoch, pending.effect)
+            {
+                self.update_views();
+                let caster = &self.sessions[&source];
+                let recipient = self.sessions.get(&pending.target);
+                let tier = crate::shield_charging::tier(pending.ability, pending.trained_rank)
+                    .ok_or_else(|| invalid("Unknown Shield Charging tier."))?;
+                let eligible = recipient.is_some_and(|recipient| {
+                    caster.shield_charging_available()
+                        && recipient.shield_charging_available()
+                        && recipient.sector.id == caster.sector.id
+                        && caster.shield_charging_contact(pending.target)
+                        && (pending.target == source
+                            || tier.rank >= 5
+                                && distance(recipient.position, caster.position) <= tier.range)
+                });
+                if !eligible {
+                    self.sessions
+                        .get_mut(&source)
+                        .unwrap()
+                        .clear_pending_shield_charging()?;
+                    continue;
+                }
+                let recipient = recipient.unwrap();
+                self.energy_ledger.cast_shield_charging(
+                    source,
+                    epoch,
+                    pending.effect,
+                    caster.energy_balance().0,
+                    pending.target,
+                    crate::shield_charging::ShieldChargingBuff {
+                        revision: 0,
+                        source,
+                        target_epoch: recipient.energy_transfer_epoch(),
+                        ability: pending.ability,
+                        trained_rank: pending.trained_rank,
+                        expires_at_ms: crate::resources::unix_ms()
+                            .saturating_add(crate::shield_charging::DURATION_MS),
+                    },
+                )?;
+            }
+            if let Some(balance) = self.energy_ledger.balance(source) {
+                if let Err(error) = self
+                    .sessions
+                    .get_mut(&source)
+                    .unwrap()
+                    .apply_energy_balance(balance)
+                {
+                    crate::server_error!(
+                        "Shield Charging sender checkpoint retry for {source}: {error}"
+                    );
+                }
+            }
+            if let Some(buff) = self.energy_ledger.shield_charging_buff(pending.target) {
+                if buff.source == source {
+                    if let Some(recipient) = self.sessions.get_mut(&pending.target) {
+                        if let Err(error) = recipient.apply_shield_charging_buff(buff.clone()) {
+                            crate::server_error!(
+                                "Shield Charging recipient checkpoint retry for {}: {error}",
+                                pending.target
+                            );
+                        }
+                    }
+                }
+            }
+            self.sessions
+                .get_mut(&source)
+                .unwrap()
+                .clear_pending_shield_charging()?;
+        }
+        Ok(())
+    }
+
     /// Settle one Rally cast for all nearby grouped pilots in one world revision.
     pub(super) fn deliver_rallies(&mut self) -> io::Result<()> {
         let sources: Vec<u32> = self
