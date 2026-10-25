@@ -910,6 +910,9 @@ impl GameState {
                 "launch" => return self.sessions.get_mut(&source).unwrap().launch_from_station(),
                 "tow" => return self.sessions.get_mut(&source).unwrap().tow_to_station(),
                 "jumpstart" => return self.sessions.get_mut(&source).unwrap().self_jumpstart(),
+                "call" => return self.offer_call_forward(source, argument),
+                "acceptcall" => return self.answer_call_forward(source, true),
+                "declinecall" => return self.answer_call_forward(source, false),
                 "equip" => return self.sessions.get_mut(&source).unwrap().equip_cargo(argument),
                 "unequip" => return self.sessions.get_mut(&source).unwrap().unequip(argument),
                 "invite" => return self.group_action(source, 10, self.find_online(argument)?),
@@ -933,7 +936,7 @@ impl GameState {
                     let message = format!("{}: {:.0}, {:.0}, {:.0}", session.sector.name, session.position[0], session.position[1], session.position[2]);
                     self.sessions.get_mut(&source).unwrap().message(&message);
                 }
-                "help" => self.sessions.get_mut(&source).unwrap().message("Commands: /who, /where, /invite NAME, /accept, /decline, /leave, /kick NAME, /disband, /ability NUMBER, /jumpstart, /tow, /launch, /equip CARGO_SLOT MOUNT_SLOT, /unequip MOUNT_SLOT. Dev: /d_spawn [MOB_NAME_OR_ID] [COUNT], /d_jump SECTOR_NAME_OR_ID. Slots are zero-based."),
+                "help" => self.sessions.get_mut(&source).unwrap().message("Commands: /who, /where, /invite NAME, /accept, /decline, /leave, /kick NAME, /disband, /ability NUMBER, /call SKILL NAME, /acceptcall, /declinecall, /jumpstart, /tow, /launch, /equip CARGO_SLOT MOUNT_SLOT, /unequip MOUNT_SLOT. Dev: /d_spawn [MOB_NAME_OR_ID] [COUNT], /d_jump SECTOR_NAME_OR_ID. Slots are zero-based."),
                 _ => return Err(invalid("Unknown local command. Use /help.")),
             }
             return Ok(());

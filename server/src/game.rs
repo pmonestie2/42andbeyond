@@ -23,6 +23,8 @@ use std::time::{Duration, Instant};
 
 #[path = "game_actions.rs"]
 mod actions;
+#[path = "call_forward_game.rs"]
+mod call_forward_game;
 #[path = "dev_commands.rs"]
 mod dev_commands;
 #[path = "shield_sap_game.rs"]
@@ -39,6 +41,7 @@ pub struct GameState {
     groups: GroupManager,
     energy_ledger: EnergyLedger,
     jumpstart_offers: HashMap<u32, JumpstartOffer>,
+    call_forward_offers: HashMap<u32, call_forward_game::CallForwardOffer>,
     registrations: HashMap<IpAddr, Instant>,
     outgoing: Vec<Outbound>,
     root: PathBuf,
@@ -67,6 +70,7 @@ impl GameState {
             groups: GroupManager::default(),
             energy_ledger: EnergyLedger::load(root.join("energy_transfers.local.json"))?,
             jumpstart_offers: HashMap::new(),
+            call_forward_offers: HashMap::new(),
             registrations: HashMap::new(),
             outgoing: Vec::new(),
             root,

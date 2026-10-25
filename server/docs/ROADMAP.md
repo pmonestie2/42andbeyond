@@ -90,6 +90,16 @@ mean the corresponding gameplay system is complete.
 - Nine race/profession identities, public SQL class skill ceilings, racial starter
   gear, class ship models and weapon/device mount limits. Shared implemented
   abilities respect class ownership; other class ability handlers remain pending.
+- Progen Sentinel Call Forward can now target a visible pilot with `/call SKILL NAME`.
+  The recipient explicitly uses `/acceptcall` or `/declinecall` within 60 seconds.
+  Acceptance consumes one equipped Biostruct Sequence device of sufficient
+  rank, returns only that skill's spent points, and sets it to free rank one in
+  the same durable inventory transaction. Engine, reactor and shield technology
+  are excluded, as in the public emulator rules; a pilot must first unequip
+  gear that the reset rank could no longer use. Known build recipes persist.
+  The 5,000-unit offer range is local tuning. The archived tree has no native
+  confirmation handler, so this source implementation uses authenticated chat
+  consent rather than claiming an unverified legacy request window.
 - Loaded ammunition inventory and native cargo-to-launcher loading, stack merges,
   weapon swaps and safe unloading on removal. Ammo metadata and AUX snapshots
   persist. Player launcher travel and durable shared impacts survive owner logout

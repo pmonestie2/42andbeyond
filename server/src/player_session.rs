@@ -34,6 +34,8 @@ use std::sync::{Arc, Mutex};
 mod ability_actions;
 #[path = "attacker_feedback.rs"]
 mod attacker_feedback;
+#[path = "call_forward_service.rs"]
+mod call_forward_service;
 #[path = "combat_experience.rs"]
 mod combat_experience;
 #[path = "combat_trance.rs"]
