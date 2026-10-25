@@ -379,6 +379,20 @@ namespace FortyTwoAndBeyond.Client
                     Part(root, PrimitiveType.Cube, new Vector3(side * 8.72f, 4.8f, z - 1.4f),
                         new Vector3(.09f, 1.2f, .15f), stationAmber);
                 }
+                for (int bay = -1; bay <= 1; bay++)
+                {
+                    float z = bay * 7f;
+                    Part(root, PrimitiveType.Cube, new Vector3(side * 6.25f, .04f, z),
+                        new Vector3(.16f, .07f, 3.7f), stationFrame);
+                    Part(root, PrimitiveType.Cube, new Vector3(side * 6.23f, .09f, z),
+                        new Vector3(.045f, .035f, 3.45f), stationBlue);
+                    Part(root, PrimitiveType.Cube, new Vector3(side * 8.3f, 6.9f, z),
+                        new Vector3(.7f, .18f, 2.1f), stationDeck);
+                    Part(root, PrimitiveType.Cube, new Vector3(side * 8.3f, 6.77f, z),
+                        new Vector3(.52f, .035f, 1.8f), stationBlue);
+                    StationLamp(root, new Vector3(side * 6.9f, 6.5f, z),
+                        new Color(.46f, .78f, 1f), 1.1f, 11f);
+                }
             }
             for (int z = -8; z <= 8; z += 4)
             {
@@ -439,7 +453,11 @@ namespace FortyTwoAndBeyond.Client
                         new Vector3(side * 8.35f, 4.3f, z + 1.3f), .18f, .22f, stationWall);
                     Part(root, PrimitiveType.Cube, new Vector3(side * 9.1f, 4.5f, z + 3),
                         new Vector3(.16f, 8, .18f), stationFrame);
+                    Part(root, PrimitiveType.Cube, new Vector3(side * 7.2f, 1.87f, z + 1.32f),
+                        new Vector3(1.65f, .025f, .045f), stationAmber);
                 }
+                StationLamp(root, new Vector3(side * 5.9f, 6.6f, 1f),
+                    new Color(.4f, .75f, 1f), 1.15f, 12f);
             }
             for (int rib = -2; rib <= 2; rib++)
             {
@@ -463,6 +481,19 @@ namespace FortyTwoAndBeyond.Client
                 Vector3.one * 2.3f);
             medallion.localRotation = Quaternion.Euler(90, 0, 0);
             return root;
+        }
+
+        /// <summary>Light local station surfaces without adding realtime shadows.</summary>
+        private static void StationLamp(Transform parent, Vector3 position, Color color,
+            float intensity, float range)
+        {
+            var fixture = new GameObject("Station area lamp", typeof(Light));
+            fixture.transform.SetParent(parent, false);
+            fixture.transform.localPosition = position;
+            Light light = fixture.GetComponent<Light>();
+            light.type = LightType.Point; light.color = color;
+            light.intensity = intensity; light.range = range;
+            light.shadows = LightShadows.None;
         }
 
         /// <returns>A segmented station pilot suit with a visible pack and helmet silhouette.</returns>

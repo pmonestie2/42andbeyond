@@ -18,11 +18,12 @@ sys.path.insert(0, str(CLIENT / "Tools"))
 from play_local import stop_owned  # noqa: E402
 
 
-def run(unity: Path) -> None:
+def run(unity: Path, compact: bool = False) -> None:
     """Capture the hangar and concourse, then stop only the owned server."""
     OUTPUT.mkdir(parents=True, exist_ok=True)
+    suffix = "-compact" if compact else ""
     for name in ("station-hangar.png", "station-concourse.png", "station-loadout.png"):
-        (OUTPUT / name).unlink(missing_ok=True)
+        (OUTPUT / name.replace(".png", f"{suffix}.png")).unlink(missing_ok=True)
     with tempfile.TemporaryDirectory(prefix="station-art-") as temporary:
         state = Path(temporary)
         binary = SERVER / "target" / "debug" / "beyond-server"
@@ -49,10 +50,13 @@ def run(unity: Path) -> None:
                 info = json.loads((state / "server.local.json").read_text())
                 if info["pid"] != server.pid:
                     raise RuntimeError("Disposable server ownership mismatch")
+                command = [str(unity), "-projectPath", str(CLIENT),
+                           "--42andbeyond-station-art-smoke"]
+                if compact:
+                    command.append("--42andbeyond-station-compact")
+                command.extend(["-logFile", str(OUTPUT / "station-art-visual.log")])
                 subprocess.run(
-                    [str(unity), "-projectPath", str(CLIENT),
-                     "--42andbeyond-station-art-smoke", "-logFile",
-                     str(OUTPUT / "station-art-visual.log")],
+                    command,
                     check=True, timeout=150,
                 )
             finally:
@@ -60,8 +64,9 @@ def run(unity: Path) -> None:
                     (state / "stop.request").write_text("stop\n")
                 stop_owned(server)
     for name in ("station-hangar.png", "station-concourse.png", "station-loadout.png"):
-        if not (OUTPUT / name).is_file():
-            raise FileNotFoundError(name)
+        capture = name.replace(".png", f"{suffix}.png")
+        if not (OUTPUT / capture).is_file():
+            raise FileNotFoundError(capture)
     print("PASS: disposable station hangar, concourse, and loadout captures")
 
 
@@ -69,8 +74,9 @@ def main() -> None:
     """Parse the Unity executable and run the isolated visual check."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--unity", required=True, type=Path)
+    parser.add_argument("--compact", action="store_true", help="Capture a smaller Game View")
     args = parser.parse_args()
-    run(args.unity)
+    run(args.unity, compact=args.compact)
 
 
 if __name__ == "__main__":

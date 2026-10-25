@@ -30,6 +30,8 @@ namespace FortyTwoAndBeyond.Client
         /// </summary>
         private Rect ButtonRect(Snapshot snapshot)
         {
+            if (snapshot?.Station != null && CanvasWidth < 1450)
+                return new Rect(CanvasWidth * .5f + 86, 25, 136, 28);
             float x = snapshot?.Station == null ? CanvasWidth - 696 : CanvasWidth - 596;
             return new Rect(x, 25, 136, 28);
         }

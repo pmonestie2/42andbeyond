@@ -16,12 +16,18 @@ namespace FortyTwoAndBeyond.Editor
         private static double deadline, captureAt;
         private static int stage;
         private static bool connected;
+        private static bool compact;
+
+        /// <returns>string: The screenshot path for the active Game View size.</returns>
+        private static string CaptureName(string scene)
+        { return "Builds/verification/station-" + scene + (compact ? "-compact" : "") + ".png"; }
 
         /// <summary>Attach the opt-in driver before the Editor enters Play mode.</summary>
         static StationArtVisualSmoke()
         {
             if (Array.IndexOf(Environment.GetCommandLineArgs(), "--42andbeyond-station-art-smoke") < 0)
                 return;
+            compact = Array.IndexOf(Environment.GetCommandLineArgs(), "--42andbeyond-station-compact") >= 0;
             deadline = EditorApplication.timeSinceStartup + 90;
             EditorApplication.update += Tick;
         }
@@ -37,8 +43,13 @@ namespace FortyTwoAndBeyond.Editor
                 Type gameView = typeof(EditorWindow).Assembly.GetType("UnityEditor.GameView");
                 if (gameView != null)
                 {
-                    EditorWindow window = EditorWindow.GetWindow(gameView);
-                    window.maximized = true; window.Focus();
+                    EditorWindow window = compact ?
+                        ScriptableObject.CreateInstance(gameView) as EditorWindow :
+                        EditorWindow.GetWindow(gameView);
+                    if (compact)
+                    { window.Show(); window.position = new Rect(80, 75, 1180, 700); }
+                    else window.maximized = true;
+                    window.Focus();
                 }
                 EditorApplication.EnterPlaymode(); return;
             }
@@ -58,12 +69,12 @@ namespace FortyTwoAndBeyond.Editor
             if (EditorApplication.timeSinceStartup < captureAt) return;
             if (stage == 1)
             {
-                ScreenCapture.CaptureScreenshot("Builds/verification/station-hangar.png");
+                ScreenCapture.CaptureScreenshot(CaptureName("hangar"));
                 stage = 2; captureAt = EditorApplication.timeSinceStartup + 1; return;
             }
             if (stage == 2)
             {
-                if (!File.Exists("Builds/verification/station-hangar.png"))
+                if (!File.Exists(CaptureName("hangar")))
                 { Fail("Missing hangar capture."); return; }
                 if (!client.CurrentSnapshot.Station.RoomList.Any(room => room.Index == 1))
                 { Fail("Disposable station has no concourse room."); return; }
@@ -78,12 +89,12 @@ namespace FortyTwoAndBeyond.Editor
             }
             if (stage == 4)
             {
-                ScreenCapture.CaptureScreenshot("Builds/verification/station-concourse.png");
+                ScreenCapture.CaptureScreenshot(CaptureName("concourse"));
                 stage = 5; captureAt = EditorApplication.timeSinceStartup + 1; return;
             }
             if (stage == 5)
             {
-                if (!File.Exists("Builds/verification/station-concourse.png"))
+                if (!File.Exists(CaptureName("concourse")))
                 { Fail("Missing concourse capture."); return; }
                 client.EnterStationRoom(0);
                 stage = 6; return;
@@ -101,11 +112,11 @@ namespace FortyTwoAndBeyond.Editor
             }
             if (stage == 7)
             {
-                ScreenCapture.CaptureScreenshot("Builds/verification/station-loadout.png");
+                ScreenCapture.CaptureScreenshot(CaptureName("loadout"));
                 captureAt = EditorApplication.timeSinceStartup + 1;
                 stage = 8; return;
             }
-            if (!File.Exists("Builds/verification/station-loadout.png"))
+            if (!File.Exists(CaptureName("loadout")))
             { Fail("Missing loadout capture."); return; }
             Debug.Log("PASS: disposable station hangar, concourse, and loadout art captured");
             EditorApplication.update -= Tick;

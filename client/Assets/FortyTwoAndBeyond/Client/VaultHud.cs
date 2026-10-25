@@ -27,7 +27,9 @@ namespace FortyTwoAndBeyond.Client
         {
             if (snapshot?.Station == null) { open = false; return; }
             if (snapshot.Dialogue != null) { open = false; return; }
-            Rect toggle = new Rect((CanvasWidth - 180) * .5f - 100, 27, 180, 30);
+            Rect toggle = CanvasWidth < 1450 ?
+                new Rect(CanvasWidth * .5f - 254, 27, 160, 30) :
+                new Rect((CanvasWidth - 180) * .5f - 100, 27, 180, 30);
             if (GUI.Button(toggle, open ? "CLOSE VAULT" : "STATION VAULT", flightHud.ButtonStyle))
                 open = !open;
             if (!open) return;
