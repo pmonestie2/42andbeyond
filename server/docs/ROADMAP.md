@@ -148,8 +148,9 @@ mean the corresponding gameplay system is complete.
   stage publish through ship inventory and player RPG AUX. Skill-point spending
   and ordinary level-one character creation remain open.
 - The public mission catalog loads all 364 imported definitions; the runtime
-  currently offers thirteen wired NPC missions: Finer Points of Negotiation
-  (3), Reactor Leak (5), Supply Run (6), Going for Repairs (90), Basic Shooting Range (102), its
+  currently offers fourteen wired NPC missions: Finer Points of Negotiation
+  (3), Reactor Leak (5), Supply Run (6), Defense of the Sharim (81), Going for
+  Repairs (90), Basic Shooting Range (102), its
   prerequisite-gated sequel Kill Scuttle Larva (104), and Cash for 'Roids
   (341), plus the six Scout hull upgrades (245, 246, 258–261) at NPC27.
   The Scout rewards advance exactly one stage at native total-level gates.
@@ -162,8 +163,11 @@ mean the corresponding gameplay system is complete.
   credit payments, item possession and hand-in, intermediate XP/credit,
   owned-item and learned-formula rewards commit atomically. Skill
   unlocks are recorded durably, while the sandbox class catalog still grants
-  those skills at their ceiling. Other mission objectives, offers, scripts,
-  faction rewards and other timed/forfeitable jobs remain pending. Mission 111's
+  those skills at their ceiling. Defense of the Sharim now runs three public
+  MOB kill stages with archived dialogue, permanent-decline branch and a final
+  atomic Shinwa faction reward; a failed inventory write can be retried without
+  granting the mission or reputation early. Other mission objectives, offers,
+  scripts, faction rewards and other timed/forfeitable jobs remain pending. Mission 111's
   starting NPC is absent from the public NPC placements.
 - Vault transfers require an authoritative station sector. Rejected space
   transfers preserve the inventory and send the current cargo/vault state.

@@ -3646,6 +3646,143 @@ mod tests {
         assert!(npc_choice(&mut ship, 2).is_err());
     }
 
+    /// JS combat kills, NPC turn-ins, faction gain and optional permanent refusal persist.
+    #[test]
+    fn defense_of_sharim_commits_three_kill_stages_and_faction_reward() {
+        let mut ship = session();
+        ship.account.character.race = 1;
+        ship.account.character.profession = 1;
+        ship.skill_catalog = SkillCatalog::for_profile(&ship.account.character).unwrap();
+        ship.inventory.faction_standings.insert(18, 5000.);
+        ship.refresh_equipment().unwrap();
+        ship.sector = ship.sectors.sector(10401).unwrap();
+        ship.logged_in = true;
+        enter_npc_room(&mut ship, 489);
+        let initial_faction = ship.reputation.standing(18);
+        ship.open_npc(489).unwrap();
+        assert_eq!(ship.npc_interaction.as_ref().unwrap().mission, Some(81));
+        npc_choice(&mut ship, 2).unwrap();
+        npc_choice(&mut ship, 3).unwrap();
+        assert_eq!(ship.inventory.missions.active[0].stage, 1);
+        ship.close_npc();
+        let player = ship.player_id();
+        let mut generation = 0;
+        for (template, count, next_stage) in [(1813, 12, 2), (1815, 6, 4), (1818, 2, 6)] {
+            for _ in 0..count {
+                generation += 1;
+                ship.settle_kill_award(&crate::loot_world::KillAward {
+                    sector: 1040,
+                    death: crate::loot_world::MobDeath {
+                        spawn: 181300,
+                        generation,
+                    },
+                    killer: player,
+                    level: 1,
+                    amount: Some(100),
+                    source_killer: player,
+                    template,
+                })
+                .unwrap();
+            }
+            assert_eq!(ship.inventory.missions.active[0].stage, next_stage);
+            ship.open_npc(489).unwrap();
+            if next_stage == 2 {
+                npc_choice(&mut ship, 3).unwrap();
+                npc_choice(&mut ship, 4).unwrap();
+                npc_choice(&mut ship, 5).unwrap();
+                assert!(ship.inventory.mission_awarded_skills.contains(&46));
+            } else if next_stage == 4 {
+                npc_choice(&mut ship, 2).unwrap();
+                assert!(ship.inventory.mission_awarded_skills.contains(&24));
+                assert!(ship
+                    .inventory
+                    .cargo
+                    .iter()
+                    .flatten()
+                    .any(|item| item.template == 3644));
+            } else {
+                npc_choice(&mut ship, 2).unwrap();
+                npc_choice(&mut ship, 4).unwrap();
+            }
+            ship.close_npc();
+        }
+        assert!(ship.inventory.missions.completed.contains(&81));
+        assert!(ship.inventory.missions.active.is_empty());
+        assert_eq!(ship.reputation.standing(18), initial_faction + 500.);
+        let saved: crate::inventory::Inventory =
+            serde_json::from_slice(&std::fs::read(ship.state_dir.join("inventory.json")).unwrap())
+                .unwrap();
+        assert_eq!(
+            saved.faction_standings.get(&18),
+            Some(&(initial_faction + 500.))
+        );
+        assert!(saved.missions.completed.contains(&81));
+        ship.open_npc(489).unwrap();
+        assert_ne!(ship.npc_interaction.as_ref().unwrap().mission, Some(81));
+    }
+
+    /// Native permanent refusal blocks a later offer without creating an active journal slot.
+    #[test]
+    fn defense_of_sharim_decline_branch_persists_without_acceptance() {
+        let mut ship = session();
+        ship.account.character.race = 1;
+        ship.account.character.profession = 1;
+        ship.skill_catalog = SkillCatalog::for_profile(&ship.account.character).unwrap();
+        ship.sector = ship.sectors.sector(10401).unwrap();
+        ship.logged_in = true;
+        enter_npc_room(&mut ship, 489);
+        ship.open_npc(489).unwrap();
+        assert_eq!(ship.npc_interaction.as_ref().unwrap().mission, Some(81));
+        npc_choice(&mut ship, 4).unwrap();
+        assert!(ship.inventory.missions.completed.contains(&81));
+        assert!(ship.inventory.missions.active.is_empty());
+        let saved: crate::inventory::Inventory =
+            serde_json::from_slice(&std::fs::read(ship.state_dir.join("inventory.json")).unwrap())
+                .unwrap();
+        assert!(saved.missions.completed.contains(&81));
+        ship.close_npc();
+        ship.open_npc(489).unwrap();
+        assert_ne!(ship.npc_interaction.as_ref().unwrap().mission, Some(81));
+    }
+
+    /// A failed final inventory replacement cannot publish faction or mission rewards.
+    #[test]
+    fn defense_of_sharim_final_reward_retries_after_disk_failure() {
+        let mut ship = session();
+        ship.account.character.race = 1;
+        ship.account.character.profession = 1;
+        ship.skill_catalog = SkillCatalog::for_profile(&ship.account.character).unwrap();
+        ship.inventory.faction_standings.insert(18, 5000.);
+        ship.refresh_equipment().unwrap();
+        ship.sector = ship.sectors.sector(10401).unwrap();
+        ship.logged_in = true;
+        enter_npc_room(&mut ship, 489);
+        let catalog = crate::missions::MissionCatalog::load().unwrap();
+        ship.inventory
+            .missions
+            .start(81, crate::resources::unix_ms(), &catalog)
+            .unwrap();
+        ship.inventory.missions.active[0].stage = 6;
+        let before = ship.inventory.clone();
+        ship.open_npc(489).unwrap();
+        npc_choice(&mut ship, 2).unwrap();
+        ship.pending.clear();
+        let temporary = ship.state_dir.join("inventory.json.tmp");
+        std::fs::create_dir_all(&ship.state_dir).unwrap();
+        std::fs::create_dir(&temporary).unwrap();
+        assert!(npc_choice(&mut ship, 4).is_err());
+        assert_eq!(ship.inventory, before);
+        assert_eq!(ship.reputation.standing(18), 5000.);
+        assert!(ship.pending.is_empty());
+        std::fs::remove_dir(temporary).unwrap();
+        npc_choice(&mut ship, 4).unwrap();
+        assert!(ship.inventory.missions.completed.contains(&81));
+        assert_eq!(ship.reputation.standing(18), 5500.);
+        assert!(ship
+            .pending
+            .contains(&packets::reputation(&ship.factions, &ship.reputation)));
+    }
+
     #[test]
     fn negotiation_mission_turn_in_debits_credits_with_repeated_rewards_once() {
         let mut ship = session();

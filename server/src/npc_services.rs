@@ -231,13 +231,35 @@ impl PlayerSession {
             candidate.missions.complete(mission, &catalog)?;
         }
         for reward in &current_stage.rewards {
-            let amount = match &reward.data {
-                crate::missions::MissionRewardData::Number(value) => u64::try_from(*value)
-                    .map_err(|_| invalid("Mission reward amount is negative."))?,
+            let signed = match &reward.data {
+                crate::missions::MissionRewardData::Number(value) => *value,
                 crate::missions::MissionRewardData::Script(_) => {
                     return Err(invalid("Mission script rewards are not supported yet."));
                 }
             };
+            if reward.kind == 5 {
+                let faction = u32::try_from(reward.flags)
+                    .map_err(|_| invalid("Mission faction reward has invalid identity."))?;
+                if !self
+                    .factions
+                    .faction(faction)
+                    .is_some_and(|entry| entry.pda)
+                {
+                    return Err(invalid("Mission faction reward has no native PDA slot."));
+                }
+                let change = i32::try_from(signed)
+                    .map_err(|_| invalid("Mission faction reward exceeds native range."))?;
+                let current = self
+                    .factions
+                    .reactions(self.account.character.class(), &candidate.faction_standings)?
+                    .standing(faction);
+                candidate
+                    .faction_standings
+                    .insert(faction, (current + change as f32).clamp(-9000., 9999.));
+                continue;
+            }
+            let amount =
+                u64::try_from(signed).map_err(|_| invalid("Mission reward amount is negative."))?;
             match reward.kind {
                 1 => {
                     candidate.credits = candidate
@@ -332,10 +354,27 @@ impl PlayerSession {
         }
         let active = self.npc_interaction.as_ref().unwrap().clone();
         let mut entry = self.active_npc_node(&active, node)?;
-        if entry.flag > 1 && !(active.mission.is_some() && matches!(entry.flag, 2 | 5 | 6)) {
+        if entry.flag > 1 && !(active.mission.is_some() && matches!(entry.flag, 2 | 3 | 5 | 6)) {
             return Err(invalid("This NPC mission action is not implemented yet."));
         }
-        if entry.flag == 5 {
+        if entry.flag == 3 {
+            let mission = active.mission.unwrap();
+            let catalog = crate::missions::MissionCatalog::load()?;
+            if active.mission_stage != 0
+                || catalog.offer(identity, &self.account.character, &self.inventory)
+                    != Some(mission)
+            {
+                return Err(invalid("Mission decline is no longer eligible."));
+            }
+            let mut candidate = self.inventory.clone();
+            candidate.missions.completed.insert(mission);
+            self.commit_inventory(candidate)?;
+            self.npc_interaction.as_mut().unwrap().mission = None;
+            self.pending.push(packets::message(&format!(
+                "Mission declined: {}.",
+                catalog.get(mission)?.name
+            )));
+        } else if entry.flag == 5 {
             let mission = active.mission.unwrap();
             let catalog = crate::missions::MissionCatalog::load()?;
             let destination = catalog
