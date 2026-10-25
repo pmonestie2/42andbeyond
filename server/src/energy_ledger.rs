@@ -7,6 +7,7 @@ use crate::protocol::invalid;
 use crate::psionic_shield::PsionicShieldBuff;
 use crate::rally::RallyBuff;
 use crate::reactor_optimization::ReactorOptimizationBuff;
+use crate::repulsor_field::RepulsorBuff;
 use crate::shield_charging::ShieldChargingBuff;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -101,6 +102,10 @@ struct LedgerData {
     #[serde(default)]
     last_psionic_shield: BTreeMap<u32, TransferSequence>,
     #[serde(default)]
+    repulsor_field_buffs: BTreeMap<u32, RepulsorBuff>,
+    #[serde(default)]
+    last_repulsor_field: BTreeMap<u32, TransferSequence>,
+    #[serde(default)]
     last_shield_sap: BTreeMap<u32, TransferSequence>,
 }
 
@@ -136,6 +141,8 @@ impl EnergyLedger {
                 last_shield_charging: BTreeMap::new(),
                 psionic_shield_buffs: BTreeMap::new(),
                 last_psionic_shield: BTreeMap::new(),
+                repulsor_field_buffs: BTreeMap::new(),
+                last_repulsor_field: BTreeMap::new(),
                 last_shield_sap: BTreeMap::new(),
             }
         };
@@ -237,6 +244,10 @@ impl EnergyLedger {
                 .iter()
                 .any(|(source, last)| *source == 0 || last.epoch == 0 || last.sequence == 0)
             || data
+                .last_repulsor_field
+                .iter()
+                .any(|(source, last)| *source == 0 || last.epoch == 0 || last.sequence == 0)
+            || data
                 .last_shield_sap
                 .iter()
                 .any(|(source, last)| *source == 0 || last.epoch == 0 || last.sequence == 0)
@@ -274,6 +285,18 @@ impl EnergyLedger {
                     || buff.expires_at_ms == 0
                     || !buff.remaining.is_finite()
                     || !capacity.is_some_and(|limit| buff.remaining > 0. && buff.remaining <= limit)
+            })
+            || data.repulsor_field_buffs.iter().any(|(target, buff)| {
+                *target == 0
+                    || buff.revision == 0
+                    || buff.revision > data.revision
+                    || buff.source == 0
+                    || buff.target_epoch == 0
+                    || crate::repulsor_field::tier(buff.ability, buff.trained_rank).is_none()
+                    || !buff.effective_rank.is_finite()
+                    || !(buff.trained_rank as f32..=crate::repulsor_field::MAX_EFFECTIVE_RANK)
+                        .contains(&buff.effective_rank)
+                    || buff.expires_at_ms == 0
             })
         {
             return Err(invalid("Invalid targeted energy transfer ledger."));
@@ -907,6 +930,86 @@ impl EnergyLedger {
             .path
             .parent()
             .ok_or_else(|| invalid("Psionic Shield ledger has no directory."))?;
+        fs::create_dir_all(directory)?;
+        let temporary = self.path.with_extension("json.tmp");
+        let mut file = File::create(&temporary)?;
+        file.write_all(&serde_json::to_vec_pretty(&next)?)?;
+        file.sync_all()?;
+        fs::rename(temporary, &self.path)?;
+        self.data = next;
+        Ok(self.data.revision)
+    }
+
+    /// Returns:
+    ///     Option<&RepulsorBuff>: Last committed recipient field.
+    pub fn repulsor_field_buff(&self, target: u32) -> Option<&RepulsorBuff> {
+        self.data.repulsor_field_buffs.get(&target)
+    }
+
+    /// Returns:
+    ///     bool: Whether this charged Repulsor cast already settled.
+    pub fn repulsor_field_seen(&self, source: u32, epoch: u64, effect: u32) -> bool {
+        self.data
+            .last_repulsor_field
+            .get(&source)
+            .is_some_and(|last| last.epoch == epoch && effect <= last.sequence)
+    }
+
+    /// Atomically settle caster energy and the selected recipient's field.
+    ///
+    /// Returns:
+    ///     u64: Shared durable world revision.
+    pub fn cast_repulsor_field(
+        &mut self,
+        source: u32,
+        epoch: u64,
+        effect: u32,
+        source_energy: f32,
+        target: u32,
+        mut buff: RepulsorBuff,
+    ) -> io::Result<u64> {
+        if source == 0
+            || epoch == 0
+            || effect == 0
+            || target == 0
+            || self.repulsor_field_seen(source, epoch, effect)
+            || buff.source != source
+            || buff.target_epoch == 0
+            || crate::repulsor_field::tier(buff.ability, buff.trained_rank).is_none()
+            || !buff.effective_rank.is_finite()
+            || !(buff.trained_rank as f32..=crate::repulsor_field::MAX_EFFECTIVE_RANK)
+                .contains(&buff.effective_rank)
+            || buff.expires_at_ms == 0
+            || !source_energy.is_finite()
+            || !(0. ..=1_000_000_000.).contains(&source_energy)
+        {
+            return Err(invalid("Invalid or repeated Repulsor Field cast."));
+        }
+        let mut next = self.data.clone();
+        next.revision = next
+            .revision
+            .checked_add(1)
+            .ok_or_else(|| invalid("Repulsor Field revision exhausted."))?;
+        next.balances.insert(
+            source,
+            EnergyBalance {
+                revision: next.revision,
+                energy: source_energy,
+            },
+        );
+        buff.revision = next.revision;
+        next.repulsor_field_buffs.insert(target, buff);
+        next.last_repulsor_field.insert(
+            source,
+            TransferSequence {
+                epoch,
+                sequence: effect,
+            },
+        );
+        let directory = self
+            .path
+            .parent()
+            .ok_or_else(|| invalid("Repulsor Field ledger has no directory."))?;
         fs::create_dir_all(directory)?;
         let temporary = self.path.with_extension("json.tmp");
         let mut file = File::create(&temporary)?;

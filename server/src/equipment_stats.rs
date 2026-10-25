@@ -35,6 +35,7 @@ pub struct ShipStats {
     pub recharge_shields_skill: f32,
     pub hull_patch_skill: f32,
     pub gravity_link_skill: f32,
+    pub repulsor_field_skill: f32,
     pub shield_inversion_duration_bonus: f32,
     pub tractor_speed: f32,
     pub tractor_range: f32,
@@ -324,6 +325,16 @@ impl EquipmentStats {
                 modifiers
                     .apply_signed("SKILL_GRAVITY_LINK", skills.level(25) as f32)
                     .clamp(0., 10.)
+            } else {
+                0.
+            },
+            repulsor_field_skill: if skills.level(48) > 0 {
+                modifiers
+                    .apply_signed("SKILL_REPULSOR_FIELD", skills.level(48) as f32)
+                    .clamp(
+                        skills.level(48) as f32,
+                        crate::repulsor_field::MAX_EFFECTIVE_RANK,
+                    )
             } else {
                 0.
             },

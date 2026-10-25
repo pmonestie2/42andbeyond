@@ -82,6 +82,10 @@ pub(super) struct Checkpoint {
     #[serde(default)]
     psionic_shield_revision: u64,
     #[serde(default)]
+    repulsor_field_buff: Option<crate::repulsor_field::RepulsorBuff>,
+    #[serde(default)]
+    repulsor_field_revision: u64,
+    #[serde(default)]
     combat_trance: combat_trance::CombatTrance,
     #[serde(default)]
     player_firing: bool,
@@ -224,6 +228,11 @@ impl PlayerSession {
                     || !buff.remaining.is_finite()
                     || buff.remaining <= 0.
             })
+            || saved.repulsor_field_buff.as_ref().is_some_and(|buff| {
+                buff.revision > saved.repulsor_field_revision
+                    || crate::repulsor_field::tier(buff.ability, buff.trained_rank).is_none()
+                    || !buff.effective_rank.is_finite()
+            })
             || saved
                 .peer_buffs
                 .windows(2)
@@ -301,6 +310,11 @@ impl PlayerSession {
                 .pending_psionic_shield
                 .as_ref()
                 .is_some_and(|barrier| !barrier.valid())
+            || saved
+                .skills
+                .pending_repulsor_field
+                .as_ref()
+                .is_some_and(|field| !field.valid())
             || saved
                 .skills
                 .pending_shield_sap
@@ -400,6 +414,10 @@ impl PlayerSession {
             .psionic_shield_buff
             .filter(|buff| buff.valid(unix_ms(), self.session_epoch));
         self.psionic_shield_revision = saved.psionic_shield_revision;
+        self.repulsor_field_buff = saved
+            .repulsor_field_buff
+            .filter(|buff| buff.valid(unix_ms(), self.session_epoch));
+        self.repulsor_field_revision = saved.repulsor_field_revision;
         self.combat_trance = saved.combat_trance;
         let trance_was_active = self.combat_trance.active;
         self.combat_trance.reconcile_replacement(
@@ -549,6 +567,7 @@ impl PlayerSession {
         self.publish_reactor_optimization_resume();
         self.publish_shield_charging_resume();
         self.publish_psionic_shield_resume();
+        self.publish_repulsor_field_resume();
         self.publish_skill_status_resume();
         self.publish_combat_trance_resume();
         for expired in expired_peer_buffs {
@@ -660,6 +679,8 @@ impl PlayerSession {
             shield_charging_revision: self.shield_charging_revision,
             psionic_shield_buff: self.psionic_shield_buff.clone(),
             psionic_shield_revision: self.psionic_shield_revision,
+            repulsor_field_buff: self.repulsor_field_buff.clone(),
+            repulsor_field_revision: self.repulsor_field_revision,
             combat_trance: self.combat_trance.clone(),
             player_firing: self.player_firing,
             following: self.following,

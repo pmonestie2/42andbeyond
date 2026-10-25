@@ -28,7 +28,7 @@ pub(super) fn valid_receipts(receipts: &[MobDamageReceipt]) -> bool {
             receipt.sector > 0
                 && receipt.sequence > 0
                 && receipt.reflection.is_finite()
-                && (0. ..=50.).contains(&receipt.reflection)
+                && (0. ..=crate::repulsor_field::MAX_TOTAL_REFLECTION).contains(&receipt.reflection)
                 && receipt.sequence < (1u64 << 48)
                 && receipt.wear.as_ref().is_none_or(|wear| {
                     wear.slot < crate::inventory::EQUIPMENT_SLOTS
@@ -100,6 +100,17 @@ impl PlayerSession {
                 damage_control,
             },
         )?;
+        if let Some(field) = &self.repulsor_field_buff {
+            let feedback = field
+                .feedback(
+                    result.reported_damage,
+                    kind.index(),
+                    crate::resources::unix_ms(),
+                    self.session_epoch,
+                )
+                .ok_or_else(|| invalid("Invalid Repulsor Field feedback."))?;
+            reflection += feedback.reflected;
+        }
         let mut motion = self.motion.clone();
         let mut warp = self.warp.clone();
         let warp_event = (result.hull_branch && warp.active())
@@ -172,6 +183,7 @@ impl PlayerSession {
             ));
         }
         self.advance_psionic_shield_buff()?;
+        self.advance_repulsor_field_buff()?;
         let kind = DamageType::from_index(hit.damage_type)?;
         let plan = self.plan_mob_damage(hit, kind)?;
         let receipt = MobDamageReceipt {
@@ -436,6 +448,37 @@ mod tests {
         ship.receive_mob_hit(&hit(&ship, 42)).unwrap();
         assert_eq!(ship.inventory.equipped, initial);
         assert!(ship.inventory.applied_equipment_wear.is_empty());
+    }
+
+    /// Post-deflect Repulsor feedback is frozen in the NPC receipt across retry.
+    #[test]
+    fn repulsor_feedback_is_post_deflect_and_replayed_once() {
+        let mut ship = ship();
+        let now = crate::resources::unix_ms();
+        ship.repulsor_field_buff = Some(crate::repulsor_field::RepulsorBuff {
+            revision: 1,
+            source: ship.player_id(),
+            target_epoch: ship.session_epoch,
+            ability: 72,
+            trained_rank: 7,
+            effective_rank: 7.,
+            expires_at_ms: now + crate::repulsor_field::duration_ms(7.),
+        });
+        ship.repulsor_field_revision = 1;
+        ship.checkpoint_session(true).unwrap();
+        let shot = hit(&ship, 59);
+        let plan = ship
+            .plan_mob_damage(&shot, DamageType::from_index(3).unwrap())
+            .unwrap();
+        assert!((plan.reflection - plan.result.reported_damage * 0.6).abs() < 0.01);
+        let once = ship.receive_mob_hit(&shot).unwrap();
+        assert!((once - plan.reflection).abs() < 0.01);
+        let mut restored =
+            PlayerSession::new(ship.sector.clone(), ship.bind, ship.state_dir.clone()).unwrap();
+        let shield_after = restored.shield;
+        assert_eq!(restored.receive_mob_hit(&shot).unwrap(), once);
+        assert_eq!(restored.shield, shield_after);
+        assert_eq!(restored.mob_damage_receipts.len(), 1);
     }
 
     /// A barrier and the ship's HP share the NPC-shot receipt across restart.

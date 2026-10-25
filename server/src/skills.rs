@@ -37,6 +37,7 @@ pub enum AbilityKind {
     ReactorOptimization,
     ShieldCharging,
     PsionicShield,
+    RepulsorField,
     ShieldInversion,
     ShieldSap,
     Summon,
@@ -534,6 +535,8 @@ pub struct SkillState {
     pub pending_shield_charging: Option<crate::shield_charging::PendingShieldCharging>,
     #[serde(default)]
     pub pending_psionic_shield: Option<crate::psionic_shield::PendingPsionicShield>,
+    #[serde(default)]
+    pub pending_repulsor_field: Option<crate::repulsor_field::PendingRepulsorField>,
     #[serde(default)]
     pub active_inversion: Option<crate::shield_inversion::ActiveShieldInversion>,
     #[serde(default)]

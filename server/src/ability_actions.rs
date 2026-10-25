@@ -30,6 +30,7 @@ impl PlayerSession {
         let durable_optimization = ability.kind == AbilityKind::ReactorOptimization;
         let durable_shield_charging = ability.kind == AbilityKind::ShieldCharging;
         let durable_psionic_shield = ability.kind == AbilityKind::PsionicShield;
+        let durable_repulsor = ability.kind == AbilityKind::RepulsorField;
         let durable_inversion = ability.kind == AbilityKind::ShieldInversion;
         let durable_sap = ability.kind == AbilityKind::ShieldSap;
         let durable_gravity = ability.kind == AbilityKind::GravityLink;
@@ -76,6 +77,9 @@ impl PlayerSession {
         }
         if durable_psionic_shield && self.skills.pending_psionic_shield.is_some() {
             return Err(invalid("Previous Psionic Shield is still settling."));
+        }
+        if durable_repulsor && self.skills.pending_repulsor_field.is_some() {
+            return Err(invalid("Previous Repulsor Field is still settling."));
         }
         if durable_sap && self.skills.pending_shield_sap.is_some() {
             return Err(invalid("Previous Shield Sap is still settling."));
@@ -125,6 +129,11 @@ impl PlayerSession {
             && crate::psionic_shield::tier(ability.id, self.skill_catalog.level(42)).is_none()
         {
             return Err(invalid("Psionic Shield rank is not trained."));
+        }
+        if durable_repulsor
+            && crate::repulsor_field::tier(ability.id, self.skill_catalog.level(48)).is_none()
+        {
+            return Err(invalid("Repulsor Field rank is not trained."));
         }
         if durable_sap
             && crate::shield_sap::tier(ability.id, self.skill_catalog.level(54)).is_none()
@@ -246,6 +255,7 @@ impl PlayerSession {
             AbilityKind::ReactorOptimization => 0,
             AbilityKind::ShieldCharging => 0,
             AbilityKind::PsionicShield => 0,
+            AbilityKind::RepulsorField => 0,
             AbilityKind::ShieldInversion => 0,
             AbilityKind::GravityLink => 0,
             AbilityKind::Menace => 0,
@@ -307,6 +317,7 @@ impl PlayerSession {
             || durable_optimization
             || durable_shield_charging
             || durable_psionic_shield
+            || durable_repulsor
             || durable_sap
             || durable_inversion
         {
@@ -414,6 +425,36 @@ impl PlayerSession {
                 return Err(invalid("Shield Charging target is dead or out of range."));
             }
             return Ok(requested_target);
+        }
+        if ability.kind == AbilityKind::RepulsorField {
+            let band = crate::repulsor_field::tier(ability.id, self.skill_catalog.level(48))
+                .ok_or_else(|| invalid("Repulsor Field rank is not trained."))?;
+            let recipient = if requested_target == self.player_id() || requested_target == u32::MAX
+            {
+                self.player_id()
+            } else {
+                requested_target
+            };
+            let contact = self.peer_contacts.get(&recipient);
+            let position = if recipient == self.player_id() {
+                self.position
+            } else {
+                contact
+                    .ok_or_else(|| invalid("Select a visible pilot for Repulsor Field."))?
+                    .position
+            };
+            if !crate::repulsor_field::target_in_range(
+                band,
+                self.player_id(),
+                recipient,
+                self.position,
+                position,
+                contact.is_none_or(|contact| !contact.incapacitated),
+                recipient == self.player_id() || contact.is_some(),
+            ) {
+                return Err(invalid("Repulsor Field target is dead or out of range."));
+            }
+            return Ok(recipient);
         }
         if ability.kind == AbilityKind::PsionicShield {
             let tier = crate::psionic_shield::tier(ability.id, self.skill_catalog.level(42))
@@ -631,10 +672,12 @@ impl PlayerSession {
                 || self.gate_transit.is_some()
                 || self.sector.station.is_some()
                 || self.mining.is_some());
-            let invalid_psionic = definition.kind == AbilityKind::PsionicShield
-                && (self.warp.active()
-                    || self.gate_transit.is_some()
-                    || self.sector.station.is_some());
+            let invalid_psionic = matches!(
+                definition.kind,
+                AbilityKind::PsionicShield | AbilityKind::RepulsorField
+            ) && (self.warp.active()
+                || self.gate_transit.is_some()
+                || self.sector.station.is_some());
             let invalid_gravity = definition.kind == AbilityKind::GravityLink
                 && (self.warp.active()
                     || self.gate_transit.is_some()
@@ -684,6 +727,7 @@ impl PlayerSession {
                         | AbilityKind::Menace
                         | AbilityKind::Enrage
                         | AbilityKind::PsionicShield
+                        | AbilityKind::RepulsorField
                         | AbilityKind::ShieldInversion
                 ) {
                     if let Err(error) = self.checkpoint_session(true) {
@@ -1149,6 +1193,16 @@ impl PlayerSession {
                         trained_rank: self.skill_catalog.level(51),
                     });
             }
+            AbilityKind::RepulsorField => {
+                self.skills.pending_repulsor_field =
+                    Some(crate::repulsor_field::PendingRepulsorField {
+                        target,
+                        effect,
+                        ability: ability.id,
+                        trained_rank: self.skill_catalog.level(48),
+                        effective_rank: self.equipment.ship.repulsor_field_skill,
+                    });
+            }
             AbilityKind::PsionicShield => {
                 self.skills.pending_psionic_shield =
                     Some(crate::psionic_shield::PendingPsionicShield {
@@ -1200,6 +1254,7 @@ impl PlayerSession {
                 | AbilityKind::ReactorOptimization
                 | AbilityKind::ShieldCharging
                 | AbilityKind::PsionicShield
+                | AbilityKind::RepulsorField
                 | AbilityKind::ShieldSap
         ) {
             self.checkpoint_session(true)?;

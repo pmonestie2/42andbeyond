@@ -3596,3 +3596,85 @@ fn multiplayer_hate_targets_the_attacker_and_dev_jump_clears_the_departed_identi
         None
     );
 }
+
+/// A Sentinel field settles once and replays its recipient status after torn storage.
+#[test]
+fn repulsor_selected_peer_is_durable_and_class_slots_do_not_collide() {
+    let root = std::env::temp_dir().join(format!("enb-repulsor-game-{}", rand::random::<u64>()));
+    let accounts = AccountDirectory::new(&root);
+    let sentinel_account = accounts
+        .create_class(
+            "sentinel".into(),
+            "example",
+            "Sentinel".into(),
+            crate::classes::CharacterClass::parse("ps").unwrap(),
+        )
+        .unwrap();
+    let caster = sentinel_account.account.character.game_id;
+    let warrior = accounts
+        .create_class(
+            "warrior".into(),
+            "example",
+            "Warrior".into(),
+            crate::classes::CharacterClass::parse("pw").unwrap(),
+        )
+        .unwrap()
+        .account
+        .character
+        .game_id;
+    let catalog = crate::items::ItemCatalog::load().unwrap();
+    let mut inventory =
+        crate::inventory::Inventory::starter_for(&sentinel_account.account.character, &catalog)
+            .unwrap();
+    inventory.equipped[1] = Some(crate::inventory::ItemInstance::stock(3337, 1));
+    fs::write(
+        sentinel_account.directory.join("inventory.json"),
+        serde_json::to_vec(&inventory).unwrap(),
+    )
+    .unwrap();
+    let sector: Sector = serde_json::from_str(include_str!("../data/sector.json")).unwrap();
+    let bind = Ipv4Addr::new(127, 0, 0, 2);
+    let mut game = GameState::new(sector.clone(), bind, root.clone()).unwrap();
+    login(&mut game, caster, 24501, "sentinel");
+    login(&mut game, warrior, 24502, "warrior");
+    game.sessions.get_mut(&caster).unwrap().position = [0.; 3];
+    game.sessions.get_mut(&warrior).unwrap().position = [2_000., 0., 0.];
+    game.update_views();
+    let energy = game.sessions[&caster].energy_balance().0;
+    activate(&mut game, caster, warrior, 72);
+    assert_eq!(game.sessions[&caster].energy_balance().0, energy - 1_000.);
+    game.sessions
+        .get_mut(&warrior)
+        .unwrap()
+        .checkpoint_session(true)
+        .unwrap();
+    let torn = root.join("accounts/warrior/session.local.json.tmp");
+    fs::create_dir(&torn).unwrap();
+    advance(&mut game, 2.1);
+    assert_eq!(game.energy_ledger.revision(), 1);
+    assert!(game.sessions[&warrior].test_repulsor_field_buff().is_none());
+    fs::remove_dir(&torn).unwrap();
+    let charged = game.energy_ledger.balance(caster).unwrap().energy;
+    drop(game);
+    let mut restored = GameState::new(sector, bind, root.clone()).unwrap();
+    assert_eq!(restored.sessions[&caster].energy_balance().0, charged);
+    assert_eq!(restored.energy_ledger.revision(), 1);
+    let warrior_ship = &restored.sessions[&warrior];
+    let ledger_field = restored.energy_ledger.repulsor_field_buff(warrior).unwrap();
+    assert!(
+        ledger_field.valid(
+            crate::resources::unix_ms(),
+            warrior_ship.energy_transfer_epoch()
+        ),
+        "ledger field invalid for recipient: {ledger_field:?}, epoch={}",
+        warrior_ship.energy_transfer_epoch()
+    );
+    assert_eq!(warrior_ship.test_repulsor_field_buff().unwrap().ability, 72);
+    assert!(warrior_ship.test_repulsor_status_queued());
+    assert_eq!(crate::repulsor_field::buff_slot("pw"), 12);
+    assert_eq!(crate::repulsor_field::buff_slot("ps"), 9);
+    restored.deliver_repulsor_fields().unwrap();
+    assert_eq!(restored.energy_ledger.revision(), 1);
+    drop(restored);
+    fs::remove_dir_all(root).unwrap();
+}

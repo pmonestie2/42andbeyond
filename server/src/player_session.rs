@@ -86,6 +86,8 @@ mod rally_service;
 mod reactor_optimization_service;
 #[path = "recovery.rs"]
 mod recovery;
+#[path = "repulsor_field_service.rs"]
+mod repulsor_field_service;
 #[path = "reputation_service.rs"]
 mod reputation_service;
 #[path = "sector_transfer.rs"]
@@ -243,6 +245,8 @@ pub struct PlayerSession {
     shield_charging_revision: u64,
     psionic_shield_buff: Option<crate::psionic_shield::PsionicShieldBuff>,
     psionic_shield_revision: u64,
+    repulsor_field_buff: Option<crate::repulsor_field::RepulsorBuff>,
+    repulsor_field_revision: u64,
     combat_trance: combat_trance::CombatTrance,
     shield: f32,
     pub(crate) hull: f32,
@@ -450,6 +454,8 @@ impl PlayerSession {
             shield_charging_revision: 0,
             psionic_shield_buff: None,
             psionic_shield_revision: 0,
+            repulsor_field_buff: None,
+            repulsor_field_revision: 0,
             combat_trance: combat_trance::CombatTrance::default(),
             shield: stats.shield_capacity,
             hull: stats.hull_capacity,
@@ -1728,6 +1734,8 @@ impl PlayerSession {
         self.shield_charging_revision = 0;
         self.psionic_shield_buff = None;
         self.psionic_shield_revision = 0;
+        self.repulsor_field_buff = None;
+        self.repulsor_field_revision = 0;
         self.combat_trance = combat_trance::CombatTrance::default();
         self.refresh_equipment()?;
         self.forget_session()?;

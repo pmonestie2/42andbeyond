@@ -65,6 +65,7 @@ impl PlayerSession {
         self.advance_reactor_optimization_buff()?;
         self.advance_shield_charging_buff()?;
         self.advance_psionic_shield_buff()?;
+        self.advance_repulsor_field_buff()?;
         self.advance_gating()?;
         if !self.logged_in {
             return Ok(());

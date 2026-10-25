@@ -29,6 +29,8 @@ mod call_forward_game;
 mod dev_commands;
 #[path = "psionic_shield_game.rs"]
 mod psionic_shield_game;
+#[path = "repulsor_field_game.rs"]
+mod repulsor_field_game;
 #[path = "shield_inversion_game.rs"]
 mod shield_inversion_game;
 #[path = "shield_sap_game.rs"]
@@ -219,6 +221,14 @@ impl GameState {
                     "Player Psionic Shield revision exceeds the durable ledger.",
                 ));
             }
+            if session.repulsor_field_revision() > self.energy_ledger.revision()
+                || session.repulsor_field_revision() > 0
+                    && self.energy_ledger.repulsor_field_buff(id).is_none()
+            {
+                return Err(invalid(
+                    "Player Repulsor revision exceeds the durable ledger.",
+                ));
+            }
             if let Some(balance) = self.energy_ledger.balance(id) {
                 session.apply_energy_balance(balance)?;
             }
@@ -254,6 +264,9 @@ impl GameState {
             }
             if let Some(buff) = self.energy_ledger.psionic_shield_buff(id) {
                 session.apply_psionic_shield_buff(buff.clone())?;
+            }
+            if let Some(buff) = self.energy_ledger.repulsor_field_buff(id) {
+                session.apply_repulsor_field_buff(buff.clone())?;
             }
             for (&peer, at) in &self.registrations {
                 if at.elapsed() < Duration::from_secs(600) {
@@ -695,6 +708,7 @@ impl GameState {
         self.deliver_reactor_optimizations()?;
         self.deliver_shield_chargings()?;
         self.deliver_psionic_shields()?;
+        self.deliver_repulsor_fields()?;
         self.deliver_shield_saps()?;
         self.deliver_shield_inversions(now_ms)?;
         self.deliver_support()?;
