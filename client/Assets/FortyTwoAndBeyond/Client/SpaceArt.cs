@@ -12,7 +12,7 @@ namespace FortyTwoAndBeyond.Client
         private readonly List<Material> materials = new List<Material>();
         private readonly List<Mesh> meshes = new List<Mesh>();
         private readonly Mesh[] rocks = new Mesh[8];
-        private readonly Mesh ring, shipHull;
+        private readonly Mesh ring, shipHull, suitArmor;
         private readonly GameObject corvetteAsset, frigateAsset, destroyerAsset, cruiserAsset, carrierAsset;
         private readonly GameObject[] proteronAssets = new GameObject[5];
         private readonly Material[] proteronSurfaces = new Material[5];
@@ -37,21 +37,14 @@ namespace FortyTwoAndBeyond.Client
             Texture2D plating = LoadDetail("HullPlating");
             foreach (Material surface in new[] { hull, trim, dark })
             { surface.SetTexture("_DetailTex", plating); surface.SetFloat("_TextureStrength", .8f); }
-            stationDeck = Surface(new Color(.23f, .31f, .38f), .72f, .34f);
-            stationWall = Surface(new Color(.29f, .39f, .48f), .6f, .42f);
-            stationFrame = Surface(new Color(.09f, .15f, .22f), .83f, .55f);
-            stationRecess = Surface(new Color(.025f, .055f, .085f), .38f, .24f);
+            stationDeck = StationSurface(new Color(.22f, .3f, .38f), .72f, .34f, .34f);
+            stationWall = StationSurface(new Color(.32f, .42f, .51f), .6f, .42f, .24f);
+            stationFrame = StationSurface(new Color(.12f, .19f, .26f), .83f, .55f, .45f);
+            stationRecess = StationSurface(new Color(.045f, .075f, .11f), .38f, .24f, .37f);
             stationBlue = Surface(new Color(.025f, .43f, .55f), .42f, .5f,
                 new Color(.01f, .15f, .24f));
             stationAmber = Surface(new Color(.61f, .28f, .065f), .47f, .48f,
                 new Color(.22f, .085f, .012f));
-            foreach (Material surface in new[] { stationDeck, stationWall, stationFrame, stationRecess })
-            {
-                surface.SetTexture("_DetailTex", plating);
-                surface.SetFloat("_TextureStrength", surface == stationRecess ? .28f : .56f);
-                surface.SetFloat("_DetailGain", 1.8f);
-                surface.SetFloat("_Panels", surface == stationDeck ? .4f : .68f);
-            }
             glass = Surface(new Color(.015f, .12f, .18f), .8f, .85f);
             glow = Surface(new Color(.05f, .6f, .85f), .2f, .5f, new Color(.1f, 1.4f, 2.1f));
             amber = Surface(new Color(.8f, .35f, .06f), .4f, .3f, new Color(1.3f, .35f, .04f));
@@ -105,6 +98,7 @@ namespace FortyTwoAndBeyond.Client
             }
             ring = Torus(1, .12f, 48, 8); meshes.Add(ring);
             shipHull = Hull(); meshes.Add(shipHull);
+            suitArmor = SuitArmor(); meshes.Add(suitArmor);
             for (int i = 0; i < rocks.Length; i++) { rocks[i] = Asteroid(i + 17); meshes.Add(rocks[i]); }
         }
 
@@ -114,6 +108,22 @@ namespace FortyTwoAndBeyond.Client
             Material material = ShaderMaterial("42 and Beyond/Surface");
             material.color = color; material.SetFloat("_Metallic", metal); material.SetFloat("_Glossiness", smoothness);
             material.SetColor("_EmissionColor", emission); return material;
+        }
+
+        /// <returns>Material: A world-aligned station metal with varied panel values.</returns>
+        private Material StationSurface(Color color, float metal, float smoothness, float plateScale)
+        {
+            Shader shader = Resources.Load<Shader>("StationHull");
+            if (shader == null) shader = Resources.Load<Shader>("Surface");
+            if (shader == null) throw new InvalidOperationException("Missing station hull shader");
+            var material = new Material(shader); materials.Add(material);
+            material.SetColor("_Color", color);
+            material.SetTexture("_DetailTex", LoadDetail("HullPlating"));
+            material.SetFloat("_Metallic", metal);
+            material.SetFloat("_Glossiness", smoothness);
+            material.SetFloat("_PlateScale", plateScale);
+            material.SetFloat("_PatternStrength", .68f);
+            return material;
         }
 
         /// <returns>An owned material referencing a shader included in Resources.</returns>
@@ -308,8 +318,8 @@ namespace FortyTwoAndBeyond.Client
                 new Vector3(10, 7.2f, .12f), stationRecess);
             Part(root, PrimitiveType.Cube, new Vector3(0, 4.4f, 10.94f),
                 new Vector3(7.4f, 5.6f, .08f), glass);
-            Model(root, ring, stationFrame, new Vector3(0, 4.5f, 10.82f), Vector3.one * 3.2f);
-            Model(root, ring, stationBlue, new Vector3(0, 4.5f, 10.74f), Vector3.one * 2.93f);
+            Model(root, ring, stationFrame, new Vector3(0, 4.5f, 10.82f), Vector3.one * 2.25f);
+            Model(root, ring, stationBlue, new Vector3(0, 4.5f, 10.74f), Vector3.one * 2.04f);
             for (int panel = -5; panel <= 5; panel++)
             {
                 float z = panel * 2.05f;
@@ -430,18 +440,22 @@ namespace FortyTwoAndBeyond.Client
         public Transform StationAvatar(Transform parent)
         {
             Transform root = Root(parent, "Station pilot");
-            Part(root, PrimitiveType.Capsule, new Vector3(0, 1.15f, 0),
-                new Vector3(.64f, .7f, .45f), stationWall);
-            Part(root, PrimitiveType.Cube, new Vector3(0, 1.45f, -.26f),
-                new Vector3(.52f, .47f, .2f), stationFrame);
+            Model(root, suitArmor, stationWall, new Vector3(0, .79f, 0),
+                new Vector3(.45f, 1.01f, .3f));
+            Model(root, suitArmor, stationFrame, new Vector3(0, 1.04f, -.35f),
+                new Vector3(.33f, .55f, .17f));
             Part(root, PrimitiveType.Cube, new Vector3(0, 1.28f, -.37f),
                 new Vector3(.3f, .34f, .1f), stationRecess);
             Part(root, PrimitiveType.Cube, new Vector3(0, 1.43f, -.43f),
                 new Vector3(.13f, .18f, .025f), stationBlue);
-            Part(root, PrimitiveType.Sphere, new Vector3(0, 2.07f, 0),
-                new Vector3(.5f, .5f, .48f), stationFrame);
-            Part(root, PrimitiveType.Sphere, new Vector3(0, 2.09f, .15f),
-                new Vector3(.38f, .3f, .34f), glass);
+            Part(root, PrimitiveType.Cylinder, new Vector3(0, 1.77f, 0),
+                new Vector3(.39f, .11f, .37f), stationFrame);
+            Part(root, PrimitiveType.Sphere, new Vector3(0, 2.04f, 0),
+                new Vector3(.48f, .44f, .46f), stationFrame);
+            Part(root, PrimitiveType.Sphere, new Vector3(0, 2.08f, .14f),
+                new Vector3(.37f, .27f, .33f), glass);
+            Part(root, PrimitiveType.Cube, new Vector3(0, 2.3f, -.08f),
+                new Vector3(.25f, .035f, .38f), stationWall);
             Part(root, PrimitiveType.Cube, new Vector3(0, 2.05f, -.38f),
                 new Vector3(.27f, .08f, .045f), stationBlue);
             Part(root, PrimitiveType.Cube, new Vector3(0, 1.7f, .28f),
@@ -450,15 +464,16 @@ namespace FortyTwoAndBeyond.Client
                 new Vector3(.55f, .16f, .45f), stationFrame);
             for (int side = -1; side <= 1; side += 2)
             {
-                Transform shoulder = Part(root, PrimitiveType.Cube,
-                    new Vector3(side * .43f, 1.58f, 0), new Vector3(.36f, .25f, .42f), stationFrame);
+                Transform shoulder = Model(root, suitArmor, stationFrame,
+                    new Vector3(side * .44f, 1.48f, 0), new Vector3(.22f, .23f, .25f));
                 shoulder.localRotation = Quaternion.Euler(0, 0, side * -15);
-                Part(root, PrimitiveType.Capsule, new Vector3(side * .5f, 1.14f, 0),
-                    new Vector3(.21f, .46f, .24f), stationWall);
+                Transform arm = Model(root, suitArmor, stationWall,
+                    new Vector3(side * .52f, .79f, 0), new Vector3(.16f, .69f, .18f));
+                arm.localRotation = Quaternion.Euler(0, 0, side * -7);
                 Part(root, PrimitiveType.Cube, new Vector3(side * .5f, .75f, .01f),
                     new Vector3(.21f, .15f, .25f), stationFrame);
-                Part(root, PrimitiveType.Capsule, new Vector3(side * .2f, .39f, 0),
-                    new Vector3(.26f, .44f, .3f), stationWall);
+                Model(root, suitArmor, stationWall, new Vector3(side * .2f, .08f, 0),
+                    new Vector3(.21f, .69f, .22f));
                 Part(root, PrimitiveType.Cube, new Vector3(side * .2f, .14f, .14f),
                     new Vector3(.29f, .16f, .43f), stationFrame);
                 Part(root, PrimitiveType.Cube, new Vector3(side * .33f, 1.31f, -.24f),
@@ -695,6 +710,46 @@ namespace FortyTwoAndBeyond.Client
             Transform rings = Model(planet, belt, ringMaterial, Vector3.zero, Vector3.one * .5f);
             rings.localRotation = Quaternion.Euler(65, 0, 0);
             return root;
+        }
+
+        /// <returns>Mesh: A tapered octagonal armor shell shared by the station pilot's suit.</returns>
+        private static Mesh SuitArmor()
+        {
+            float[] levels = { 0f, .16f, .78f, 1f };
+            float[] widths = { .64f, .85f, 1f, .73f };
+            float[] depths = { .72f, .9f, 1f, .72f };
+            Vector2[] outline =
+            {
+                new Vector2(-.78f, -1), new Vector2(.78f, -1),
+                new Vector2(1, -.72f), new Vector2(1, .72f),
+                new Vector2(.78f, 1), new Vector2(-.78f, 1),
+                new Vector2(-1, .72f), new Vector2(-1, -.72f)
+            };
+            var vertices = new Vector3[levels.Length * outline.Length];
+            var triangles = new List<int>();
+            for (int ringIndex = 0; ringIndex < levels.Length; ringIndex++)
+                for (int corner = 0; corner < outline.Length; corner++)
+                    vertices[ringIndex * outline.Length + corner] = new Vector3(
+                        outline[corner].x * widths[ringIndex], levels[ringIndex],
+                        outline[corner].y * depths[ringIndex]);
+            for (int ringIndex = 0; ringIndex < levels.Length - 1; ringIndex++)
+                for (int corner = 0; corner < outline.Length; corner++)
+                {
+                    int a = ringIndex * outline.Length + corner;
+                    int b = ringIndex * outline.Length + (corner + 1) % outline.Length;
+                    int c = a + outline.Length, d = b + outline.Length;
+                    triangles.AddRange(new[] { a, c, b, b, c, d });
+                }
+            int top = (levels.Length - 1) * outline.Length;
+            for (int corner = 1; corner < outline.Length - 1; corner++)
+            {
+                triangles.AddRange(new[] { 0, corner, corner + 1 });
+                triangles.AddRange(new[] { top, top + corner + 1, top + corner });
+            }
+            var mesh = new Mesh { name = "Pilot suit armor", vertices = vertices,
+                triangles = triangles.ToArray() };
+            mesh.RecalculateNormals(); mesh.RecalculateBounds();
+            return mesh;
         }
 
         /// <returns>A closed swept spacecraft hull with recalculated normals.</returns>
