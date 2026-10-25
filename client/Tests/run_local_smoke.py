@@ -47,7 +47,7 @@ def main() -> None:
         sector = json.loads((server_root / 'data' / 'sector.json').read_text())
         resource_sector = json.loads((server_root / 'data' / 'asteroid_belt_alpha.json').read_text())
         resource = next(node for node in resource_sector['resources'] if node['level'] == 1 and node['ore_items'])
-        resource['position'] = [100.0, 0.0, 0.0]
+        resource['position'] = [650.0, 0.0, 0.0]
         warp_resource = next(node for node in resource_sector['resources']
                              if node['level'] == 1 and node['ore_items'] and node['id'] != resource['id']).copy()
         warp_resource['position'] = [4500.0, 0.0, 0.0]

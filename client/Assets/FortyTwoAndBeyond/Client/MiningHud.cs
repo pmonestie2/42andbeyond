@@ -32,7 +32,9 @@ namespace FortyTwoAndBeyond.Client
             Vector2 point = new Vector2(Input.mousePosition.x / flightHud.Scale,
                 (Screen.height - Input.mousePosition.y) / flightHud.Scale);
             Snapshot snapshot = client.CurrentSnapshot;
-            return PanelRect(snapshot != null && snapshot.ResourceWindowOpen && snapshot.ResourceTargetId == selectedId).Contains(point);
+            bool open = snapshot != null && snapshot.ResourceWindowOpen && snapshot.ResourceTargetId == selectedId;
+            return PanelRect(open, open && snapshot.MiningProspect != null &&
+                snapshot.MiningTractor != null).Contains(point);
         }
 
         /// <returns>bool: Whether a visible resource was selected under the pointer.</returns>
@@ -61,9 +63,9 @@ namespace FortyTwoAndBeyond.Client
         }
 
         /// <returns>The centered bounds of the selected resource panel.</returns>
-        private Rect PanelRect(bool open)
+        private Rect PanelRect(bool open, bool concurrent)
         {
-            float height = open ? 286 : 160;
+            float height = open ? concurrent ? 338 : 286 : 160;
             return new Rect((CanvasWidth - 370) * .5f, CanvasHeight - height - 122, 370, height);
         }
 
@@ -88,7 +90,9 @@ namespace FortyTwoAndBeyond.Client
             if (selectedId == 0) return;
             MapObject resource = snapshot.Objects.First(item => item.Id == selectedId);
             bool open = snapshot.ResourceWindowOpen && snapshot.ResourceTargetId == selectedId;
-            Rect panel = PanelRect(open);
+            bool prospecting = snapshot.MiningProspect?.TargetId == selectedId;
+            bool tractoring = snapshot.MiningTractor?.TargetId == selectedId;
+            Rect panel = PanelRect(open, prospecting && tractoring);
             flightHud.Panel(panel);
             Fill(new Rect(panel.x + 12, panel.y + 13, 5, 5), new Color(.25f, .95f, .85f));
             GUI.Label(new Rect(panel.x + 25, panel.y + 7, panel.width - 37, 18), "RESOURCE SCAN", flightHud.SmallStyle);
@@ -119,9 +123,12 @@ namespace FortyTwoAndBeyond.Client
             }
             if (GUI.Button(new Rect(panel.x + panel.width - 88, panel.y + 7, 76, 28), "CLOSE", flightHud.ButtonStyle))
                 client.CloseResource();
-            bool mining = snapshot.MiningActivity?.TargetId == selectedId;
-            if (mining) DrawMiningProgress(panel, snapshot);
-            float listTop = mining ? 131 : 79;
+            if (prospecting) DrawMiningProgress(panel, snapshot.MiningProspect,
+                snapshot.ProspectProgress, snapshot.ProspectRemainingSeconds, 80);
+            if (tractoring) DrawMiningProgress(panel, snapshot.MiningTractor,
+                snapshot.TractorProgress, snapshot.TractorRemainingSeconds, prospecting ? 132 : 80);
+            float listTop = prospecting && tractoring ? 183 :
+                prospecting || tractoring ? 131 : 79;
             GUILayout.BeginArea(new Rect(panel.x + 12, panel.y + listTop,
                 panel.width - 24, panel.height - listTop - 37));
             oreScroll = GUILayout.BeginScrollView(oreScroll);
@@ -132,7 +139,7 @@ namespace FortyTwoAndBeyond.Client
                 if (items.Length == 0) GUILayout.Label("Resource depleted", flightHud.SmallStyle);
                 foreach (ItemView item in items)
                 {
-                    GUI.enabled = !mining && stopped && prospectVerb == true;
+                    GUI.enabled = !prospecting && stopped && prospectVerb == true;
                     if (GUILayout.Button($"PROSPECT  {item.Name}  ×{item.Quantity}", flightHud.ButtonStyle, GUILayout.Height(34)))
                         client.ProspectResource(item.Slot);
                     GUI.enabled = true;
@@ -142,15 +149,15 @@ namespace FortyTwoAndBeyond.Client
         }
 
         /// <summary>Show the server's timed prospect or tractor phase and its local countdown.</summary>
-        private void DrawMiningProgress(Rect panel, Snapshot snapshot)
+        private void DrawMiningProgress(Rect panel, MiningActivity activity, float progress,
+            float remainingSeconds, float y)
         {
-            MiningActivity activity = snapshot.MiningActivity;
             string phase = activity.Phase == MiningPhase.Prospect ? "PROSPECTING" : "TRACTORING ORE";
-            GUI.Label(new Rect(panel.x + 12, panel.y + 80, panel.width - 24, 20),
-                $"{phase}   ·   {snapshot.MiningRemainingSeconds:0.0} S", flightHud.BodyStyle);
-            Rect track = new Rect(panel.x + 12, panel.y + 108, panel.width - 24, 8);
+            GUI.Label(new Rect(panel.x + 12, panel.y + y, panel.width - 24, 20),
+                $"{phase}   ·   {remainingSeconds:0.0} S", flightHud.BodyStyle);
+            Rect track = new Rect(panel.x + 12, panel.y + y + 28, panel.width - 24, 8);
             Fill(track, new Color(.08f, .2f, .25f));
-            Fill(new Rect(track.x, track.y, track.width * Mathf.Clamp01(snapshot.MiningProgress), track.height),
+            Fill(new Rect(track.x, track.y, track.width * Mathf.Clamp01(progress), track.height),
                 activity.Phase == MiningPhase.Prospect ? new Color(.3f, .86f, .8f) :
                 new Color(.98f, .75f, .32f));
         }

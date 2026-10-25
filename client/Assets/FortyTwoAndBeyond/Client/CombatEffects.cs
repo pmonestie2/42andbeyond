@@ -53,10 +53,15 @@ namespace FortyTwoAndBeyond.Client
         private readonly Material material, impactMaterial;
         private Camera effectCamera;
         private float normalFieldOfView = 60f;
-        private LineRenderer miningHalo, miningCore, miningContact, miningScanOrbit;
-        private readonly LineRenderer[] miningPackets = new LineRenderer[4];
-        private MiningActivity miningActivity;
-        private Vector3 miningPoint;
+        private sealed class MiningVisual
+        {
+            public LineRenderer Halo, Core, Contact, Orbit;
+            public readonly LineRenderer[] Packets = new LineRenderer[4];
+            public MiningActivity Activity;
+            public Vector3 Point;
+        }
+        private readonly MiningVisual prospectVisual = new MiningVisual();
+        private readonly MiningVisual tractorVisual = new MiningVisual();
         private LineRenderer lootHalo, lootCore, lootFilament, lootRing;
         private LootActivity lootActivity;
         private Vector3 lootPoint;
@@ -165,27 +170,39 @@ namespace FortyTwoAndBeyond.Client
                 if (actor.Shield >= 0) reportedShields[actor.Id] = actor.Shield;
             SetWarpPhase(snapshot.WarpPhase, snapshot.WarpArrived);
             SetLootActivity(snapshot);
-            MiningActivity activity = snapshot.MiningActivity;
+            SetMiningVisual(prospectVisual, snapshot.MiningProspect, snapshot);
+            SetMiningVisual(tractorVisual, snapshot.MiningTractor, snapshot);
+        }
+
+        /// <summary>Keep each server-owned prospect or ore tractor visual independent.</summary>
+        private void SetMiningVisual(MiningVisual visual, MiningActivity activity, Snapshot snapshot)
+        {
             MapObject resource = activity == null ? null : snapshot.Objects.FirstOrDefault(item =>
                 item.Id == activity.TargetId && item.Kind == 38);
-            if (resource == null || snapshot.Station != null || !snapshot.ResourceWindowOpen ||
-                snapshot.WarpPhase != WarpPhase.Idle)
-            { ClearMining(); return; }
-            if (miningActivity == null || miningActivity.TargetId != activity.TargetId ||
-                miningActivity.Phase != activity.Phase || miningActivity.EffectId != activity.EffectId)
+            if (activity == null || snapshot.Station != null || snapshot.WarpPhase != WarpPhase.Idle ||
+                activity.Phase == MiningPhase.Prospect && resource == null)
+            { ClearMiningVisual(visual); return; }
+            if (visual.Activity == null || visual.Activity.EffectId != activity.EffectId ||
+                visual.Activity.ArticleId != activity.ArticleId)
             {
-                ClearMining();
+                ClearMiningVisual(visual);
                 Color tint = activity.Phase == MiningPhase.Prospect ? new Color(.35f, .95f, .9f) :
                     new Color(1f, .72f, .32f);
-                miningHalo = Line("Mining field", .12f, tint, 2);
-                miningCore = Line("Mining focus", .025f, Color.white, 2);
-                miningContact = Line("Ore contact", .035f, tint, 5);
-                miningScanOrbit = Line("Ore scan orbit", .025f, tint, 33);
-                for (int index = 0; index < miningPackets.Length; index++)
-                    miningPackets[index] = Line("Ore transfer pulse", .035f, tint, 2);
+                string phase = activity.Phase == MiningPhase.Prospect ? "Prospect" : "Ore tractor";
+                visual.Halo = Line(phase + " field", .09f, tint, 2);
+                visual.Core = Line(phase + " focus", .025f, Color.white, 2);
+                visual.Contact = Line(phase + " contact", .035f, tint, 5);
+                visual.Orbit = Line(phase + " orbit", .025f, tint, 33);
+                for (int index = 0; index < visual.Packets.Length; index++)
+                    visual.Packets[index] = Line(phase + " transfer pulse", .035f, tint, 2);
+                foreach (LineRenderer line in new[] { visual.Halo, visual.Core, visual.Contact, visual.Orbit })
+                    if (line != null) line.enabled = false;
+                foreach (LineRenderer line in visual.Packets)
+                    if (line != null) line.enabled = false;
             }
-            miningActivity = activity;
-            miningPoint = player.position + SpaceClient.Convert(resource.Position) -
+            visual.Activity = activity;
+            Position source = activity.Phase == MiningPhase.Tractor ? activity.Position : resource.Position;
+            visual.Point = player.position + SpaceClient.Convert(source) -
                 SpaceClient.Convert(snapshot.Position);
         }
 
@@ -333,54 +350,68 @@ namespace FortyTwoAndBeyond.Client
                     ray.enabled = true;
                 }
             }
-            if (miningActivity != null && miningHalo != null && miningCore != null && miningContact != null)
+            TickMiningVisual(prospectVisual);
+            TickMiningVisual(tractorVisual);
+            TickLoot();
+            TickWarp();
+            TickDeviceBuff();
+            TickPeerBuff();
+        }
+
+        /// <summary>Animate one authoritative mining beam without changing the other phase.</summary>
+        private void TickMiningVisual(MiningVisual visual)
+        {
+            MiningActivity activity = visual.Activity;
+            if (activity != null && visual.Halo != null && visual.Core != null && visual.Contact != null)
             {
                 float pulse = .65f + .35f * Mathf.Sin(Time.unscaledTime * 18);
-                float progress = miningActivity.Progress(Stopwatch.GetTimestamp());
+                float progress = activity.Progress(Stopwatch.GetTimestamp());
                 Vector3 origin = player.position + player.forward * .3f;
-                Vector3 oreSurface = miningPoint + (origin - miningPoint).normalized * .65f;
-                miningHalo.SetPosition(0, origin); miningHalo.SetPosition(1, oreSurface);
-                miningCore.SetPosition(0, origin); miningCore.SetPosition(1, oreSurface);
-                Color tint = miningActivity.Phase == MiningPhase.Prospect ?
+                Vector3 oreSurface = visual.Point + (origin - visual.Point).normalized * .65f;
+                visual.Halo.SetPosition(0, origin); visual.Halo.SetPosition(1, oreSurface);
+                visual.Core.SetPosition(0, origin); visual.Core.SetPosition(1, oreSurface);
+                visual.Halo.enabled = visual.Core.enabled = true;
+                Color tint = activity.Phase == MiningPhase.Prospect ?
                     new Color(.35f, .95f, .9f) : new Color(1f, .72f, .32f);
                 tint.a = .3f + .2f * pulse;
-                miningHalo.startColor = miningHalo.endColor = tint;
-                miningHalo.widthMultiplier = .1f + .035f * pulse;
+                visual.Halo.startColor = visual.Halo.endColor = tint;
+                visual.Halo.widthMultiplier = .08f + .025f * pulse;
                 Color core = Color.white; core.a = .65f + .25f * pulse;
-                miningCore.startColor = miningCore.endColor = core;
+                visual.Core.startColor = visual.Core.endColor = core;
                 Camera camera = ViewCamera();
                 Vector3 right = camera != null ? camera.transform.right : Vector3.right;
                 Vector3 up = camera != null ? camera.transform.up : Vector3.up;
                 float contactRadius = .12f;
-                miningContact.SetPosition(0, oreSurface + right * contactRadius);
-                miningContact.SetPosition(1, oreSurface + up * contactRadius);
-                miningContact.SetPosition(2, oreSurface - right * contactRadius);
-                miningContact.SetPosition(3, oreSurface - up * contactRadius);
-                miningContact.SetPosition(4, oreSurface + right * contactRadius);
+                visual.Contact.SetPosition(0, oreSurface + right * contactRadius);
+                visual.Contact.SetPosition(1, oreSurface + up * contactRadius);
+                visual.Contact.SetPosition(2, oreSurface - right * contactRadius);
+                visual.Contact.SetPosition(3, oreSurface - up * contactRadius);
+                visual.Contact.SetPosition(4, oreSurface + right * contactRadius);
+                visual.Contact.enabled = true;
                 tint.a = .8f * pulse;
-                miningContact.startColor = miningContact.endColor = tint;
-                if (miningScanOrbit != null)
+                visual.Contact.startColor = visual.Contact.endColor = tint;
+                if (visual.Orbit != null)
                 {
-                    miningScanOrbit.enabled = miningActivity.Phase == MiningPhase.Prospect;
-                    if (miningScanOrbit.enabled)
+                    visual.Orbit.enabled = activity.Phase == MiningPhase.Prospect;
+                    if (visual.Orbit.enabled)
                     {
                         float radius = .23f + progress * .35f;
                         for (int point = 0; point < 33; point++)
                         {
                             float angle = point * Mathf.PI * 2 / 32 + Time.unscaledTime * 1.7f;
-                            miningScanOrbit.SetPosition(point, oreSurface + right * Mathf.Cos(angle) * radius +
+                            visual.Orbit.SetPosition(point, oreSurface + right * Mathf.Cos(angle) * radius +
                                 up * Mathf.Sin(angle) * radius * .55f);
                         }
                         Color scan = tint; scan.a = .32f * (1f - progress * .5f);
-                        miningScanOrbit.startColor = miningScanOrbit.endColor = scan;
+                        visual.Orbit.startColor = visual.Orbit.endColor = scan;
                     }
                 }
-                for (int index = 0; index < miningPackets.Length; index++)
+                for (int index = 0; index < visual.Packets.Length; index++)
                 {
-                    LineRenderer packet = miningPackets[index];
+                    LineRenderer packet = visual.Packets[index];
                     if (packet == null) continue;
                     float along = Mathf.Repeat(Time.unscaledTime * .65f + index * .25f, 1f);
-                    if (miningActivity.Phase == MiningPhase.Tractor) along = 1f - along;
+                    if (activity.Phase == MiningPhase.Tractor) along = 1f - along;
                     Vector3 center = Vector3.Lerp(origin, oreSurface, along);
                     Vector3 travel = (oreSurface - origin).normalized * .045f;
                     packet.SetPosition(0, center - travel);
@@ -390,10 +421,6 @@ namespace FortyTwoAndBeyond.Client
                     packet.enabled = true;
                 }
             }
-            TickLoot();
-            TickWarp();
-            TickDeviceBuff();
-            TickPeerBuff();
         }
 
         /// <summary>Show only the server-active recipient Scan Boost field on this ship.</summary>
@@ -638,16 +665,23 @@ namespace FortyTwoAndBeyond.Client
             }
         }
 
-        /// <summary>Remove the prospecting and tractor visuals when the native phase ends.</summary>
+        /// <summary>Remove both independent mining visuals when leaving the sector or warping.</summary>
         private void ClearMining()
         {
-            foreach (LineRenderer line in new[] { miningHalo, miningCore, miningContact, miningScanOrbit })
+            ClearMiningVisual(prospectVisual);
+            ClearMiningVisual(tractorVisual);
+        }
+
+        /// <summary>Remove one native phase without erasing its overlapping companion.</summary>
+        private void ClearMiningVisual(MiningVisual visual)
+        {
+            foreach (LineRenderer line in new[] { visual.Halo, visual.Core, visual.Contact, visual.Orbit })
                 if (line != null) Object.Destroy(line.gameObject);
-            foreach (LineRenderer packet in miningPackets)
+            foreach (LineRenderer packet in visual.Packets)
                 if (packet != null) Object.Destroy(packet.gameObject);
-            System.Array.Clear(miningPackets, 0, miningPackets.Length);
-            miningHalo = miningCore = miningContact = miningScanOrbit = null;
-            miningActivity = null;
+            System.Array.Clear(visual.Packets, 0, visual.Packets.Length);
+            visual.Halo = visual.Core = visual.Contact = visual.Orbit = null;
+            visual.Activity = null;
         }
 
         /// <summary>Remove a wreck tractor as soon as its native transfer ends.</summary>

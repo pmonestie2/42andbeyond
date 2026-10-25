@@ -230,13 +230,32 @@ internal static class Program
             world.MiningActivity.EffectId == 11 && world.MiningActivity.ItemName == "Ore" &&
             world.MiningActivity.DurationSeconds == 2 && first.MiningActivity.Phase == MiningPhase.Prospect,
             "Ore tractor transition lost the selected resource or changed an older snapshot.");
+        byte[] nextProspect = (byte[])prospect.Clone();
+        Array.Copy(BitConverter.GetBytes(12u), 0, nextProspect, 8, 4);
+        world.Apply(new Frame(0x2012, nextProspect), 1);
+        Snapshot overlap = new Snapshot(world, "ready", true);
+        Assert(overlap.MiningProspect?.EffectId == 12 && overlap.MiningTractor?.EffectId == 11 &&
+            overlap.MiningActivity?.Phase == MiningPhase.Prospect &&
+            overlap.ProspectRemainingSeconds > 0 && overlap.TractorRemainingSeconds > 0,
+            "A new prospect overwrote the prior server-owned ore tractor.");
         world.Apply(new Frame(0x0f, BitConverter.GetBytes(9u)), 1);
-        Assert(world.MiningActivity?.EffectId == 11, "An earlier effect removal cancelled tractor progress.");
+        Assert(world.MiningProspect?.EffectId == 12 && world.MiningTractor?.EffectId == 11,
+            "An earlier prospect effect removal cancelled an overlapping mining phase.");
         world.Apply(new Frame(7, BitConverter.GetBytes(10u)), 1);
-        Assert(world.MiningActivity == null, "Collected ore left an active tractor display.");
-        world.Apply(new Frame(0x2012, prospect), 1);
-        world.Apply(new Frame(0x0f, BitConverter.GetBytes(9u)), 1);
+        Assert(world.MiningTractor == null && world.MiningProspect?.EffectId == 12 &&
+            overlap.MiningTractor?.ArticleId == 10,
+            "Collected ore removed the newer prospect or mutated an older snapshot.");
+        world.Apply(new Frame(0x0f, BitConverter.GetBytes(12u)), 1);
         Assert(world.MiningActivity == null, "Server cancellation left prospecting active.");
+        var replay = new World();
+        replay.SetResourceTarget(77);
+        replay.Apply(new Frame(0x2013, tractor), 1);
+        replay.Apply(new Frame(0x2012, nextProspect), 1);
+        Assert(replay.MiningTractor?.TargetId == 77 && replay.MiningProspect?.EffectId == 12,
+            "Restart replay did not retain the older tractor and newer prospect separately.");
+        replay.Apply(new Frame(0x0f, BitConverter.GetBytes(12u)), 1);
+        Assert(replay.MiningProspect == null && replay.MiningTractor?.ArticleId == 10,
+            "Canceling the newer prospect erased already claimed ore in flight.");
         byte[] invalid = (byte[])prospect.Clone();
         Array.Copy(BitConverter.GetBytes(100001u), 0, invalid, 16, 4);
         Reject(() => world.Apply(new Frame(0x2012, invalid), 1));

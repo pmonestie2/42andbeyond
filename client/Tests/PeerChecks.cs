@@ -194,14 +194,30 @@ internal static class PeerChecks
                     "Native prospecting window or asteroid stock did not arrive.");
                 ResourceState ore = observer.World.Resources[resource.Id];
                 int oreSlot = Array.FindIndex(ore.Items, item => item?.Present == true);
+                int nextOreSlot = Array.FindIndex(ore.Items, item => item?.Present == true &&
+                    item.Template != ore.Items[oreSlot].Template);
+                Require(nextOreSlot >= 0, "Disposable resource needs two distinct ore slots for overlap.");
                 uint oreTemplate = ore.Items[oreSlot].Template;
+                uint nextOreTemplate = ore.Items[nextOreSlot].Template;
                 observer.ProspectResource(oreSlot);
-                Wait(observer, visitor, () => observer.World.Equipment.Cargo.Any(item => item?.Template == oreTemplate),
-                    "Prospecting did not award server-owned ore into cargo.");
+                Wait(observer, visitor, () => observer.World.MiningTractor != null,
+                    "First prospect did not enter its authoritative ore tractor phase.");
+                uint priorArticle = observer.World.MiningTractor.ArticleId;
+                observer.ProspectResource(nextOreSlot);
+                Wait(observer, visitor, () => observer.World.MiningProspect != null &&
+                    observer.World.MiningTractor?.ArticleId == priorArticle,
+                    "The second prospect did not overlap the first ore tractor.");
+                Snapshot overlapped = new Snapshot(observer.World, "ready", true);
+                Require(overlapped.ProspectRemainingSeconds > 0 &&
+                    overlapped.TractorRemainingSeconds > 0,
+                    "Immutable mining snapshot lost one of the simultaneous phases.");
+                Wait(observer, visitor, () => observer.World.Equipment.Cargo.Any(item => item?.Template == oreTemplate) &&
+                    observer.World.Equipment.Cargo.Any(item => item?.Template == nextOreTemplate),
+                    "Overlapped mining did not award both server-owned ore items into cargo.");
                 observer.CloseResource();
                 Wait(observer, visitor, () => !observer.World.ResourceWindowOpen,
                     "Native prospecting window did not close.");
-                Console.WriteLine("PASS: asteroid selection, native prospect window, ore tractor and cargo award");
+                Console.WriteLine("PASS: asteroid selection, simultaneous prospect/tractor phases and two ore awards");
                 Position before = observer.World.Players[peerId].Position;
                 visitor.Thrust(2);
                 Wait(observer, visitor, () => observer.World.Players[peerId].Position.Distance(before) > 1900,

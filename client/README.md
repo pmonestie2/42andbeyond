@@ -226,8 +226,9 @@ Explorer pilots can click a mineable asteroid or gas cloud, open its prospecting
 window, and choose a server-listed ore slot. The server checks the ship, skill,
 distance, reactor energy, and shared resource claim before it awards ore to cargo.
 The panel shows the resource level, depletion, stock, and timed Prospect/Tractor
-phases from native packets. It blocks repeat ore clicks until the server reports
-completion or cancellation. The Prospect control follows the server's native
+phases from native packets. It tracks a new prospect separately from an earlier
+ore tractor, allowing another server-listed ore slot while the claimed ore is
+being delivered. The Prospect control follows the server's native
 verb; while the ship is moving, its button brakes before opening the window.
 The Skills button lists abilities advertised by the connected character's native
 RPG packet. Selecting one sends the native activation command, and the panel
@@ -328,6 +329,12 @@ python3 client/Tests/run_loot_visual.py --unity /Applications/Unity/Hub/Editor/6
 This owned loopback fixture kills one MOB, opens its corpse, captures the native
 tractor, and requires both a cargo gain and reduced wreck stock before capturing
 the completed pickup. It stops its Editor and server processes afterward.
+
+To capture the two simultaneous mining phases against a temporary ore field:
+
+```sh
+python3 client/Tests/run_mining_overlap_visual.py --unity /Applications/Unity/Hub/Editor/6000.3.13f1/Unity.app/Contents/MacOS/Unity
+```
 
 Verified on macOS: C# protocol checks; actual local bridge login, character
 selection, UDP entry, map and position delivery, impulse, warp, gate activation

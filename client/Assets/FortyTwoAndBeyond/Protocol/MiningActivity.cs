@@ -12,15 +12,17 @@ namespace FortyTwoAndBeyond.Protocol
         public readonly MiningPhase Phase;
         public readonly uint TargetId, EffectId, ArticleId;
         public readonly string ItemName;
+        public readonly Position Position;
         public readonly float DurationSeconds;
         public readonly long StartedAt;
 
         /// <summary>Keep the server's phase identity and duration together.</summary>
         public MiningActivity(MiningPhase phase, uint targetId, uint effectId, uint articleId,
-            string itemName, float durationSeconds, long startedAt)
+            string itemName, float durationSeconds, long startedAt, Position position = default)
         {
             Phase = phase; TargetId = targetId; EffectId = effectId; ArticleId = articleId;
             ItemName = itemName; DurationSeconds = durationSeconds; StartedAt = startedAt;
+            Position = position;
         }
 
         /// <summary>
@@ -54,7 +56,7 @@ namespace FortyTwoAndBeyond.Protocol
             return tractor == null ? null : new MiningActivity(MiningPhase.Tractor,
                 previous?.TargetId ?? selectedResource, tractor.EffectId,
                 tractor.ArticleId, tractor.ItemName, tractor.DurationSeconds,
-                Stopwatch.GetTimestamp());
+                Stopwatch.GetTimestamp(), tractor.Position);
         }
 
         /// <summary>
