@@ -8,9 +8,10 @@ use crate::packets;
 use crate::protocol::SECTOR_PORT;
 use crate::protocol::{invalid, Datagram, Frame, Reader};
 use std::collections::HashMap;
+use std::fs::{File, OpenOptions};
 use std::io;
 use std::net::{Ipv4Addr, Shutdown, SocketAddr, TcpListener, TcpStream, UdpSocket};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
@@ -20,6 +21,31 @@ pub struct Config {
     pub bind: Ipv4Addr,
     pub sector: Sector,
     pub state_dir: PathBuf,
+}
+
+/// Returns:
+///     File: Exclusive state-directory lock held until the server exits.
+/// Raises:
+///     io::Error: Another server owns the state directory or the lock cannot be opened.
+fn lock_state_directory(state_dir: &Path) -> io::Result<File> {
+    std::fs::create_dir_all(state_dir)?;
+    let lock = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(state_dir.join("server.lock"))?;
+    lock.try_lock().map_err(|error| match error {
+        std::fs::TryLockError::WouldBlock => io::Error::new(
+            io::ErrorKind::AlreadyExists,
+            format!(
+                "Server state directory is already in use: {}",
+                state_dir.display()
+            ),
+        ),
+        std::fs::TryLockError::Error(error) => error,
+    })?;
+    Ok(lock)
 }
 
 #[derive(Default)]
@@ -330,9 +356,9 @@ fn accept_connections(
 }
 
 pub fn run(config: Config, stop: Arc<AtomicBool>) -> io::Result<()> {
+    let _state_lock = lock_state_directory(&config.state_dir)?;
     let stop_request = config.state_dir.join("stop.request");
     let status_path = config.state_dir.join("server.local.json");
-    std::fs::create_dir_all(&config.state_dir)?;
     // A request belongs to one process lifetime; a previous stop must not stop
     // the replacement immediately.
     if stop_request.exists() {
@@ -492,6 +518,21 @@ pub fn run(config: Config, stop: Arc<AtomicBool>) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A second server cannot publish state through a different bind address.
+    #[test]
+    fn state_directory_allows_only_one_writer() {
+        let state_dir =
+            std::env::temp_dir().join(format!("enb-server-lock-{}", rand::random::<u64>()));
+        let first = lock_state_directory(&state_dir).unwrap();
+        let error = lock_state_directory(&state_dir).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::AlreadyExists);
+        assert!(error.to_string().contains("already in use"));
+        drop(first);
+        let replacement = lock_state_directory(&state_dir).unwrap();
+        drop(replacement);
+        std::fs::remove_dir_all(state_dir).unwrap();
+    }
 
     /// Repeated unreachable sends are counted while new errors still surface.
     #[test]
