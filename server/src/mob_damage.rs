@@ -95,6 +95,7 @@ impl PlayerSession {
                 damage_control,
             },
         )?;
+        reflection += result.reported_damage * self.equipment.ship.counterstrike_percent / 100.;
         if let Some(field) = &self.repulsor_field_buff {
             let feedback = field
                 .feedback(
@@ -396,6 +397,35 @@ mod tests {
         let settled_hull = ship.hull;
         ship.receive_mob_hit(&shot).unwrap();
         assert_eq!(ship.hull, settled_hull);
+    }
+
+    /// Counterstrike reflection is frozen with the durable hit receipt.
+    #[test]
+    fn equipped_counterstrike_reflects_once_across_retry_and_restart() {
+        let mut ship = ship();
+        ship.inventory.equipped[9] = Some(crate::inventory::ItemInstance::stock(2178, 1));
+        ship.refresh_equipment().unwrap();
+        assert!((ship.equipment.ship.counterstrike_percent - 8.4).abs() < 0.001);
+        let mut shot = hit(&ship, 121);
+        shot.damage = 50.;
+        let expected = ship
+            .plan_mob_damage(&shot, DamageType::Energy)
+            .unwrap()
+            .result
+            .reported_damage
+            * 0.084;
+        let first = ship.receive_mob_hit(&shot).unwrap();
+        assert!((first - expected).abs() < 0.001);
+        ship.inventory.equipped[9].as_mut().unwrap().structure = 0.;
+        ship.refresh_equipment().unwrap();
+        assert_eq!(ship.equipment.ship.counterstrike_percent, 0.);
+        assert_eq!(ship.receive_mob_hit(&shot).unwrap(), first);
+        let root = ship.state_dir.clone();
+        let sector = ship.sector.clone();
+        let bind = ship.bind;
+        drop(ship);
+        let mut resumed = PlayerSession::new(sector, bind, root).unwrap();
+        assert_eq!(resumed.receive_mob_hit(&shot).unwrap(), first);
     }
 
     /// A hull hit wears only its selected equipment category at the frozen rate.

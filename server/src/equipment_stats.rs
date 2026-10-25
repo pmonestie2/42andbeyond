@@ -49,6 +49,8 @@ pub struct ShipStats {
     pub equipment_wear_multipliers: [f32; 5],
     /// Seconds of public Cloaking Time gear, frozen when Cloak engages.
     pub cloak_time_bonus: f32,
+    /// Percent of an incoming instant MOB hit reflected to its attacker.
+    pub counterstrike_percent: f32,
     pub environment_skill_bonus: f32,
     pub environment_duration_bonus: f32,
     pub summon_skill_bonus: f32,
@@ -404,6 +406,7 @@ impl EquipmentStats {
             } else {
                 0.
             },
+            counterstrike_percent: modifiers.apply("STAT_COUNTERSTRIKE", 0.).clamp(0., 40.),
             environment_skill_bonus: if skills.level(23) > 0 {
                 modifiers
                     .apply_signed("SKILL_ENVIRONMENT_SHIELD", 0.)
