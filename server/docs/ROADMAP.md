@@ -100,6 +100,12 @@ mean the corresponding gameplay system is complete.
   The 5,000-unit offer range is local tuning. The archived tree has no native
   confirmation handler, so this source implementation uses authenticated chat
   consent rather than claiming an unverified legacy request window.
+- Jenquai Defender Summon now moves a selected enemy, selected group pilot,
+  nearby group, or selected enemy formation to the caster and can return a
+  selected group pilot to their registered port. The server checks group,
+  sector, range and living state again at delivery, checkpoints player movement
+  before broadcast, and uses the journaled station transition for Return Friend.
+  [Summon notes](SUMMON.md) identify the public rules and locally tuned values.
 - Loaded ammunition inventory and native cargo-to-launcher loading, stack merges,
   weapon swaps and safe unloading on removal. Ammo metadata and AUX snapshots
   persist. Player launcher travel and durable shared impacts survive owner logout

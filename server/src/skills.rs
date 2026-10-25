@@ -35,6 +35,7 @@ pub enum AbilityKind {
     ReactorOptimization,
     ShieldCharging,
     ShieldSap,
+    Summon,
     PowerDown,
     Unsupported,
 }
@@ -541,6 +542,14 @@ pub enum SupportAction {
     },
     Fold {
         target: u32,
+    },
+    Summon {
+        ability: u32,
+        trained_rank: u32,
+        target: u32,
+        origin_sector: u32,
+        origin_position: [f32; 3],
+        origin_heading: [f32; 3],
     },
     Energy {
         amount: f32,

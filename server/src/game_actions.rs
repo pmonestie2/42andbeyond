@@ -1222,6 +1222,16 @@ impl GameState {
             .collect();
         for (source, sector, position, actions) in actions {
             for action in actions {
+                if matches!(action, SupportAction::Summon { .. }) {
+                    let delivered = self.deliver_summon(source, &action)?;
+                    if !delivered {
+                        self.sessions
+                            .get_mut(&source)
+                            .unwrap()
+                            .message("No group pilot remained eligible for Summon.");
+                    }
+                    continue;
+                }
                 let mut delivered = false;
                 // Native Jumpstart can rescue any visible incapacitated ship,
                 // independently of group membership. Other support stays scoped
@@ -1270,6 +1280,7 @@ impl GameState {
                         SupportAction::Energy { .. } => {
                             peer.sector == sector && distance(peer.position, position) <= 3000.
                         }
+                        SupportAction::Summon { .. } => unreachable!("handled above"),
                     };
                     if eligible {
                         self.sessions

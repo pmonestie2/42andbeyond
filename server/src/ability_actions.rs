@@ -195,6 +195,7 @@ impl PlayerSession {
             AbilityKind::ShieldCharging => 0,
             AbilityKind::GravityLink => 0,
             AbilityKind::ShieldSap => 733,
+            AbilityKind::Summon => 0,
             AbilityKind::EquipmentRepair => unreachable!("toggle handled before charged cast"),
             AbilityKind::PowerDown => unreachable!("toggle handled before charged cast"),
         };
@@ -271,6 +272,45 @@ impl PlayerSession {
         }
         if ability.kind == AbilityKind::Rally {
             return Ok(self.player_id());
+        }
+        if ability.kind == AbilityKind::Summon {
+            let tier = crate::summon::tier(ability.id, self.skill_catalog.level(56))
+                .ok_or_else(|| invalid("Summon rank is not trained."))?;
+            return match tier.target {
+                crate::summon::SummonTarget::Group => Ok(self.player_id()),
+                crate::summon::SummonTarget::Friend | crate::summon::SummonTarget::ReturnFriend => {
+                    let contact = self
+                        .group_contacts
+                        .iter()
+                        .find(|contact| contact.id == requested_target)
+                        .ok_or_else(|| invalid("Select a group pilot for Summon."))?;
+                    if contact.sector != self.sector.id
+                        || contact.incapacitated
+                        || distance(contact.position, self.position) > tier.range
+                    {
+                        return Err(invalid("Summon recipient is unavailable or out of range."));
+                    }
+                    Ok(requested_target)
+                }
+                crate::summon::SummonTarget::Enemy
+                | crate::summon::SummonTarget::EnemyFormation => {
+                    let index = requested_target
+                        .checked_sub(MOB_ID)
+                        .ok_or_else(|| invalid("Select a hostile MOB for Summon."))?;
+                    let combat = lock_combat(&self.combat)?;
+                    let mob = combat
+                        .actors
+                        .get(index as usize)
+                        .ok_or_else(|| invalid("Select a hostile MOB for Summon."))?;
+                    if mob.state == MobState::Dead
+                        || !self.mob_visible_in_scan(index as usize, mob)
+                        || mob.range_to(self.position) > tier.range
+                    {
+                        return Err(invalid("Summon enemy is unavailable or out of range."));
+                    }
+                    Ok(requested_target)
+                }
+            };
         }
         if ability.kind == AbilityKind::ReactorOptimization {
             if ability.rank < 5
@@ -491,11 +531,17 @@ impl PlayerSession {
                     || self.sector.station.is_some()
                     || self.mining.is_some()
                     || !self.logged_in);
+            let invalid_summon = definition.kind == AbilityKind::Summon
+                && (self.warp.active()
+                    || self.gate_transit.is_some()
+                    || self.sector.station.is_some()
+                    || !self.logged_in);
             if (self.hull <= 0. && !self_jumpstart)
                 || invalid_jumpstart
                 || invalid_recharge
                 || invalid_gravity
                 || invalid_sap
+                || invalid_summon
                 || definition.kind == AbilityKind::Cloak
                     && definition.rank < 5
                     && self.motion.speed.abs() > 0.1
@@ -671,6 +717,68 @@ impl PlayerSession {
                     self.pending
                         .push(packets::movement(target, mob.position, self.tick_ms()));
                     self.add_skill_effect(target, 267);
+                }
+            }
+            AbilityKind::Summon => {
+                let tier = crate::summon::tier(ability.id, self.skill_catalog.level(56))
+                    .ok_or_else(|| invalid("Summon rank is not trained."))?;
+                match tier.target {
+                    crate::summon::SummonTarget::Friend
+                    | crate::summon::SummonTarget::Group
+                    | crate::summon::SummonTarget::ReturnFriend => {
+                        self.support_actions.push(SupportAction::Summon {
+                            ability: ability.id,
+                            trained_rank: self.skill_catalog.level(56),
+                            target,
+                            origin_sector: self.sector.id,
+                            origin_position: self.position,
+                            origin_heading: self.motion.heading(),
+                        });
+                    }
+                    crate::summon::SummonTarget::Enemy
+                    | crate::summon::SummonTarget::EnemyFormation => {
+                        let selected = target
+                            .checked_sub(MOB_ID)
+                            .ok_or_else(|| invalid("Summon enemy target disappeared."))?
+                            as usize;
+                        let anchor = combat
+                            .actors
+                            .get(selected)
+                            .ok_or_else(|| invalid("Summon enemy target disappeared."))?;
+                        if anchor.state == MobState::Dead
+                            || anchor.range_to(self.position) > tier.range
+                        {
+                            return Err(invalid("Summon enemy left range."));
+                        }
+                        let center = anchor.position;
+                        let formation = anchor.definition.spawn_group;
+                        let heading = self.motion.heading();
+                        let destination = crate::summon::arrival_position(
+                            self.position,
+                            heading,
+                            self.sector.bounds.min,
+                            self.sector.bounds.max,
+                        );
+                        for (index, mob) in combat.actors.iter_mut().enumerate() {
+                            let selected_target = index == selected;
+                            let same_formation = tier.target
+                                == crate::summon::SummonTarget::EnemyFormation
+                                && formation != 0
+                                && mob.definition.spawn_group == formation
+                                && distance(mob.position, center) <= 1500.;
+                            if mob.state == MobState::Dead || !(selected_target || same_formation) {
+                                continue;
+                            }
+                            mob.position = destination;
+                            mob.motion.stop();
+                            mob.speed = 0.;
+                            self.pending.push(packets::movement(
+                                MOB_ID + index as u32,
+                                destination,
+                                self.tick_ms(),
+                            ));
+                        }
+                    }
                 }
             }
             AbilityKind::Jumpstart => {

@@ -111,6 +111,8 @@ mod skill_tests;
 mod station_actions;
 #[path = "station_peers.rs"]
 mod station_peers;
+#[path = "summon_service.rs"]
+mod summon_service;
 #[cfg(test)]
 #[path = "session_takeover_tests.rs"]
 mod takeover_tests;

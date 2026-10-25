@@ -42,6 +42,7 @@ pub mod server;
 pub mod shield_charging;
 pub mod shield_sap;
 pub mod skills;
+pub mod summon;
 pub mod warp;
 mod world_random;
 

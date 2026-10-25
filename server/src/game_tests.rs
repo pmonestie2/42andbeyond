@@ -37,6 +37,79 @@ pub(super) fn game() -> GameState {
     .unwrap()
 }
 
+/// Summon moves a hostile, then one grouped pilot and finally journals port return.
+#[test]
+fn defender_summon_enemy_friend_and_registered_port_survive_restart() {
+    let root = std::env::temp_dir().join(format!("enb-summon-{}", rand::random::<u64>()));
+    let accounts = AccountDirectory::new(&root);
+    let caster = accounts
+        .create_class(
+            "alice".into(),
+            "example",
+            "Alice".into(),
+            crate::classes::CharacterClass::parse("jd").unwrap(),
+        )
+        .unwrap();
+    let alice = caster.account.character.game_id;
+    let bob = accounts
+        .create("bob".into(), "example", "Bob".into())
+        .unwrap()
+        .account
+        .character
+        .game_id;
+    let items = crate::items::ItemCatalog::load().unwrap();
+    let mut inventory =
+        crate::inventory::Inventory::starter_for(&caster.account.character, &items).unwrap();
+    inventory.equipped[1] = Some(crate::inventory::ItemInstance::stock(3340, 1));
+    fs::write(
+        caster.directory.join("inventory.json"),
+        serde_json::to_vec(&inventory).unwrap(),
+    )
+    .unwrap();
+    let sector: Sector = serde_json::from_str(include_str!("../data/sector.json")).unwrap();
+    let bind = Ipv4Addr::new(127, 0, 0, 2);
+    let mut game = GameState::new(sector.clone(), bind, root.clone()).unwrap();
+    login(&mut game, alice, 23101, "alice");
+    login(&mut game, bob, 23102, "bob");
+    game.groups.invite(alice, bob).unwrap();
+    game.groups.accept(bob).unwrap();
+    game.sessions.get_mut(&alice).unwrap().position = [0.; 3];
+    game.sessions.get_mut(&bob).unwrap().position = [2_000., 0., 0.];
+    {
+        let mut combat = lock_combat(&game.sessions[&alice].combat).unwrap();
+        combat.actors[0].position = [3_000., 0., 0.];
+        combat.actors[0].definition.spawn = [3_000., 0., 0.];
+        combat.actors[0].definition.aggressive = false;
+    }
+    game.advance(0.1).unwrap();
+    activate(&mut game, alice, MOB_ID, 117);
+    advance(&mut game, 3.1);
+    assert!(
+        distance(
+            lock_combat(&game.sessions[&alice].combat).unwrap().actors[0].position,
+            game.sessions[&alice].position
+        ) < 300.
+    );
+    lock_combat(&game.sessions[&alice].combat).unwrap().actors[0].damage(1_000_000.);
+    advance(&mut game, 5.1);
+    activate(&mut game, alice, bob, 119);
+    advance(&mut game, 3.1);
+    assert!(distance(game.sessions[&bob].position, game.sessions[&alice].position) < 300.);
+    advance(&mut game, 5.1);
+    game.sessions.get_mut(&bob).unwrap().position = [4_000., 0., 0.];
+    game.advance(0.1).unwrap();
+    rally_cast(&mut game, alice, 120);
+    advance(&mut game, 3.1);
+    assert!(distance(game.sessions[&bob].position, game.sessions[&alice].position) < 300.);
+    advance(&mut game, 5.1);
+    activate(&mut game, alice, bob, 97);
+    advance(&mut game, 3.1);
+    assert!(game.sessions[&bob].sector.station.is_some());
+    drop(game);
+    let restored = GameState::new(sector, bind, root).unwrap();
+    assert!(restored.sessions[&bob].sector.station.is_some());
+}
+
 pub(super) fn login(game: &mut GameState, id: u32, port: u16, username: &str) {
     let peer: SocketAddr = format!("127.0.0.1:{port}").parse().unwrap();
     game.handle_udp(

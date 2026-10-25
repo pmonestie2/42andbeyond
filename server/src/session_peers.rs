@@ -349,6 +349,11 @@ impl PlayerSession {
                 });
             }
             SupportAction::Fold { .. } => self.fold_self(),
+            SupportAction::Summon { .. } => {
+                return Err(invalid(
+                    "Summon must be delivered by the world coordinator.",
+                ));
+            }
             SupportAction::Cloak {
                 enabled: true,
                 rank,

@@ -29,6 +29,8 @@ mod call_forward_game;
 mod dev_commands;
 #[path = "shield_sap_game.rs"]
 mod shield_sap_game;
+#[path = "summon_game.rs"]
+mod summon_game;
 #[cfg(test)]
 #[path = "game_tests.rs"]
 mod tests;
