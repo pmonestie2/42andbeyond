@@ -17,6 +17,8 @@ namespace FortyTwoAndBeyond.Editor
         private static int stage;
         private static bool connected;
         private static bool compact;
+        private static bool motion;
+        private static uint contactId;
 
         /// <returns>string: The screenshot path for the active Game View size.</returns>
         private static string CaptureName(string scene)
@@ -28,6 +30,7 @@ namespace FortyTwoAndBeyond.Editor
             if (Array.IndexOf(Environment.GetCommandLineArgs(), "--42andbeyond-station-art-smoke") < 0)
                 return;
             compact = Array.IndexOf(Environment.GetCommandLineArgs(), "--42andbeyond-station-compact") >= 0;
+            motion = Array.IndexOf(Environment.GetCommandLineArgs(), "--42andbeyond-station-motion") >= 0;
             deadline = EditorApplication.timeSinceStartup + 90;
             EditorApplication.update += Tick;
         }
@@ -96,6 +99,40 @@ namespace FortyTwoAndBeyond.Editor
             {
                 if (!File.Exists(CaptureName("concourse")))
                 { Fail("Missing concourse capture."); return; }
+                if (motion)
+                {
+                    var contact = client.CurrentSnapshot.Station.Contacts.FirstOrDefault(entry =>
+                        entry.Room == client.CurrentSnapshot.Station.CurrentRoom);
+                    if (contact == null) { Fail("No contact in the captured room."); return; }
+                    contactId = contact.Id;
+                    client.OpenNpc(contactId);
+                    stage = 9; return;
+                }
+                client.EnterStationRoom(0);
+                stage = 6; return;
+            }
+            if (stage == 9)
+            {
+                if (client.CurrentSnapshot.Dialogue?.NpcId != contactId) return;
+                captureAt = EditorApplication.timeSinceStartup + 1;
+                stage = 10; return;
+            }
+            if (stage == 10)
+            {
+                ScreenCapture.CaptureScreenshot(CaptureName("dialogue"));
+                captureAt = EditorApplication.timeSinceStartup + 1;
+                stage = 11; return;
+            }
+            if (stage == 11)
+            {
+                if (!File.Exists(CaptureName("dialogue")))
+                { Fail("Missing contact dialogue capture."); return; }
+                client.ChooseNpc(230);
+                stage = 12; return;
+            }
+            if (stage == 12)
+            {
+                if (client.CurrentSnapshot.Dialogue != null) return;
                 client.EnterStationRoom(0);
                 stage = 6; return;
             }

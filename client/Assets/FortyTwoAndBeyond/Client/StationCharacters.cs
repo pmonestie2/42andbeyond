@@ -33,16 +33,34 @@ namespace FortyTwoAndBeyond.Client
                     body = art.StationAvatar(parent, contact: true);
                     body.name = "Station contact " + id;
                     contacts[id] = body;
+                    body.localRotation = Quaternion.Euler(0, index % 2 == 0 ? -72f : 72f, 0);
                 }
                 int side = index % 2 == 0 ? 1 : -1;
                 int row = index / 2;
                 float lateral = room == 0 ? 6.5f : 4.7f;
                 float depth = room == 0 ? -2f + row * 3f : 3.5f + row * 2.6f;
                 body.localPosition = new Vector3(side * lateral, 0, Mathf.Clamp(depth, -7f, 8f));
-                body.localRotation = Quaternion.Euler(0, side > 0 ? -72f : 72f, 0);
             }
             foreach (uint id in contacts.Keys.Where(id => !ids.Contains(id)).ToArray())
             { Object.Destroy(contacts[id].gameObject); contacts.Remove(id); }
+        }
+
+        /// <summary>Turn only the contacted NPC toward the pilot during server dialogue.</summary>
+        public void Tick(Vector3 pilotPosition, uint dialogueNpcId, float delta)
+        {
+            float blend = 1f - Mathf.Exp(-3f * Mathf.Min(delta, .1f));
+            foreach (KeyValuePair<uint, Transform> entry in contacts)
+            {
+                Transform body = entry.Value;
+                bool engaged = dialogueNpcId != 0 && entry.Key == dialogueNpcId;
+                body.GetComponent<StationSuitMotion>()?.SetEngaged(engaged);
+                Quaternion idle = Quaternion.Euler(0, body.localPosition.x > 0 ? -72f : 72f, 0);
+                Vector3 direction = pilotPosition - body.localPosition;
+                direction.y = 0;
+                Quaternion target = engaged && direction.sqrMagnitude > .1f ?
+                    Quaternion.LookRotation(direction, Vector3.up) : idle;
+                body.localRotation = Quaternion.Slerp(body.localRotation, target, blend);
+            }
         }
 
         /// <summary>Remove contact suits when the pilot disconnects or leaves the sector.</summary>

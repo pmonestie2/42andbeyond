@@ -416,6 +416,7 @@ namespace FortyTwoAndBeyond.Client
                     ? 0 : avatar.Position.Z;
                 body.localPosition = new Vector3(Mathf.Clamp(x * .25f, -6, 6), 0,
                     Mathf.Clamp(z * .25f, -9, 9));
+                body.GetComponent<StationSuitMotion>()?.ReportPose(body.localPosition);
                 float orientation = float.IsNaN(avatar.Orientation) || float.IsInfinity(avatar.Orientation)
                     ? 0 : avatar.Orientation;
                 body.localRotation = Quaternion.Euler(0, orientation * Mathf.Rad2Deg, 0);
@@ -502,7 +503,10 @@ namespace FortyTwoAndBeyond.Client
             {
                 ownStationAvatar.position = avatarPosition;
                 ownStationAvatar.rotation = Quaternion.Euler(0, stationWalk.Orientation * Mathf.Rad2Deg, 0);
+                ownStationAvatar.GetComponent<StationSuitMotion>()?.SetWalking(stationWalk.Translating);
             }
+            if (docked) stationCharacters?.Tick(avatarPosition,
+                snapshot.Dialogue?.NpcId ?? 0, delta);
             ship.gameObject.SetActive(!docked || dockingBay);
             environment.gameObject.SetActive(!chart && !docked);
             if (docked)
@@ -871,10 +875,10 @@ namespace FortyTwoAndBeyond.Client
                 worker.Submit(new ClientCommand(CommandKind.ActivateAbility, id));
         }
 
-        /// <summary>Queue a Recharge Shields cast for a specific visible pilot or self.</summary>
+        /// <summary>Queue an ally shield or hull repair for a specific visible pilot or self.</summary>
         public void ActivateAbilityFor(uint id, uint recipient)
         {
-            if (!Ready || snapshot.Station != null || id != 89 ||
+            if (!Ready || snapshot.Station != null || id != 89 && id != 95 ||
                 !snapshot.AvailableAbilities.Contains(id) ||
                 recipient != snapshot.PlayerId && !snapshot.Players.Any(actor =>
                     actor.Id == recipient && actor.HasPosition)) return;

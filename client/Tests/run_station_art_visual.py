@@ -18,11 +18,14 @@ sys.path.insert(0, str(CLIENT / "Tools"))
 from play_local import stop_owned  # noqa: E402
 
 
-def run(unity: Path, compact: bool = False) -> None:
+def run(unity: Path, compact: bool = False, motion: bool = False) -> None:
     """Capture the hangar and concourse, then stop only the owned server."""
     OUTPUT.mkdir(parents=True, exist_ok=True)
     suffix = "-compact" if compact else ""
-    for name in ("station-hangar.png", "station-concourse.png", "station-loadout.png"):
+    names = ["station-hangar.png", "station-concourse.png", "station-loadout.png"]
+    if motion:
+        names.append("station-dialogue.png")
+    for name in names:
         (OUTPUT / name.replace(".png", f"{suffix}.png")).unlink(missing_ok=True)
     with tempfile.TemporaryDirectory(prefix="station-art-") as temporary:
         state = Path(temporary)
@@ -54,6 +57,8 @@ def run(unity: Path, compact: bool = False) -> None:
                            "--42andbeyond-station-art-smoke"]
                 if compact:
                     command.append("--42andbeyond-station-compact")
+                if motion:
+                    command.append("--42andbeyond-station-motion")
                 command.extend(["-logFile", str(OUTPUT / "station-art-visual.log")])
                 subprocess.run(
                     command,
@@ -63,7 +68,7 @@ def run(unity: Path, compact: bool = False) -> None:
                 if server.poll() is None:
                     (state / "stop.request").write_text("stop\n")
                 stop_owned(server)
-    for name in ("station-hangar.png", "station-concourse.png", "station-loadout.png"):
+    for name in names:
         capture = name.replace(".png", f"{suffix}.png")
         if not (OUTPUT / capture).is_file():
             raise FileNotFoundError(capture)
@@ -75,8 +80,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--unity", required=True, type=Path)
     parser.add_argument("--compact", action="store_true", help="Capture a smaller Game View")
+    parser.add_argument("--motion", action="store_true", help="Capture contact dialogue response")
     args = parser.parse_args()
-    run(args.unity, compact=args.compact)
+    run(args.unity, compact=args.compact, motion=args.motion)
 
 
 if __name__ == "__main__":

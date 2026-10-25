@@ -11,12 +11,13 @@ namespace FortyTwoAndBeyond.Client
         public float Z { get; private set; }
         public float Orientation { get; private set; }
         public bool Moving { get; private set; }
+        public bool Translating { get; private set; }
 
         /// <summary>Place the local avatar near the visible entrance of a new room.</summary>
         public void EnterRoom(uint room)
         {
             Room = room; X = 0; Z = LocalSession.StationEntryZ;
-            Orientation = 0; Moving = false;
+            Orientation = 0; Moving = Translating = false;
         }
 
         /// <summary>
@@ -40,6 +41,7 @@ namespace FortyTwoAndBeyond.Client
             X = Math.Max(-30f, Math.Min(30f, X + (float)Math.Sin(Orientation) * walk * 8f * delta));
             Z = Math.Max(-40f, Math.Min(40f, Z + (float)Math.Cos(Orientation) * walk * 8f * delta));
             Moving = turn != 0 || walk != 0;
+            Translating = walk != 0;
             return X != oldX || Z != oldZ || Orientation != oldOrientation;
         }
 
@@ -48,6 +50,6 @@ namespace FortyTwoAndBeyond.Client
         ///     bool: Whether an idle pose should be published after movement.
         /// </summary>
         public bool Stop()
-        { bool wasMoving = Moving; Moving = false; return wasMoving; }
+        { bool wasMoving = Moving; Moving = Translating = false; return wasMoving; }
     }
 }

@@ -536,31 +536,42 @@ namespace FortyTwoAndBeyond.Client
                 new Vector3(.3f, .07f, .08f), accent);
             Part(root, PrimitiveType.Cube, new Vector3(0, .75f, 0),
                 new Vector3(.53f, .15f, .44f), stationFrame);
+            var arms = new Transform[2];
+            var legs = new Transform[2];
             for (int side = -1; side <= 1; side += 2)
             {
+                int index = side < 0 ? 0 : 1;
                 Transform shoulder = Model(root, suitArmor, suitShell,
                     new Vector3(side * .48f, 1.48f, 0), new Vector3(.26f, .25f, .27f));
                 shoulder.localRotation = Quaternion.Euler(0, 0, side * -15);
-                Transform arm = Model(root, suitArmor, suitJoint,
-                    new Vector3(side * .53f, .81f, 0), new Vector3(.17f, .68f, .18f));
+                Transform armPivot = Root(root, side < 0 ? "Left arm" : "Right arm");
+                armPivot.localPosition = new Vector3(side * .53f, 1.45f, 0);
+                arms[index] = armPivot;
+                Transform arm = Model(armPivot, suitArmor, suitJoint,
+                    new Vector3(0, -.64f, 0), new Vector3(.17f, .68f, .18f));
                 arm.localRotation = Quaternion.Euler(0, 0, side * -7);
-                Part(root, PrimitiveType.Cube, new Vector3(side * .55f, 1.05f, .17f),
+                Part(armPivot, PrimitiveType.Cube, new Vector3(side * .02f, -.4f, .17f),
                     new Vector3(.2f, .38f, .06f), suitShell);
-                Part(root, PrimitiveType.Cube, new Vector3(side * .55f, .67f, .04f),
+                Part(armPivot, PrimitiveType.Cube, new Vector3(side * .02f, -.78f, .04f),
                     new Vector3(.24f, .2f, .26f), suitShell);
-                Part(root, PrimitiveType.Cube, new Vector3(side * .56f, .52f, .07f),
+                Part(armPivot, PrimitiveType.Cube, new Vector3(side * .03f, -.93f, .07f),
                     new Vector3(.15f, .06f, .17f), accent);
-                Model(root, suitArmor, suitJoint, new Vector3(side * .21f, .08f, 0),
+                Transform legPivot = Root(root, side < 0 ? "Left leg" : "Right leg");
+                legPivot.localPosition = new Vector3(side * .21f, .75f, 0);
+                legs[index] = legPivot;
+                Model(legPivot, suitArmor, suitJoint, new Vector3(0, -.67f, 0),
                     new Vector3(.2f, .69f, .21f));
-                Part(root, PrimitiveType.Cube, new Vector3(side * .21f, .43f, .18f),
+                Part(legPivot, PrimitiveType.Cube, new Vector3(0, -.32f, .18f),
                     new Vector3(.25f, .33f, .08f), suitShell);
-                Part(root, PrimitiveType.Cube, new Vector3(side * .21f, .13f, .2f),
+                Part(legPivot, PrimitiveType.Cube, new Vector3(0, -.62f, .2f),
                     new Vector3(.28f, .2f, .39f), stationFrame);
                 Part(root, PrimitiveType.Cube, new Vector3(side * .35f, 1.48f, -.26f),
                     new Vector3(.07f, .28f, .04f), accent);
                 Part(root, PrimitiveType.Cube, new Vector3(side * .34f, 2.04f, 0),
                     new Vector3(.12f, .22f, .12f), stationFrame);
             }
+            root.gameObject.AddComponent<StationSuitMotion>().Configure(
+                arms[0], arms[1], legs[0], legs[1], contact);
             return root;
         }
 

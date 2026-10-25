@@ -265,7 +265,10 @@ the response buttons are the choices advertised by that NPC. The journal entry
 remains the authority for the current stage and is removed on completion.
 Station pilots and visible contacts use original, repo-native layered suit geometry
 in `SpaceArt.cs`; contact placement follows the server's room list. These are
-authored replacements, not the original NPC models. Station interiors and the
+authored replacements, not the original NPC models. Suit arms and legs move only
+with local walking input or observed peer room poses. Contacts idle at their
+advertised room positions and turn toward the pilot during that contact's native
+dialogue. Station interiors and the
 full original combat and equipment UI remain unfinished.
 
 ## Implementation boundaries
