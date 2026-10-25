@@ -1,6 +1,8 @@
-# 42 and Beyond
+# 42 and Beyond - A re-implementation of Earth And Beyond.
 
-Standalone Unity client and Rust game server.
+Standalone Unity client and Rust game server - Still work in progress but the server supports Earth And Beyond "normal" clients - Eg it's a back port of the "regular" ENB server (Net7) 
+
+Why: I wanted to explore making a new client - For that you need a server to play with - the Net7 server being close source (I really wonder why) I remade a server.
 
 | Directory | Purpose |
 | --- | --- |
