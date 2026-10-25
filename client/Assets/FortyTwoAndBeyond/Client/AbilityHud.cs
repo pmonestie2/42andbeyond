@@ -39,6 +39,8 @@ namespace FortyTwoAndBeyond.Client
         private bool open;
         private int assigningSlot = -1;
         private uint slotOwner;
+        private uint pendingSupportTarget;
+        private float pendingSupportAt;
         public bool IsOpen => open;
         private float CanvasWidth => Screen.width / flightHud.Scale;
         private float CanvasHeight => Screen.height / flightHud.Scale;
@@ -85,7 +87,7 @@ namespace FortyTwoAndBeyond.Client
         private void LoadSlots(uint playerId)
         {
             if (slotOwner == playerId) return;
-            slotOwner = playerId; assigningSlot = -1;
+            slotOwner = playerId; assigningSlot = -1; pendingSupportTarget = 0;
             for (int i = 0; i < slots.Length; i++)
                 slots[i] = PlayerPrefs.GetInt($"42andBeyond.ability.{playerId}.{i}", -1);
         }
@@ -96,7 +98,49 @@ namespace FortyTwoAndBeyond.Client
             if (snapshot == null || index < 0 || index >= slots.Length) return;
             LoadSlots(snapshot.PlayerId);
             if (slots[index] < 0 || !snapshot.AvailableAbilities.Contains((uint)slots[index])) return;
+            if (SupportTargetPending(snapshot) || slots[index] == 125 && SelectedCrew(snapshot) == null) return;
             client.ActivateAbility((uint)slots[index]);
+        }
+
+        /// <returns>bool: Whether a support selection still awaits server target acknowledgment.</returns>
+        private bool SupportTargetPending(Snapshot snapshot)
+        {
+            if (pendingSupportTarget == 0) return false;
+            if (snapshot.SelectedTargetId == pendingSupportTarget || Time.unscaledTime - pendingSupportAt > 3)
+            { pendingSupportTarget = 0; return false; }
+            return true;
+        }
+
+        /// <returns>ShipActor: The visible server-selected crew member, or null.</returns>
+        private static ShipActor SelectedCrew(Snapshot snapshot)
+        { return snapshot.Players.FirstOrDefault(actor => actor.Id == snapshot.SelectedTargetId &&
+            actor.HasPosition && snapshot.Group.Members.Any(member => member.Id == actor.Id)); }
+
+        /// <summary>Choose a self or visible crew recipient using native target selection.</summary>
+        private void SupportTargetBar(Snapshot snapshot, Rect panel)
+        {
+            ShipActor selectedCrew = SelectedCrew(snapshot);
+            uint recipient = selectedCrew?.Id ?? snapshot.PlayerId;
+            bool pending = SupportTargetPending(snapshot);
+            bool shielded = snapshot.ObjectEffects.Any(effect =>
+                effect.OwnerId == recipient && effect.Descriptor == 216);
+            string target = selectedCrew?.Name ?? "YOUR SHIP";
+            GUI.Label(new Rect(panel.x + 18, panel.y + 205, panel.width - 36, 23),
+                pending ? "SUPPORT TARGET  ·  WAITING FOR SERVER" :
+                "SUPPORT TARGET  ·  " + target.ToUpperInvariant() +
+                (shielded ? "  ·  ENV SHIELD ACTIVE" : ""), flightHud.SmallStyle);
+            if (GUI.Button(new Rect(panel.x + 18, panel.y + 229, 86, 29), "SELF", flightHud.ButtonStyle))
+            { pendingSupportTarget = snapshot.PlayerId; pendingSupportAt = Time.unscaledTime; client.SelectAbilitySelf(); }
+            ShipActor[] crew = snapshot.Players.Where(actor => actor.HasPosition &&
+                snapshot.Group.Members.Any(member => member.Id == actor.Id)).Take(4).ToArray();
+            for (int i = 0; i < crew.Length; i++)
+            {
+                ShipActor actor = crew[i];
+                string label = actor.Name.Length > 9 ? actor.Name.Substring(0, 8) + "…" : actor.Name;
+                if (GUI.Button(new Rect(panel.x + 109 + i * 96, panel.y + 229, 91, 29),
+                    label, flightHud.ButtonStyle))
+                { pendingSupportTarget = actor.Id; pendingSupportAt = Time.unscaledTime; client.SelectContact(actor.Id); }
+            }
         }
 
         /// <summary>Show bound abilities and their configured keys during flight.</summary>
@@ -184,9 +228,10 @@ namespace FortyTwoAndBeyond.Client
                     label, flightHud.ButtonStyle)) assigningSlot = i;
             }
             DrawExperience(panel, snapshot.Experience);
+            SupportTargetBar(snapshot, panel);
             AbilityDefinition[] available = catalog.Where(item => item.id >= 0 && snapshot.AvailableAbilities.Contains((uint)item.id))
                 .OrderBy(item => item.name).ToArray();
-            GUILayout.BeginArea(new Rect(panel.x + 18, panel.y + 208, panel.width - 36, panel.height - 257));
+            GUILayout.BeginArea(new Rect(panel.x + 18, panel.y + 266, panel.width - 36, panel.height - 315));
             scroll = GUILayout.BeginScrollView(scroll);
             if (available.Length == 0)
                 GUILayout.Label("Waiting for class abilities from the server…", flightHud.SmallStyle);
@@ -203,7 +248,8 @@ namespace FortyTwoAndBeyond.Client
                     $"{ability.name}  ·  CHARGING {snapshot.CastRemainingSeconds:0.#} S" :
                     ability.id == 65 ? "Jumpstart  ·  ENERGY DEPENDS ON TARGET" :
                     $"{ability.name}  ·  RANK {ability.rank}  ·  {ability.energy:0} ENERGY";
-                GUI.enabled = assigningSlot >= 0 || recovery <= 0 && !charging;
+                GUI.enabled = assigningSlot >= 0 || recovery <= 0 && !charging &&
+                    !SupportTargetPending(snapshot) && (ability.id != 125 || SelectedCrew(snapshot) != null);
                 if (GUILayout.Button(new GUIContent(label, description), flightHud.ButtonStyle, GUILayout.Height(34)))
                 {
                     if (assigningSlot >= 0)

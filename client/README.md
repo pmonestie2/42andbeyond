@@ -227,7 +227,11 @@ verb; while the ship is moving, its button brakes before opening the window.
 The Skills button lists abilities advertised by the connected character's native
 RPG packet. Selecting one sends the native activation command, and the panel
 shows the server's combat, trade and explore levels, next-level progress bars,
-available skill points, charge and cooldown updates. The server applies target, range,
+available skill points, charge and cooldown updates. Its support-target row selects
+your own ship or a visible group member through the server's native target packet.
+The row waits for target acknowledgment before casting and shows a recipient's
+Environment Shield when its native effect is visible. Teleport Friend requires a
+server-selected visible group member. The server applies target, range,
 energy, charge, and cooldown rules. Refresh display labels from
 the public Rust catalog with `python3 client/Tools/sync_ability_catalog.py`
 after server skill-content changes. Click one of six slots in the Skills panel,

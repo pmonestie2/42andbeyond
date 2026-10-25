@@ -850,6 +850,13 @@ namespace FortyTwoAndBeyond.Client
             }
         }
 
+        /// <summary>Select the own ship for a self-directed class support ability.</summary>
+        public void SelectAbilitySelf()
+        {
+            if (Ready && snapshot.Station == null)
+                worker.Submit(new ClientCommand(CommandKind.SelectTarget, snapshot.PlayerId));
+        }
+
         /// <summary>Follow the currently selected visible ship through native flight control.</summary>
         public void FollowSelected()
         {

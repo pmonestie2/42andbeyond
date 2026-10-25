@@ -525,7 +525,7 @@ namespace FortyTwoAndBeyond.Protocol
         {
             bool selectableObject = World.Objects.TryGetValue(target, out MapObject item) &&
                 (item.Navigable || item.Kind == 25 || item.Kind == 38);
-            if (!Ready || gate != 0 || (!World.Mobs.ContainsKey(target) &&
+            if (!Ready || gate != 0 || (target != Player && !World.Mobs.ContainsKey(target) &&
                 !World.Players.ContainsKey(target) && !selectableObject)) return;
             if (followTarget != target) followTarget = 0;
             if (World.Equipment.TargetId != target) World.SetOpenLoot(0);

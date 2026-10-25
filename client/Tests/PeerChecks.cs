@@ -229,6 +229,21 @@ internal static class PeerChecks
                 visitor.AnswerConfirmation(true);
                 Wait(observer, visitor, () => observer.World.Group.IsLeader && observer.World.Group.Members.Any(m => m.Id == peerId) &&
                     visitor.World.Group.Members.Any(m => m.Id == observer.Player), "Group roster did not converge.");
+                Wait(observer, visitor, () => (!observer.World.AbilityCooldownEnds.TryGetValue(23,
+                    out long readyAt) || readyAt <= Stopwatch.GetTimestamp()) &&
+                    observer.World.Position.Distance(visitor.World.Position) < 3000,
+                    "Crew pilot did not reach Environment Barrier range after cooldown.");
+                observer.SelectTarget(peerId);
+                Wait(observer, visitor, () => observer.World.Equipment.TargetId == peerId,
+                    "Group support recipient did not receive native target acknowledgment.");
+                observer.ActivateAbility(44);
+                Wait(observer, visitor, () => visitor.World.ObjectEffects.Values.Any(effect =>
+                    effect.OwnerId == peerId && effect.Descriptor == 216),
+                    "Environment Barrier did not publish its native recipient effect.");
+                observer.SelectTarget(observer.Player);
+                Wait(observer, visitor, () => observer.World.Equipment.TargetId == observer.Player,
+                    "Own-ship support target was not acknowledged by the server.");
+                Console.WriteLine("PASS: selected crew support cast, recipient effect, and self targeting");
                 observer.Formation(4);
                 Wait(observer, visitor, () => observer.World.Group.Formation == "Slot Back" &&
                     observer.World.Group.Formed && visitor.World.Group.Formation == "Slot Back" &&

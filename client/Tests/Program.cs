@@ -14,7 +14,7 @@ internal static class Program
         CheckReassembly(); CheckWorld(); CheckMissionJournal(); CheckMissionDialogue();
         CheckExperience(); CheckMiningPhases(); CheckLootTractor(); CheckWarpPhases(); CheckNavigationSelection(); CheckWarpTargets(); CheckWeaponReady();
         CheckDamageResults(); CheckCombatEngagement(); CheckContactSelection(); CheckTargetVerbs(); CheckDeviceEffects();
-        CheckNativeDeviceBuff();
+        CheckNativeDeviceBuff(); CheckSupportObjectEffects();
         CheckAmmunitionTransfer(); CheckFlightThrottle(); CheckFormationAnchor();
         CheckStationLayout(); CheckStationWalk(); CheckDemoRoster(); CheckAddress(); PeerChecks.Decode();
         Console.WriteLine("PASS: framing, ordering, fragmentation, duplicates, bounds, world decoding, private addresses");
@@ -599,6 +599,25 @@ internal static class Program
             active.DeviceBuff.VisualActive && active.DeviceBuff.Name == "Turbo Weapons",
             "Native buff expiry mutated a previous immutable snapshot or left the buff active.");
         Reject(() => NativeObjectEffect.Decode(bytes("03060000405c028e920930ca05")));
+    }
+
+    /// <summary>Retain server-created support visuals until their native removal packet.</summary>
+    private static void CheckSupportObjectEffects()
+    {
+        var world = new World();
+        world.Apply(new Frame(0x09, Wire.Body(writer =>
+        {
+            writer.Write((byte)3); writer.Write(2u); writer.Write((ushort)216);
+            writer.Write(99u); writer.Write(5000u);
+        })), 1);
+        Snapshot active = new Snapshot(world, "ready", true);
+        Assert(active.ObjectEffects.Length == 1 && active.ObjectEffects[0].OwnerId == 2 &&
+            active.ObjectEffects[0].EffectId == 99 && active.ObjectEffects[0].Descriptor == 216,
+            "Native group support effect did not identify the recipient and visual descriptor.");
+        world.Apply(new Frame(0x0f, Wire.Body(writer => writer.Write(99u))), 1);
+        Assert(new Snapshot(world, "ready", true).ObjectEffects.Length == 0 &&
+            active.ObjectEffects.Length == 1,
+            "Effect removal mutated an earlier immutable support snapshot.");
     }
 
     /// <summary>Recognize catalog-backed active devices and their server notices.</summary>

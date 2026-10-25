@@ -490,6 +490,8 @@ namespace FortyTwoAndBeyond.Protocol
             else { ResourceTargetId = 0; ResourceWindowOpen = false; MiningActivity = null; }
         }
         public readonly Queue<ShotEvent> Shots = new Queue<ShotEvent>();
+        public readonly Dictionary<ulong, NativeObjectEffect> ObjectEffects =
+            new Dictionary<ulong, NativeObjectEffect>();
         public GroupState Group { get; private set; } = new GroupState(false, Array.Empty<GroupMember>());
         public FormationAnchor Formation { get; private set; }
         public TargetVerbs Verbs { get; private set; } = TargetVerbs.Empty;
@@ -607,13 +609,13 @@ namespace FortyTwoAndBeyond.Protocol
                     if (firstEnd < 0 || firstEnd + 1 >= b.Length) throw new InvalidDataException("Missing sector name.");
                     string name = Wire.Text(b, firstEnd + 1, b.Length - firstEnd - 1);
                     if (name.Length == 0) throw new InvalidDataException("Empty sector name.");
-                    if (Sector != name) { Objects.Clear(); Players.Clear(); Mobs.Clear(); StationAvatars.Clear(); Loot.Clear(); Resources.Clear(); ResourceTargetId = 0; ResourceWindowOpen = false; MiningActivity = null; LootActivity = null; Formation = null; Warp = WarpState.Decode(0, 0); lastServerTickAt = 0; OpenLootId = 0; Verbs = TargetVerbs.Empty; Shots.Clear(); Damages.Clear(); ClearConfirmation(); nextShot = nextDamage = 0; }
+                    if (Sector != name) { Objects.Clear(); Players.Clear(); Mobs.Clear(); StationAvatars.Clear(); Loot.Clear(); Resources.Clear(); ResourceTargetId = 0; ResourceWindowOpen = false; MiningActivity = null; LootActivity = null; Formation = null; Warp = WarpState.Decode(0, 0); lastServerTickAt = 0; OpenLootId = 0; Verbs = TargetVerbs.Empty; Shots.Clear(); Damages.Clear(); ObjectEffects.Clear(); ClearConfirmation(); nextShot = nextDamage = 0; }
                     Sector = name;
                     break;
                 case 0x4f:
                     if (b.Length != 6) throw new InvalidDataException("Invalid station identity.");
                     Station = b[4] == 0 ? new StationState(Wire.U32(b, 0)) : null;
-                    if (Station != null) { ActiveDeviceLabel = ""; ActiveDeviceEndsAt = 0; ActiveBuff = TimedDeviceBuff.Empty; awaitingDeviceVisual = false; Formation = null; }
+                    if (Station != null) { ActiveDeviceLabel = ""; ActiveDeviceEndsAt = 0; ActiveBuff = TimedDeviceBuff.Empty; awaitingDeviceVisual = false; Formation = null; ObjectEffects.Clear(); }
                     Production = new ProductionState();
                     StationAvatars.Clear();
                     Dialogue = null; Vendor = Array.Empty<ItemState>();
@@ -689,6 +691,11 @@ namespace FortyTwoAndBeyond.Protocol
                     break;
                 case 0x09:
                     NativeObjectEffect objectEffect = NativeObjectEffect.Decode(b);
+                    if (objectEffect != null)
+                    {
+                        if (ObjectEffects.Count >= 256) ObjectEffects.Clear();
+                        ObjectEffects[((ulong)objectEffect.OwnerId << 32) | objectEffect.EffectId] = objectEffect;
+                    }
                     if (awaitingDeviceVisual && objectEffect?.OwnerId == player && ActiveBuff.Active)
                     {
                         ActiveBuff = ActiveBuff.WithVisual(objectEffect.EffectId, objectEffect.Descriptor);
@@ -697,6 +704,9 @@ namespace FortyTwoAndBeyond.Protocol
                     break;
                 case 0x0f:
                     if (b.Length != 4) throw new InvalidDataException("Invalid effect removal.");
+                    uint removedEffect = Wire.U32(b, 0);
+                    foreach (ulong key in ObjectEffects.Keys.Where(key => (uint)key == removedEffect).ToArray())
+                        ObjectEffects.Remove(key);
                     if (MiningActivity?.EffectId == Wire.U32(b, 0)) MiningActivity = null;
                     if (LootActivity?.EffectId == Wire.U32(b, 0)) LootActivity = null;
                     if (ActiveBuff.VisualDescriptor != 0 && ActiveBuff.VisualEffectId == Wire.U32(b, 0))
@@ -873,6 +883,8 @@ namespace FortyTwoAndBeyond.Protocol
                     if (OpenLootId == Wire.U32(b, 0)) { OpenLootId = 0; LootActivity = null; }
                     if (ResourceTargetId == Wire.U32(b, 0)) SetResourceTarget(0);
                     Players.Remove(Wire.U32(b, 0)); Mobs.Remove(Wire.U32(b, 0));
+                    foreach (ulong key in ObjectEffects.Keys.Where(key => key >> 32 == Wire.U32(b, 0)).ToArray())
+                        ObjectEffects.Remove(key);
                     StationAvatars.Remove(Wire.U32(b, 0));
                     break;
                 case 0xa0:
@@ -982,6 +994,7 @@ namespace FortyTwoAndBeyond.Protocol
         public readonly float CastRemainingSeconds;
         public readonly IReadOnlyDictionary<uint, float> AbilityCooldownSeconds;
         public readonly ItemView[] Vendor;
+        public readonly NativeObjectEffect[] ObjectEffects;
         public readonly ResourceView[] Resources;
         public readonly uint ResourceTargetId;
         public readonly bool ResourceWindowOpen;
@@ -1010,6 +1023,7 @@ namespace FortyTwoAndBeyond.Protocol
             Sector = world.Sector; Status = status; Position = world.Position;
             Orientation = (float[])world.Orientation.Clone(); HasPosition = world.HasPosition;
             Objects = world.Objects.Values.OrderBy(x => x.Name).ToArray(); Ready = ready;
+            ObjectEffects = world.ObjectEffects.Values.ToArray();
             Speed = world.Speed;
             TargetSpeed = world.TargetSpeed; Acceleration = world.Acceleration;
             AngularY = world.AngularY; AngularZ = world.AngularZ;
