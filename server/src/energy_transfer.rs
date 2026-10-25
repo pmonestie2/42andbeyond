@@ -65,8 +65,9 @@ impl PlayerSession {
             return Err(invalid("Damaged transfer device cannot be activated."));
         }
         let template = self.items.get(item.template)?;
-        let offer = transfer_reactor_energy(template)
+        let mut offer = transfer_reactor_energy(template)
             .ok_or_else(|| invalid("This item cannot transfer reactor energy."))?;
+        offer.cost *= self.equipment.ship.device_energy_multiplier;
         if self.energy < offer.cost {
             return Err(invalid("Insufficient reactor energy for transfer."));
         }

@@ -31,8 +31,9 @@ impl PlayerSession {
         if item.structure <= 0. {
             return Err(invalid("Damaged friendly device cannot be activated."));
         }
-        let offer = friendly_offer(self.items.get(item.template)?)
+        let mut offer = friendly_offer(self.items.get(item.template)?)
             .ok_or_else(|| invalid("This device has no supported friendly effect."))?;
+        offer.cost *= self.equipment.ship.device_energy_multiplier;
         if self.energy < offer.cost {
             return Err(invalid("Insufficient reactor energy for friendly device."));
         }

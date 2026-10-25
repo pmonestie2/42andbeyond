@@ -620,6 +620,8 @@ impl PlayerSession {
             if item.structure <= 0. {
                 return Err(invalid("Damaged device cannot be activated."));
             }
+            let activation_cost =
+                template.activation.energy * self.equipment.ship.device_energy_multiplier;
             if energy_transfer::transfer_reactor_energy(template).is_some() {
                 self.client_events.push(ClientEvent::EnergyTransfer {
                     target: self.target,
@@ -644,7 +646,6 @@ impl PlayerSession {
                 return Ok(());
             }
             if let Some((shield_percent, reactor_percent)) = reroute_shield_energy(template) {
-                let activation_cost = template.activation.energy;
                 let shield_cost = self.equipment.ship.shield_capacity * shield_percent / 100.;
                 let reactor_gain = self.equipment.ship.energy_capacity * reactor_percent / 100.;
                 if self.energy < activation_cost {
@@ -700,7 +701,7 @@ impl PlayerSession {
                 )));
                 return Ok(());
             }
-            if self.energy < template.activation.energy {
+            if self.energy < activation_cost {
                 self.pending.push(packets::message(&format!(
                     "Insufficient reactor energy for {}.",
                     effect.label()
@@ -709,7 +710,7 @@ impl PlayerSession {
             }
             let previous_energy = self.energy;
             let previous_active = self.active_device.clone();
-            self.energy -= template.activation.energy;
+            self.energy -= activation_cost;
             self.active_device = Some(ActiveDevice {
                 slot: slot as u8,
                 template: item.template,

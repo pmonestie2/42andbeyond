@@ -6387,6 +6387,51 @@ mod tests {
         assert!((restored.shield - restored.equipment.ship.shield_recharge).abs() < 0.001);
     }
 
+    /// Device cost gear changes local admission and survives a saved activation.
+    #[test]
+    fn equipped_device_energy_changes_self_buff_and_reroute_cost() {
+        let mut ship = session();
+        ship.logged_in = true;
+        ship.selected_peer = Some("127.0.0.1".parse().unwrap());
+        ship.endpoint = Some("127.0.0.1:22495".parse().unwrap());
+        let mut inventory = ship.inventory.clone();
+        inventory.equipped[1] = Some(crate::inventory::ItemInstance::stock(3343, 1));
+        inventory.equipped[2] = Some(crate::inventory::ItemInstance::stock(2628, 1));
+        inventory.equipped[9] = Some(crate::inventory::ItemInstance::stock(1810, 1));
+        ship.commit_inventory(inventory).unwrap();
+        assert!((ship.equipment.ship.device_energy_multiplier - 0.61).abs() < 0.0001);
+        let activation = [ship.player_id().to_le_bytes().as_slice(), &[2, 9]].concat();
+        ship.energy = 15.;
+        ship.activate_equipped_item(&activation).unwrap();
+        assert!(ship.active_device.is_some());
+        assert!((ship.energy - (15. - 22. * 0.61)).abs() < 0.001);
+        let restored =
+            PlayerSession::new(ship.sector.clone(), ship.bind, ship.state_dir.clone()).unwrap();
+        assert!((restored.energy - ship.energy).abs() < 0.001);
+        assert!(restored.active_device.is_some());
+
+        let mut inventory = ship.inventory.clone();
+        inventory.equipped[9] = Some(crate::inventory::ItemInstance::stock(1933, 1));
+        ship.commit_inventory(inventory).unwrap();
+        ship.shield = ship.equipment.ship.shield_capacity;
+        ship.energy = 60.;
+        let capacity = ship.equipment.ship.energy_capacity;
+        ship.activate_equipped_item(&activation).unwrap();
+        assert!((ship.energy - (60. - 85. * 0.61 + capacity * 0.18)).abs() < 0.001);
+
+        let mut inventory = ship.inventory.clone();
+        inventory.equipped[2] = Some(crate::inventory::ItemInstance::stock(2507, 1));
+        inventory.equipped[3] = Some(crate::inventory::ItemInstance::stock(856, 1));
+        inventory.equipped[9] = Some(crate::inventory::ItemInstance::stock(1810, 1));
+        ship.commit_inventory(inventory).unwrap();
+        ship.active_device = None;
+        assert!((ship.equipment.ship.device_energy_multiplier - 1.1).abs() < 0.0001);
+        ship.energy = 23.;
+        ship.activate_equipped_item(&activation).unwrap();
+        assert!(ship.active_device.is_none());
+        assert_eq!(ship.energy, 23.);
+    }
+
     #[test]
     fn activated_plasma_deflect_reduces_authoritative_incoming_damage() {
         let mut ship = session();

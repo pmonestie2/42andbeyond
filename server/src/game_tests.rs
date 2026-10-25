@@ -2618,6 +2618,7 @@ fn targeted_reactor_transfer_is_atomic_across_two_players_and_replacement() {
     let mut inventory: crate::inventory::Inventory =
         serde_json::from_slice(&fs::read(&inventory_path).unwrap()).unwrap();
     inventory.equipped[9] = Some(crate::inventory::ItemInstance::stock(1946, 1));
+    inventory.equipped[2] = Some(crate::inventory::ItemInstance::stock(2628, 1));
     fs::write(&inventory_path, serde_json::to_vec(&inventory).unwrap()).unwrap();
 
     let mut game = GameState::new(sector.clone(), bind, root.clone()).unwrap();
@@ -2656,7 +2657,7 @@ fn targeted_reactor_transfer_is_atomic_across_two_players_and_replacement() {
     )
     .unwrap();
     game.advance_at(0., crate::resources::unix_ms()).unwrap();
-    assert_eq!(game.sessions[&alice].energy_balance().0, before - 85.);
+    assert!((game.sessions[&alice].energy_balance().0 - (before - 85. * 0.61)).abs() < 0.001);
     assert_eq!(game.sessions[&bob].energy_balance().0, 229.);
     assert_eq!(game.energy_ledger.revision(), 1);
     game.handle_udp(SECTOR_PORT, "127.0.0.1:22731".parse().unwrap(), request)
@@ -2690,7 +2691,7 @@ fn targeted_reactor_transfer_is_atomic_across_two_players_and_replacement() {
     }
     drop(game);
     let mut restored = GameState::new(sector.clone(), bind, root.clone()).unwrap();
-    assert_eq!(restored.sessions[&alice].energy_balance().0, before - 85.);
+    assert!((restored.sessions[&alice].energy_balance().0 - (before - 85. * 0.61)).abs() < 0.001);
     assert_eq!(restored.sessions[&bob].energy_balance().0, 229.);
     restored
         .handle_event(
@@ -2719,7 +2720,7 @@ fn targeted_reactor_transfer_is_atomic_across_two_players_and_replacement() {
         )
         .is_err());
     assert_eq!(restored.energy_ledger.revision(), 1);
-    assert_eq!(restored.sessions[&alice].energy_balance().0, before - 85.);
+    assert!((restored.sessions[&alice].energy_balance().0 - (before - 85. * 0.61)).abs() < 0.001);
     assert_eq!(restored.sessions[&bob].energy_balance().0, 229.);
     fs::remove_dir(temporary).unwrap();
 
@@ -2739,12 +2740,12 @@ fn targeted_reactor_transfer_is_atomic_across_two_players_and_replacement() {
         )
         .unwrap();
     assert_eq!(restored.energy_ledger.revision(), 2);
-    assert_eq!(restored.sessions[&alice].energy_balance().0, before - 170.);
+    assert!((restored.sessions[&alice].energy_balance().0 - (before - 170. * 0.61)).abs() < 0.001);
     assert_eq!(restored.sessions[&bob].energy_balance().0, 358.);
     fs::remove_dir(recipient_temporary).unwrap();
     drop(restored);
     let mut restored = GameState::new(sector.clone(), bind, root.clone()).unwrap();
-    assert_eq!(restored.sessions[&alice].energy_balance().0, before - 170.);
+    assert!((restored.sessions[&alice].energy_balance().0 - (before - 170. * 0.61)).abs() < 0.001);
     assert_eq!(restored.sessions[&bob].energy_balance().0, 358.);
 
     // Real logout acknowledges the revision in player.json and retains the
@@ -2780,6 +2781,7 @@ fn grouped_scan_boost_replays_both_sides_after_stale_checkpoints() {
     let mut inventory: crate::inventory::Inventory =
         serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
     inventory.equipped[9] = Some(crate::inventory::ItemInstance::stock(1813, 1));
+    inventory.equipped[2] = Some(crate::inventory::ItemInstance::stock(2628, 1));
     fs::write(&path, serde_json::to_vec(&inventory).unwrap()).unwrap();
 
     let alice = FIRST_PLAYER_ID;
@@ -2794,6 +2796,16 @@ fn grouped_scan_boost_replays_both_sides_after_stale_checkpoints() {
         &[alice.to_le_bytes(), bob.to_le_bytes()].concat(),
     )
     .unwrap();
+    // Fifteen reactor points can fund the discounted 22-point device only.
+    game.sessions
+        .get_mut(&alice)
+        .unwrap()
+        .set_energy_for_test(15.);
+    game.sessions
+        .get_mut(&alice)
+        .unwrap()
+        .checkpoint_session(true)
+        .unwrap();
     let before_energy = game.sessions[&alice].energy_balance().0;
     let cost = crate::peer_buffs::friendly_offer(
         crate::items::ItemCatalog::load()
@@ -2802,7 +2814,8 @@ fn grouped_scan_boost_replays_both_sides_after_stale_checkpoints() {
             .unwrap(),
     )
     .unwrap()
-    .cost;
+    .cost
+        * 0.61;
     let before_scan = game.sessions[&bob]
         .peer_snapshot()
         .unwrap()

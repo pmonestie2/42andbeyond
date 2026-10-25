@@ -53,6 +53,8 @@ pub struct ShipStats {
     pub environment_duration_bonus: f32,
     pub summon_skill_bonus: f32,
     pub fold_distance_bonus: f32,
+    /// Equipped cost multiplier for activated items, including targeted devices.
+    pub device_energy_multiplier: f32,
     pub tractor_speed: f32,
     pub tractor_range: f32,
     pub deflects: [f32; 9],
@@ -428,6 +430,10 @@ impl EquipmentStats {
             } else {
                 0.
             },
+            device_energy_multiplier: modifiers
+                .apply_signed("STAT_DEVICE_ENERGY", 100.)
+                .clamp(10., 400.)
+                / 100.,
             tractor_speed: modifiers.apply("STAT_TRACTORBEAM", 200.).max(1.),
             // Long Tractor Beam has a catalog range modifier. The archived
             // fixed range ignored it; retain the current 2 km base.
@@ -989,6 +995,29 @@ mod tests {
             .level = 0;
         let untrained = EquipmentStats::derive(&inventory, &catalog, &skills).unwrap();
         assert_eq!(untrained.ship.fold_distance_bonus, 0.);
+    }
+    /// Public engine and beam modifiers apply once to every item activation cost.
+    #[test]
+    fn equipped_device_energy_cost_uses_strongest_intact_catalog_modifiers() {
+        let catalog = ItemCatalog::load().unwrap();
+        let skills = SkillCatalog::load().unwrap();
+        let mut inventory = Inventory::starter(&catalog).unwrap();
+        assert_eq!(
+            EquipmentStats::derive(&inventory, &catalog, &skills)
+                .unwrap()
+                .ship
+                .device_energy_multiplier,
+            1.
+        );
+        inventory.equipped[2] = Some(crate::inventory::ItemInstance::stock(2628, 1));
+        let reduced = EquipmentStats::derive(&inventory, &catalog, &skills).unwrap();
+        assert!((reduced.ship.device_energy_multiplier - 0.61).abs() < 0.0001);
+        inventory.equipped[3] = Some(crate::inventory::ItemInstance::stock(856, 1));
+        let combined = EquipmentStats::derive(&inventory, &catalog, &skills).unwrap();
+        assert!((combined.ship.device_energy_multiplier - 0.71).abs() < 0.0001);
+        inventory.equipped[2].as_mut().unwrap().structure = 0.;
+        let broken = EquipmentStats::derive(&inventory, &catalog, &skills).unwrap();
+        assert!((broken.ship.device_energy_multiplier - 1.1).abs() < 0.0001);
     }
     #[test]
     fn chance_modifiers_keep_percent_operations_at_zero_base_and_strongest_effects() {
