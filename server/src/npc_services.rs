@@ -4,6 +4,64 @@
 use super::*;
 use crate::npcs::{Branch, TalkNode};
 
+/// Returns:
+///     u32: Negotiate percentage at the trained rank, capped at the public rank-seven band.
+fn negotiate_percent(rank: u32) -> u32 {
+    if rank == 0 {
+        0
+    } else {
+        5 + 2 * rank.min(7)
+    }
+}
+
+/// Returns:
+///     u64: Price after an integer percentage, rounded down as in the native vendor.
+/// Raises:
+///     io::Error: The adjusted price exceeds the native credit range.
+fn price_percent(base: u64, percent: u32) -> io::Result<u64> {
+    u64::try_from(u128::from(base) * u128::from(percent) / 100)
+        .map_err(|_| invalid("Negotiated price exceeds the credit range."))
+}
+
+/// Returns:
+///     u64: Buy quote after Negotiate unlocks purchase discounts at rank three.
+fn purchase_price(base: u64, rank: u32) -> io::Result<u64> {
+    price_percent(
+        base,
+        100 - if rank >= 3 {
+            negotiate_percent(rank)
+        } else {
+            0
+        },
+    )
+}
+
+/// Returns:
+///     u64: Service fee after Negotiate unlocks that discount at rank five.
+fn service_price(base: u64, rank: u32) -> io::Result<u64> {
+    price_percent(
+        base,
+        100 - if rank >= 5 {
+            negotiate_percent(rank)
+        } else {
+            0
+        },
+    )
+}
+
+/// Returns:
+///     u64: Contract reward after the rank-seven Negotiate bonus.
+fn mission_reward(base: u64, rank: u32) -> io::Result<u64> {
+    price_percent(
+        base,
+        100 + if rank >= 7 {
+            negotiate_percent(rank)
+        } else {
+            0
+        },
+    )
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub(super) struct NpcInteraction {
     pub(super) npc: u32,
@@ -18,6 +76,30 @@ pub(super) struct NpcInteraction {
 }
 
 impl PlayerSession {
+    /// Returns:
+    ///     u64: Vendor offer after rank-three or higher Negotiate purchase discount.
+    pub(super) fn negotiated_purchase_price(&self, base: u64) -> io::Result<u64> {
+        purchase_price(base, self.skill_catalog.level(36))
+    }
+
+    /// Returns:
+    ///     u64: Vendor sale receipt after the trained Negotiate profit bonus.
+    pub(super) fn negotiated_sale_price(&self, base: u64) -> io::Result<u64> {
+        price_percent(base, 100 + negotiate_percent(self.skill_catalog.level(36)))
+    }
+
+    /// Returns:
+    ///     u64: Manufacturing or refining fee after rank-five Negotiate.
+    pub(super) fn negotiated_service_price(&self, base: u64) -> io::Result<u64> {
+        service_price(base, self.skill_catalog.level(36))
+    }
+
+    /// Returns:
+    ///     u64: Mission credit reward after rank-seven Negotiate.
+    pub(super) fn negotiated_mission_reward(&self, base: u64) -> io::Result<u64> {
+        mission_reward(base, self.skill_catalog.level(36))
+    }
+
     /// Require the avatar to occupy the NPC's actual station room.
     fn npc_in_current_room(&self, identity: u32) -> bool {
         self.sector.station.as_ref().is_some_and(|station| {
@@ -356,7 +438,7 @@ impl PlayerSession {
                 1 => {
                     candidate.credits = candidate
                         .credits
-                        .checked_add(amount)
+                        .checked_add(self.negotiated_mission_reward(amount)?)
                         .ok_or_else(|| invalid("Mission credit reward overflow."))?;
                 }
                 2 => {
@@ -634,7 +716,10 @@ impl PlayerSession {
 
     fn vendor_frames(&self, identity: u32) -> io::Result<Vec<Frame>> {
         let npc = self.npcs.npc(identity, self.sector.id)?;
-        let offers = self.npcs.group(npc)?.inventory(&self.items)?;
+        let mut offers = self.npcs.group(npc)?.inventory(&self.items)?;
+        for offer in &mut offers {
+            offer.price = self.negotiated_purchase_price(offer.price)?;
+        }
         let mut frames: Vec<Frame> = offers
             .iter()
             .map(|offer| self.items.get(offer.item).map(ItemTemplate::packet))
@@ -656,7 +741,7 @@ impl PlayerSession {
                 let price = if template.level > 9 {
                     0
                 } else {
-                    group.buy_price(template.id, &self.items)?
+                    self.negotiated_sale_price(group.buy_price(template.id, &self.items)?)?
                 };
                 Ok((template.id, price))
             })
@@ -722,7 +807,7 @@ impl PlayerSession {
                 self.inventory.purchased(
                     offer.item,
                     transfer.quantity,
-                    offer.price,
+                    self.negotiated_purchase_price(offer.price)?,
                     transfer.destination_slot,
                     &self.items,
                 )
@@ -737,11 +822,112 @@ impl PlayerSession {
                 self.inventory.sold(
                     transfer.source_slot,
                     transfer.quantity,
-                    group.buy_price(item.template, &self.items)?,
+                    self.negotiated_sale_price(group.buy_price(item.template, &self.items)?)?,
                     &self.items,
                 )
             }
             _ => Err(invalid("Unsupported vendor transfer path or destination.")),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Native rank gates and integer rounding agree across all price paths.
+    #[test]
+    fn negotiate_rank_bands_gate_vendor_service_and_contract_prices() {
+        for (rank, bonus) in [(0, 0), (1, 7), (2, 9), (3, 11), (5, 15), (7, 19)] {
+            assert_eq!(negotiate_percent(rank), bonus);
+            assert_eq!(
+                price_percent(2190, 100 + bonus).unwrap(),
+                2190 * u64::from(100 + bonus) / 100
+            );
+        }
+        assert_eq!(purchase_price(1000, 2).unwrap(), 1000);
+        assert_eq!(purchase_price(1000, 3).unwrap(), 890);
+        assert_eq!(service_price(1000, 4).unwrap(), 1000);
+        assert_eq!(service_price(1000, 5).unwrap(), 850);
+        assert_eq!(mission_reward(1000, 6).unwrap(), 1000);
+        assert_eq!(mission_reward(1000, 7).unwrap(), 1190);
+        assert_eq!(price_percent(2190, 111).unwrap(), 2430);
+        assert_eq!(
+            price_percent(u64::MAX, 119).unwrap_err().kind(),
+            io::ErrorKind::InvalidData
+        );
+    }
+
+    /// Vendor quotes and durable buy/sell candidates use the same TT discount.
+    #[test]
+    fn trained_tradesman_vendor_prices_match_authoritative_transfers() {
+        let root =
+            std::env::temp_dir().join(format!("enb-negotiate-vendor-{}", rand::random::<u64>()));
+        let mut account =
+            crate::account::Account::create("tt".into(), "pass", "Trader".into()).unwrap();
+        account.character.race = 0;
+        account.character.profession = 1;
+        account.save_new(&root).unwrap();
+        let sector: Sector = serde_json::from_str(include_str!("../data/sector.json")).unwrap();
+        let mut ship =
+            PlayerSession::new(sector, Ipv4Addr::new(127, 0, 0, 2), root.clone()).unwrap();
+        ship.sector = ship.sectors.sector(10761).unwrap();
+        ship.logged_in = true;
+        let room = ship
+            .sector
+            .station
+            .as_ref()
+            .unwrap()
+            .npcs
+            .iter()
+            .find(|npc| npc.id == 16)
+            .unwrap()
+            .room;
+        ship.station_pose = Some(StationPose {
+            room,
+            orientation: 0.,
+            position: [0.; 3],
+            action: 0x41,
+        });
+        ship.open_npc(16).unwrap();
+        ship.talk_choice(&[ship.player_id().to_le_bytes().as_slice(), &[2]].concat())
+            .unwrap();
+        let group = ship.npcs.group(ship.npcs.npc(16, 10761).unwrap()).unwrap();
+        let offer = group.inventory(&ship.items).unwrap()[0];
+        let buy = ship.negotiated_purchase_price(offer.price).unwrap();
+        assert_eq!(buy, offer.price * 81 / 100);
+        let original = 10_000_000;
+        ship.inventory.credits = original;
+        let purchased = ship
+            .vendor_transaction(ItemTransfer {
+                source: 4,
+                source_slot: 0,
+                destination: 1,
+                destination_slot: 0,
+                quantity: 1,
+            })
+            .unwrap();
+        assert_eq!(purchased.credits, original - buy);
+        ship.inventory = purchased;
+        let base_sale = group.buy_price(offer.item, &ship.items).unwrap();
+        assert_eq!(
+            ship.vendor_prices(&ship.inventory).unwrap()[&offer.item],
+            ship.negotiated_sale_price(base_sale).unwrap()
+        );
+        let sold = ship
+            .vendor_transaction(ItemTransfer {
+                source: 1,
+                source_slot: 0,
+                destination: 4,
+                destination_slot: 0,
+                quantity: 1,
+            })
+            .unwrap();
+        assert_eq!(
+            sold.credits,
+            original - buy + ship.negotiated_sale_price(base_sale).unwrap()
+        );
+        drop(ship);
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

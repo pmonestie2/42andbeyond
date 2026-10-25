@@ -376,7 +376,8 @@ impl PlayerSession {
         let product = sample
             .as_ref()
             .map_or(window.selected, |sample| sample.template);
-        let recipe = CraftRecipe::resolve(product, &self.items)?;
+        let mut recipe = CraftRecipe::resolve(product, &self.items)?;
+        recipe.cost = self.negotiated_service_price(recipe.cost)?;
         let recovered_components = if operation == CraftOperation::Dismantle {
             let chance = recipe.dismantle_chance(&self.skill_catalog, &self.items)?;
             recipe
@@ -558,7 +559,7 @@ impl PlayerSession {
         let Ok(recipe) = CraftRecipe::resolve(view.selected, &self.items) else {
             return Ok(());
         };
-        view.cost = recipe.cost;
+        view.cost = self.negotiated_service_price(recipe.cost)?;
         view.base_cost = recipe.cost;
         let mut available = BTreeMap::<u32, u32>::new();
         for item in self.inventory.cargo.iter().flatten() {
