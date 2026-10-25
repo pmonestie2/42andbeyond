@@ -98,15 +98,15 @@ namespace FortyTwoAndBeyond.Client
             if (snapshot == null || index < 0 || index >= slots.Length) return;
             LoadSlots(snapshot.PlayerId);
             if (slots[index] < 0 || !snapshot.AvailableAbilities.Contains((uint)slots[index])) return;
-            if (slots[index] != 89 && SupportTargetPending(snapshot) ||
+            if (slots[index] != 89 && slots[index] != 95 && SupportTargetPending(snapshot) ||
                 slots[index] == 125 && SelectedCrew(snapshot) == null) return;
             ActivateForSelectedTarget((uint)slots[index], snapshot);
         }
 
-        /// <summary>Preserve the chosen Recharge Shields recipient across target selection.</summary>
+        /// <summary>Preserve the chosen shield or hull repair recipient across target selection.</summary>
         private void ActivateForSelectedTarget(uint id, Snapshot snapshot)
         {
-            if (id != 89) { client.ActivateAbility(id); return; }
+            if (id != 89 && id != 95) { client.ActivateAbility(id); return; }
             uint selected = snapshot.SelectedTargetId;
             ShipActor peer = snapshot.Players.FirstOrDefault(actor => actor.Id == selected && actor.HasPosition);
             uint recipient = pendingSupportTarget != 0 && Time.unscaledTime - pendingSupportAt <= 3 ?
@@ -133,7 +133,9 @@ namespace FortyTwoAndBeyond.Client
         private void SupportTargetBar(Snapshot snapshot, Rect panel)
         {
             ShipActor selectedCrew = SelectedCrew(snapshot);
-            ShipActor selectedPeer = snapshot.AvailableAbilities.Contains(89u) ?
+            bool peerRepair = snapshot.AvailableAbilities.Contains(89u) ||
+                snapshot.AvailableAbilities.Contains(95u);
+            ShipActor selectedPeer = peerRepair ?
                 snapshot.Players.FirstOrDefault(actor => actor.Id == snapshot.SelectedTargetId &&
                     actor.HasPosition) : selectedCrew;
             uint recipient = selectedPeer?.Id ?? snapshot.PlayerId;
@@ -148,7 +150,7 @@ namespace FortyTwoAndBeyond.Client
             if (GUI.Button(new Rect(panel.x + 18, panel.y + 229, 86, 29), "SELF", flightHud.ButtonStyle))
             { pendingSupportTarget = snapshot.PlayerId; pendingSupportAt = Time.unscaledTime; client.SelectAbilitySelf(); }
             ShipActor[] crew = snapshot.Players.Where(actor => actor.HasPosition &&
-                (snapshot.AvailableAbilities.Contains(89u) ||
+                (peerRepair ||
                  snapshot.Group.Members.Any(member => member.Id == actor.Id)))
                 .OrderByDescending(actor => snapshot.Group.Members.Any(member => member.Id == actor.Id))
                 .Take(4).ToArray();
@@ -268,7 +270,7 @@ namespace FortyTwoAndBeyond.Client
                     ability.id == 65 ? "Jumpstart  ·  ENERGY DEPENDS ON TARGET" :
                     $"{ability.name}  ·  RANK {ability.rank}  ·  {ability.energy:0} ENERGY";
                 GUI.enabled = assigningSlot >= 0 || recovery <= 0 && !charging &&
-                    (ability.id == 89 || !SupportTargetPending(snapshot)) &&
+                    (ability.id == 89 || ability.id == 95 || !SupportTargetPending(snapshot)) &&
                     (ability.id != 125 || SelectedCrew(snapshot) != null);
                 if (GUILayout.Button(new GUIContent(label, description), flightHud.ButtonStyle, GUILayout.Height(34)))
                 {

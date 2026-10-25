@@ -706,7 +706,7 @@ namespace FortyTwoAndBeyond.Protocol
         /// <summary>Activate an ability listed in this character's authoritative RPG state.</summary>
         public void ActivateAbility(uint id)
         {
-            if (id == 89)
+            if (id == 89 || id == 95)
             {
                 uint selected = World.Equipment.TargetId;
                 ActivateAbilityFor(id, World.Players.TryGetValue(selected, out ShipActor peer) &&
@@ -719,22 +719,23 @@ namespace FortyTwoAndBeyond.Protocol
             Status = "Activating ability " + id;
         }
 
-        /// <summary>Cast Recharge Shields only after the selected recipient is acknowledged.</summary>
+        /// <summary>Cast an ally shield or hull repair after recipient acknowledgment.</summary>
         public void ActivateAbilityFor(uint id, uint target)
         {
-            if (id != 89 || !Ready || gate != 0 || World.Station != null ||
+            if (id != 89 && id != 95 || !Ready || gate != 0 || World.Station != null ||
                 World.Equipment.Hull <= 0 || !World.AvailableAbilities.Contains(id)) return;
+            string label = id == 89 ? "Recharge Shields" : "Repair Hull";
             if (target != Player && (!World.Players.TryGetValue(target, out ShipActor peer) ||
                 !peer.HasPosition))
-            { Status = "Recharge Shields recipient is no longer visible"; return; }
+            { Status = label + " recipient is no longer visible"; return; }
             pendingAbilityTarget = pendingAbilityId = 0;
             if (World.Equipment.TargetId == target)
             { Send(0x58, Wire.Body(w => { w.Write(Player); w.Write(0u); w.Write(id); }));
-              Status = "Charging Recharge Shields"; return; }
+              Status = "Charging " + label; return; }
             SelectTarget(target);
             pendingAbilityTarget = target; pendingAbilityId = id;
             pendingAbilityAt = clock.Elapsed.TotalSeconds;
-            Status = "Waiting for Recharge Shields target acknowledgment";
+            Status = "Waiting for " + label + " target acknowledgment";
         }
 
         /// <summary>Ask rescue control for the native incapacitation choices.</summary>
@@ -820,7 +821,7 @@ namespace FortyTwoAndBeyond.Protocol
                             (target == Player || World.Players.TryGetValue(target, out ShipActor recipient) &&
                              recipient.HasPosition))
                         { Send(0x58, Wire.Body(w => { w.Write(Player); w.Write(0u); w.Write(ability); }));
-                          Status = "Charging Recharge Shields"; }
+                          Status = "Charging " + (ability == 89 ? "Recharge Shields" : "Repair Hull"); }
                     }
                     if (b.Length == 8 && pendingDeviceSlot >= 0 &&
                         Wire.U32(b, 0) == pendingDeviceTarget && Wire.U32(b, 4) == uint.MaxValue)

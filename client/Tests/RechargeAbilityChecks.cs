@@ -18,7 +18,7 @@ internal static class RechargeAbilityChecks
         }
     }
 
-    /// <summary>Verify acknowledged ally and self Recharge Shields casts on a disposable server.</summary>
+    /// <summary>Verify native ally and self shield and hull repairs on a disposable server.</summary>
     public static void Live(string host)
     {
         using (var caster = new LocalSession(CancellationToken.None))
@@ -41,7 +41,18 @@ internal static class RechargeAbilityChecks
             Wait(caster, recipient, () => caster.World.Equipment.TargetId == caster.Player &&
                 caster.World.Messages.Count(message => message.Contains("Recharge Shields completed.")) >= 2,
                 "Acknowledged self Recharge Shields did not complete.");
-            Console.WriteLine("PASS: native Recharge Shields target acknowledgment, ally cast, self cast");
+            if (!caster.World.AvailableAbilities.Contains(77u) ||
+                !caster.World.AvailableAbilities.Contains(95u))
+                throw new Exception("Hull Patch or Repair Hull was not advertised for TT.");
+            caster.ActivateAbilityFor(95, recipient.Player);
+            Wait(caster, recipient, () => caster.World.Equipment.TargetId == recipient.Player &&
+                caster.World.Messages.Any(message => message.Contains("Hull repair completed.")),
+                "Acknowledged ally Repair Hull did not complete.");
+            caster.ActivateAbility(77);
+            Wait(caster, recipient, () => caster.World.Messages.Count(message =>
+                message.Contains("Hull repair completed.")) >= 2,
+                "Self Patch Hull did not complete with an ally selected.");
+            Console.WriteLine("PASS: native Recharge Shields and Hull Patch/Repair Hull ally/self casts");
         }
     }
 }

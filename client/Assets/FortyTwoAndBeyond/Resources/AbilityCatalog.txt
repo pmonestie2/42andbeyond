@@ -16,7 +16,9 @@
 66	15	Jupiter Gate	Creates a temporary wormhole, teleporting all group members to Jupiter.	wormhole	2	50.0	3.0	10.0	3000
 67	15	Kailaasa Gate	Creates a temporary wormhole, teleporting all group members to Kailaasa.	wormhole	1	35.0	3.0	10.0	3000
 68	23	Lesser Environment Shield	Creates a shield that reduces environmental effects by 100% and reduces incoming damage by 10%.	environment	3	100.0	1.0	10.0	3000
+77	27	Patch Hull	Restore your own damaged hull after a short charge.	hull_patch	1	50.0	0.0	0.0	0
 89	46	Recharge Shields	Recharge the selected pilot's shields after a short charge.	recharge_shields	3	125.0	1.0	0.0	3004
+95	27	Repair Hull	Repair the selected pilot's hull after a short charge.	hull_patch	3	125.0	1.0	0.0	3004
 106	53	Shield Drain	Drains shields from an enemy target.	leech	1	35.0	1.0	10.0	3000
 108	53	Shield Leech	Drains shields from a single hostile and transfers a portion of that as energy to the player.	leech	3	75.0	1.0	10.0	3000
 109	53	Shield Leeching Sphere	Drains shields from all targets within 1500 units of the target and transfers a portion of that as energy to the player.	leech	6	300.0	1.0	10.0	3000
