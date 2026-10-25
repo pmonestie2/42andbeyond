@@ -1,9 +1,9 @@
 //! Progen Sentinel Power Down tier rules from the public skill reference:
 //! https://net7wiki.bmsite.net/index.php?title=Power_Down
 //! The archived PlayerClass.cpp names the abilities but has no executable
-//! Power Down handler. Ranked success probabilities and gear's STAT_POWERDOWN
-//! bonuses are not quantified there; an active ship is fully hidden from MOB
-//! targeting rather than inventing an unverified random failure rate.
+//! Power Down handler. Ranked success probabilities are not quantified there;
+//! an active ship is fully hidden from MOB targeting. Equipped skill levels
+//! apply bounded local cost and recharge tuning, without a random failure rate.
 
 pub const COOLDOWN_SECONDS: f32 = 3.;
 pub const STATUS_SLOT: usize = 12;
@@ -41,6 +41,18 @@ pub fn recharge_rate(ordinary: f32, base: f32, fraction: f32) -> f32 {
     (ordinary - base + base * fraction).max(0.)
 }
 
+/// Returns:
+///     f32: A locally tuned activation cost after equipped skill levels.
+pub fn activation_energy(base: f32, equipped_bonus: f32) -> f32 {
+    base * (1. - equipped_bonus.clamp(0., 4.) * 0.05)
+}
+
+/// Returns:
+///     f32: A bounded base recharge fraction after equipped skill levels.
+pub fn equipped_recharge_fraction(trained_fraction: f32, equipped_bonus: f32) -> f32 {
+    (trained_fraction + equipped_bonus.clamp(0., 4.) * 0.05).clamp(0., 1.)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -55,5 +67,7 @@ mod tests {
         assert_eq!(tier(4, 6), None);
         assert_eq!(recharge_rate(150., 100., 0.), 50.);
         assert_eq!(recharge_rate(150., 100., 0.5), 100.);
+        assert_eq!(activation_energy(100., 4.), 80.);
+        assert_eq!(equipped_recharge_fraction(0.5, 4.), 0.7);
     }
 }

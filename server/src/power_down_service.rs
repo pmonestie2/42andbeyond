@@ -37,7 +37,11 @@ impl PlayerSession {
         }
         let tier = crate::power_down::tier(ability.id, self.skill_catalog.level(37))
             .ok_or_else(|| invalid("Power Down rank is not trained."))?;
-        if self.energy < tier.energy {
+        let energy_cost = crate::power_down::activation_energy(
+            tier.energy,
+            self.equipment.ship.power_down_skill_bonus,
+        );
+        if self.energy < energy_cost {
             return Err(invalid("Insufficient reactor energy."));
         }
         let before = self.energy;
@@ -45,7 +49,7 @@ impl PlayerSession {
             .skills
             .cooldowns
             .insert(37, crate::power_down::COOLDOWN_SECONDS);
-        self.energy -= tier.energy;
+        self.energy -= energy_cost;
         self.skills.power_down_ability = Some(ability.id);
         if let Err(error) = self.checkpoint_session(true) {
             self.energy = before;
@@ -187,6 +191,50 @@ mod tests {
             assert_eq!(ship.skills.power_down_ability, None);
             assert_eq!(definition.skill, 37);
         }
+    }
+
+    /// Equipped Power Down improves cost and recharge without unlocking a tier.
+    #[test]
+    fn equipped_power_down_bonus_survives_active_restart() {
+        let mut ship = sentinel("GearedSentinel", FIRST_PLAYER_ID + 17);
+        ship.inventory.equipped[9] = Some(crate::inventory::ItemInstance::stock(1924, 1));
+        ship.refresh_equipment().unwrap();
+        std::fs::write(
+            ship.state_dir.join("inventory.json"),
+            serde_json::to_vec(&ship.inventory).unwrap(),
+        )
+        .unwrap();
+        let stats = ship.equipment.ship;
+        assert!((stats.power_down_skill_bonus - 1.53).abs() < 0.001);
+        assert!(crate::power_down::tier(4, 6).is_none());
+        let before = ship.energy;
+        ship.begin_ability_for(1, ship.player_id()).unwrap();
+        let cost = crate::power_down::activation_energy(75., stats.power_down_skill_bonus);
+        assert!((ship.energy - (before - cost)).abs() < 0.001);
+        let root = ship.state_dir.clone();
+        let sector = ship.sector.clone();
+        drop(ship);
+        let mut resumed = PlayerSession::new(sector, Ipv4Addr::LOCALHOST, root).unwrap();
+        assert!(resumed.restore_session().unwrap());
+        assert_eq!(resumed.skills.power_down_ability, Some(1));
+        assert!((resumed.equipment.ship.power_down_skill_bonus - 1.53).abs() < 0.001);
+        resumed.energy = 0.;
+        resumed.shield = 0.;
+        resumed.advance_ship_resources(1.);
+        let energy_fraction = crate::power_down::equipped_recharge_fraction(0., 1.53);
+        let shield_fraction = crate::power_down::equipped_recharge_fraction(0.5, 1.53);
+        let expected_energy = crate::power_down::recharge_rate(
+            stats.energy_recharge,
+            stats.energy_recharge_base,
+            energy_fraction,
+        );
+        let expected_shield = crate::power_down::recharge_rate(
+            stats.shield_recharge,
+            stats.shield_recharge_base,
+            shield_fraction,
+        );
+        assert!((resumed.energy - expected_energy).abs() < 0.001);
+        assert!((resumed.shield - expected_shield).abs() < 0.001);
     }
 
     /// A hostile MOB drops hate on the powered-down pilot and selects a peer.

@@ -194,7 +194,10 @@ impl PlayerSession {
                     crate::power_down::recharge_rate(
                         stats.energy_recharge,
                         stats.energy_recharge_base,
-                        tier.reactor_recharge_fraction,
+                        crate::power_down::equipped_recharge_fraction(
+                            tier.reactor_recharge_fraction,
+                            stats.power_down_skill_bonus,
+                        ),
                     )
                 });
             self.energy = (self.energy + recharge * dt).min(stats.energy_capacity);
@@ -208,7 +211,10 @@ impl PlayerSession {
                     crate::power_down::recharge_rate(
                         stats.shield_recharge,
                         stats.shield_recharge_base,
-                        tier.shield_recharge_fraction,
+                        crate::power_down::equipped_recharge_fraction(
+                            tier.shield_recharge_fraction,
+                            stats.power_down_skill_bonus,
+                        ),
                     )
                 });
             self.shield = (self.shield + recharge * dt).min(stats.shield_capacity);
