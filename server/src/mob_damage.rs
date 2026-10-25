@@ -96,6 +96,11 @@ impl PlayerSession {
             },
         )?;
         reflection += result.reported_damage * self.equipment.ship.counterstrike_percent / 100.;
+        reflection += crate::energy_feedback::reflected(
+            result.reported_damage,
+            kind.index(),
+            self.equipment.ship.energy_feedback_percent,
+        );
         if let Some(field) = &self.repulsor_field_buff {
             let feedback = field
                 .feedback(
@@ -107,6 +112,9 @@ impl PlayerSession {
                 .ok_or_else(|| invalid("Invalid Repulsor Field feedback."))?;
             reflection += feedback.reflected;
         }
+        // All reflected branches share one durable receipt and must remain
+        // within its validated bound even for exceptional incoming hit sizes.
+        reflection = reflection.min(crate::repulsor_field::MAX_TOTAL_REFLECTION);
         let mut motion = self.motion.clone();
         let mut warp = self.warp.clone();
         let warp_event = (result.hull_branch && warp.active())
@@ -426,6 +434,36 @@ mod tests {
         drop(ship);
         let mut resumed = PlayerSession::new(sector, bind, root).unwrap();
         assert_eq!(resumed.receive_mob_hit(&shot).unwrap(), first);
+    }
+
+    /// Energy Feedback adds only to Energy hits and replays its frozen return.
+    #[test]
+    fn equipped_energy_feedback_stacks_with_counterstrike_without_repeat() {
+        let mut ship = ship();
+        ship.inventory.equipped[9] = Some(crate::inventory::ItemInstance::stock(5335, 1));
+        ship.inventory.equipped[10] = Some(crate::inventory::ItemInstance::stock(2178, 1));
+        ship.refresh_equipment().unwrap();
+        let mut shot = hit(&ship, 141);
+        shot.damage = 50.;
+        let energy_plan = ship.plan_mob_damage(&shot, DamageType::Energy).unwrap();
+        let basis = energy_plan.result.reported_damage;
+        assert!((energy_plan.reflection - basis * (0.042 + 0.084)).abs() < 0.001);
+        let explosive_plan = ship.plan_mob_damage(&shot, DamageType::Explosive).unwrap();
+        assert!(
+            (explosive_plan.reflection - explosive_plan.result.reported_damage * 0.084).abs()
+                < 0.001
+        );
+        let first = ship.receive_mob_hit(&shot).unwrap();
+        assert!((first - energy_plan.reflection).abs() < 0.001);
+        let mut inventory = ship.inventory.clone();
+        inventory.equipped[9].as_mut().unwrap().structure = 0.;
+        inventory.equipped[10].as_mut().unwrap().structure = 0.;
+        ship.commit_inventory(inventory).unwrap();
+        assert_eq!(ship.equipment.ship.energy_feedback_percent, 0.);
+        assert_eq!(ship.receive_mob_hit(&shot).unwrap(), first);
+        let mut restored =
+            PlayerSession::new(ship.sector.clone(), ship.bind, ship.state_dir.clone()).unwrap();
+        assert_eq!(restored.receive_mob_hit(&shot).unwrap(), first);
     }
 
     /// A hull hit wears only its selected equipment category at the frozen rate.

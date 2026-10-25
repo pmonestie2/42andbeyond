@@ -6,6 +6,7 @@ pub mod call_forward;
 pub mod content;
 pub mod crafting;
 pub mod crypto;
+pub mod energy_feedback;
 pub mod energy_ledger;
 pub mod energy_leech;
 pub mod enrage;

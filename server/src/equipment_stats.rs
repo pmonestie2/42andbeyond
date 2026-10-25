@@ -51,6 +51,8 @@ pub struct ShipStats {
     pub cloak_time_bonus: f32,
     /// Percent of an incoming instant MOB hit reflected to its attacker.
     pub counterstrike_percent: f32,
+    /// Equipped incoming Energy damage returned to the attacker.
+    pub energy_feedback_percent: f32,
     pub environment_skill_bonus: f32,
     pub environment_duration_bonus: f32,
     pub summon_skill_bonus: f32,
@@ -407,6 +409,9 @@ impl EquipmentStats {
                 0.
             },
             counterstrike_percent: modifiers.apply("STAT_COUNTERSTRIKE", 0.).clamp(0., 40.),
+            energy_feedback_percent: modifiers
+                .chance_bonus(crate::energy_feedback::STAT)
+                .clamp(0., crate::energy_feedback::MAX_PERCENT),
             environment_skill_bonus: if skills.level(23) > 0 {
                 modifiers
                     .apply_signed("SKILL_ENVIRONMENT_SHIELD", 0.)
@@ -1021,6 +1026,37 @@ mod tests {
         inventory.equipped[2].as_mut().unwrap().structure = 0.;
         let broken = EquipmentStats::derive(&inventory, &catalog, &skills).unwrap();
         assert!((broken.ship.device_energy_multiplier - 1.1).abs() < 0.0001);
+    }
+
+    /// Energy Feedback's catalog typo and percent operation still reach combat.
+    #[test]
+    fn energy_feedback_gear_uses_strongest_intact_public_effect() {
+        let catalog = ItemCatalog::load().unwrap();
+        let skills = SkillCatalog::load().unwrap();
+        let mut inventory = Inventory::starter(&catalog).unwrap();
+        assert_eq!(
+            EquipmentStats::derive(&inventory, &catalog, &skills)
+                .unwrap()
+                .ship
+                .energy_feedback_percent,
+            0.
+        );
+        inventory.equipped[9] = Some(crate::inventory::ItemInstance::stock(5335, 1));
+        assert!(
+            (EquipmentStats::derive(&inventory, &catalog, &skills)
+                .unwrap()
+                .ship
+                .energy_feedback_percent
+                - 4.2)
+                .abs()
+                < 0.0001
+        );
+        inventory.equipped[3] = Some(crate::inventory::ItemInstance::stock(1158, 1));
+        let geared = EquipmentStats::derive(&inventory, &catalog, &skills).unwrap();
+        assert_eq!(geared.ship.energy_feedback_percent, 14.);
+        inventory.equipped[3].as_mut().unwrap().structure = 0.;
+        let broken = EquipmentStats::derive(&inventory, &catalog, &skills).unwrap();
+        assert!((broken.ship.energy_feedback_percent - 4.2).abs() < 0.0001);
     }
     #[test]
     fn chance_modifiers_keep_percent_operations_at_zero_base_and_strongest_effects() {
