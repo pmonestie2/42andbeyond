@@ -26,27 +26,29 @@ fn price_percent(base: u64, percent: u32) -> io::Result<u64> {
 /// Returns:
 ///     u64: Buy quote after Negotiate unlocks purchase discounts at rank three.
 fn purchase_price(base: u64, rank: u32) -> io::Result<u64> {
-    price_percent(
+    let quoted = price_percent(
         base,
         100 - if rank >= 3 {
             negotiate_percent(rank)
         } else {
             0
         },
-    )
+    )?;
+    Ok(if base > 0 { quoted.max(1) } else { 0 })
 }
 
 /// Returns:
 ///     u64: Service fee after Negotiate unlocks that discount at rank five.
 fn service_price(base: u64, rank: u32) -> io::Result<u64> {
-    price_percent(
+    let quoted = price_percent(
         base,
         100 - if rank >= 5 {
             negotiate_percent(rank)
         } else {
             0
         },
-    )
+    )?;
+    Ok(if base > 0 { quoted.max(1) } else { 0 })
 }
 
 /// Returns:
@@ -847,8 +849,10 @@ mod tests {
         }
         assert_eq!(purchase_price(1000, 2).unwrap(), 1000);
         assert_eq!(purchase_price(1000, 3).unwrap(), 890);
+        assert_eq!(purchase_price(1, 7).unwrap(), 1);
         assert_eq!(service_price(1000, 4).unwrap(), 1000);
         assert_eq!(service_price(1000, 5).unwrap(), 850);
+        assert_eq!(service_price(1, 7).unwrap(), 1);
         assert_eq!(mission_reward(1000, 6).unwrap(), 1000);
         assert_eq!(mission_reward(1000, 7).unwrap(), 1190);
         assert_eq!(price_percent(2190, 111).unwrap(), 2430);

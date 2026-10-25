@@ -59,9 +59,9 @@ impl CraftRecipe {
     /// Returns:
     ///     bool: Whether a saved fee is the catalog price or a rank-five to seven Negotiate quote.
     fn valid_quoted_cost(base: u64, quoted: u64) -> bool {
-        [100u32, 85, 83, 81]
-            .into_iter()
-            .any(|percent| u128::from(base) * u128::from(percent) / 100 == u128::from(quoted))
+        [100u32, 85, 83, 81].into_iter().any(|percent| {
+            (u128::from(base) * u128::from(percent) / 100).max(1) == u128::from(quoted)
+        })
     }
 
     /// Check recipe identity while allowing a frozen Negotiate service discount.
@@ -659,6 +659,7 @@ mod tests {
         assert!(discounted
             .manufacture(&inventory, &skills, &items, "TestBuilder")
             .is_err());
+        assert!(CraftRecipe::valid_quoted_cost(1, 1)); // Tiny ammo fees stay nonzero.
         assert_eq!(built.trade_xp, 50);
         assert_eq!(
             built
