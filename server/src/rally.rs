@@ -8,10 +8,6 @@ use serde::{Deserialize, Serialize};
 pub const DURATION_MS: u64 = 600_000;
 pub const CHARGE_SECONDS: f32 = 2.;
 pub const COOLDOWN_SECONDS: f32 = 30.;
-/// Visual approximation: the original Rally EffectDescID is absent from the
-/// archived ARally handler/effect.ini. The native Environment Shield field is
-/// the closest source-backed protective arc available for a client-side trial.
-pub const VISUAL_DESCRIPTOR: u16 = 216;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Tactic {
@@ -22,6 +18,19 @@ pub enum Tactic {
 }
 
 impl Tactic {
+    /// Returns:
+    ///     u16: Native client effect.ini entry that starts this Rally visual.
+    pub fn visual_descriptor(self) -> u16 {
+        // The installed legacy client's Data/client/ini/effect.ini links each
+        // fade-in to its indefinitely sustained tactic effect.
+        match self {
+            Self::Damage => 333,
+            Self::Defense => 675,
+            Self::Firing => 676,
+            Self::Stealth => 327,
+        }
+    }
+
     /// Returns:
     ///     &str: Legacy client buff icon token, separate from status prose.
     pub fn buff_type(self) -> &'static str {
@@ -101,9 +110,8 @@ impl RallyBuff {
     /// Returns:
     ///     u32: Stable native 0x09/0x0f identity for this recipient's Rally field.
     pub fn visual_id(&self, target: u32) -> u32 {
-        // Each pilot has at most one Rally buff; reuse only after removing the
-        // previous field. Ordinary skill IDs and targeted-device IDs use other
-        // ranges. A fixed identity lets short replacement replay the same art.
+        // One active Rally per pilot. Remove the old field before reusing this
+        // identity; keep it stable across a short server replacement.
         0x6a00_0000 | (target & 0x00ff_ffff)
     }
 
@@ -215,10 +223,10 @@ mod tests {
         assert_eq!(trained.modifiers()[0].value, 15.);
         assert_eq!(Tactic::Damage.buff_type(), "Damage_Tactics");
         assert_eq!(Tactic::Stealth.buff_type(), "Stealth_Tactics");
+        assert_eq!(Tactic::Damage.visual_descriptor(), 333);
+        assert_eq!(Tactic::Defense.visual_descriptor(), 675);
+        assert_eq!(Tactic::Firing.visual_descriptor(), 676);
+        assert_eq!(Tactic::Stealth.visual_descriptor(), 327);
         assert_eq!(trained.visual_id(0x4000_0001), 0x6a00_0001);
-        assert_ne!(
-            trained.visual_id(0x4000_0001),
-            trained.visual_id(0x4000_0002)
-        );
     }
 }

@@ -68,7 +68,7 @@ impl PlayerSession {
         self.pending.push(packets::object_effect(
             self.player_id(),
             buff.visual_id(self.player_id()),
-            crate::rally::VISUAL_DESCRIPTOR,
+            buff.tactic.visual_descriptor(),
             self.tick_ms(),
         ));
         self.pending.push(packets::message(&format!(

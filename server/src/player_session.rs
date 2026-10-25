@@ -3065,8 +3065,7 @@ mod tests {
         let visual = ship.rally_buff.as_ref().unwrap().visual_id(id);
         assert!(ship.pending.iter().any(|frame| frame.opcode == 9
             && frame.body.get(1..5) == Some(id.to_le_bytes().as_slice())
-            && frame.body.get(5..7)
-                == Some(crate::rally::VISUAL_DESCRIPTOR.to_le_bytes().as_slice())
+            && frame.body.get(5..7) == Some(333u16.to_le_bytes().as_slice())
             && frame.body.get(7..11) == Some(visual.to_le_bytes().as_slice())));
         ship.pending.clear();
         ship.rally_buff.as_mut().unwrap().expires_at_ms = crate::resources::unix_ms() - 1;
@@ -3107,6 +3106,7 @@ mod tests {
             && frame.body.windows(token.len()).any(|part| part == token)));
         let visual = ship.rally_buff.as_ref().unwrap().visual_id(id);
         assert!(ship.pending.iter().any(|frame| frame.opcode == 9
+            && frame.body.get(5..7) == Some(327u16.to_le_bytes().as_slice())
             && frame.body.get(7..11) == Some(visual.to_le_bytes().as_slice())));
         ship.pending.clear();
         ship.rally_buff.as_mut().unwrap().expires_at_ms = crate::resources::unix_ms() - 1;
@@ -3117,47 +3117,51 @@ mod tests {
         assert!(ship.pending.contains(&packets::remove_effect(visual)));
     }
 
-    /// A renewed Rally removes the old field before reusing its stable ID.
+    /// Each catalog tier starts its own client-linked visual, replacing prior art.
     #[test]
-    fn rally_replacement_reuses_visual_identity_after_native_removal() {
+    fn rally_tiers_replace_visual_before_reusing_stable_effect_identity() {
         let mut ship = session();
         ship.logged_in = true;
         let id = ship.player_id();
         let epoch = ship.session_epoch;
-        for (revision, tactic) in [
-            (1, crate::rally::Tactic::Damage),
-            (2, crate::rally::Tactic::Defense),
+        for (revision, tactic, descriptor) in [
+            (1, crate::rally::Tactic::Damage, 333u16),
+            (2, crate::rally::Tactic::Defense, 675),
+            (3, crate::rally::Tactic::Firing, 676),
+            (4, crate::rally::Tactic::Stealth, 327),
         ] {
+            ship.pending.clear();
             ship.apply_rally_buff(crate::rally::RallyBuff {
                 revision,
                 source: id,
                 target_epoch: epoch,
                 tactic,
-                skill_rank: 3,
+                skill_rank: 7,
                 expires_at_ms: crate::resources::unix_ms() + 30_000,
             })
             .unwrap();
-            if revision == 1 {
-                ship.pending.clear();
+            let visual = ship.rally_buff.as_ref().unwrap().visual_id(id);
+            let added = ship
+                .pending
+                .iter()
+                .position(|frame| {
+                    frame.opcode == 9
+                        && frame.body.get(5..7) == Some(descriptor.to_le_bytes().as_slice())
+                        && frame.body.get(7..11) == Some(visual.to_le_bytes().as_slice())
+                })
+                .unwrap();
+            if revision > 1 {
+                let removed = ship
+                    .pending
+                    .iter()
+                    .position(|frame| *frame == packets::remove_effect(visual))
+                    .unwrap();
+                assert!(removed < added);
             }
         }
-        let visual = ship.rally_buff.as_ref().unwrap().visual_id(id);
-        let removed = ship
-            .pending
-            .iter()
-            .position(|frame| *frame == packets::remove_effect(visual))
-            .unwrap();
-        let added = ship
-            .pending
-            .iter()
-            .position(|frame| {
-                frame.opcode == 9 && frame.body.get(7..11) == Some(visual.to_le_bytes().as_slice())
-            })
-            .unwrap();
-        assert!(removed < added);
     }
 
-    /// Resume reuses the same ObjectEffect ID and descriptor after replacement.
+    /// Restart replays the same native effect identity, not a second field.
     #[test]
     fn rally_visual_replays_from_disposable_session_checkpoint() {
         let mut ship = session();
@@ -3183,8 +3187,7 @@ mod tests {
         drop(ship);
         let restored = PlayerSession::new(sector, bind, root.clone()).unwrap();
         assert!(restored.pending.iter().any(|frame| frame.opcode == 9
-            && frame.body.get(5..7)
-                == Some(crate::rally::VISUAL_DESCRIPTOR.to_le_bytes().as_slice())
+            && frame.body.get(5..7) == Some(327u16.to_le_bytes().as_slice())
             && frame.body.get(7..11) == Some(visual.to_le_bytes().as_slice())));
         assert!(restored.pending.iter().any(|frame| frame.opcode == 0x1b
             && frame

@@ -259,12 +259,14 @@ mean the corresponding gameplay system is complete.
   archived ARally handler is absent: the four effect families come from the
   original manual and Net-7 skill documentation, while bonus percentages,
   reactor costs, charge time and cooldown are explicitly local balance tuning
-  in `src/rally.rs`. The original Rally `EffectDescID` is absent from the
-  archived handler and `effect.ini` is unavailable. Native descriptor 216
-  (Environment Shield) is provisionally used as a protective-field visual
-  approximation for user review. It has one stable recipient effect ID,
-  replays as `0x09` after short replacement, and clears with `0x0f` on
-  replacement or expiry; it is not claimed as the original Rally artwork.
+  in `src/rally.rs`. The installed Windows legacy client's
+  `Data/client/ini/effect.ini` (SHA-256
+  `D192E0E25A385EDD47D12E9802CAAF9180AE4F228E72A44086D4A043C457BBF6`)
+  identifies native fade-in descriptors 333/675/676/327 for Damage/Defense/
+  Firing/Stealth Tactics. Their links reach indefinitely sustained visuals.
+  Rally sends the respective `0x09` on activation and replay with one stable
+  recipient effect ID, then `0x0f` on replacement/expiry. Descriptor 216 was
+  rejected after a legacy-client trial showed an unrelated sphere.
 - Sustained active statuses use native ShipIndex.Buffs slots without collision:
   equipped item 0, targeted devices 1–4, Rally 5, Cloak 6, Environment
   Shield 7, and the five-second Combat Cloak damage window 8. Activation and
