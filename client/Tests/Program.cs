@@ -22,7 +22,8 @@ internal static class Program
         if (args.Length == 2 && args[0] == "--server") { PeerChecks.Live(args[1]); CheckServer(args[1]); }
         else if (args.Length == 2 && args[0] == "--recharge-server") RechargeAbilityChecks.Live(args[1]);
         else if (args.Length == 2 && args[0] == "--support-server") SupportAbilityChecks.Live(args[1]);
-        else if (args.Length != 0) throw new ArgumentException("Usage: ProtocolChecks [--server PRIVATE_IP|--recharge-server PRIVATE_IP|--support-server PRIVATE_IP]");
+        else if (args.Length == 2 && args[0] == "--enemy-ability-server") EnemyAbilityChecks.Live(args[1]);
+        else if (args.Length != 0) throw new ArgumentException("Usage: ProtocolChecks [--server PRIVATE_IP|--recharge-server PRIVATE_IP|--support-server PRIVATE_IP|--enemy-ability-server PRIVATE_IP]");
     }
 
     /// <summary>Keep server-selected support abilities distinct from self and combat casts.</summary>
@@ -36,6 +37,11 @@ internal static class Program
             !AbilityTargets.Directed(77) && !AbilityTargets.Directed(91) &&
             !AbilityTargets.Directed(124),
             "Ability recipient policy mismatches the native server contract.");
+        foreach (uint id in new uint[] { 33, 52, 53, 106, 108, 109, 124 })
+            Assert(AbilityTargets.Enemy(id) && !AbilityTargets.Directed(id),
+                "Enemy ability lost its selected-MOB requirement.");
+        Assert(!AbilityTargets.Enemy(32) && !AbilityTargets.Enemy(125),
+            "Support ability was classified as hostile targeting.");
     }
 
     /// <summary>Fail with a useful behavior description.</summary>

@@ -28,6 +28,8 @@ namespace FortyTwoAndBeyond.Protocol
         private double pendingDeviceAt;
         private uint pendingAbilityTarget, pendingAbilityId;
         private double pendingAbilityAt;
+        private uint requestedTarget;
+        private double requestedTargetAt;
         private double combatTargetAt, followTargetAt, pendingLootAt, pendingResourceAt, selfJumpstartAt, rescueRequestAt;
         private bool gateActivated, gateCamera, gateFinished, dockRequested, lootRequested, selfJumpstartPending, rescuePending, disposed, failed;
         private byte[] handoff;
@@ -179,6 +181,7 @@ namespace FortyTwoAndBeyond.Protocol
             gate = dock = followTarget = pendingResource = pendingDeviceTarget = 0;
             pendingDeviceSlot = -1; pendingDeviceTemplate = 0;
             pendingAbilityTarget = pendingAbilityId = 0;
+            requestedTarget = 0;
             selfJumpstartPending = rescuePending = false; handoff = null;
             byte[] body = Wire.Body(w =>
             {
@@ -438,7 +441,7 @@ namespace FortyTwoAndBeyond.Protocol
                 !World.Group.Members.Any(member => member.Id == target)))
             { Status = "Select a visible crew pilot for " + template.ActivationLabel; return; }
             pendingDeviceTarget = pendingDeviceTemplate = 0; pendingDeviceSlot = -1;
-            if (World.Equipment.TargetId == target)
+            if (World.Equipment.TargetId == target && requestedTarget == 0)
             { SendDeviceActivation(slot, target, template.ActivationLabel); return; }
             SelectTarget(target);
             pendingDeviceTarget = target; pendingDeviceSlot = slot;
@@ -598,6 +601,7 @@ namespace FortyTwoAndBeyond.Protocol
                 !World.Players.ContainsKey(target) && !selectableObject)) return;
             if (followTarget != target) followTarget = 0;
             if (World.Equipment.TargetId != target) World.SetOpenLoot(0);
+            requestedTarget = target; requestedTargetAt = clock.Elapsed.TotalSeconds;
             Send(0x17, Wire.Body(w => { w.Write(Player); w.Write(target); }));
         }
 
@@ -706,6 +710,13 @@ namespace FortyTwoAndBeyond.Protocol
         /// <summary>Activate an ability listed in this character's authoritative RPG state.</summary>
         public void ActivateAbility(uint id)
         {
+            if (AbilityTargets.Enemy(id))
+            {
+                uint target = requestedTarget != 0 && clock.Elapsed.TotalSeconds - requestedTargetAt <= 5 ?
+                    requestedTarget : World.Equipment.TargetId;
+                ActivateAbilityFor(id, target);
+                return;
+            }
             if (AbilityTargets.Directed(id))
             {
                 uint selected = World.Equipment.TargetId;
@@ -719,26 +730,46 @@ namespace FortyTwoAndBeyond.Protocol
             Status = "Activating ability " + id;
         }
 
-        /// <summary>Cast a directed support ability after recipient acknowledgment.</summary>
+        /// <summary>Cast a target-dependent ability after the server acknowledges its target.</summary>
         public void ActivateAbilityFor(uint id, uint target)
         {
-            if (!AbilityTargets.Directed(id) || !Ready || gate != 0 || World.Station != null ||
+            if (!AbilityTargets.Directed(id) && !AbilityTargets.Enemy(id) ||
+                !Ready || gate != 0 || World.Station != null ||
                 World.Equipment.Hull <= 0 || !World.AvailableAbilities.Contains(id)) return;
             string label = AbilityTargets.Name(id);
-            if (target == Player && AbilityTargets.RequiresPeer(id))
-            { Status = "Select a visible crew pilot for " + label; return; }
-            if (target != Player && (!World.Players.TryGetValue(target, out ShipActor peer) ||
-                !peer.HasPosition || AbilityTargets.CrewOnly(id) &&
-                !World.Group.Members.Any(member => member.Id == target)))
-            { Status = label + " recipient is no longer visible"; return; }
+            if (AbilityTargets.Enemy(id))
+            {
+                if (!World.Mobs.TryGetValue(target, out ShipActor mob) || !mob.HasPosition)
+                { Status = "Select a visible MOB for " + label; return; }
+            }
+            else
+            {
+                if (target == Player && AbilityTargets.RequiresPeer(id))
+                { Status = "Select a visible crew pilot for " + label; return; }
+                if (target != Player && (!World.Players.TryGetValue(target, out ShipActor peer) ||
+                    !peer.HasPosition || AbilityTargets.CrewOnly(id) &&
+                    !World.Group.Members.Any(member => member.Id == target)))
+                { Status = label + " recipient is no longer visible"; return; }
+            }
             pendingAbilityTarget = pendingAbilityId = 0;
-            if (World.Equipment.TargetId == target)
+            if (World.Equipment.TargetId == target && requestedTarget == 0)
             { Send(0x58, Wire.Body(w => { w.Write(Player); w.Write(0u); w.Write(id); }));
               Status = "Activating " + label; return; }
             SelectTarget(target);
             pendingAbilityTarget = target; pendingAbilityId = id;
             pendingAbilityAt = clock.Elapsed.TotalSeconds;
             Status = "Waiting for " + label + " target acknowledgment";
+        }
+
+        /// <returns>bool: Whether an acknowledged ability target remains visible and eligible.</returns>
+        private bool AbilityRecipientValid(uint ability, uint target)
+        {
+            if (AbilityTargets.Enemy(ability))
+                return World.Mobs.TryGetValue(target, out ShipActor mob) && mob.HasPosition;
+            if (target == Player) return !AbilityTargets.RequiresPeer(ability);
+            return World.Players.TryGetValue(target, out ShipActor peer) && peer.HasPosition &&
+                (!AbilityTargets.CrewOnly(ability) ||
+                 World.Group.Members.Any(member => member.Id == target));
         }
 
         /// <summary>Ask rescue control for the native incapacitation choices.</summary>
@@ -814,6 +845,8 @@ namespace FortyTwoAndBeyond.Protocol
                     if (rescuePending) { rescuePending = false; Status = "Rescue options received"; }
                     break;
                 case 0x19:
+                    if (b.Length == 8 && Wire.U32(b, 0) == requestedTarget &&
+                        Wire.U32(b, 4) == uint.MaxValue) requestedTarget = 0;
                     if (b.Length == 8 && pendingAbilityId != 0 &&
                         Wire.U32(b, 0) == pendingAbilityTarget && Wire.U32(b, 4) == uint.MaxValue)
                     {
@@ -821,10 +854,7 @@ namespace FortyTwoAndBeyond.Protocol
                         pendingAbilityTarget = pendingAbilityId = 0;
                         if (Ready && gate == 0 && World.Station == null && World.Equipment.Hull > 0 &&
                             World.AvailableAbilities.Contains(ability) &&
-                            (target == Player && !AbilityTargets.RequiresPeer(ability) ||
-                             World.Players.TryGetValue(target, out ShipActor recipient) &&
-                             recipient.HasPosition && (!AbilityTargets.CrewOnly(ability) ||
-                             World.Group.Members.Any(member => member.Id == target))))
+                            AbilityRecipientValid(ability, target))
                         { Send(0x58, Wire.Body(w => { w.Write(Player); w.Write(0u); w.Write(ability); }));
                           Status = "Activating " + AbilityTargets.Name(ability); }
                     }
@@ -949,6 +979,7 @@ namespace FortyTwoAndBeyond.Protocol
                 if (pendingAbilityId != 0 && now - pendingAbilityAt > 5)
                 { pendingAbilityTarget = pendingAbilityId = 0;
                   Status = "Ability target did not acknowledge; cast cancelled"; }
+                if (requestedTarget != 0 && now - requestedTargetAt > 5) requestedTarget = 0;
                 if (gate != 0)
                 {
                     double elapsed = now - gateAt;
