@@ -913,6 +913,11 @@ impl PlayerSession {
                         self.resource_revision = None;
                     }
                     self.target = target;
+                    if self.npc_interaction.as_ref().is_some_and(|active| {
+                        active.space_object.is_some() && active.space_object != Some(target)
+                    }) {
+                        self.close_npc();
+                    }
                     let mut reply = Vec::from(target.to_le_bytes());
                     reply.extend_from_slice(&u32::MAX.to_le_bytes());
                     self.pending.push(Frame::new(0x19, reply));
@@ -925,6 +930,7 @@ impl PlayerSession {
                     self.refresh_target_verbs(true);
                     self.refresh_loot_target(true)?;
                     self.refresh_resource_target(true)?;
+                    self.open_space_mission(target)?;
                 }
             }
             0x5a => {
@@ -4463,6 +4469,106 @@ mod tests {
         .unwrap();
         assert_eq!(resumed.skill_catalog.level(47), 1);
         assert!(resumed.inventory.missions.completed.contains(&90));
+        drop(resumed);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    /// A fresh Privateer completes the public space-object talk mission after travel.
+    #[test]
+    fn native_privateer_waste_disposal_space_dialogue_and_turn_in_survive_restart() {
+        let root = std::env::temp_dir().join(format!("enb-pp-waste-{}", rand::random::<u64>()));
+        let stored = crate::accounts::AccountDirectory::new(&root)
+            .create_class_progression(
+                "privateer".into(),
+                "pass",
+                "Privateer".into(),
+                crate::classes::CharacterClass::parse("pp").unwrap(),
+            )
+            .unwrap();
+        let initial = SectorCatalog::load().unwrap().sector(1076).unwrap();
+        let mut ship = PlayerSession::new(
+            initial.clone(),
+            Ipv4Addr::LOCALHOST,
+            stored.directory.clone(),
+        )
+        .unwrap();
+        assert_eq!(ship.sector.id, 10371);
+        ship.logged_in = true;
+        enter_npc_room(&mut ship, 371);
+        ship.open_npc(371).unwrap();
+        assert_eq!(ship.npc_interaction.as_ref().unwrap().mission, Some(48));
+        for choice in [3, 4, 5] {
+            npc_choice(&mut ship, choice).unwrap();
+        }
+        assert_eq!(ship.inventory.missions.active[0].stage, 1);
+        ship.station_request(10371, 1).unwrap();
+        assert_eq!(ship.sector.id, 1037);
+        ship.logged_in = true; // Complete the disposable native sector handoff.
+        let nav = ship
+            .sector
+            .navpoints
+            .iter()
+            .find(|nav| nav.source_id == 3059)
+            .unwrap()
+            .clone();
+        let target = [ship.player_id().to_le_bytes(), nav.id.to_le_bytes()].concat();
+        ship.position = [
+            nav.position[0] + nav.radius + 5001.,
+            nav.position[1],
+            nav.position[2],
+        ];
+        ship.handle_input(0x17, &target).unwrap();
+        assert!(ship.npc_interaction.is_none());
+        ship.position = [
+            nav.position[0] + nav.radius + 4999.,
+            nav.position[1],
+            nav.position[2],
+        ];
+        ship.handle_input(0x17, &target).unwrap();
+        assert_eq!(
+            ship.npc_interaction.as_ref().unwrap().space_object,
+            Some(nav.id)
+        );
+        assert!(ship.pending.iter().any(|frame| frame.opcode == 0x54));
+        ship.position[0] += 3.;
+        assert!(npc_choice(&mut ship, 2).is_err());
+        assert_eq!(ship.inventory.missions.active[0].stage, 1);
+        ship.position[0] -= 3.;
+        npc_choice(&mut ship, 2).unwrap();
+        assert_eq!(ship.inventory.missions.active[0].stage, 2);
+        let outsider = crate::accounts::AccountDirectory::new(&root)
+            .create_class_progression(
+                "outsider".into(),
+                "pass",
+                "Outsider".into(),
+                crate::classes::CharacterClass::parse("pp").unwrap(),
+            )
+            .unwrap();
+        let mut peer =
+            PlayerSession::new(initial.clone(), Ipv4Addr::LOCALHOST, outsider.directory).unwrap();
+        peer.sector = peer.sectors.sector(1037).unwrap();
+        peer.position = ship.position;
+        peer.logged_in = true;
+        peer.handle_input(
+            0x17,
+            &[peer.player_id().to_le_bytes(), nav.id.to_le_bytes()].concat(),
+        )
+        .unwrap();
+        assert!(peer.npc_interaction.is_none());
+        assert!(!peer.pending.iter().any(|frame| frame.opcode == 0x54));
+        drop(peer);
+        let state = ship.state_dir.clone();
+        drop(ship);
+        let mut resumed = PlayerSession::new(initial, Ipv4Addr::LOCALHOST, state).unwrap();
+        assert_eq!(resumed.sector.id, 1037);
+        assert_eq!(resumed.inventory.missions.active[0].stage, 2);
+        resumed.transfer_sector(10371, false).unwrap();
+        resumed.logged_in = true;
+        enter_npc_room(&mut resumed, 371);
+        resumed.open_npc(371).unwrap();
+        npc_choice(&mut resumed, 2).unwrap();
+        assert!(resumed.inventory.missions.completed.contains(&48));
+        assert_eq!(resumed.inventory.credits, 10_200);
         drop(resumed);
         std::fs::remove_dir_all(root).unwrap();
     }

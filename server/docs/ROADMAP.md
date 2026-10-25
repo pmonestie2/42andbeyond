@@ -201,8 +201,9 @@ mean the corresponding gameplay system is complete.
   the class ceiling instead of the pilot's current rank, allowing a supported
   mission to grant its first rank durably.
 - The public mission catalog loads all 364 imported definitions; the runtime
-  currently offers fifteen wired NPC missions: Finer Points of Negotiation
-  (3), Reactor Leak (5), Supply Run (6), Defense of the Sharim (81), Going for
+  currently offers sixteen wired NPC missions: Finer Points of Negotiation
+  (3), Reactor Leak (5), Supply Run (6), Waste Disposal (48),
+  Defense of the Sharim (81), Going for
   Repairs (90), Basic Shooting Range (102), its
   prerequisite-gated sequel Kill Scuttle Larva (104), repeatable Eliminate
   Scuttle Infestation (303), and Cash for 'Roids (341), plus the six Scout hull
@@ -215,8 +216,14 @@ mean the corresponding gameplay system is complete.
   Combat objectives
   share the death-generation receipt with combat XP; NPC dialogue, required
   credit payments, item possession and hand-in, intermediate XP/credit,
-  owned-item and learned-formula rewards commit atomically. Skill
-  unlocks are recorded durably, while the sandbox class catalog still grants
+  owned-item and learned-formula rewards commit atomically.
+  Waste Disposal starts from Crones Christopher at the Privateer's hosted Arx
+  Bursa station. Its archived TALK_SPACE_NPC objective uses selected Waste
+  Disposal Station nav within 5,000 m of its surface, presents the public
+  space dialogue through native 0x54/0x55, and persists stage progress before
+  station turn-in. A fresh Privateer launch, range boundary, restart and
+  turn-in test passes; Unity graphical verification remains pending.
+  Skill unlocks are recorded durably, while the sandbox class catalog still grants
   those skills at their ceiling. Defense of the Sharim now runs three public
   MOB kill stages with archived dialogue, permanent-decline branch and a final
   atomic Shinwa faction reward; a failed inventory write can be retried without

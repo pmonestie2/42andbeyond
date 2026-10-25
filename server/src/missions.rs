@@ -157,10 +157,10 @@ impl MissionCatalog {
         inventory: &Inventory,
     ) -> Option<u32> {
         self.0.values().find_map(|mission| {
-            (matches!(mission.id, 3 | 5 | 6 | 81 | 90 | 102 | 104 | 245 | 246 | 258..=261 | 303 | 341)
+            (matches!(mission.id, 3 | 5 | 6 | 48 | 81 | 90 | 102 | 104 | 245 | 246 | 258..=261 | 303 | 341)
                 && mission.stages.len() >= 2
                 && mission.time_limit == 0
-                && (!mission.forfeitable || matches!(mission.id, 245 | 246 | 258..=261 | 303))
+                && (!mission.forfeitable || matches!(mission.id, 48 | 245 | 246 | 258..=261 | 303))
                 && Self::start_tree_supported(&mission.stages[0])
                 && mission.stages[0]
                     .completion

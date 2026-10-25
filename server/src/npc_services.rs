@@ -7,6 +7,8 @@ use crate::npcs::{Branch, TalkNode};
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub(super) struct NpcInteraction {
     pub(super) npc: u32,
+    #[serde(default)]
+    pub(super) space_object: Option<u32>,
     pub(super) node: u8,
     pub(super) vendor: bool,
     #[serde(default)]
@@ -57,6 +59,7 @@ impl PlayerSession {
             .or_else(|| catalog.offer(identity, &self.account.character, &self.inventory));
         self.npc_interaction = Some(NpcInteraction {
             npc: identity,
+            space_object: None,
             node: 1,
             vendor: false,
             mission,
@@ -82,6 +85,67 @@ impl PlayerSession {
             );
         }
         Ok(())
+    }
+
+    /// Open an authored space-object conversation after a native target selection.
+    pub(super) fn open_space_mission(&mut self, target: u32) -> io::Result<()> {
+        let Some(nav) = self.sector.navpoints.iter().find(|nav| nav.id == target) else {
+            return Ok(());
+        };
+        if !self.logged_in
+            || self.hull <= 0.
+            || self.sector.station.is_some()
+            || self.warp.active()
+            || nav.range_to(self.position) > 5000.
+        {
+            return Ok(());
+        }
+        let source_id = nav.source_id;
+        let catalog = crate::missions::MissionCatalog::load()?;
+        let Some((mission, stage)) = self.inventory.missions.active.iter().find_map(|progress| {
+            let definition = catalog.get(progress.id).ok()?;
+            let current = definition.stages.get(progress.stage as usize)?;
+            (progress.id == 48
+                && current.completion.iter().any(|objective| {
+                    objective.kind == 19 && objective.data == i64::from(source_id)
+                }))
+            .then_some((progress.id, progress.stage))
+        }) else {
+            return Ok(());
+        };
+        self.close_npc();
+        self.npc_interaction = Some(NpcInteraction {
+            npc: source_id,
+            space_object: Some(target),
+            node: 1,
+            vendor: false,
+            mission: Some(mission),
+            mission_stage: stage,
+        });
+        self.pending.push(packets::message(&format!(
+            "Mission objective: {}.",
+            catalog.get(mission)?.name
+        )));
+        self.show_npc_node(1)
+    }
+
+    /// Returns:
+    ///     bool: Whether the station NPC or selected space object remains reachable.
+    fn conversation_available(&self, active: &NpcInteraction) -> bool {
+        if let Some(target) = active.space_object {
+            self.logged_in
+                && self.hull > 0.
+                && self.sector.station.is_none()
+                && !self.warp.active()
+                && self.target == target
+                && self.sector.navpoints.iter().any(|nav| {
+                    nav.id == target
+                        && nav.source_id == active.npc
+                        && nav.range_to(self.position) <= 5000.
+                })
+        } else {
+            self.npc_in_current_room(active.npc)
+        }
     }
 
     /// Returns:
@@ -172,16 +236,24 @@ impl PlayerSession {
             .stages
             .get(stage as usize)
             .ok_or_else(|| invalid("Mission stage is unavailable."))?;
-        if !current_stage.completion.iter().any(|objective| {
-            objective.kind == 1
-                && objective.data == i64::from(self.npc_interaction.as_ref().unwrap().npc)
-        }) {
+        let interaction = self.npc_interaction.as_ref().unwrap();
+        if !self.conversation_available(interaction)
+            || !current_stage.completion.iter().any(|objective| {
+                objective.kind
+                    == if interaction.space_object.is_some() {
+                        19
+                    } else {
+                        1
+                    }
+                    && objective.data == i64::from(interaction.npc)
+            })
+        {
             return Err(invalid("Mission NPC objective is unavailable."));
         }
         let mut candidate = self.inventory.clone();
         for objective in &current_stage.completion {
             match objective.kind {
-                1 if objective.data == i64::from(self.npc_interaction.as_ref().unwrap().npc) => {}
+                1 | 19 if objective.data == i64::from(interaction.npc) => {}
                 2 | 13 => {
                     let template = u32::try_from(objective.data)
                         .map_err(|_| invalid("Mission item requirement is invalid."))?;
@@ -356,15 +428,15 @@ impl PlayerSession {
     }
 
     fn show_npc_node(&mut self, node: u8) -> io::Result<()> {
-        let identity = self
+        let active = self
             .npc_interaction
             .as_ref()
             .ok_or_else(|| invalid("No NPC conversation is active."))?
-            .npc;
-        if !self.npc_in_current_room(identity) {
-            return Err(invalid("NPC conversation is no longer in your room."));
+            .clone();
+        if !self.conversation_available(&active) {
+            return Err(invalid("NPC conversation is no longer in range."));
         }
-        let active = self.npc_interaction.as_ref().unwrap().clone();
+        let identity = active.npc;
         let mut entry = self.active_npc_node(&active, node)?;
         if entry.flag > 1 && !(active.mission.is_some() && matches!(entry.flag, 2 | 3 | 5 | 6)) {
             return Err(invalid("This NPC mission action is not implemented yet."));
@@ -499,7 +571,12 @@ impl PlayerSession {
     }
 
     pub(super) fn talk_choice(&mut self, body: &[u8]) -> io::Result<()> {
-        if self.sector.station.is_none() {
+        if self.sector.station.is_none()
+            && !self
+                .npc_interaction
+                .as_ref()
+                .is_some_and(|active| active.space_object.is_some())
+        {
             return self.rescue_choice(body);
         }
         if body.len() != 5 {
@@ -522,8 +599,8 @@ impl PlayerSession {
             .npc_interaction
             .as_ref()
             .ok_or_else(|| invalid("No NPC conversation is active."))?;
-        if !self.npc_in_current_room(active.npc) {
-            return Err(invalid("NPC conversation is no longer in your room."));
+        if !self.conversation_available(active) {
+            return Err(invalid("NPC conversation is no longer in range."));
         }
         let current = self.active_npc_node(active, active.node)?;
         // A modified client cannot jump directly to any trade/mission node.
@@ -595,7 +672,7 @@ impl PlayerSession {
 
     pub(super) fn restore_npc_service(&mut self) -> io::Result<()> {
         if let Some(active) = self.npc_interaction.clone() {
-            if !self.npc_in_current_room(active.npc)
+            if !self.conversation_available(&active)
                 || self.active_npc_node(&active, active.node).is_err()
             {
                 self.close_npc();
