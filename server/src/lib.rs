@@ -62,6 +62,7 @@ pub mod ammunition;
 pub mod biorepression;
 
 pub mod classes;
+pub mod fold_space_high;
 
 pub mod mob_stats;
 

@@ -401,6 +401,8 @@ pub struct Cast {
     #[serde(default)]
     pub hacking_generation: Option<u64>,
     #[serde(default)]
+    pub fold_mob_generation: Option<u64>,
+    #[serde(default)]
     pub befriend_generation: Option<u64>,
     pub bio_generation: Option<u64>,
     #[serde(default)]
@@ -504,6 +506,9 @@ impl Cast {
             && self.hacking_generation.is_none_or(|generation| {
                 matches!(self.ability, 13 | 16 | 57 | 58 | 76) && generation < 1_000_000_000
             })
+            && self
+                .fold_mob_generation
+                .is_none_or(|generation| self.ability == 36 && generation < 1_000_000_000)
             && self.befriend_generation.is_none_or(|generation| {
                 matches!(self.ability, 15 | 20 | 43 | 63 | 115) && generation < 1_000_000_000
             })
@@ -567,6 +572,8 @@ pub struct SkillState {
     pub active_inversion: Option<crate::shield_inversion::ActiveShieldInversion>,
     #[serde(default)]
     pub pending_self_destruct: Option<crate::self_destruct::PendingSelfDestruct>,
+    #[serde(default)]
+    pub pending_high_fold: Option<crate::fold_space_high::PendingHighFold>,
     #[serde(default)]
     pub self_destruct_until_ms: u64,
     #[serde(default)]

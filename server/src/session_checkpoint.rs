@@ -96,6 +96,8 @@ pub(super) struct Checkpoint {
     #[serde(default)]
     mob_damage_receipts: Vec<mob_damage::MobDamageReceipt>,
     #[serde(default)]
+    high_fold_receipts: Vec<crate::fold_space_high::FoldReceipt>,
+    #[serde(default)]
     attacker_ids: BTreeSet<u32>,
     #[serde(default)]
     skills: SkillState,
@@ -269,6 +271,16 @@ impl PlayerSession {
             || !saved.energy.is_finite()
             || saved.mining.as_ref().is_some_and(|cast| !cast.valid())
             || saved.skills.cast.as_ref().is_some_and(|cast| !cast.valid())
+            || saved
+                .skills
+                .pending_high_fold
+                .as_ref()
+                .is_some_and(|fold| !fold.valid() || fold.source != self.player_id())
+            || saved.high_fold_receipts.len() > crate::fold_space_high::RECEIPT_LIMIT
+            || saved
+                .high_fold_receipts
+                .iter()
+                .any(|receipt| !receipt.valid())
             || saved
                 .skills
                 .active_inversion
@@ -464,6 +476,7 @@ impl PlayerSession {
         self.following = saved.following;
         self.last_launch = saved.last_launch;
         self.mob_damage_receipts = saved.mob_damage_receipts;
+        self.high_fold_receipts = saved.high_fold_receipts;
         self.restore_mob_equipment_wear()?;
         self.attacker_ids = saved.attacker_ids;
         self.follow_peer = None;
@@ -698,6 +711,7 @@ impl PlayerSession {
             following: self.following,
             last_launch: self.last_launch,
             mob_damage_receipts: self.mob_damage_receipts.clone(),
+            high_fold_receipts: self.high_fold_receipts.clone(),
             attacker_ids: self.attacker_ids.clone(),
             skills: self.skills.clone(),
             handoff: self.handoff.clone(),

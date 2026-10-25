@@ -189,6 +189,8 @@ pub struct Mob {
     #[serde(default)]
     pub hacks: Vec<crate::hacking::HackEffect>,
     #[serde(default)]
+    pub last_high_fold: Option<crate::fold_space_high::MobFoldReceipt>,
+    #[serde(default)]
     pub befriend: Vec<crate::befriend::BefriendEffect>,
     pub bio: Vec<crate::biorepression::BioEffect>,
     #[serde(default)]
@@ -279,6 +281,7 @@ impl Mob {
             enrage: Vec::new(),
             menace: Vec::new(),
             hacks: Vec::new(),
+            last_high_fold: None,
             befriend: Vec::new(),
             bio: Vec::new(),
             death_generation: 0,
@@ -332,6 +335,13 @@ impl Mob {
         saved
             .bio
             .retain(|effect| effect.active(crate::resources::unix_ms(), saved.death_generation));
+        if saved
+            .last_high_fold
+            .as_ref()
+            .is_some_and(|receipt| !receipt.valid(saved.death_generation))
+        {
+            saved.last_high_fold = None;
+        }
         saved
             .gravity
             .retain(|effect| effect.active(crate::resources::unix_ms()));
@@ -442,6 +452,7 @@ impl Mob {
             self.enrage.clear();
             self.menace.clear();
             self.hacks.clear();
+            self.last_high_fold = None;
             self.befriend.clear();
             self.bio.clear();
         }
@@ -873,6 +884,7 @@ impl Mob {
                 self.enrage.clear();
                 self.menace.clear();
                 self.hacks.clear();
+                self.last_high_fold = None;
                 self.befriend.clear();
                 self.bio.clear();
                 self.state = MobState::Idle;

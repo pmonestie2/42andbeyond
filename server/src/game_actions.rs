@@ -1307,6 +1307,14 @@ impl GameState {
                 }
             }
         }
+        let high_fold_sources: Vec<u32> = self
+            .sessions
+            .iter()
+            .filter_map(|(id, session)| session.high_fold_pending().map(|_| *id))
+            .collect();
+        for source in high_fold_sources {
+            self.deliver_high_fold(source)?;
+        }
         Ok(())
     }
 

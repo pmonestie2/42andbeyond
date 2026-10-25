@@ -325,6 +325,180 @@ fn warrior_shield_inversion_pulses_and_survives_world_restart() {
     );
 }
 
+/// Area Fold retries a failed recipient checkpoint without moving the caster twice.
+#[test]
+fn defender_area_fold_retries_partial_group_delivery_without_double_move() {
+    let root = std::env::temp_dir().join(format!("enb-fold-high-{}", rand::random::<u64>()));
+    let accounts = AccountDirectory::new(&root);
+    let caster_account = accounts
+        .create_class(
+            "defender".into(),
+            "example",
+            "Defender".into(),
+            crate::classes::CharacterClass::parse("jd").unwrap(),
+        )
+        .unwrap();
+    let caster = caster_account.account.character.game_id;
+    let ally_account = accounts
+        .create_class(
+            "ally".into(),
+            "example",
+            "Ally".into(),
+            crate::classes::CharacterClass::parse("je").unwrap(),
+        )
+        .unwrap();
+    let ally = ally_account.account.character.game_id;
+    let catalog = crate::items::ItemCatalog::load().unwrap();
+    let mut equipment =
+        crate::inventory::Inventory::starter_for(&caster_account.account.character, &catalog)
+            .unwrap();
+    equipment.equipped[1].as_mut().unwrap().template = 3340;
+    fs::write(
+        caster_account.directory.join("inventory.json"),
+        serde_json::to_vec(&equipment).unwrap(),
+    )
+    .unwrap();
+    let sector: Sector = serde_json::from_str(include_str!("../data/sector.json")).unwrap();
+    let bind = Ipv4Addr::new(127, 0, 0, 2);
+    let mut game = GameState::new(sector.clone(), bind, root.clone()).unwrap();
+    login(&mut game, caster, 24901, "defender");
+    login(&mut game, ally, 24902, "ally");
+    game.groups.invite(caster, ally).unwrap();
+    game.groups.accept(ally).unwrap();
+    game.sessions.get_mut(&caster).unwrap().position = [0.; 3];
+    game.sessions.get_mut(&ally).unwrap().position = [1_000., 0., 0.];
+    game.update_views();
+    let outsider_energy = game.sessions[&ally].energy_balance().0;
+    activate(&mut game, ally, caster, 17);
+    assert_eq!(game.sessions[&ally].energy_balance().0, outsider_energy);
+    let energy = game.sessions[&caster].energy_balance().0;
+    activate(&mut game, caster, caster, 17);
+    assert_eq!(game.sessions[&caster].energy_balance().0, energy - 300.);
+    advance(&mut game, 2.9);
+    game.sessions
+        .get_mut(&caster)
+        .unwrap()
+        .advance(0.2)
+        .unwrap();
+    assert!(game.sessions[&caster].high_fold_pending().is_some());
+    let blocked = if caster > ally {
+        caster_account.directory.join("session.local.json.tmp")
+    } else {
+        ally_account.directory.join("session.local.json.tmp")
+    };
+    fs::create_dir(&blocked).unwrap();
+    assert!(game.deliver_support().is_err());
+    let first = caster.min(ally);
+    let second = caster.max(ally);
+    let first_origin_x = if first == caster { 0. } else { 1_000. };
+    let second_origin_x = if second == caster { 0. } else { 1_000. };
+    assert!((game.sessions[&first].position[0] - first_origin_x - 6_800.).abs() < 1.);
+    assert_eq!(game.sessions[&second].position[0], second_origin_x);
+    fs::remove_dir(blocked).unwrap();
+    game.deliver_support().unwrap();
+    assert!((game.sessions[&caster].position[0] - 6_800.).abs() < 1.);
+    assert!((game.sessions[&ally].position[0] - 7_800.).abs() < 1.);
+    drop(game);
+    let restored = GameState::new(sector, bind, root.clone()).unwrap();
+    assert!((restored.sessions[&caster].position[0] - 6_800.).abs() < 1.);
+    assert!((restored.sessions[&ally].position[0] - 7_800.).abs() < 1.);
+    fs::remove_dir_all(root).unwrap();
+}
+
+/// Directional Teleport moves a selected group ship and a hostile MOB once.
+#[test]
+fn defender_directional_fold_moves_peer_and_generation_pinned_mob() {
+    let root = std::env::temp_dir().join(format!("enb-fold-directional-{}", rand::random::<u64>()));
+    let accounts = AccountDirectory::new(&root);
+    let defender_account = accounts
+        .create_class(
+            "defender".into(),
+            "example",
+            "Defender".into(),
+            crate::classes::CharacterClass::parse("jd").unwrap(),
+        )
+        .unwrap();
+    let defender = defender_account.account.character.game_id;
+    let ally = accounts
+        .create_class(
+            "ally".into(),
+            "example",
+            "Ally".into(),
+            crate::classes::CharacterClass::parse("je").unwrap(),
+        )
+        .unwrap()
+        .account
+        .character
+        .game_id;
+    let catalog = crate::items::ItemCatalog::load().unwrap();
+    let mut equipment =
+        crate::inventory::Inventory::starter_for(&defender_account.account.character, &catalog)
+            .unwrap();
+    equipment.equipped[1].as_mut().unwrap().template = 3340;
+    fs::write(
+        defender_account.directory.join("inventory.json"),
+        serde_json::to_vec(&equipment).unwrap(),
+    )
+    .unwrap();
+    let sector: Sector = serde_json::from_str(include_str!("../data/sector.json")).unwrap();
+    let bind = Ipv4Addr::new(127, 0, 0, 2);
+    let mut game = GameState::new(sector.clone(), bind, root.clone()).unwrap();
+    login(&mut game, defender, 24911, "defender");
+    login(&mut game, ally, 24912, "ally");
+    game.groups.invite(defender, ally).unwrap();
+    game.groups.accept(ally).unwrap();
+    game.sessions.get_mut(&defender).unwrap().position = [0.; 3];
+    game.sessions.get_mut(&ally).unwrap().position = [1_000., 0., 0.];
+    game.update_views();
+    activate(&mut game, defender, ally, 36);
+    game.sessions
+        .get_mut(&defender)
+        .unwrap()
+        .advance_player(3.1)
+        .unwrap();
+    game.deliver_support().unwrap();
+    assert!((game.sessions[&ally].position[0] - 7_500.).abs() < 1.);
+    assert_eq!(game.sessions[&defender].position, [0.; 3]);
+    game.deliver_support().unwrap();
+    assert!((game.sessions[&ally].position[0] - 7_500.).abs() < 1.);
+
+    {
+        let mut combat = lock_combat(&game.sessions[&defender].combat).unwrap();
+        combat.actors[0].position = [2_000., 0., 0.];
+        combat.actors[0].definition.spawn = [2_000., 0., 0.];
+        combat.actors[0].definition.aggressive = false;
+    }
+    game.sessions.get_mut(&defender).unwrap().position = [0.; 3];
+    game.update_views();
+    game.sessions
+        .get_mut(&defender)
+        .unwrap()
+        .advance_player(5.1)
+        .unwrap();
+    activate(&mut game, defender, MOB_ID, 36);
+    game.sessions
+        .get_mut(&defender)
+        .unwrap()
+        .advance_player(3.1)
+        .unwrap();
+    let mob_position = lock_combat(&game.sessions[&defender].combat)
+        .unwrap()
+        .actors[0]
+        .position;
+    assert!((mob_position[0] - 8_500.).abs() < 1.);
+    drop(game);
+    let restored = GameState::new(sector, bind, root.clone()).unwrap();
+    assert!((restored.sessions[&ally].position[0] - 7_500.).abs() < 1.);
+    assert_eq!(
+        lock_combat(restored.combats.get(&1076).unwrap())
+            .unwrap()
+            .actors[0]
+            .position,
+        mob_position
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
 /// Summon moves a hostile, then one grouped pilot and finally journals port return.
 #[test]
 fn defender_summon_enemy_friend_and_registered_port_survive_restart() {

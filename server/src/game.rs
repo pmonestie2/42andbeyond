@@ -29,6 +29,8 @@ mod call_forward_game;
 mod dev_commands;
 #[path = "energy_leech_game.rs"]
 mod energy_leech_game;
+#[path = "fold_space_high_game.rs"]
+mod fold_space_high_game;
 #[path = "psionic_shield_game.rs"]
 mod psionic_shield_game;
 #[path = "repulsor_field_game.rs"]

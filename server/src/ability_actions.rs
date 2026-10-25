@@ -40,6 +40,7 @@ impl PlayerSession {
         let durable_hacking = ability.kind == AbilityKind::Hacking;
         let durable_befriend = ability.kind == AbilityKind::Befriend;
         let durable_bio = ability.kind == AbilityKind::Biorepression;
+        let durable_high_fold = ability.kind == AbilityKind::Fold && matches!(ability.id, 17 | 36);
         let durable_enrage = ability.kind == AbilityKind::Enrage;
         if ability.kind == AbilityKind::Jumpstart {
             self.jumpstart_definition()?;
@@ -101,6 +102,9 @@ impl PlayerSession {
         if durable_blast && self.skills.pending_self_destruct.is_some() {
             return Err(invalid("Previous Self Destruct is still settling."));
         }
+        if durable_high_fold && self.skills.pending_high_fold.is_some() {
+            return Err(invalid("Previous Fold travel is still settling."));
+        }
         let self_jumpstart = ability.kind == AbilityKind::Jumpstart
             && (requested_target == self.player_id() || requested_target == u32::MAX);
         if self.hull <= 0. && !self_jumpstart {
@@ -135,6 +139,16 @@ impl PlayerSession {
             return Err(invalid("This skill is recovering."));
         }
         let target = self.ability_target(&ability, requested_target)?;
+        if durable_high_fold
+            && crate::fold_space_high::tier(
+                ability.id,
+                self.skill_catalog.level(crate::fold_space_high::SKILL_ID),
+                self.account.character.class().code(),
+            )
+            .is_none()
+        {
+            return Err(invalid("High Fold rank is not trained."));
+        }
         if durable_optimization
             && crate::reactor_optimization::tier(ability.id, self.skill_catalog.level(43)).is_none()
         {
@@ -258,6 +272,12 @@ impl PlayerSession {
         } else {
             None
         };
+        let fold_mob_generation =
+            if ability.id == 36 && (MOB_ID..MOB_ID + 0x1000_0000).contains(&target) {
+                Some(self.high_fold_mob_generation(target)?)
+            } else {
+                None
+            };
         let enrage_generation = if durable_enrage {
             Some(self.enrage_target_generation(target)?)
         } else {
@@ -397,6 +417,7 @@ impl PlayerSession {
             hacking_generation,
             befriend_generation,
             bio_generation,
+            fold_mob_generation,
             enrage_generation,
             summon_generation,
             sap_generation,
@@ -410,6 +431,7 @@ impl PlayerSession {
             || durable_hacking
             || durable_befriend
             || durable_bio
+            || durable_high_fold
             || durable_enrage
             || durable_optimization
             || durable_shield_charging
@@ -449,6 +471,40 @@ impl PlayerSession {
         }
         if ability.kind == AbilityKind::SelfDestruct {
             return Ok(self.player_id());
+        }
+        if ability.kind == AbilityKind::Fold && ability.id == 17 {
+            return Ok(self.player_id());
+        }
+        if ability.kind == AbilityKind::Fold && ability.id == 36 {
+            let target = if self.target == 0 || self.target == u32::MAX {
+                self.player_id()
+            } else {
+                self.target
+            };
+            if target == self.player_id() {
+                return Ok(target);
+            }
+            if (MOB_ID..MOB_ID + 0x1000_0000).contains(&target) {
+                self.high_fold_mob_generation(target)?;
+                let combat = lock_combat(&self.combat)?;
+                let mob = &combat.actors[(target - MOB_ID) as usize];
+                if distance(self.position, mob.position) > 6_500. {
+                    return Err(invalid("Directional Teleport MOB is out of range."));
+                }
+                return Ok(target);
+            }
+            let contact = self
+                .group_contacts
+                .iter()
+                .find(|contact| contact.id == target)
+                .ok_or_else(|| invalid("Select a visible group pilot for Directional Teleport."))?;
+            if contact.incapacitated
+                || contact.sector != self.sector.id
+                || distance(self.position, contact.position) > 6_000.
+            {
+                return Err(invalid("Directional Teleport pilot is out of range."));
+            }
+            return Ok(target);
         }
         if ability.kind == AbilityKind::Summon {
             let tier = crate::summon::tier(ability.id, self.skill_catalog.level(56))
@@ -880,6 +936,12 @@ impl PlayerSession {
                     || self.gate_transit.is_some()
                     || self.sector.station.is_some()
                     || !self.logged_in);
+            let invalid_high_fold = definition.kind == AbilityKind::Fold
+                && matches!(definition.id, 17 | 36)
+                && (self.warp.active()
+                    || self.gate_transit.is_some()
+                    || self.sector.station.is_some()
+                    || !self.logged_in);
             if (self.hull <= 0. && !self_jumpstart)
                 || invalid_jumpstart
                 || invalid_recharge
@@ -895,6 +957,7 @@ impl PlayerSession {
                 || invalid_inversion
                 || invalid_blast
                 || invalid_summon
+                || invalid_high_fold
                 || definition.kind == AbilityKind::Cloak
                     && definition.rank < 5
                     && self.motion.speed.abs() > 0.1
@@ -913,6 +976,7 @@ impl PlayerSession {
                         | AbilityKind::RepulsorField
                         | AbilityKind::ShieldInversion
                         | AbilityKind::SelfDestruct
+                        | AbilityKind::Fold
                 ) {
                     if let Err(error) = self.checkpoint_session(true) {
                         self.skills.cast = Some(cast);
@@ -1193,6 +1257,40 @@ impl PlayerSession {
                         self.tick_ms(),
                         (cooldown * 1000.) as u32,
                     ));
+                    return Ok(());
+                }
+                if ability.kind == AbilityKind::Fold && matches!(ability.id, 17 | 36) {
+                    let previous_pending = self.skills.pending_high_fold.clone();
+                    let pending_len = self.pending.len();
+                    let applied = match self.settle_high_fold(&ability, &cast) {
+                        Ok(applied) => applied,
+                        Err(error) => {
+                            self.skills.cast = Some(cast);
+                            return Err(error);
+                        }
+                    };
+                    let previous_cooldown = self.skills.cooldowns.insert(ability.skill, cooldown);
+                    if let Err(error) = self.checkpoint_session(true) {
+                        self.skills.pending_high_fold = previous_pending;
+                        self.pending.truncate(pending_len);
+                        if let Some(previous) = previous_cooldown {
+                            self.skills.cooldowns.insert(ability.skill, previous);
+                        } else {
+                            self.skills.cooldowns.remove(&ability.skill);
+                        }
+                        self.skills.cast = Some(cast);
+                        return Err(error);
+                    }
+                    self.remove_effect(cast.effect);
+                    self.pending.push(packets::ability_progress(None, 0, 0));
+                    self.pending.push(packets::skill_cooldown(
+                        ability.skill,
+                        self.tick_ms(),
+                        (cooldown * 1000.) as u32,
+                    ));
+                    if !applied {
+                        self.message("High Fold target was lost before completion.");
+                    }
                     return Ok(());
                 }
                 self.remove_effect(cast.effect);
@@ -1664,7 +1762,7 @@ impl PlayerSession {
             });
         }
     }
-    fn add_skill_effect(&mut self, target: u32, asset: u16) -> u32 {
+    pub(super) fn add_skill_effect(&mut self, target: u32, asset: u16) -> u32 {
         let effect = self.next_effect;
         self.next_effect = self.next_effect.wrapping_add(1);
         self.pending.push(packets::object_effect(

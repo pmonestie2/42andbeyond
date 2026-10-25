@@ -56,6 +56,8 @@ mod enrage_service;
 mod equipment_repair_service;
 #[path = "exploration.rs"]
 pub(crate) mod exploration;
+#[path = "fold_space_high_service.rs"]
+mod fold_space_high_service;
 #[path = "follow_service.rs"]
 mod follow_service;
 #[path = "gating_service.rs"]
@@ -220,6 +222,7 @@ pub struct PlayerSession {
     last_motion_report: Option<Instant>,
     last_launch: u64,
     mob_damage_receipts: Vec<mob_damage::MobDamageReceipt>,
+    high_fold_receipts: Vec<crate::fold_space_high::FoldReceipt>,
     attacker_ids: BTreeSet<u32>,
     following: bool,
     follow_peer: Option<crate::following::FollowContact>,
@@ -431,6 +434,7 @@ impl PlayerSession {
             last_motion_report: None,
             last_launch: 0,
             mob_damage_receipts: Vec::new(),
+            high_fold_receipts: Vec::new(),
             attacker_ids: BTreeSet::new(),
             following: false,
             follow_peer: None,
