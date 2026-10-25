@@ -848,10 +848,10 @@ namespace FortyTwoAndBeyond.Client
             bool open = snapshot.OpenLootId == wreckId;
             bool tractoring = snapshot.LootActivity != null && snapshot.LootActivity.CorpseId == wreckId;
             float height = open ? tractoring ? 272 : 250 : 126;
-            float x = CanvasWidth - 690, y = CanvasHeight - height - 122;
+            float x = CanvasWidth - 740, y = CanvasHeight - height - 122;
             Panel(new Rect(x, y, 360, height));
             GUI.Label(new Rect(x + 12, y + 8, open ? 250 : 336, 22), wreck.Name, body);
-            if (open && GUI.Button(new Rect(x + 274, y + 5, 74, 26), "CLOSE", button))
+            if (open && GUI.Button(new Rect(x + 272, y + 10, 76, 30), "CLOSE", button))
                 client.CloseLoot(wreckId);
             float distance = wreck.Position.Distance(snapshot.Position);
             GUI.Label(new Rect(x + 12, y + 33, 336, 20), $"WRECK RANGE  {distance / 1000:0.00} km", small);
