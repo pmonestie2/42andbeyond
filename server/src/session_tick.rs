@@ -74,6 +74,7 @@ impl PlayerSession {
             }
         }
         if self.sector.station.is_some() {
+            self.advance_combat_trance()?;
             self.advance_ship_resources(dt);
             return Ok(());
         }
@@ -109,6 +110,7 @@ impl PlayerSession {
             self.motion
                 .advance(&mut self.position, &self.sector.bounds, dt);
         }
+        self.advance_combat_trance()?;
         self.advance_mission_arrivals()?;
         self.advance_exploration()?;
         self.dirty |= self.position != previous;

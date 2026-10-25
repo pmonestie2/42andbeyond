@@ -112,11 +112,21 @@ mean the corresponding gameplay system is complete.
   modifier per operation, as in the archived stat engine.
 - Progen Warrior Combat Trance now contributes the archived rank-three typed
   deflect bands, rank-six reactor recharge and rank-seven shield recharge to
-  authoritative combat/resources and ship AUX. Public Combat Trance gear raises
+  authoritative combat/resources and ship AUX only while fully stopped in space
+  and for three seconds per effective skill rank after movement resumes. Its
+  native buff slot and current tier visual (effect.ini descriptors 672/670/673/
+  669/671) publish on entry, clear on expiry, and replay after short replacement.
+  Public Combat Trance gear raises
   the effective rank (the archived branch uses a mismatched Negotiate stat key);
   a durable NPC hit receipt test covers equipped resistance across replacement.
   The archived accuracy branch remains gated because its TODO expression does
-  not define a usable positive-rank bonus.
+  not define a usable positive-rank bonus. The archived resistance/shield
+  formulas differ from the Net-7 wiki's measured values; this checkpoint
+  retains the archived formulas pending a separate balance decision. Timing:
+  [original Player Guide](https://www.earthnbeyond.com/game_info/skills.progen_w.html)
+  and [Net-7 Combat Trance](https://net7wiki.bmsite.net/index.php?title=Combat_Trance).
+  Visual descriptors: installed Windows client's Data/client/ini/effect.ini
+  (SHA-256 D192E0E25A385EDD47D12E9802CAAF9180AE4F228E72A44086D4A043C457BBF6).
 - Persistent cargo/equipment/vault inventory and credits, split/merge/swap
   transfers, mount/class/skill/quantity validation, trade/no-store vault rules,
   atomic replacement before publication and restart reconciliation.

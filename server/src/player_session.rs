@@ -36,6 +36,8 @@ mod ability_actions;
 mod attacker_feedback;
 #[path = "combat_experience.rs"]
 mod combat_experience;
+#[path = "combat_trance.rs"]
+mod combat_trance;
 #[path = "dev_session.rs"]
 mod dev_session;
 #[path = "energy_transfer.rs"]
@@ -209,6 +211,7 @@ pub struct PlayerSession {
     peer_buff_revision: u64,
     rally_buff: Option<crate::rally::RallyBuff>,
     rally_revision: u64,
+    combat_trance: combat_trance::CombatTrance,
     shield: f32,
     pub(crate) hull: f32,
     energy: f32,
@@ -281,7 +284,8 @@ impl PlayerSession {
         let grant_applied = granted.is_some();
         let inventory = granted.unwrap_or(inventory);
         inventory.validate_for_profile(&account.character, &items, &skill_catalog)?;
-        let equipment = EquipmentStats::derive(&inventory, &items, &skill_catalog)?;
+        let equipment =
+            EquipmentStats::derive_with_trance(&inventory, &items, &skill_catalog, &[], false)?;
         let factions = crate::factions::FactionCatalog::load()?;
         let reputation =
             factions.reactions(account.character.class(), &inventory.faction_standings)?;
@@ -406,6 +410,7 @@ impl PlayerSession {
             peer_buff_revision: 0,
             rally_buff: None,
             rally_revision: 0,
+            combat_trance: combat_trance::CombatTrance::default(),
             shield: stats.shield_capacity,
             hull: stats.hull_capacity,
             energy: stats.energy_capacity,
@@ -1297,11 +1302,12 @@ impl PlayerSession {
                 .into_iter()
                 .flat_map(crate::rally::RallyBuff::modifiers),
         );
-        let equipment = EquipmentStats::derive_with_activated(
+        let equipment = EquipmentStats::derive_with_trance(
             &candidate,
             &self.items,
             &candidate_skills,
             &active_modifiers,
+            self.combat_trance.active,
         )?;
         let prices = self.vendor_prices(&candidate)?;
         let reputation = if candidate.faction_standings == self.inventory.faction_standings
@@ -1640,6 +1646,7 @@ impl PlayerSession {
         self.peer_buff_revision = 0;
         self.rally_buff = None;
         self.rally_revision = 0;
+        self.combat_trance = combat_trance::CombatTrance::default();
         self.refresh_equipment()?;
         self.forget_session()?;
         self.skills = SkillState::default();
@@ -1686,10 +1693,11 @@ mod tests {
         let mut candidate = ship.inventory.clone();
         candidate.equipped[9] = Some(crate::inventory::ItemInstance::stock(2097, 1));
         ship.commit_inventory(candidate).unwrap();
-        assert!(ship.equipment.ship.deflects[3] > ordinary);
         ship.logged_in = true;
         ship.selected_peer = Some("127.0.0.1".parse().unwrap());
         ship.endpoint = Some("127.0.0.1:22343".parse().unwrap());
+        ship.advance_combat_trance().unwrap();
+        assert!(ship.equipment.ship.deflects[3] > ordinary);
         ship.shield = ship.equipment.ship.shield_capacity;
         let starting_shield = ship.shield;
         let hit = crate::npc_projectiles::MobHit {
@@ -1718,6 +1726,90 @@ mod tests {
         assert_eq!(restored.shield, ship.shield);
         restored.receive_mob_hit(&hit).unwrap();
         assert_eq!(restored.shield, ship.shield);
+    }
+
+    /// Combat Trance activates at rest, lingers after thrust, then clears and replays after restart.
+    #[test]
+    fn combat_trance_motion_linger_visual_and_restart_are_authoritative() {
+        let root =
+            std::env::temp_dir().join(format!("enb-trance-motion-{}", rand::random::<u64>()));
+        let mut account = Account::create("pw".into(), "pass", "Warrior".into()).unwrap();
+        account.character.race = 2;
+        account.character.profession = 0;
+        account.save_new(&root).unwrap();
+        let sector: Sector = serde_json::from_str(include_str!("../data/sector.json")).unwrap();
+        let bind = Ipv4Addr::new(127, 0, 0, 2);
+        let mut ship = PlayerSession::new(sector.clone(), bind, root.clone()).unwrap();
+        ship.logged_in = true;
+        ship.selected_peer = Some("127.0.0.1".parse().unwrap());
+        ship.endpoint = Some("127.0.0.1:22343".parse().unwrap());
+        let id = ship.player_id();
+        let baseline = ship.equipment.ship;
+        assert!(!ship.combat_trance.active);
+        ship.advance_combat_trance().unwrap();
+        assert!(ship.combat_trance.active && ship.combat_trance.stationary);
+        assert!(ship.equipment.ship.deflects[0] > baseline.deflects[0]);
+        assert!(ship.equipment.ship.energy_recharge > baseline.energy_recharge);
+        assert!(ship.equipment.ship.shield_recharge > baseline.shield_recharge);
+        assert!(ship.pending.contains(&packets::ship_status_buff_slot(
+            id,
+            9,
+            "Combat_Trance",
+            true,
+            0
+        )));
+        let visual_id = ship.combat_trance_visual_id();
+        assert!(
+            ship.pending
+                .contains(&packets::object_effect(id, visual_id, 671, ship.tick_ms()))
+                || ship
+                    .pending
+                    .iter()
+                    .any(|frame| { frame.opcode == 9 && frame.body[5..7] == 671u16.to_le_bytes() })
+        );
+
+        ship.pending.clear();
+        ship.motion.speed = 100.;
+        ship.motion.set_speed = 100.;
+        ship.advance_combat_trance().unwrap();
+        assert!(ship.combat_trance.active && !ship.combat_trance.stationary);
+        assert_eq!(ship.equipment.ship.deflects[0], baseline.deflects[0] + 37.);
+        assert!(ship.pending.iter().any(|frame| {
+            frame.opcode == 0x1b
+                && frame
+                    .body
+                    .windows(b"Combat_Trance".len())
+                    .any(|bytes| bytes == b"Combat_Trance")
+        }));
+        ship.save().unwrap();
+        ship.checkpoint_session(true).unwrap();
+        let restored = PlayerSession::new(sector, bind, root).unwrap();
+        assert!(restored.combat_trance.active && !restored.combat_trance.stationary);
+        assert_eq!(
+            restored.equipment.ship.deflects[0],
+            ship.equipment.ship.deflects[0]
+        );
+        assert!(restored
+            .pending
+            .iter()
+            .any(|frame| { frame.opcode == 9 && frame.body[5..7] == 671u16.to_le_bytes() }));
+
+        ship.pending.clear();
+        ship.combat_trance.linger_until_ms = crate::resources::unix_ms() - 1;
+        ship.advance_combat_trance().unwrap();
+        assert!(!ship.combat_trance.active);
+        assert_eq!(ship.equipment.ship.deflects[0], baseline.deflects[0]);
+        assert!(ship.pending.contains(&packets::remove_effect(visual_id)));
+        assert!(ship
+            .pending
+            .contains(&packets::ship_active_buff_slot(id, 9, "", 0)));
+        ship.motion.stop();
+        ship.advance_combat_trance().unwrap();
+        assert!(ship.combat_trance.stationary);
+        ship.warp.phase = WarpPhase::Charging;
+        ship.advance_combat_trance().unwrap();
+        assert!(ship.combat_trance.active && !ship.combat_trance.stationary);
+        assert!(ship.combat_trance.linger_until_ms > crate::resources::unix_ms());
     }
 
     /// Verify a saved prospect device changes one pilot without changing another.

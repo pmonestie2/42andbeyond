@@ -70,6 +70,8 @@ pub(super) struct Checkpoint {
     #[serde(default)]
     rally_revision: u64,
     #[serde(default)]
+    combat_trance: combat_trance::CombatTrance,
+    #[serde(default)]
     player_firing: bool,
     #[serde(default)]
     following: bool,
@@ -313,6 +315,24 @@ impl PlayerSession {
             .rally_buff
             .filter(|buff| buff.valid(unix_ms(), self.session_epoch));
         self.rally_revision = saved.rally_revision;
+        self.combat_trance = saved.combat_trance;
+        let trance_was_active = self.combat_trance.active;
+        self.combat_trance.reconcile_replacement(
+            unix_ms(),
+            self.sector.station.is_none() && self.hull > 0. && !self.warp.active(),
+            &self.motion,
+            self.equipment.combat_trance_rank,
+        );
+        if trance_was_active && !self.combat_trance.active {
+            self.pending.push(packets::ship_active_buff_slot(
+                self.player_id(),
+                combat_trance::COMBAT_TRANCE_SLOT,
+                "",
+                0,
+            ));
+            self.pending
+                .push(packets::remove_effect(self.combat_trance_visual_id()));
+        }
         let mut expired_peer_buffs = Vec::new();
         self.peer_buffs.retain(|buff| {
             if buff.valid(&self.items, unix_ms(), self.session_epoch) {
@@ -441,6 +461,7 @@ impl PlayerSession {
         self.publish_peer_buff_resume();
         self.publish_rally_resume();
         self.publish_skill_status_resume();
+        self.publish_combat_trance_resume();
         for expired in expired_peer_buffs {
             self.remove_peer_buff_presentation(&expired);
         }
@@ -544,6 +565,7 @@ impl PlayerSession {
             peer_buff_revision: self.peer_buff_revision,
             rally_buff: self.rally_buff.clone(),
             rally_revision: self.rally_revision,
+            combat_trance: self.combat_trance.clone(),
             player_firing: self.player_firing,
             following: self.following,
             last_launch: self.last_launch,

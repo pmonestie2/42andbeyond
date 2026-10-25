@@ -88,13 +88,17 @@ impl PlayerSession {
                     if Some(ammo.template) == weapon.ammunition {
                         weapon.clone()
                     } else {
-                        EquipmentStats::derive(&candidate, &self.items, &self.skill_catalog)?
-                            .weapons
-                            .into_iter()
-                            .find(|stats| stats.slot == weapon.slot)
-                            .ok_or_else(|| {
-                                invalid("Launcher disappeared during volley preparation.")
-                            })?
+                        EquipmentStats::derive_with_trance(
+                            &candidate,
+                            &self.items,
+                            &self.skill_catalog,
+                            &[],
+                            self.combat_trance.active,
+                        )?
+                        .weapons
+                        .into_iter()
+                        .find(|stats| stats.slot == weapon.slot)
+                        .ok_or_else(|| invalid("Launcher disappeared during volley preparation."))?
                     }
                 };
                 if weapon.item_type != 14 {

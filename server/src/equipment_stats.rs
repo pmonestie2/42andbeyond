@@ -52,6 +52,8 @@ pub struct WeaponStats {
 pub struct EquipmentStats {
     pub ship: ShipStats,
     pub weapons: Vec<WeaponStats>,
+    /// Gear-adjusted trained Combat Trance rank, independent of movement.
+    pub combat_trance_rank: f32,
 }
 
 /// The archived stat engine chooses the strongest equipped modifier for each
@@ -120,6 +122,20 @@ impl EquipmentStats {
         skills: &SkillCatalog,
         activated: &[Modifier],
     ) -> io::Result<Self> {
+        Self::derive_with_trance(inventory, catalog, skills, activated, true)
+    }
+
+    /// Derive live stats with Combat Trance enabled only during its stationary or linger window.
+    ///
+    /// Returns:
+    ///     Self: Authoritative ship and weapon stats plus the effective trained rank.
+    pub fn derive_with_trance(
+        inventory: &Inventory,
+        catalog: &ItemCatalog,
+        skills: &SkillCatalog,
+        activated: &[Modifier],
+        trance_active: bool,
+    ) -> io::Result<Self> {
         inventory.validate(catalog)?;
         let mut modifiers = EquippedModifiers::default();
         for item in inventory
@@ -169,10 +185,15 @@ impl EquipmentStats {
         // PlayerSkills.cpp derives these defensive bands; its lookup of
         // SKILL_NEGOTIATE for the gear bonus is a typo against the public
         // SKILL_COMBAT_TRANCE item effects and Stats.h's matching macro.
-        let trance = if skills.level(13) > 0 {
+        let combat_trance_rank = if skills.level(13) > 0 {
             modifiers
                 .apply_signed("SKILL_COMBAT_TRANCE", skills.level(13) as f32)
                 .max(0.)
+        } else {
+            0.
+        };
+        let trance = if trance_active {
+            combat_trance_rank
         } else {
             0.
         };
@@ -390,7 +411,11 @@ impl EquipmentStats {
                 hit_chances,
             });
         }
-        Ok(Self { ship, weapons })
+        Ok(Self {
+            ship,
+            weapons,
+            combat_trance_rank,
+        })
     }
 }
 

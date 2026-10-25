@@ -389,11 +389,12 @@ impl PlayerSession {
                 .into_iter()
                 .flat_map(crate::rally::RallyBuff::modifiers),
         );
-        self.equipment = EquipmentStats::derive_with_activated(
+        self.equipment = EquipmentStats::derive_with_trance(
             &self.inventory,
             &self.items,
             &self.skill_catalog,
             &modifiers,
+            self.combat_trance.active,
         )?;
         self.reputation = self.factions.reactions(
             self.account.character.class(),
