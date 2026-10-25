@@ -698,6 +698,104 @@ fn advance(game: &mut GameState, seconds: f32) {
     }
 }
 
+/// A JS cast buffs one selected pilot and survives a torn recipient checkpoint.
+#[test]
+fn reactor_optimization_selected_peer_is_durable_and_idempotent() {
+    let root = std::env::temp_dir().join(format!("enb-reactor-opt-{}", rand::random::<u64>()));
+    let accounts = AccountDirectory::new(&root);
+    let caster = accounts
+        .create_class(
+            "seeker".into(),
+            "example",
+            "Seeker".into(),
+            crate::classes::CharacterClass::parse("js").unwrap(),
+        )
+        .unwrap()
+        .account
+        .character
+        .game_id;
+    let recipient = accounts
+        .create("recipient".into(), "example", "Recipient".into())
+        .unwrap()
+        .account
+        .character
+        .game_id;
+    let profile = crate::account::Account::load(&root).unwrap().character;
+    let mut inventory = crate::inventory::Inventory::starter_for(
+        &profile,
+        &crate::items::ItemCatalog::load().unwrap(),
+    )
+    .unwrap();
+    inventory.equipped[1].as_mut().unwrap().template = 3340;
+    fs::write(
+        root.join("inventory.json"),
+        serde_json::to_vec(&inventory).unwrap(),
+    )
+    .unwrap();
+    let sector: Sector = serde_json::from_str(include_str!("../data/sector.json")).unwrap();
+    let bind = Ipv4Addr::new(127, 0, 0, 2);
+    let mut game = GameState::new(sector.clone(), bind, root.clone()).unwrap();
+    login(&mut game, caster, 22971, "seeker");
+    login(&mut game, recipient, 22972, "recipient");
+    let wrong_class_energy = game.sessions[&recipient].energy_balance().0;
+    activate(&mut game, recipient, caster, 86);
+    assert_eq!(
+        game.sessions[&recipient].energy_balance().0,
+        wrong_class_energy
+    );
+    game.sessions.get_mut(&recipient).unwrap().position = [4_500., 0., 0.];
+    game.sessions.get_mut(&caster).unwrap().position = [0., 0., 0.];
+    game.update_views();
+    assert!(game.sessions[&caster].reactor_optimization_contact(recipient));
+    let caster_energy = game.sessions[&caster].energy_balance().0;
+    activate(&mut game, caster, recipient, 86);
+    assert_eq!(game.sessions[&caster].energy_balance().0, caster_energy);
+    game.sessions.get_mut(&recipient).unwrap().position = [2_000., 0., 0.];
+    game.update_views();
+    let before = game.sessions[&recipient].peer_snapshot().unwrap().stats;
+    activate(&mut game, caster, recipient, 86);
+    assert_eq!(
+        game.sessions[&caster].energy_balance().0,
+        caster_energy - 200.
+    );
+    game.sessions
+        .get_mut(&recipient)
+        .unwrap()
+        .checkpoint_session(true)
+        .unwrap();
+    let torn = root.join("accounts/recipient/session.local.json.tmp");
+    fs::create_dir(&torn).unwrap();
+    advance(&mut game, 2.1);
+    assert_eq!(game.energy_ledger.revision(), 1);
+    assert_eq!(
+        game.energy_ledger
+            .reactor_optimization_buff(recipient)
+            .unwrap()
+            .ability,
+        86
+    );
+    assert_eq!(
+        game.sessions[&recipient]
+            .peer_snapshot()
+            .unwrap()
+            .stats
+            .energy_capacity,
+        before.energy_capacity
+    );
+    fs::remove_dir(&torn).unwrap();
+    let charged = game.energy_ledger.balance(caster).unwrap().energy;
+    drop(game);
+    let mut restored = GameState::new(sector, bind, root.clone()).unwrap();
+    let after = restored.sessions[&recipient].peer_snapshot().unwrap().stats;
+    assert!((after.energy_capacity - before.energy_capacity * 1.25).abs() < 0.01);
+    assert!((after.energy_recharge - before.energy_recharge * 1.2).abs() < 0.01);
+    assert_eq!(restored.sessions[&caster].energy_balance().0, charged);
+    restored.deliver_reactor_optimizations().unwrap();
+    assert_eq!(restored.energy_ledger.revision(), 1);
+    drop(restored);
+    fs::remove_dir_all(root).unwrap();
+}
+
 /// PW area Gravity Link and PS single-target casts survive restart without
 /// doubling reactor cost or widening either pilot's target selection.
 #[test]

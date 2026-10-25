@@ -32,6 +32,7 @@ pub enum AbilityKind {
     EquipmentRepair,
     GravityLink,
     Rally,
+    ReactorOptimization,
     Unsupported,
 }
 
@@ -480,6 +481,9 @@ pub struct SkillState {
     pub pending_hull_repair: Option<PendingHullRepair>,
     #[serde(default)]
     pub pending_rally: Option<crate::rally::PendingRally>,
+    #[serde(default)]
+    pub pending_reactor_optimization:
+        Option<crate::reactor_optimization::PendingReactorOptimization>,
     #[serde(default)]
     pub equipment_repair: Option<crate::equipment_repair::ActiveEquipmentRepair>,
     #[serde(default)]

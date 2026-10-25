@@ -27,6 +27,7 @@ impl PlayerSession {
             AbilityKind::RechargeShields | AbilityKind::HullPatch
         );
         let durable_rally = ability.kind == AbilityKind::Rally;
+        let durable_optimization = ability.kind == AbilityKind::ReactorOptimization;
         let durable_gravity = ability.kind == AbilityKind::GravityLink;
         if ability.kind == AbilityKind::Jumpstart {
             self.jumpstart_definition()?;
@@ -58,6 +59,9 @@ impl PlayerSession {
         if durable_rally && self.skills.pending_rally.is_some() {
             return Err(invalid("Previous Rally is still settling."));
         }
+        if durable_optimization && self.skills.pending_reactor_optimization.is_some() {
+            return Err(invalid("Previous Reactor Optimization is still settling."));
+        }
         let self_jumpstart = ability.kind == AbilityKind::Jumpstart
             && (requested_target == self.player_id() || requested_target == u32::MAX);
         if self.hull <= 0. && !self_jumpstart {
@@ -80,6 +84,11 @@ impl PlayerSession {
             return Err(invalid("This skill is recovering."));
         }
         let target = self.ability_target(&ability, requested_target)?;
+        if durable_optimization
+            && crate::reactor_optimization::tier(ability.id, self.skill_catalog.level(43)).is_none()
+        {
+            return Err(invalid("Reactor Optimization rank is not trained."));
+        }
         let gravity_generation = if durable_gravity {
             Some(self.gravity_target_generation(target)?)
         } else {
@@ -152,6 +161,7 @@ impl PlayerSession {
             AbilityKind::RechargeShields => 733,
             AbilityKind::HullPatch => 733,
             AbilityKind::Rally => 0,
+            AbilityKind::ReactorOptimization => 0,
             AbilityKind::GravityLink => 0,
             AbilityKind::EquipmentRepair => unreachable!("toggle handled before charged cast"),
         };
@@ -194,7 +204,7 @@ impl PlayerSession {
             hull_repair_amount,
             gravity_generation,
         });
-        if durable_repair || durable_rally || durable_gravity {
+        if durable_repair || durable_rally || durable_gravity || durable_optimization {
             if let Err(error) = self.checkpoint_session(true) {
                 self.energy += energy;
                 self.skills.cast = None;
@@ -221,6 +231,26 @@ impl PlayerSession {
         }
         if ability.kind == AbilityKind::Rally {
             return Ok(self.player_id());
+        }
+        if ability.kind == AbilityKind::ReactorOptimization {
+            if ability.rank < 5
+                || requested_target == self.player_id()
+                || requested_target == u32::MAX
+            {
+                return Ok(self.player_id());
+            }
+            let contact = self
+                .peer_contacts
+                .get(&requested_target)
+                .ok_or_else(|| invalid("Select a visible pilot for Reactor Optimization."))?;
+            if contact.incapacitated
+                || distance(contact.position, self.position) > ability.range as f32
+            {
+                return Err(invalid(
+                    "Reactor Optimization target is dead or out of range.",
+                ));
+            }
+            return Ok(requested_target);
         }
         if ability.kind == AbilityKind::RechargeShields {
             if ability.rank == 1
@@ -383,7 +413,9 @@ impl PlayerSession {
                     || self.sector.station.is_some());
             let invalid_recharge = matches!(
                 definition.kind,
-                AbilityKind::RechargeShields | AbilityKind::HullPatch
+                AbilityKind::RechargeShields
+                    | AbilityKind::HullPatch
+                    | AbilityKind::ReactorOptimization
             ) && (self.warp.active()
                 || self.gate_transit.is_some()
                 || self.sector.station.is_some()
@@ -673,6 +705,15 @@ impl PlayerSession {
                     skill_rank: self.skill_catalog.level(44),
                 });
             }
+            AbilityKind::ReactorOptimization => {
+                self.skills.pending_reactor_optimization =
+                    Some(crate::reactor_optimization::PendingReactorOptimization {
+                        target,
+                        effect,
+                        ability: ability.id,
+                        trained_rank: self.skill_catalog.level(43),
+                    });
+            }
             AbilityKind::GravityLink => {
                 return Err(invalid(
                     "Gravity Link settles through its durable MOB cast.",
@@ -685,7 +726,10 @@ impl PlayerSession {
         drop(combat);
         if matches!(
             ability.kind,
-            AbilityKind::RechargeShields | AbilityKind::HullPatch | AbilityKind::Rally
+            AbilityKind::RechargeShields
+                | AbilityKind::HullPatch
+                | AbilityKind::Rally
+                | AbilityKind::ReactorOptimization
         ) {
             self.checkpoint_session(true)?;
         }

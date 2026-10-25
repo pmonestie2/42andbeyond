@@ -183,6 +183,14 @@ impl GameState {
             {
                 return Err(invalid("Player Rally revision exceeds the durable ledger."));
             }
+            if session.reactor_optimization_revision() > self.energy_ledger.revision()
+                || session.reactor_optimization_revision() > 0
+                    && self.energy_ledger.reactor_optimization_buff(id).is_none()
+            {
+                return Err(invalid(
+                    "Player Reactor Optimization revision exceeds the durable ledger.",
+                ));
+            }
             if let Some(balance) = self.energy_ledger.balance(id) {
                 session.apply_energy_balance(balance)?;
             }
@@ -209,6 +217,9 @@ impl GameState {
             }
             if let Some(buff) = self.energy_ledger.rally_buff(id) {
                 session.apply_rally_buff(buff.clone())?;
+            }
+            if let Some(buff) = self.energy_ledger.reactor_optimization_buff(id) {
+                session.apply_reactor_optimization_buff(buff.clone())?;
             }
             for (&peer, at) in &self.registrations {
                 if at.elapsed() < Duration::from_secs(600) {
@@ -647,6 +658,7 @@ impl GameState {
         self.deliver_hull_repairs()?;
         self.deliver_equipment_repairs()?;
         self.deliver_rallies()?;
+        self.deliver_reactor_optimizations()?;
         self.deliver_support()?;
         for id in &ids {
             self.attach_session(*id)?;

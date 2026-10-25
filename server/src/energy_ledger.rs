@@ -5,6 +5,7 @@ use crate::inventory::{ItemInstance, EQUIPMENT_SLOTS};
 use crate::peer_buffs::PeerBuff;
 use crate::protocol::invalid;
 use crate::rally::RallyBuff;
+use crate::reactor_optimization::ReactorOptimizationBuff;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fs::{self, File};
@@ -85,6 +86,10 @@ struct LedgerData {
     rally_buffs: BTreeMap<u32, RallyBuff>,
     #[serde(default)]
     last_rally: BTreeMap<u32, TransferSequence>,
+    #[serde(default)]
+    reactor_optimization_buffs: BTreeMap<u32, ReactorOptimizationBuff>,
+    #[serde(default)]
+    last_reactor_optimization: BTreeMap<u32, TransferSequence>,
 }
 
 pub struct EnergyLedger {
@@ -113,6 +118,8 @@ impl EnergyLedger {
                 peer_buffs: BTreeMap::new(),
                 rally_buffs: BTreeMap::new(),
                 last_rally: BTreeMap::new(),
+                reactor_optimization_buffs: BTreeMap::new(),
+                last_reactor_optimization: BTreeMap::new(),
             }
         };
         if data.version != 1
@@ -200,6 +207,23 @@ impl EnergyLedger {
                     || buff.skill_rank > 7
                     || buff.expires_at_ms == 0
             })
+            || data
+                .last_reactor_optimization
+                .iter()
+                .any(|(source, last)| *source == 0 || last.epoch == 0 || last.sequence == 0)
+            || data
+                .reactor_optimization_buffs
+                .iter()
+                .any(|(target, buff)| {
+                    *target == 0
+                        || buff.revision == 0
+                        || buff.revision > data.revision
+                        || buff.source == 0
+                        || buff.target_epoch == 0
+                        || crate::reactor_optimization::tier(buff.ability, buff.trained_rank)
+                            .is_none()
+                        || buff.expires_at_ms == 0
+                })
         {
             return Err(invalid("Invalid targeted energy transfer ledger."));
         }
@@ -598,6 +622,83 @@ impl EnergyLedger {
             .path
             .parent()
             .ok_or_else(|| invalid("Rally ledger has no directory."))?;
+        fs::create_dir_all(directory)?;
+        let temporary = self.path.with_extension("json.tmp");
+        let mut file = File::create(&temporary)?;
+        file.write_all(&serde_json::to_vec_pretty(&next)?)?;
+        file.sync_all()?;
+        fs::rename(temporary, &self.path)?;
+        self.data = next;
+        Ok(self.data.revision)
+    }
+
+    /// Returns:
+    ///     Option<&ReactorOptimizationBuff>: Last committed timed reactor status.
+    pub fn reactor_optimization_buff(&self, target: u32) -> Option<&ReactorOptimizationBuff> {
+        self.data.reactor_optimization_buffs.get(&target)
+    }
+
+    /// Returns:
+    ///     bool: Whether an authenticated Reactor Optimization cast was settled.
+    pub fn reactor_optimization_seen(&self, source: u32, epoch: u64, effect: u32) -> bool {
+        self.data
+            .last_reactor_optimization
+            .get(&source)
+            .is_some_and(|last| last.epoch == epoch && effect <= last.sequence)
+    }
+
+    /// Atomically commit the caster's charged energy and one recipient's status.
+    ///
+    /// Returns:
+    ///     u64: Shared durable world revision for the cast.
+    pub fn cast_reactor_optimization(
+        &mut self,
+        source: u32,
+        epoch: u64,
+        effect: u32,
+        source_energy: f32,
+        target: u32,
+        mut buff: ReactorOptimizationBuff,
+    ) -> io::Result<u64> {
+        if source == 0
+            || epoch == 0
+            || effect == 0
+            || self.reactor_optimization_seen(source, epoch, effect)
+            || target == 0
+            || buff.source != source
+            || buff.target_epoch == 0
+            || buff.expires_at_ms == 0
+            || crate::reactor_optimization::tier(buff.ability, buff.trained_rank).is_none()
+            || !source_energy.is_finite()
+            || !(0. ..=1_000_000_000.).contains(&source_energy)
+        {
+            return Err(invalid("Invalid or repeated Reactor Optimization cast."));
+        }
+        let mut next = self.data.clone();
+        next.revision = next
+            .revision
+            .checked_add(1)
+            .ok_or_else(|| invalid("Reactor Optimization revision exhausted."))?;
+        next.balances.insert(
+            source,
+            EnergyBalance {
+                revision: next.revision,
+                energy: source_energy,
+            },
+        );
+        buff.revision = next.revision;
+        next.reactor_optimization_buffs.insert(target, buff);
+        next.last_reactor_optimization.insert(
+            source,
+            TransferSequence {
+                epoch,
+                sequence: effect,
+            },
+        );
+        let directory = self
+            .path
+            .parent()
+            .ok_or_else(|| invalid("Reactor Optimization ledger has no directory."))?;
         fs::create_dir_all(directory)?;
         let temporary = self.path.with_extension("json.tmp");
         let mut file = File::create(&temporary)?;

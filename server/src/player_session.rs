@@ -72,6 +72,8 @@ mod peer_buff_service;
 mod production_service;
 #[path = "rally_service.rs"]
 mod rally_service;
+#[path = "reactor_optimization_service.rs"]
+mod reactor_optimization_service;
 #[path = "recovery.rs"]
 mod recovery;
 #[path = "reputation_service.rs"]
@@ -215,6 +217,8 @@ pub struct PlayerSession {
     peer_buff_revision: u64,
     rally_buff: Option<crate::rally::RallyBuff>,
     rally_revision: u64,
+    reactor_optimization_buff: Option<crate::reactor_optimization::ReactorOptimizationBuff>,
+    reactor_optimization_revision: u64,
     combat_trance: combat_trance::CombatTrance,
     shield: f32,
     pub(crate) hull: f32,
@@ -414,6 +418,8 @@ impl PlayerSession {
             peer_buff_revision: 0,
             rally_buff: None,
             rally_revision: 0,
+            reactor_optimization_buff: None,
+            reactor_optimization_revision: 0,
             combat_trance: combat_trance::CombatTrance::default(),
             shield: stats.shield_capacity,
             hull: stats.hull_capacity,
@@ -1306,13 +1312,23 @@ impl PlayerSession {
                 .into_iter()
                 .flat_map(crate::rally::RallyBuff::modifiers),
         );
-        let equipment = EquipmentStats::derive_with_trance(
+        let mut equipment = EquipmentStats::derive_with_trance(
             &candidate,
             &self.items,
             &candidate_skills,
             &active_modifiers,
             self.combat_trance.active,
         )?;
+        if let Some(buff) = self
+            .reactor_optimization_buff
+            .as_ref()
+            .filter(|buff| buff.valid(crate::resources::unix_ms(), self.session_epoch))
+        {
+            buff.apply(
+                &mut equipment.ship.energy_capacity,
+                &mut equipment.ship.energy_recharge,
+            );
+        }
         let prices = self.vendor_prices(&candidate)?;
         let reputation = if candidate.faction_standings == self.inventory.faction_standings
             && self.reputation.class_faction == self.account.character.class().faction()
@@ -1650,6 +1666,8 @@ impl PlayerSession {
         self.peer_buff_revision = 0;
         self.rally_buff = None;
         self.rally_revision = 0;
+        self.reactor_optimization_buff = None;
+        self.reactor_optimization_revision = 0;
         self.combat_trance = combat_trance::CombatTrance::default();
         self.refresh_equipment()?;
         self.forget_session()?;
@@ -3171,6 +3189,85 @@ mod tests {
             .pending
             .contains(&packets::ship_active_buff_slot(id, 5, "", 0)));
         assert!(ship.pending.contains(&packets::remove_effect(visual)));
+    }
+
+    /// Reactor Optimization changes real ship stats and clears only slot 11.
+    #[test]
+    fn reactor_optimization_applies_native_status_and_expires() {
+        let mut ship = session();
+        ship.logged_in = true;
+        let baseline = ship.equipment.ship;
+        let id = ship.player_id();
+        ship.apply_reactor_optimization_buff(
+            crate::reactor_optimization::ReactorOptimizationBuff {
+                revision: 1,
+                source: id,
+                target_epoch: ship.session_epoch,
+                ability: 86,
+                trained_rank: 7,
+                expires_at_ms: crate::resources::unix_ms() + 10_000,
+            },
+        )
+        .unwrap();
+        assert!(
+            (ship.equipment.ship.energy_capacity - baseline.energy_capacity * 1.25).abs() < 0.01
+        );
+        assert!(
+            (ship.equipment.ship.energy_recharge - baseline.energy_recharge * 1.2).abs() < 0.01
+        );
+        let token = b"Reactor_Optimization";
+        assert!(ship.pending.iter().any(|frame| {
+            frame.opcode == 0x1b && frame.body.windows(token.len()).any(|bytes| bytes == token)
+        }));
+        assert!(!ship.pending.iter().any(|frame| frame.opcode == 9));
+        ship.pending.clear();
+        ship.reactor_optimization_buff
+            .as_mut()
+            .unwrap()
+            .expires_at_ms = crate::resources::unix_ms() - 1;
+        ship.advance_reactor_optimization_buff().unwrap();
+        assert_eq!(
+            ship.equipment.ship.energy_capacity,
+            baseline.energy_capacity
+        );
+        assert_eq!(
+            ship.equipment.ship.energy_recharge,
+            baseline.energy_recharge
+        );
+        assert!(ship
+            .pending
+            .contains(&packets::ship_active_buff_slot(id, 11, "", 0)));
+    }
+
+    /// Each JS tier charges its authored local cost and freezes its trained rank.
+    #[test]
+    fn seeker_reactor_optimization_five_tiers_charge_and_queue_once() {
+        let root =
+            std::env::temp_dir().join(format!("enb-reactor-tiers-{}", rand::random::<u64>()));
+        let mut account = Account::create("seeker".into(), "pass", "Seeker".into()).unwrap();
+        account.character.race = 1;
+        account.character.profession = 1;
+        account.save_new(&root).unwrap();
+        let mut ship = PlayerSession::new(
+            serde_json::from_str(include_str!("../data/sector.json")).unwrap(),
+            Ipv4Addr::new(127, 0, 0, 2),
+            root.clone(),
+        )
+        .unwrap();
+        ship.logged_in = true;
+        assert_eq!(ship.skill_catalog.level(43), 7);
+        for (ability, energy) in [(82, 75.), (83, 100.), (84, 125.), (85, 150.), (86, 200.)] {
+            ship.energy = 500.;
+            ship.begin_ability_for(ability, ship.player_id()).unwrap();
+            assert_eq!(ship.energy, 500. - energy);
+            ship.advance_abilities(2.1).unwrap();
+            let pending = ship.skills.pending_reactor_optimization.take().unwrap();
+            assert_eq!(pending.ability, ability);
+            assert_eq!(pending.target, ship.player_id());
+            assert_eq!(pending.trained_rank, 7);
+            ship.skills.cooldowns.remove(&43);
+        }
+        fs::remove_dir_all(root).unwrap();
     }
 
     /// Legacy status icons resolve the underscore BuffType, including resume.

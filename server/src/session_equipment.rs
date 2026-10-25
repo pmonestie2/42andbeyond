@@ -396,6 +396,16 @@ impl PlayerSession {
             &modifiers,
             self.combat_trance.active,
         )?;
+        if let Some(buff) = self
+            .reactor_optimization_buff
+            .as_ref()
+            .filter(|buff| buff.valid(crate::resources::unix_ms(), self.session_epoch))
+        {
+            buff.apply(
+                &mut self.equipment.ship.energy_capacity,
+                &mut self.equipment.ship.energy_recharge,
+            );
+        }
         self.reputation = self.factions.reactions(
             self.account.character.class(),
             &self.inventory.faction_standings,

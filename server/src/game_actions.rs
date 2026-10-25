@@ -6,6 +6,101 @@ use super::*;
 use crate::mob::distance;
 
 impl GameState {
+    /// Settle one selected Reactor Optimization status in the atomic world ledger.
+    pub(super) fn deliver_reactor_optimizations(&mut self) -> io::Result<()> {
+        let sources: Vec<u32> = self
+            .sessions
+            .iter()
+            .filter_map(|(id, session)| session.pending_reactor_optimization().map(|_| *id))
+            .collect();
+        for source in sources {
+            let pending = self.sessions[&source]
+                .pending_reactor_optimization()
+                .unwrap();
+            if !pending.valid() {
+                return Err(invalid("Invalid saved Reactor Optimization cast."));
+            }
+            self.sessions
+                .get_mut(&source)
+                .unwrap()
+                .checkpoint_session(true)?;
+            let epoch = self.sessions[&source].energy_transfer_epoch();
+            if !self
+                .energy_ledger
+                .reactor_optimization_seen(source, epoch, pending.effect)
+            {
+                self.update_views();
+                let caster = &self.sessions[&source];
+                let recipient = self.sessions.get(&pending.target);
+                let tier = crate::reactor_optimization::tier(pending.ability, pending.trained_rank)
+                    .ok_or_else(|| invalid("Unknown Reactor Optimization tier."))?;
+                let eligible = recipient.is_some_and(|recipient| {
+                    caster.reactor_optimization_available()
+                        && recipient.reactor_optimization_available()
+                        && recipient.sector.id == caster.sector.id
+                        && caster.reactor_optimization_contact(pending.target)
+                        && (pending.target == source
+                            || tier.rank >= 5
+                                && distance(recipient.position, caster.position) <= tier.range)
+                });
+                if !eligible {
+                    self.sessions
+                        .get_mut(&source)
+                        .unwrap()
+                        .clear_pending_reactor_optimization()?;
+                    continue;
+                }
+                let recipient = recipient.unwrap();
+                self.energy_ledger.cast_reactor_optimization(
+                    source,
+                    epoch,
+                    pending.effect,
+                    caster.energy_balance().0,
+                    pending.target,
+                    crate::reactor_optimization::ReactorOptimizationBuff {
+                        revision: 0,
+                        source,
+                        target_epoch: recipient.energy_transfer_epoch(),
+                        ability: pending.ability,
+                        trained_rank: pending.trained_rank,
+                        expires_at_ms: crate::resources::unix_ms()
+                            .saturating_add(crate::reactor_optimization::DURATION_MS),
+                    },
+                )?;
+            }
+            if let Some(balance) = self.energy_ledger.balance(source) {
+                if let Err(error) = self
+                    .sessions
+                    .get_mut(&source)
+                    .unwrap()
+                    .apply_energy_balance(balance)
+                {
+                    crate::server_error!(
+                        "Reactor Optimization sender checkpoint retry for {source}: {error}"
+                    );
+                }
+            }
+            if let Some(buff) = self.energy_ledger.reactor_optimization_buff(pending.target) {
+                if buff.source == source {
+                    if let Some(recipient) = self.sessions.get_mut(&pending.target) {
+                        if let Err(error) = recipient.apply_reactor_optimization_buff(buff.clone())
+                        {
+                            crate::server_error!(
+                                "Reactor Optimization recipient checkpoint retry for {}: {error}",
+                                pending.target
+                            );
+                        }
+                    }
+                }
+            }
+            self.sessions
+                .get_mut(&source)
+                .unwrap()
+                .clear_pending_reactor_optimization()?;
+        }
+        Ok(())
+    }
+
     /// Settle one Rally cast for all nearby grouped pilots in one world revision.
     pub(super) fn deliver_rallies(&mut self) -> io::Result<()> {
         let sources: Vec<u32> = self

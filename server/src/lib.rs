@@ -31,6 +31,7 @@ pub mod player_session;
 pub mod production;
 pub mod protocol;
 pub mod rally;
+pub mod reactor_optimization;
 pub mod refining;
 pub mod resources;
 pub mod sector_combat;
