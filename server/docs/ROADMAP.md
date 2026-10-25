@@ -54,6 +54,15 @@ mean the corresponding gameplay system is complete.
   dead enemies cannot be revived by contemplation. Recovery rebinds changed
   content/caps while preserving existing damage and death state.
 - JE skills/abilities, incap, self-jumpstart, native tow request and home station.
+- Rank-three Recharge Shields is now usable by Terran Traders, Jenquai Seekers
+  and Progen Privates through the native ability packet. It spends 125 reactor
+  points at charge start, applies the archived 360-per-effective-skill shield
+  amount to self or a selected visible pilot, and honors public equipped skill
+  bonuses. Charge and completion effects use native object packets. A saved
+  completed-cast outbox and one world-ledger revision couple caster reactor
+  energy with recipient shields; failed writes and short replacement retry
+  without a duplicate heal. Higher Recharge Shields ranks and other class
+  abilities remain pending.
 - Nine race/profession identities, public SQL class skill ceilings, racial starter
   gear, class ship models and weapon/device mount limits. Shared implemented
   abilities respect class ownership; other class ability handlers remain pending.

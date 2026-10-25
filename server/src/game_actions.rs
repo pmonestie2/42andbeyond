@@ -254,6 +254,83 @@ impl GameState {
         Ok(())
     }
 
+    /// Settle completed shield casts with one durable reactor/shield receipt.
+    pub(super) fn deliver_shield_recharges(&mut self) -> io::Result<()> {
+        let sources: Vec<u32> = self
+            .sessions
+            .iter()
+            .filter_map(|(id, session)| session.pending_shield_recharge().map(|_| *id))
+            .collect();
+        for source in sources {
+            let cast = self.sessions[&source].pending_shield_recharge().unwrap();
+            if !cast.valid() {
+                return Err(invalid("Invalid saved Recharge Shields cast."));
+            }
+            self.sessions
+                .get_mut(&source)
+                .unwrap()
+                .checkpoint_session(true)?;
+            let epoch = self.sessions[&source].shield_recharge_epoch();
+            if !self.energy_ledger.recharge_seen(source, epoch, cast.effect) {
+                self.update_views();
+                let caster = &self.sessions[&source];
+                let recipient = self.sessions.get(&cast.target);
+                let eligible = recipient.is_some_and(|target| {
+                    target.shield_recharge_available()
+                        && caster.shield_recharge_available()
+                        && target.sector.id == caster.sector.id
+                        && distance(target.position, caster.position) <= cast.range
+                        && caster.can_recharge_peer(cast.target)
+                });
+                if !eligible {
+                    let caster = self.sessions.get_mut(&source).unwrap();
+                    caster.clear_shield_recharge()?;
+                    caster.message("Recharge Shields target left range before completion.");
+                    continue;
+                }
+                let recipient = &self.sessions[&cast.target];
+                let (shield, capacity) = recipient.shield_balance();
+                let target_after = (shield + cast.amount).min(capacity);
+                let source_energy = caster.energy_balance().0;
+                self.energy_ledger.recharge_shields(
+                    source,
+                    cast.target,
+                    epoch,
+                    cast.effect,
+                    source_energy,
+                    target_after,
+                )?;
+            }
+            let energy = self.energy_ledger.balance(source).unwrap();
+            if let Err(error) = self
+                .sessions
+                .get_mut(&source)
+                .unwrap()
+                .apply_energy_balance(energy)
+            {
+                crate::server_error!(
+                    "Shield recharge sender checkpoint retry for {source}: {error}"
+                );
+            }
+            let shield = self.energy_ledger.shield_balance(cast.target).unwrap();
+            if let Err(error) = self
+                .sessions
+                .get_mut(&cast.target)
+                .unwrap()
+                .apply_shield_balance(shield)
+            {
+                crate::server_error!(
+                    "Shield recharge recipient checkpoint retry for {}: {error}",
+                    cast.target
+                );
+            }
+            let caster = self.sessions.get_mut(&source).unwrap();
+            caster.clear_shield_recharge()?;
+            caster.publish_shield_recharge(cast.target, cast.effect);
+        }
+        Ok(())
+    }
+
     fn group_action(&mut self, source: u32, action: u32, target: u32) -> io::Result<()> {
         if (action == 11 || action == 12) && self.jumpstart_offers.contains_key(&source) {
             return self.answer_jumpstart(source, action == 11);

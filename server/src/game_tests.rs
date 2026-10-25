@@ -99,6 +99,114 @@ fn activate(game: &mut GameState, owner: u32, target: u32, ability: u32) {
     .unwrap();
 }
 
+/// Rank-three Recharge Shields heals a visible pilot once across replacement.
+#[test]
+fn recharge_shields_is_durable_for_two_pilots() {
+    let root = std::env::temp_dir().join(format!("enb-shield-ability-{}", rand::random::<u64>()));
+    let accounts = AccountDirectory::new(&root);
+    let alice = accounts
+        .create_class(
+            "alice".into(),
+            "example",
+            "Alice".into(),
+            crate::classes::CharacterClass::parse("tt").unwrap(),
+        )
+        .unwrap()
+        .account
+        .character
+        .game_id;
+    let bob = accounts
+        .create("bob".into(), "example", "Bob".into())
+        .unwrap()
+        .account
+        .character
+        .game_id;
+    let sector: Sector = serde_json::from_str(include_str!("../data/sector.json")).unwrap();
+    let bind = Ipv4Addr::new(127, 0, 0, 2);
+    let mut game = GameState::new(sector.clone(), bind, root.clone()).unwrap();
+    login(&mut game, alice, 22901, "alice");
+    login(&mut game, bob, 22902, "bob");
+    game.sessions.get_mut(&bob).unwrap().set_shield_for_test(0.);
+    game.sessions
+        .get_mut(&bob)
+        .unwrap()
+        .checkpoint_session(true)
+        .unwrap();
+    game.update_views();
+    let before_energy = game.sessions[&alice].energy_balance().0;
+    let capacity = game.sessions[&bob].shield_balance().1;
+    activate(&mut game, alice, bob, 89);
+    assert_eq!(
+        game.sessions[&alice].energy_balance().0,
+        before_energy - 125.
+    );
+    advance(&mut game, 1.2);
+    assert_eq!(game.energy_ledger.revision(), 1);
+    assert_eq!(game.sessions[&bob].shield_balance().0, capacity.min(2520.));
+    assert!(game.sessions[&alice].pending_shield_recharge().is_none());
+
+    // A torn recipient checkpoint must recover from the committed world file.
+    let recipient_path = root.join("accounts/bob/session.local.json");
+    let mut stale: serde_json::Value =
+        serde_json::from_slice(&fs::read(&recipient_path).unwrap()).unwrap();
+    stale["shield"] = serde_json::json!(0.);
+    stale["shield_revision"] = serde_json::json!(0);
+    fs::write(&recipient_path, serde_json::to_vec(&stale).unwrap()).unwrap();
+    drop(game);
+    let mut restored = GameState::new(sector.clone(), bind, root.clone()).unwrap();
+    assert_eq!(
+        restored.sessions[&bob].shield_balance().0,
+        capacity.min(2520.)
+    );
+    assert_eq!(restored.energy_ledger.revision(), 1);
+    restored.deliver_shield_recharges().unwrap();
+    assert_eq!(restored.energy_ledger.revision(), 1);
+
+    // A failed ledger rename leaves the completed cast in its session outbox.
+    restored
+        .sessions
+        .get_mut(&bob)
+        .unwrap()
+        .set_shield_for_test(0.);
+    restored
+        .sessions
+        .get_mut(&bob)
+        .unwrap()
+        .checkpoint_session(true)
+        .unwrap();
+    let full_reactor = restored.sessions[&alice].energy_balance().1;
+    restored
+        .sessions
+        .get_mut(&alice)
+        .unwrap()
+        .set_energy_for_test(full_reactor);
+    restored
+        .sessions
+        .get_mut(&alice)
+        .unwrap()
+        .checkpoint_session(true)
+        .unwrap();
+    restored.update_views();
+    activate(&mut restored, alice, bob, 89);
+    let temporary = root.join("energy_transfers.local.json.tmp");
+    fs::create_dir(&temporary).unwrap();
+    assert!(restored.advance(1.2).is_err());
+    assert_eq!(restored.energy_ledger.revision(), 1);
+    assert!(restored.sessions[&alice]
+        .pending_shield_recharge()
+        .is_some());
+    fs::remove_dir(&temporary).unwrap();
+    drop(restored);
+    let mut retried = GameState::new(sector, bind, root.clone()).unwrap();
+    assert!(retried.sessions[&alice].pending_shield_recharge().is_some());
+    retried.deliver_shield_recharges().unwrap();
+    assert_eq!(retried.energy_ledger.revision(), 2);
+    assert!(retried.sessions[&alice].pending_shield_recharge().is_none());
+    retried.deliver_shield_recharges().unwrap();
+    assert_eq!(retried.energy_ledger.revision(), 2);
+    fs::remove_dir_all(root).unwrap();
+}
+
 fn advance(game: &mut GameState, seconds: f32) {
     for _ in 0..(seconds / 0.1).ceil() as usize {
         game.advance(0.1).unwrap();

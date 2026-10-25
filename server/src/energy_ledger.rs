@@ -16,6 +16,12 @@ pub struct EnergyBalance {
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+pub struct ShieldBalance {
+    pub revision: u64,
+    pub shield: f32,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 struct TransferSequence {
     epoch: u64,
     sequence: u32,
@@ -45,8 +51,12 @@ struct LedgerData {
     version: u32,
     revision: u64,
     balances: BTreeMap<u32, EnergyBalance>,
+    #[serde(default)]
+    shields: BTreeMap<u32, ShieldBalance>,
     // Historical on-disk name; this also deduplicates peer-buff activations.
     last_transfer: BTreeMap<u32, TransferSequence>,
+    #[serde(default)]
+    last_recharge: BTreeMap<u32, TransferSequence>,
     #[serde(default)]
     peer_buffs: BTreeMap<u32, StoredPeerBuffs>,
 }
@@ -67,7 +77,9 @@ impl EnergyLedger {
                 version: 1,
                 revision: 0,
                 balances: BTreeMap::new(),
+                shields: BTreeMap::new(),
                 last_transfer: BTreeMap::new(),
+                last_recharge: BTreeMap::new(),
                 peer_buffs: BTreeMap::new(),
             }
         };
@@ -83,6 +95,17 @@ impl EnergyLedger {
                 .last_transfer
                 .iter()
                 .any(|(player, last)| *player == 0 || last.epoch == 0 || last.sequence == 0)
+            || data
+                .last_recharge
+                .iter()
+                .any(|(player, last)| *player == 0 || last.epoch == 0 || last.sequence == 0)
+            || data.shields.iter().any(|(player, balance)| {
+                *player == 0
+                    || balance.revision == 0
+                    || balance.revision > data.revision
+                    || !balance.shield.is_finite()
+                    || !(0. ..=1_000_000_000.).contains(&balance.shield)
+            })
             || data.peer_buffs.iter().any(|(target, stored)| {
                 let buffs = stored.as_slice();
                 *target == 0
@@ -115,6 +138,86 @@ impl EnergyLedger {
     ///     Option<EnergyBalance>: Latest atomic transfer balance for a player.
     pub fn balance(&self, player: u32) -> Option<EnergyBalance> {
         self.data.balances.get(&player).copied()
+    }
+
+    /// Returns:
+    ///     Option<ShieldBalance>: Last committed cross-session shield level.
+    pub fn shield_balance(&self, player: u32) -> Option<ShieldBalance> {
+        self.data.shields.get(&player).copied()
+    }
+
+    /// Returns:
+    ///     bool: Whether this charged ability already settled.
+    pub fn recharge_seen(&self, player: u32, epoch: u64, effect: u32) -> bool {
+        self.data
+            .last_recharge
+            .get(&player)
+            .is_some_and(|last| last.epoch == epoch && effect <= last.sequence)
+    }
+
+    /// Atomically settle the caster's reactor and recipient's shield.
+    ///
+    /// Returns:
+    ///     u64: Revision shared by both durable resources.
+    pub fn recharge_shields(
+        &mut self,
+        source: u32,
+        target: u32,
+        epoch: u64,
+        effect: u32,
+        source_energy: f32,
+        target_shield: f32,
+    ) -> io::Result<u64> {
+        if source == 0
+            || target == 0
+            || epoch == 0
+            || effect == 0
+            || self.recharge_seen(source, epoch, effect)
+            || !source_energy.is_finite()
+            || !(0. ..=1_000_000_000.).contains(&source_energy)
+            || !target_shield.is_finite()
+            || !(0. ..=1_000_000_000.).contains(&target_shield)
+        {
+            return Err(invalid("Invalid or repeated shield recharge."));
+        }
+        let mut next = self.data.clone();
+        next.revision = next
+            .revision
+            .checked_add(1)
+            .ok_or_else(|| invalid("Shield recharge revision exhausted."))?;
+        next.balances.insert(
+            source,
+            EnergyBalance {
+                revision: next.revision,
+                energy: source_energy,
+            },
+        );
+        next.shields.insert(
+            target,
+            ShieldBalance {
+                revision: next.revision,
+                shield: target_shield,
+            },
+        );
+        next.last_recharge.insert(
+            source,
+            TransferSequence {
+                epoch,
+                sequence: effect,
+            },
+        );
+        let directory = self
+            .path
+            .parent()
+            .ok_or_else(|| invalid("Shield recharge ledger has no directory."))?;
+        fs::create_dir_all(directory)?;
+        let temporary = self.path.with_extension("json.tmp");
+        let mut file = File::create(&temporary)?;
+        file.write_all(&serde_json::to_vec_pretty(&next)?)?;
+        file.sync_all()?;
+        fs::rename(temporary, &self.path)?;
+        self.data = next;
+        Ok(self.data.revision)
     }
 
     /// Returns:
@@ -277,6 +380,29 @@ impl EnergyLedger {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A failed rename cannot spend reactor energy or restore shields.
+    #[test]
+    fn shield_recharge_commits_both_resources_and_deduplicates_after_reload() {
+        let root =
+            std::env::temp_dir().join(format!("enb-recharge-ledger-{}", rand::random::<u64>()));
+        fs::create_dir_all(&root).unwrap();
+        let path = root.join("energy_transfers.local.json");
+        let mut ledger = EnergyLedger::load(path.clone()).unwrap();
+        let temporary = path.with_extension("json.tmp");
+        fs::create_dir(&temporary).unwrap();
+        assert!(ledger.recharge_shields(1, 2, 7, 300, 75., 420.).is_err());
+        assert_eq!(ledger.revision(), 0);
+        fs::remove_dir(&temporary).unwrap();
+        assert_eq!(ledger.recharge_shields(1, 2, 7, 300, 75., 420.).unwrap(), 1);
+        let mut restored = EnergyLedger::load(path).unwrap();
+        assert!(restored.recharge_seen(1, 7, 300));
+        assert_eq!(restored.balance(1).unwrap().energy, 75.);
+        assert_eq!(restored.shield_balance(2).unwrap().shield, 420.);
+        assert!(restored.recharge_shields(1, 2, 7, 300, 75., 840.).is_err());
+        assert_eq!(restored.shield_balance(2).unwrap().shield, 420.);
+        fs::remove_dir_all(root).unwrap();
+    }
 
     /// Failed writes leave both balances and the last sequence unchanged.
     #[test]

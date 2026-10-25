@@ -27,6 +27,7 @@ pub struct ShipStats {
     pub signature: f32,
     pub turn_rate: f32,
     pub prospect_bonus: f32,
+    pub recharge_shields_skill: f32,
     pub tractor_speed: f32,
     pub tractor_range: f32,
     pub deflects: [f32; 9],
@@ -252,6 +253,15 @@ impl EquipmentStats {
             signature: modifiers.apply("STAT_SIGNATURE", class.base_signature() + field(2, 29)?),
             turn_rate: modifiers.apply("STAT_TURN", 45.),
             prospect_bonus: modifiers.apply_signed("SKILL_PROSPECT", 0.),
+            // Stats.h names this SHIELD_RECHARGE; public item effects use
+            // RECHARGE_SHIELDS for the same trained skill.
+            recharge_shields_skill: if skills.level(46) > 0 {
+                modifiers
+                    .apply_signed("SKILL_RECHARGE_SHIELDS", skills.level(46) as f32)
+                    .clamp(0., 9.)
+            } else {
+                0.
+            },
             tractor_speed: modifiers.apply("STAT_TRACTORBEAM", 200.).max(1.),
             // Long Tractor Beam has a catalog range modifier. The archived
             // fixed range ignored it; retain the current 2 km base.
@@ -379,6 +389,31 @@ impl EquipmentStats {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Public beam gear raises the native Recharge Shields skill above rank.
+    #[test]
+    fn recharge_shields_uses_public_skill_gear() {
+        let catalog = ItemCatalog::load().unwrap();
+        let mut profile = crate::account::Account::create("pilot".into(), "pass", "Pilot".into())
+            .unwrap()
+            .character;
+        let class = crate::classes::CharacterClass::parse("js").unwrap();
+        profile.race = class.race();
+        profile.profession = class.profession();
+        let skills = SkillCatalog::for_profile(&profile).unwrap();
+        let mut inventory = Inventory::starter_for(&profile, &catalog).unwrap();
+        let base = EquipmentStats::derive(&inventory, &catalog, &skills).unwrap();
+        assert_eq!(base.ship.recharge_shields_skill, 7.);
+        inventory.equipped[3] = Some(crate::inventory::ItemInstance {
+            template: 792,
+            quantity: 1,
+            quality: 1.,
+            structure: 1.,
+            builder_name: String::new(),
+        });
+        let equipped = EquipmentStats::derive(&inventory, &catalog, &skills).unwrap();
+        assert!((equipped.ship.recharge_shields_skill - 7.87).abs() < 0.001);
+    }
     #[test]
     fn native_class_scan_and_signature_include_skill_and_engine_once() {
         let catalog = ItemCatalog::load().unwrap();

@@ -125,6 +125,7 @@ impl PlayerSession {
                 position,
                 home_station: self.home_station,
                 energy_revision: self.energy_revision,
+                shield_revision: self.shield_revision,
             },
             checkpoint: self.transition_checkpoint(destination, position, join)?,
         };

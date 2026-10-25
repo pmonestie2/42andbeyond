@@ -26,6 +26,7 @@ pub enum AbilityKind {
     Fold,
     Jumpstart,
     Leech,
+    RechargeShields,
     Unsupported,
 }
 
@@ -124,6 +125,29 @@ pub struct Cast {
     /// Jumpstarts retain their committed cost, remaining time and legacy repair.
     #[serde(default)]
     pub jumpstart: Option<JumpstartPlan>,
+    #[serde(default)]
+    pub recharge_amount: Option<f32>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PendingShieldRecharge {
+    pub target: u32,
+    pub effect: u32,
+    pub amount: f32,
+    pub range: f32,
+}
+
+impl PendingShieldRecharge {
+    /// Returns:
+    ///     bool: Whether the saved recharge can be retried safely.
+    pub fn valid(&self) -> bool {
+        self.target != 0
+            && self.effect != 0
+            && self.amount.is_finite()
+            && self.amount > 0.
+            && self.range.is_finite()
+            && (1. ..=10_000.).contains(&self.range)
+    }
 }
 
 impl Cast {
@@ -133,6 +157,9 @@ impl Cast {
             && self.remaining >= 0.
             && self.jumpstart.as_ref().is_none_or(|plan| {
                 self.ability == 65 && plan.valid() && self.remaining <= plan.charge_seconds
+            })
+            && self.recharge_amount.is_none_or(|amount| {
+                self.ability == 89 && amount.is_finite() && (1. ..=3240.).contains(&amount)
             })
     }
 }
@@ -153,6 +180,8 @@ pub struct SkillState {
     pub cloak_stealth: Option<u32>,
     #[serde(default)]
     pub temporary_effects: BTreeMap<u32, f32>,
+    #[serde(default)]
+    pub pending_shield_recharge: Option<PendingShieldRecharge>,
 }
 
 #[derive(Clone, Debug)]
