@@ -20,7 +20,7 @@ namespace FortyTwoAndBeyond.Client
         private float CanvasWidth => Screen.width / Scale;
         private float CanvasHeight => Screen.height / Scale;
         private readonly Color cyan = new Color(.3f, .85f, 1), white = new Color(.86f, .93f, 1), muted = new Color(.46f, .62f, .72f), gold = new Color(1, .72f, .3f), crewColor = new Color(.39f, 1f, .68f);
-        private GUIStyle heading, body, wrappedBody, small, commsPreview, section, button, selected, playerButton, hostileButton, damageStyle, input, primaryButton, equipmentRow, equipmentText, equipmentMeta, vitalText, buffText, contactName, hostileName, playerName, contactMeta;
+        private GUIStyle heading, body, wrappedBody, small, commsPreview, section, button, selected, playerButton, hostileButton, damageStyle, input, primaryButton, equipmentRow, equipmentText, equipmentMeta, vitalText, buffText, contactName, hostileName, playerName, contactMeta, dialogueText, dialogueChoice, dialogueMeta;
         private Texture2D buttonTexture, selectedTexture, panelTexture, radarTexture, weaveTexture, frameTexture;
         internal GUIStyle BodyStyle => body;
         internal GUIStyle SmallStyle => small;
@@ -204,6 +204,9 @@ namespace FortyTwoAndBeyond.Client
             hostileName = new GUIStyle(contactName); hostileName.normal.textColor = new Color(1f, .58f, .46f);
             playerName = new GUIStyle(contactName); playerName.normal.textColor = cyan;
             contactMeta = new GUIStyle(small) { wordWrap = true };
+            dialogueText = new GUIStyle(wrappedBody) { fontSize = 17, padding = new RectOffset(4, 4, 5, 7) };
+            dialogueMeta = new GUIStyle(small) { fontSize = 13, wordWrap = true };
+            dialogueMeta.normal.textColor = new Color(.66f, .8f, .89f);
             section = new GUIStyle(GUI.skin.label) { fontSize = 15, fontStyle = FontStyle.Bold }; section.normal.textColor = cyan;
             damageStyle = new GUIStyle(GUI.skin.label) { fontSize = 20, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
             damageStyle.normal.textColor = gold;
@@ -221,6 +224,7 @@ namespace FortyTwoAndBeyond.Client
                 alignment = TextAnchor.MiddleLeft, padding = new RectOffset(10, 8, 4, 4) };
             button.normal.background = buttonTexture; button.normal.textColor = white;
             button.hover.background = selectedTexture; button.hover.textColor = cyan;
+            dialogueChoice = new GUIStyle(button) { fontSize = 14, padding = new RectOffset(13, 10, 7, 7) };
             selected = new GUIStyle(button); selected.normal.background = selectedTexture; selected.normal.textColor = cyan;
             playerButton = new GUIStyle(button); playerButton.normal.textColor = cyan;
             hostileButton = new GUIStyle(button); hostileButton.normal.textColor = new Color(1f, .53f, .4f);
@@ -513,12 +517,13 @@ namespace FortyTwoAndBeyond.Client
                 uint id = contact.Id;
                 string label = npcNames.TryGetValue(id, out string npcName) ? npcName : "Contact " + id;
                 GUI.enabled = snapshot.Dialogue == null;
-                Rect row = GUILayoutUtility.GetRect(0, 53, GUILayout.ExpandWidth(true));
+                Rect row = GUILayoutUtility.GetRect(0, 58, GUILayout.ExpandWidth(true));
                 if (GUI.Button(row, "", button)) client.OpenNpc(id);
                 Fill(new Rect(row.x + 1, row.y + 2, 3, row.height - 4), cyan);
-                GUI.Label(new Rect(row.x + 13, row.y + 5, row.width - 24, 22), label, body);
-                GUI.Label(new Rect(row.x + 13, row.y + 28, row.width - 24, 18),
-                    "CONTACT " + (index + 1).ToString("00") + "  /  OPEN DIALOGUE", small);
+                GUI.Label(new Rect(row.x + 14, row.y + 6, row.width - 34, 23), label, body);
+                GUI.Label(new Rect(row.x + 14, row.y + 31, row.width - 34, 18),
+                    "CONTACT " + (index + 1).ToString("00") + "   ·   TALK", small);
+                GUI.Label(new Rect(row.x + row.width - 21, row.y + 19, 18, 22), "›", section);
             }
             if (roomContacts.Length == 0)
                 GUILayout.Label("No contacts in this room. Choose another concourse.", small);
@@ -561,14 +566,18 @@ namespace FortyTwoAndBeyond.Client
         {
             DialogueState dialogue = snapshot.Dialogue;
             bool trading = dialogue.VendorOpen;
-            float width = Mathf.Min(trading ? 680 : 590, CanvasWidth - 625), x = (CanvasWidth - width) * .5f;
-            float top = trading ? 116 : CanvasHeight - 285;
-            float height = trading ? CanvasHeight - 140 : 260;
+            float width = Mathf.Min(trading ? 700 : 660, CanvasWidth - 630), x = (CanvasWidth - width) * .5f;
+            float height = trading ? CanvasHeight - 140 : 300;
+            float top = trading ? 116 : CanvasHeight - height - 24;
             Panel(new Rect(x, top, width, height));
             string title = npcNames.TryGetValue(dialogue.NpcId, out string name) ? name : "Station contact";
-            GUI.Label(new Rect(x + 18, top + 11, width - 100, 26), title.ToUpperInvariant(), body);
-            if (GUI.Button(new Rect(x + width - 102, top + 12, 84, 26), "Close", button)) client.ChooseNpc(230);
-            GUILayout.BeginArea(new Rect(x + 18, top + 47, width - 36, trading ? 125 : 195));
+            Fill(new Rect(x + 1, top + 2, 4, 48), cyan);
+            GUI.Label(new Rect(x + 19, top + 12, width - 130, 27), title.ToUpperInvariant(), body);
+            GUI.Label(new Rect(x + 20, top + 38, width - 130, 19),
+                trading ? "STATION CONTACT   /   TRADE" : "STATION CONTACT   /   CONVERSATION", dialogueMeta);
+            if (GUI.Button(new Rect(x + width - 104, top + 15, 86, 29), "CLOSE", button)) client.ChooseNpc(230);
+            Fill(new Rect(x + 18, top + 61, width - 36, 1), new Color(.24f, .55f, .68f, .45f));
+            GUILayout.BeginArea(new Rect(x + 18, top + 70, width - 36, trading ? 108 : height - 84));
             dialogueScroll = GUILayout.BeginScrollView(dialogueScroll);
             if (dialogue.MissionKind != MissionDialogueKind.None)
             {
@@ -576,12 +585,13 @@ namespace FortyTwoAndBeyond.Client
                     dialogue.MissionKind == MissionDialogueKind.Objective ? "ACTIVE MISSION" :
                     dialogue.MissionKind == MissionDialogueKind.Completed ? "MISSION COMPLETED" :
                     dialogue.MissionStage == 1 ? "MISSION ACCEPTED" : "MISSION UPDATED";
-                GUILayout.Label(phase + "  ·  " + dialogue.MissionName, section);
+                GUILayout.Label(phase, section);
+                GUILayout.Label(dialogue.MissionName, dialogueText);
                 MissionState mission = snapshot.Missions.FirstOrDefault(entry => entry?.Name == dialogue.MissionName);
                 if (mission != null && !string.IsNullOrEmpty(mission.Objective))
                 {
-                    GUILayout.Label("CURRENT OBJECTIVE", small);
-                    GUILayout.Label(mission.Objective, small);
+                    GUILayout.Label("CURRENT OBJECTIVE", dialogueMeta);
+                    GUILayout.Label(mission.Objective, dialogueMeta);
                     GUILayout.Space(8);
                 }
             }
@@ -591,10 +601,25 @@ namespace FortyTwoAndBeyond.Client
                 int marker = line.IndexOf(' ');
                 if (marker > 0 && marker < 20) line = line.Substring(marker + 1);
             }
-            GUILayout.Label(line.Length > 0 ? line : "Waiting for reply…", body);
-            GUILayout.Space(12);
+            if (line.Length == 0) line = "Waiting for reply…";
+            float transcriptHeight = Mathf.Max(45,
+                dialogueText.CalcHeight(new GUIContent(line), width - 82) + 15);
+            Rect transcript = GUILayoutUtility.GetRect(0, transcriptHeight, GUILayout.ExpandWidth(true));
+            Fill(transcript, new Color(.075f, .145f, .19f, .6f));
+            Fill(new Rect(transcript.x, transcript.y, 2, transcript.height),
+                new Color(.43f, .78f, .91f, .8f));
+            GUI.Label(new Rect(transcript.x + 11, transcript.y + 5,
+                transcript.width - 22, transcript.height - 10), line, dialogueText);
+            GUILayout.Space(9);
+            if (dialogue.Choices.Length > 0) GUILayout.Label("YOUR RESPONSE", dialogueMeta);
             foreach (DialogueChoice choice in dialogue.Choices)
-                if (GUILayout.Button(choice.Text, button, GUILayout.Height(30))) client.ChooseNpc(choice.Node);
+            {
+                string caption = "›   " + choice.Text;
+                float choiceHeight = Mathf.Max(36,
+                    dialogueChoice.CalcHeight(new GUIContent(caption), width - 73) + 5);
+                if (GUILayout.Button(caption, dialogueChoice, GUILayout.Height(choiceHeight)))
+                    client.ChooseNpc(choice.Node);
+            }
             GUILayout.EndScrollView(); GUILayout.EndArea();
             if (trading) StationVendor(snapshot, new Rect(x + 18, top + 188, width - 36, height - 205));
         }
