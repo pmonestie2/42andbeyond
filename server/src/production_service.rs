@@ -380,7 +380,11 @@ impl PlayerSession {
         let mut recipe = CraftRecipe::resolve(product, &self.items)?;
         recipe.cost = self.negotiated_service_price(recipe.cost)?;
         let recovered_components = if operation == CraftOperation::Dismantle {
-            let chance = recipe.dismantle_chance(&self.skill_catalog, &self.items)?;
+            let chance = recipe.dismantle_chance_with_equipment(
+                &self.inventory,
+                &self.skill_catalog,
+                &self.items,
+            )?;
             recipe
                 .components
                 .iter()
@@ -392,7 +396,8 @@ impl PlayerSession {
         };
         let analysis_succeeded = if operation == CraftOperation::Analyze {
             recipe.analyze(&self.inventory, &self.skill_catalog, &self.items, true)?;
-            rand::random::<u32>() % 100 < recipe.chance(&self.skill_catalog, &self.items)?
+            rand::random::<u32>() % 100
+                < recipe.chance_with_equipment(&self.inventory, &self.skill_catalog, &self.items)?
         } else if operation == CraftOperation::Dismantle {
             recipe.dismantle(
                 &self.inventory,
@@ -593,12 +598,14 @@ impl PlayerSession {
                 .collect();
         }
         let result = if window.mode == 2 {
-            view.chance =
-                recipe.chance(&self.skill_catalog, &self.items).unwrap_or(0) as f32 / 100.;
+            view.chance = recipe
+                .chance_with_equipment(&self.inventory, &self.skill_catalog, &self.items)
+                .unwrap_or(0) as f32
+                / 100.;
             recipe.analyze(&self.inventory, &self.skill_catalog, &self.items, true)
         } else if window.mode == 3 {
             view.chance = recipe
-                .dismantle_chance(&self.skill_catalog, &self.items)
+                .dismantle_chance_with_equipment(&self.inventory, &self.skill_catalog, &self.items)
                 .unwrap_or(0) as f32
                 / 100.;
             recipe.dismantle(

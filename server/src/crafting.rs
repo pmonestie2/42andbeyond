@@ -57,6 +57,46 @@ pub fn build_ceiling(rank: u32) -> u32 {
 
 impl CraftRecipe {
     /// Returns:
+    ///     (u32, &'static str): Build skill and matching public gear modifier.
+    fn build_skill(&self, items: &ItemCatalog) -> io::Result<(u32, &'static str)> {
+        let skill = match items.get(self.product)?.item_type {
+            13 => (4, "SKILL_BUILD_COMPONENTS"),
+            11 => (5, "SKILL_BUILD_DEVICES"),
+            6 => (6, "SKILL_BUILD_ENGINES"),
+            7 => (8, "SKILL_BUILD_REACTORS"),
+            2 => (9, "SKILL_BUILD_SHIELDS"),
+            10 | 14..=16 => (10, "SKILL_BUILD_WEAPONS"),
+            _ => return Err(invalid("No build skill supports this item type.")),
+        };
+        Ok(skill)
+    }
+
+    /// Returns:
+    ///     f32: Strongest intact equipped modifier for this recipe's build skill.
+    fn equipped_skill_bonus(&self, inventory: &Inventory, items: &ItemCatalog) -> io::Result<f32> {
+        let (_, stat) = self.build_skill(items)?;
+        let mut bonus = 0f32;
+        for equipped in inventory
+            .equipped
+            .iter()
+            .flatten()
+            .filter(|item| item.structure > 0.)
+        {
+            for effect in &items.get(equipped.template)?.equipped {
+                for modifier in &effect.modifiers {
+                    if modifier.stat == stat
+                        && modifier.operation == 1
+                        && modifier.value.is_finite()
+                    {
+                        bonus = bonus.max(modifier.value);
+                    }
+                }
+            }
+        }
+        Ok(bonus.clamp(0., 4.))
+    }
+
+    /// Returns:
     ///     bool: Whether a saved fee is the catalog price or a rank-five to seven Negotiate quote.
     fn valid_quoted_cost(base: u64, quoted: u64) -> bool {
         [100u32, 85, 83, 81].into_iter().any(|percent| {
@@ -108,15 +148,7 @@ impl CraftRecipe {
 
     pub fn check_skill(&self, skills: &SkillCatalog, items: &ItemCatalog) -> io::Result<u32> {
         let item = items.get(self.product)?;
-        let skill = match item.item_type {
-            13 => 4,            // Build Components
-            11 => 5,            // Build Devices
-            6 => 6,             // Build Engines
-            7 => 8,             // Build Reactors
-            2 => 9,             // Build Shields
-            10 | 14..=16 => 10, // Build Weapons (including ammunition)
-            _ => return Err(invalid("No build skill supports this item type.")),
-        };
+        let (skill, _) = self.build_skill(items)?;
         let ceiling = build_ceiling(skills.level(skill));
         if ceiling < u32::from(item.level) {
             return Err(invalid("Build skill is too low for this item."));
@@ -132,6 +164,19 @@ impl CraftRecipe {
         Ok((100 - item.crafting.analyze_difficulty.clamp(0, 100)
             + 10 * (ceiling - u32::from(item.level)) as i32)
             .clamp(5, 100) as u32)
+    }
+
+    /// Returns:
+    ///     u32: Analysis chance including equipped fractional build skill.
+    pub fn chance_with_equipment(
+        &self,
+        inventory: &Inventory,
+        skills: &SkillCatalog,
+        items: &ItemCatalog,
+    ) -> io::Result<u32> {
+        let base = self.chance(skills, items)?;
+        let bonus = self.equipped_skill_bonus(inventory, items)?;
+        Ok((base as f32 + bonus * 10.).round().clamp(5., 100.) as u32)
     }
 
     pub fn requirements(&self) -> BTreeMap<u32, u32> {
@@ -257,6 +302,19 @@ impl CraftRecipe {
         Ok((100 - item.crafting.dismantle_difficulty.clamp(0, 100)
             + 10 * (ceiling - u32::from(item.level)) as i32)
             .clamp(5, 100) as u32)
+    }
+
+    /// Returns:
+    ///     u32: Component recovery chance including equipped build skill.
+    pub fn dismantle_chance_with_equipment(
+        &self,
+        inventory: &Inventory,
+        skills: &SkillCatalog,
+        items: &ItemCatalog,
+    ) -> io::Result<u32> {
+        let base = self.dismantle_chance(skills, items)?;
+        let bonus = self.equipped_skill_bonus(inventory, items)?;
+        Ok((base as f32 + bonus * 10.).round().clamp(5., 100.) as u32)
     }
 
     pub fn check_recovery(&self, recovered: &[u32]) -> io::Result<()> {
@@ -688,5 +746,38 @@ mod tests {
             (build_ceiling(5), build_ceiling(6), build_ceiling(7)),
             (5, 7, 9)
         );
+    }
+
+    /// A public build device improves analysis and recovery while intact.
+    #[test]
+    fn equipped_build_skill_raises_production_chances_only_while_intact() {
+        let items = ItemCatalog::load().unwrap();
+        let skills = SkillCatalog::load().unwrap();
+        let recipe = CraftRecipe::resolve(3292, &items).unwrap();
+        let mut inventory = Inventory::starter(&items).unwrap();
+        let base_analysis = recipe.chance(&skills, &items).unwrap();
+        let base_recovery = recipe.dismantle_chance(&skills, &items).unwrap();
+        inventory.equipped[9] = Some(ItemInstance::stock(5387, 1));
+        inventory.validate(&items).unwrap();
+        assert_eq!(
+            recipe
+                .chance_with_equipment(&inventory, &skills, &items)
+                .unwrap(),
+            base_analysis + 1
+        );
+        assert_eq!(
+            recipe
+                .dismantle_chance_with_equipment(&inventory, &skills, &items)
+                .unwrap(),
+            base_recovery + 1
+        );
+        inventory.equipped[9].as_mut().unwrap().structure = 0.;
+        assert_eq!(
+            recipe
+                .chance_with_equipment(&inventory, &skills, &items)
+                .unwrap(),
+            base_analysis
+        );
+        assert_eq!(recipe.check_skill(&skills, &items).unwrap(), 9);
     }
 }
