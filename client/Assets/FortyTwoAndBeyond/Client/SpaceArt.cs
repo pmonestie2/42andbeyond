@@ -23,6 +23,7 @@ namespace FortyTwoAndBeyond.Client
         private readonly Material hostileFrigateSurface, hostileDestroyerSurface, hostileCruiserSurface,
             hostileCarrierSurface;
         private readonly Material hull, trim, dark, glass, glow, amber, hostile, crewSignal, mineral, rock, oreRock, field;
+        private readonly Material stationDeck, stationWall, stationFrame, stationRecess, stationBlue, stationAmber;
         public Material Sky { get; }
         public Material EffectLine { get; }
 
@@ -36,6 +37,21 @@ namespace FortyTwoAndBeyond.Client
             Texture2D plating = LoadDetail("HullPlating");
             foreach (Material surface in new[] { hull, trim, dark })
             { surface.SetTexture("_DetailTex", plating); surface.SetFloat("_TextureStrength", .8f); }
+            stationDeck = Surface(new Color(.23f, .31f, .38f), .72f, .34f);
+            stationWall = Surface(new Color(.29f, .39f, .48f), .6f, .42f);
+            stationFrame = Surface(new Color(.09f, .15f, .22f), .83f, .55f);
+            stationRecess = Surface(new Color(.025f, .055f, .085f), .38f, .24f);
+            stationBlue = Surface(new Color(.025f, .43f, .55f), .42f, .5f,
+                new Color(.01f, .15f, .24f));
+            stationAmber = Surface(new Color(.61f, .28f, .065f), .47f, .48f,
+                new Color(.22f, .085f, .012f));
+            foreach (Material surface in new[] { stationDeck, stationWall, stationFrame, stationRecess })
+            {
+                surface.SetTexture("_DetailTex", plating);
+                surface.SetFloat("_TextureStrength", surface == stationRecess ? .28f : .56f);
+                surface.SetFloat("_DetailGain", 1.8f);
+                surface.SetFloat("_Panels", surface == stationDeck ? .4f : .68f);
+            }
             glass = Surface(new Color(.015f, .12f, .18f), .8f, .85f);
             glow = Surface(new Color(.05f, .6f, .85f), .2f, .5f, new Color(.1f, 1.4f, 2.1f));
             amber = Surface(new Color(.8f, .35f, .06f), .4f, .3f, new Color(1.3f, .35f, .04f));
@@ -137,6 +153,18 @@ namespace FortyTwoAndBeyond.Client
             obj.transform.SetParent(parent, false); obj.transform.localPosition = position; obj.transform.localScale = scale;
             obj.GetComponent<MeshFilter>().sharedMesh = mesh; obj.GetComponent<MeshRenderer>().sharedMaterial = material;
             return obj.transform;
+        }
+
+        /// <returns>Transform: A structural beam spanning two local-space points.</returns>
+        private static Transform Beam(Transform parent, string name, Vector3 start, Vector3 end,
+            float width, float depth, Material surface)
+        {
+            Vector3 direction = end - start;
+            Transform part = Part(parent, PrimitiveType.Cube, (start + end) * .5f,
+                new Vector3(width, direction.magnitude, depth), surface);
+            part.name = name;
+            part.localRotation = Quaternion.FromToRotation(Vector3.up, direction);
+            return part;
         }
 
         /// <returns>Material: A textured material, or null when no compatible shader is available.</returns>
@@ -269,31 +297,68 @@ namespace FortyTwoAndBeyond.Client
             return root;
         }
 
-        /// <returns>A compact procedural docking bay surrounding the parked ship.</returns>
+        /// <returns>A layered docking bay with a recessed berth and readable deck geometry.</returns>
         public Transform Hangar(Transform parent)
         {
             Transform root = Root(parent, "Station docking bay");
-            Part(root, PrimitiveType.Cube, new Vector3(0, -.25f, 0), new Vector3(18, .4f, 24), dark);
-            Part(root, PrimitiveType.Cube, new Vector3(0, 6, 11.5f), new Vector3(18, 12, .8f), trim);
-            for (int side = -1; side <= 1; side += 2)
+            Part(root, PrimitiveType.Cube, new Vector3(0, -.36f, 0), new Vector3(19, .5f, 25), stationRecess);
+            Part(root, PrimitiveType.Cube, new Vector3(0, -.09f, 0), new Vector3(12, .08f, 23), stationDeck);
+            Part(root, PrimitiveType.Cube, new Vector3(0, 6, 11.5f), new Vector3(19, 12, .9f), stationWall);
+            Part(root, PrimitiveType.Cube, new Vector3(0, 4.4f, 11.01f),
+                new Vector3(10, 7.2f, .12f), stationRecess);
+            Part(root, PrimitiveType.Cube, new Vector3(0, 4.4f, 10.94f),
+                new Vector3(7.4f, 5.6f, .08f), glass);
+            Model(root, ring, stationFrame, new Vector3(0, 4.5f, 10.82f), Vector3.one * 3.2f);
+            Model(root, ring, stationBlue, new Vector3(0, 4.5f, 10.74f), Vector3.one * 2.93f);
+            for (int panel = -5; panel <= 5; panel++)
             {
-                Part(root, PrimitiveType.Cube, new Vector3(side * 8.5f, 5, 0), new Vector3(.7f, 10, 24), trim);
-                Part(root, PrimitiveType.Cube, new Vector3(side * 5.4f, .05f, 0), new Vector3(.08f, .04f, 18), glow);
-                for (int i = -2; i <= 2; i++)
+                float z = panel * 2.05f;
+                if (Mathf.Abs(panel) > 2)
+                    Part(root, PrimitiveType.Cube, new Vector3(0, -.015f, z),
+                        new Vector3(11.4f, .035f, .055f), stationFrame);
+                for (int side = -1; side <= 1; side += 2)
                 {
-                    Part(root, PrimitiveType.Cube, new Vector3(side * 8.05f, 4.5f, i * 4),
-                        new Vector3(.12f, 7, .18f), hull);
-                    Part(root, PrimitiveType.Cube, new Vector3(side * 7.9f, 7.5f, i * 4),
-                        new Vector3(.2f, .14f, 2.2f), glow);
+                    Part(root, PrimitiveType.Cube, new Vector3(side * 4.7f, -.02f, z),
+                        new Vector3(.75f, .045f, 1.68f), stationWall);
+                    Part(root, PrimitiveType.Cube, new Vector3(side * 5.45f, .005f, z),
+                        new Vector3(.1f, .055f, 1.14f), stationBlue);
                 }
             }
-            Part(root, PrimitiveType.Cylinder, new Vector3(0, 0, 0), new Vector3(5, .12f, 5), hull);
-            Part(root, PrimitiveType.Cylinder, new Vector3(0, .1f, 0), new Vector3(3.7f, .04f, 3.7f), trim);
+            for (int side = -1; side <= 1; side += 2)
+            {
+                Part(root, PrimitiveType.Cube, new Vector3(side * 9.2f, 5, 0),
+                    new Vector3(.7f, 10, 25), stationWall);
+                Part(root, PrimitiveType.Cube, new Vector3(side * 7.8f, 8.5f, 0),
+                    new Vector3(3.2f, .4f, 25), stationFrame);
+                for (int i = -2; i <= 2; i++)
+                {
+                    float z = i * 4.7f;
+                    Beam(root, "Angled dock support", new Vector3(side * 8.85f, .2f, z),
+                        new Vector3(side * 6.1f, 8.2f, z), .4f, .5f, stationFrame);
+                    Part(root, PrimitiveType.Cube, new Vector3(side * 8.8f, 3.5f, z + 1.5f),
+                        new Vector3(.08f, 3.9f, .18f), stationBlue);
+                    Part(root, PrimitiveType.Cube, new Vector3(side * 8.72f, 4.8f, z - 1.4f),
+                        new Vector3(.09f, 1.2f, .15f), stationAmber);
+                }
+            }
+            for (int z = -8; z <= 8; z += 4)
+            {
+                Beam(root, "Dock ceiling brace", new Vector3(-6.2f, 8.1f, z),
+                    new Vector3(0, 10.25f, z), .32f, .38f, stationFrame);
+                Beam(root, "Dock ceiling brace", new Vector3(6.2f, 8.1f, z),
+                    new Vector3(0, 10.25f, z), .32f, .38f, stationFrame);
+                Part(root, PrimitiveType.Cube, new Vector3(0, 10.16f, z),
+                    new Vector3(2.4f, .08f, .23f), stationBlue);
+            }
+            Part(root, PrimitiveType.Cylinder, new Vector3(0, 0, 0),
+                new Vector3(5.35f, .13f, 5.35f), stationFrame);
+            Part(root, PrimitiveType.Cylinder, new Vector3(0, .09f, 0),
+                new Vector3(4.45f, .04f, 4.45f), stationDeck);
             for (int i = 0; i < 12; i++)
             {
                 float angle = i * Mathf.PI / 6;
                 Part(root, PrimitiveType.Cube, new Vector3(Mathf.Cos(angle) * 4.3f, .2f, Mathf.Sin(angle) * 4.3f),
-                    new Vector3(.65f, .08f, .18f), amber);
+                    new Vector3(.65f, .08f, .18f), stationAmber);
             }
             return root;
         }
@@ -302,44 +367,102 @@ namespace FortyTwoAndBeyond.Client
         public Transform StationConcourse(Transform parent)
         {
             Transform root = Root(parent, "Station concourse");
-            Part(root, PrimitiveType.Cube, new Vector3(0, -.25f, 0), new Vector3(20, .4f, 25), dark);
-            Part(root, PrimitiveType.Cube, new Vector3(0, 7, 11.5f), new Vector3(20, 14, .8f), trim);
-            Part(root, PrimitiveType.Cube, new Vector3(0, 8.5f, 0), new Vector3(20, .5f, 25), hull);
+            Part(root, PrimitiveType.Cube, new Vector3(0, -.32f, 0),
+                new Vector3(20, .5f, 25), stationRecess);
+            Part(root, PrimitiveType.Cube, new Vector3(0, -.055f, 0),
+                new Vector3(14, .05f, 24), stationDeck);
+            Part(root, PrimitiveType.Cube, new Vector3(0, 7, 11.5f),
+                new Vector3(20, 14, .8f), stationWall);
+            Part(root, PrimitiveType.Cube, new Vector3(0, 8.5f, 0),
+                new Vector3(20, .5f, 25), stationFrame);
+            Part(root, PrimitiveType.Cube, new Vector3(0, 3.5f, 11.02f),
+                new Vector3(9, 4.5f, .1f), stationRecess);
+            Part(root, PrimitiveType.Cube, new Vector3(0, 3.5f, 10.95f),
+                new Vector3(7.8f, 3.5f, .08f), glass);
             for (int side = -1; side <= 1; side += 2)
             {
-                Part(root, PrimitiveType.Cube, new Vector3(side * 9.5f, 4, 0), new Vector3(.7f, 8, 25), trim);
-                Part(root, PrimitiveType.Cube, new Vector3(side * 7.5f, .03f, 0), new Vector3(.1f, .04f, 22), glow);
+                Part(root, PrimitiveType.Cube, new Vector3(side * 9.5f, 4, 0),
+                    new Vector3(.7f, 8, 25), stationWall);
+                Part(root, PrimitiveType.Cube, new Vector3(side * 7.5f, .03f, 0),
+                    new Vector3(.1f, .04f, 22), stationBlue);
                 for (int stall = -1; stall <= 1; stall++)
                 {
                     float z = stall * 6;
-                    Part(root, PrimitiveType.Cube, new Vector3(side * 7.2f, 1.1f, z), new Vector3(3.4f, 1.4f, 3.2f), hull);
-                    Part(root, PrimitiveType.Cube, new Vector3(side * 7.2f, 2.7f, z + 1.35f), new Vector3(2.5f, 1.2f, .08f), glass);
-                    Part(root, PrimitiveType.Cube, new Vector3(side * 7.2f, 3.45f, z + 1.35f), new Vector3(2.7f, .08f, .1f), glow);
-                    Part(root, PrimitiveType.Cube, new Vector3(side * 9.1f, 4.5f, z + 3), new Vector3(.16f, 8, .18f), hull);
+                    Part(root, PrimitiveType.Cube, new Vector3(side * 7.2f, 1.05f, z),
+                        new Vector3(3.4f, 1.5f, 3.2f), stationFrame);
+                    Part(root, PrimitiveType.Cube, new Vector3(side * 7.2f, 1.85f, z + 1.35f),
+                        new Vector3(2.8f, .12f, .18f), stationWall);
+                    Part(root, PrimitiveType.Cube, new Vector3(side * 7.2f, 2.7f, z + 1.35f),
+                        new Vector3(2.5f, 1.2f, .08f), glass);
+                    Part(root, PrimitiveType.Cube, new Vector3(side * 7.2f, 3.45f, z + 1.35f),
+                        new Vector3(2.7f, .09f, .12f), stationBlue);
+                    Beam(root, "Concourse kiosk strut", new Vector3(side * 8.95f, 1.8f, z + 1.3f),
+                        new Vector3(side * 8.35f, 4.3f, z + 1.3f), .18f, .22f, stationWall);
+                    Part(root, PrimitiveType.Cube, new Vector3(side * 9.1f, 4.5f, z + 3),
+                        new Vector3(.16f, 8, .18f), stationFrame);
                 }
             }
             for (int rib = -2; rib <= 2; rib++)
             {
-                Part(root, PrimitiveType.Cube, new Vector3(0, 7.9f, rib * 5), new Vector3(18, .16f, .18f), glow);
-                Part(root, PrimitiveType.Cube, new Vector3(0, .025f, rib * 5), new Vector3(14, .035f, .1f), amber);
+                float z = rib * 5;
+                Beam(root, "Concourse ceiling arch", new Vector3(-9.15f, 5.9f, z),
+                    new Vector3(0, 8.18f, z), .29f, .32f, stationWall);
+                Beam(root, "Concourse ceiling arch", new Vector3(9.15f, 5.9f, z),
+                    new Vector3(0, 8.18f, z), .29f, .32f, stationWall);
+                Part(root, PrimitiveType.Cube, new Vector3(0, 8.06f, z),
+                    new Vector3(2.6f, .07f, .2f), stationBlue);
+                Part(root, PrimitiveType.Cube, new Vector3(0, .025f, z),
+                    new Vector3(12, .035f, .09f), stationAmber);
             }
-            Part(root, PrimitiveType.Cylinder, new Vector3(0, .02f, 2), new Vector3(2.4f, .06f, 2.4f), hull);
-            Transform medallion = Model(root, ring, glow, new Vector3(0, .08f, 2), Vector3.one * 2.3f);
+            for (int panel = -4; panel <= 4; panel++)
+                for (int side = -1; side <= 1; side += 2)
+                    Part(root, PrimitiveType.Cube, new Vector3(side * 5.5f, -.01f, panel * 2.8f),
+                        new Vector3(2.4f, .02f, 2.4f), stationWall);
+            Part(root, PrimitiveType.Cylinder, new Vector3(0, .02f, 2),
+                new Vector3(2.4f, .06f, 2.4f), stationFrame);
+            Transform medallion = Model(root, ring, stationBlue, new Vector3(0, .08f, 2),
+                Vector3.one * 2.3f);
             medallion.localRotation = Quaternion.Euler(90, 0, 0);
             return root;
         }
 
-        /// <returns>A compact station pilot silhouette built from shared materials.</returns>
+        /// <returns>A segmented station pilot suit with a visible pack and helmet silhouette.</returns>
         public Transform StationAvatar(Transform parent)
         {
             Transform root = Root(parent, "Station pilot");
-            Part(root, PrimitiveType.Capsule, new Vector3(0, 1.1f, 0), new Vector3(.55f, .8f, .42f), hull);
-            Part(root, PrimitiveType.Sphere, new Vector3(0, 2.1f, 0), new Vector3(.48f, .48f, .48f), glass);
-            Part(root, PrimitiveType.Cube, new Vector3(0, 1.38f, .26f), new Vector3(.32f, .14f, .05f), glow);
+            Part(root, PrimitiveType.Capsule, new Vector3(0, 1.15f, 0),
+                new Vector3(.64f, .7f, .45f), stationWall);
+            Part(root, PrimitiveType.Cube, new Vector3(0, 1.45f, -.26f),
+                new Vector3(.52f, .47f, .2f), stationFrame);
+            Part(root, PrimitiveType.Cube, new Vector3(0, 1.28f, -.37f),
+                new Vector3(.3f, .34f, .1f), stationRecess);
+            Part(root, PrimitiveType.Cube, new Vector3(0, 1.43f, -.43f),
+                new Vector3(.13f, .18f, .025f), stationBlue);
+            Part(root, PrimitiveType.Sphere, new Vector3(0, 2.07f, 0),
+                new Vector3(.5f, .5f, .48f), stationFrame);
+            Part(root, PrimitiveType.Sphere, new Vector3(0, 2.09f, .15f),
+                new Vector3(.38f, .3f, .34f), glass);
+            Part(root, PrimitiveType.Cube, new Vector3(0, 2.05f, -.38f),
+                new Vector3(.27f, .08f, .045f), stationBlue);
+            Part(root, PrimitiveType.Cube, new Vector3(0, 1.7f, .28f),
+                new Vector3(.42f, .12f, .07f), stationBlue);
+            Part(root, PrimitiveType.Cube, new Vector3(0, .73f, -.02f),
+                new Vector3(.55f, .16f, .45f), stationFrame);
             for (int side = -1; side <= 1; side += 2)
             {
-                Part(root, PrimitiveType.Capsule, new Vector3(side * .48f, 1.25f, 0), new Vector3(.22f, .6f, .26f), trim);
-                Part(root, PrimitiveType.Capsule, new Vector3(side * .2f, .38f, 0), new Vector3(.25f, .45f, .3f), dark);
+                Transform shoulder = Part(root, PrimitiveType.Cube,
+                    new Vector3(side * .43f, 1.58f, 0), new Vector3(.36f, .25f, .42f), stationFrame);
+                shoulder.localRotation = Quaternion.Euler(0, 0, side * -15);
+                Part(root, PrimitiveType.Capsule, new Vector3(side * .5f, 1.14f, 0),
+                    new Vector3(.21f, .46f, .24f), stationWall);
+                Part(root, PrimitiveType.Cube, new Vector3(side * .5f, .75f, .01f),
+                    new Vector3(.21f, .15f, .25f), stationFrame);
+                Part(root, PrimitiveType.Capsule, new Vector3(side * .2f, .39f, 0),
+                    new Vector3(.26f, .44f, .3f), stationWall);
+                Part(root, PrimitiveType.Cube, new Vector3(side * .2f, .14f, .14f),
+                    new Vector3(.29f, .16f, .43f), stationFrame);
+                Part(root, PrimitiveType.Cube, new Vector3(side * .33f, 1.31f, -.24f),
+                    new Vector3(.055f, .27f, .035f), stationBlue);
             }
             return root;
         }

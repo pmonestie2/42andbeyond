@@ -20,7 +20,7 @@ namespace FortyTwoAndBeyond.Client
             return texture;
         }
 
-        /// <returns>Texture2D: A transparent thirty-two-pixel system glyph.</returns>
+        /// <returns>Texture2D: A shaded sixty-four-pixel system badge with a crisp category glyph.</returns>
         private static Texture2D Build(uint type)
         {
             const int size = 32;
@@ -79,9 +79,39 @@ namespace FortyTwoAndBeyond.Client
                     Line(pixels, 16, 7, 16, 26, signal);
                     break;
             }
-            var texture = new Texture2D(size, size, TextureFormat.RGBA32, false)
-            { filterMode = FilterMode.Point, wrapMode = TextureWrapMode.Clamp };
-            texture.SetPixels32(pixels); texture.Apply(); return texture;
+            var texture = new Texture2D(64, 64, TextureFormat.RGBA32, false)
+            { filterMode = FilterMode.Bilinear, wrapMode = TextureWrapMode.Clamp };
+            texture.SetPixels32(Compose(pixels, signal)); texture.Apply(); return texture;
+        }
+
+        /// <returns>Color32[]: An anti-aliased instrument tile around the category glyph.</returns>
+        private static Color32[] Compose(Color32[] glyph, Color32 signal)
+        {
+            const int width = 64;
+            var tile = new Color32[width * width];
+            for (int y = 0; y < width; y++)
+            for (int x = 0; x < width; x++)
+            {
+                float dx = x - 31.5f, dy = y - 31.5f;
+                float radius = Mathf.Sqrt(dx * dx + dy * dy);
+                if (radius > 29f) continue;
+                float edge = Mathf.Clamp01((29f - radius) * .8f);
+                float rim = Mathf.Clamp01(1f - Mathf.Abs(radius - 26f) * .85f);
+                bool stroke = glyph[(y / 2) * 32 + x / 2].a > 0;
+                bool halo = false;
+                if (!stroke)
+                    for (int py = Mathf.Max(0, y / 2 - 1); py <= Mathf.Min(31, y / 2 + 1) && !halo; py++)
+                    for (int px = Mathf.Max(0, x / 2 - 1); px <= Mathf.Min(31, x / 2 + 1); px++)
+                        if (glyph[py * 32 + px].a > 0) { halo = true; break; }
+                float light = stroke ? 1f : halo ? .33f : rim * .42f;
+                float plate = .14f + .12f * Mathf.Clamp01((24f - radius) / 24f);
+                tile[y * width + x] = new Color32(
+                    (byte)Mathf.Clamp(12 + signal.r * light, 0, 255),
+                    (byte)Mathf.Clamp(25 + signal.g * light, 0, 255),
+                    (byte)Mathf.Clamp(37 + signal.b * light, 0, 255),
+                    (byte)Mathf.Clamp((plate + light * .7f) * 255f * edge, 0, 255));
+            }
+            return tile;
         }
 
         /// <summary>Set one glyph pixel when it lies inside the tile.</summary>
