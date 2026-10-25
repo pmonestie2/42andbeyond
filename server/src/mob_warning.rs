@@ -81,6 +81,7 @@ impl Mob {
                 self.sensors.contains(player) && !self.befriended(player.id, player.session_epoch)
             })
             .collect();
+        let skill_fraction = self.bio_skill_use_fraction();
         // Game sessions originate in a HashMap. Stable ordering preserves the
         // saved stream across process replacement and recipient enumeration.
         contacts.sort_by_key(|player| (player.id, player.session_epoch));
@@ -102,7 +103,13 @@ impl Mob {
                 // Native visibility samples cloak independently: warning hate
                 // is subsequently removed by select_target if undetectable.
                 let mut random = WorldRandom(self.warnings.random_state);
-                let hate = warning_hate(aggression, random.below(100));
+                let mut hate = warning_hate(aggression, random.below(100));
+                if hate > 0.
+                    && skill_fraction < 1.
+                    && random.below(1000) as f32 >= skill_fraction * 1000.
+                {
+                    hate = 0.;
+                }
                 self.warnings.random_state = random.0;
                 if hate > 0. {
                     self.aggro.add(player.id, hate);

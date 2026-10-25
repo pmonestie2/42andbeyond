@@ -22,6 +22,11 @@ mod befriend_mob;
 #[cfg(test)]
 #[path = "befriend_mob_tests.rs"]
 mod befriend_tests;
+#[path = "biorepression_mob.rs"]
+mod biorepression_mob;
+#[cfg(test)]
+#[path = "biorepression_mob_tests.rs"]
+mod biorepression_tests;
 #[path = "enrage_mob.rs"]
 mod enrage_mob;
 #[path = "hacking_mob.rs"]
@@ -185,6 +190,7 @@ pub struct Mob {
     pub hacks: Vec<crate::hacking::HackEffect>,
     #[serde(default)]
     pub befriend: Vec<crate::befriend::BefriendEffect>,
+    pub bio: Vec<crate::biorepression::BioEffect>,
     #[serde(default)]
     pub death_generation: u64,
     #[serde(default)]
@@ -274,6 +280,7 @@ impl Mob {
             menace: Vec::new(),
             hacks: Vec::new(),
             befriend: Vec::new(),
+            bio: Vec::new(),
             death_generation: 0,
             killer: None,
             cooldown: 0.,
@@ -318,6 +325,12 @@ impl Mob {
         }
         saved
             .hacks
+            .retain(|effect| effect.active(crate::resources::unix_ms(), saved.death_generation));
+        if saved.bio.len() > 16 || saved.bio.iter().any(|effect| !effect.valid()) {
+            return Err(crate::protocol::invalid("Invalid MOB Biorepression state."));
+        }
+        saved
+            .bio
             .retain(|effect| effect.active(crate::resources::unix_ms(), saved.death_generation));
         saved
             .gravity
@@ -430,6 +443,7 @@ impl Mob {
             self.menace.clear();
             self.hacks.clear();
             self.befriend.clear();
+            self.bio.clear();
         }
     }
     pub fn damage_by(&mut self, damage: f32, player: u32) {
@@ -752,6 +766,7 @@ impl Mob {
                 .is_some_and(|fear| fear.suppress_weapons())
             && self.disabled_seconds <= 0.
             && !self.hacked_weapon()
+            && !self.bio_weapon_disabled()
             && !self.hacked_system(crate::hacking::ShipSystem::Reactor)
             && self.cooldown <= dt
             && crate::mob_energy::recharge(
@@ -859,6 +874,7 @@ impl Mob {
                 self.menace.clear();
                 self.hacks.clear();
                 self.befriend.clear();
+                self.bio.clear();
                 self.state = MobState::Idle;
             }
             return 0.;
@@ -961,6 +977,7 @@ impl Mob {
     fn fire_if_ready(&mut self) -> f32 {
         if self.cooldown == 0.
             && !self.hacked_weapon()
+            && !self.bio_weapon_disabled()
             && !self.hacked_system(crate::hacking::ShipSystem::Reactor)
         {
             let Some(remaining) =
@@ -969,7 +986,7 @@ impl Mob {
                 return 0.;
             };
             self.reactor_energy = Some(remaining);
-            self.cooldown = self.combat.reload;
+            self.cooldown = self.combat.reload * self.bio_reload_factor();
             let accuracy = self.enrage_accuracy_multiplier();
             if accuracy < 1.
                 && self

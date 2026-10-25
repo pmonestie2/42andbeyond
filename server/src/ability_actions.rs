@@ -39,6 +39,7 @@ impl PlayerSession {
         let durable_menace = ability.kind == AbilityKind::Menace;
         let durable_hacking = ability.kind == AbilityKind::Hacking;
         let durable_befriend = ability.kind == AbilityKind::Befriend;
+        let durable_bio = ability.kind == AbilityKind::Biorepression;
         let durable_enrage = ability.kind == AbilityKind::Enrage;
         if ability.kind == AbilityKind::Jumpstart {
             self.jumpstart_definition()?;
@@ -203,6 +204,16 @@ impl PlayerSession {
         {
             return Err(invalid("Befriend rank is not trained."));
         }
+        if durable_bio
+            && crate::biorepression::tier(
+                ability.id,
+                self.skill_catalog.level(crate::biorepression::SKILL_ID),
+                self.account.character.class().code(),
+            )
+            .is_none()
+        {
+            return Err(invalid("Biorepression rank is not trained."));
+        }
         if durable_enrage && crate::enrage::tier(ability.id, self.skill_catalog.level(22)).is_none()
         {
             return Err(invalid("Enrage rank is not trained."));
@@ -239,6 +250,11 @@ impl PlayerSession {
         };
         let befriend_generation = if durable_befriend {
             Some(self.befriend_target_generation(target)?)
+        } else {
+            None
+        };
+        let bio_generation = if durable_bio {
+            Some(self.bio_target_generation(target)?)
         } else {
             None
         };
@@ -332,6 +348,7 @@ impl PlayerSession {
             AbilityKind::Menace => 0,
             AbilityKind::Hacking => 0,
             AbilityKind::Befriend => 0,
+            AbilityKind::Biorepression => 0,
             AbilityKind::Enrage => 0,
             AbilityKind::ShieldSap => 733,
             AbilityKind::Summon => 0,
@@ -379,6 +396,7 @@ impl PlayerSession {
             menace_generation,
             hacking_generation,
             befriend_generation,
+            bio_generation,
             enrage_generation,
             summon_generation,
             sap_generation,
@@ -391,6 +409,7 @@ impl PlayerSession {
             || durable_menace
             || durable_hacking
             || durable_befriend
+            || durable_bio
             || durable_enrage
             || durable_optimization
             || durable_shield_charging
@@ -608,6 +627,7 @@ impl PlayerSession {
                     | AbilityKind::Menace
                     | AbilityKind::Hacking
                     | AbilityKind::Befriend
+                    | AbilityKind::Biorepression
                     | AbilityKind::Enrage
                     | AbilityKind::ShieldInversion
             );
@@ -648,6 +668,15 @@ impl PlayerSession {
                     .ok_or_else(|| invalid("Befriend rank is not trained."))?
                     .range
                 }
+                AbilityKind::Biorepression => {
+                    crate::biorepression::tier(
+                        ability.id,
+                        self.skill_catalog.level(crate::biorepression::SKILL_ID),
+                        self.account.character.class().code(),
+                    )
+                    .ok_or_else(|| invalid("Biorepression rank is not trained."))?
+                    .range
+                }
                 AbilityKind::Menace => {
                     crate::menace::tier(ability.id, self.skill_catalog.level(33))
                         .ok_or_else(|| invalid("Menace rank is not trained."))?
@@ -671,6 +700,7 @@ impl PlayerSession {
                     AbilityKind::Menace
                         | AbilityKind::Hacking
                         | AbilityKind::EnergyLeech
+                        | AbilityKind::Biorepression
                         | AbilityKind::Enrage
                         | AbilityKind::ShieldInversion
                 ) && self.mob_relationship(mob) != 0
@@ -810,6 +840,11 @@ impl PlayerSession {
                     || self.gate_transit.is_some()
                     || self.sector.station.is_some()
                     || !self.logged_in);
+            let invalid_bio = definition.kind == AbilityKind::Biorepression
+                && (self.warp.active()
+                    || self.gate_transit.is_some()
+                    || self.sector.station.is_some()
+                    || !self.logged_in);
             let invalid_menace = definition.kind == AbilityKind::Menace
                 && (self.warp.active()
                     || self.gate_transit.is_some()
@@ -853,6 +888,7 @@ impl PlayerSession {
                 || invalid_menace
                 || invalid_hacking
                 || invalid_befriend
+                || invalid_bio
                 || invalid_enrage
                 || invalid_sap
                 || invalid_leech
@@ -871,6 +907,7 @@ impl PlayerSession {
                         | AbilityKind::Menace
                         | AbilityKind::Hacking
                         | AbilityKind::Befriend
+                        | AbilityKind::Biorepression
                         | AbilityKind::Enrage
                         | AbilityKind::PsionicShield
                         | AbilityKind::RepulsorField
@@ -988,6 +1025,39 @@ impl PlayerSession {
                         }
                         Some(result) if result.resisted > 0 => "The MOB resisted Befriend.",
                         _ => "Befriend target was lost before completion.",
+                    });
+                    return Ok(());
+                }
+                if ability.kind == AbilityKind::Biorepression {
+                    let outcome = match self.apply_biorepression(&ability, &cast) {
+                        Ok(outcome) => outcome,
+                        Err(error) => {
+                            self.skills.cast = Some(cast);
+                            return Err(error);
+                        }
+                    };
+                    let previous_cooldown = self.skills.cooldowns.insert(ability.skill, cooldown);
+                    if let Err(error) = self.checkpoint_session(true) {
+                        if let Some(previous) = previous_cooldown {
+                            self.skills.cooldowns.insert(ability.skill, previous);
+                        } else {
+                            self.skills.cooldowns.remove(&ability.skill);
+                        }
+                        self.skills.cast = Some(cast);
+                        return Err(error);
+                    }
+                    self.pending.push(packets::ability_progress(None, 0, 0));
+                    self.pending.push(packets::skill_cooldown(
+                        ability.skill,
+                        self.tick_ms(),
+                        (cooldown * 1000.) as u32,
+                    ));
+                    self.message(match outcome {
+                        Some(result) if result.affected > 0 => {
+                            "Biorepression weakened organic weapons."
+                        }
+                        Some(result) if result.resisted > 0 => "The MOB resisted Biocessation.",
+                        _ => "Biorepression target was lost before completion.",
                     });
                     return Ok(());
                 }
@@ -1486,6 +1556,11 @@ impl PlayerSession {
             }
             AbilityKind::Befriend => {
                 return Err(invalid("Befriend settles through its durable MOB cast."));
+            }
+            AbilityKind::Biorepression => {
+                return Err(invalid(
+                    "Biorepression settles through its durable MOB cast.",
+                ));
             }
             AbilityKind::Menace => {
                 return Err(invalid("Menace settles through its durable MOB cast."));

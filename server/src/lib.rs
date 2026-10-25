@@ -59,6 +59,7 @@ mod world_random;
 pub mod sandbox_loadout;
 
 pub mod ammunition;
+pub mod biorepression;
 
 pub mod classes;
 

@@ -36,6 +36,8 @@ mod ability_actions;
 mod attacker_feedback;
 #[path = "befriend_service.rs"]
 mod befriend_service;
+#[path = "biorepression_service.rs"]
+mod biorepression_service;
 #[path = "call_forward_service.rs"]
 mod call_forward_service;
 #[path = "combat_experience.rs"]

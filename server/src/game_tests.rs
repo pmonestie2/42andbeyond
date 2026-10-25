@@ -4030,6 +4030,106 @@ fn tradesman_befriend_area_is_durable_and_replays_native_visual() {
     fs::remove_dir_all(root).unwrap();
 }
 
+/// Organic area suppression is persisted before acknowledgement and restart-safe.
+#[test]
+fn enforcer_biorepression_area_persists_before_ack_and_filters_nonorganic_targets() {
+    let root = std::env::temp_dir().join(format!("enb-bio-{}", rand::random::<u64>()));
+    let accounts = AccountDirectory::new(&root);
+    let enforcer_account = accounts
+        .create_class(
+            "enforcer".into(),
+            "example",
+            "Enforcer".into(),
+            crate::classes::CharacterClass::parse("te").unwrap(),
+        )
+        .unwrap();
+    let enforcer = enforcer_account.account.character.game_id;
+    let scout = accounts
+        .create_class(
+            "scout".into(),
+            "example",
+            "Scout".into(),
+            crate::classes::CharacterClass::parse("ts").unwrap(),
+        )
+        .unwrap()
+        .account
+        .character
+        .game_id;
+    let catalog = crate::items::ItemCatalog::load().unwrap();
+    let mut equipment =
+        crate::inventory::Inventory::starter_for(&enforcer_account.account.character, &catalog)
+            .unwrap();
+    equipment.equipped[1] = Some(crate::inventory::ItemInstance::stock(3335, 1));
+    fs::write(
+        enforcer_account.directory.join("inventory.json"),
+        serde_json::to_vec(&equipment).unwrap(),
+    )
+    .unwrap();
+    let mut sector: Sector = serde_json::from_str(include_str!("../data/sector.json")).unwrap();
+    let mut first = sector.mobs[0].clone();
+    first.source_id = 940_001;
+    first.level = 1;
+    first.spawn = [1_000., 0., 0.];
+    first.mob_type = 2;
+    first.aggressive = false;
+    let mut second = first.clone();
+    second.source_id = 940_002;
+    second.spawn = [1_400., 0., 0.];
+    second.mob_type = 3;
+    let mut machine = first.clone();
+    machine.source_id = 940_003;
+    machine.spawn = [1_400., 100., 0.];
+    machine.mob_type = 0;
+    let mut distant = first.clone();
+    distant.source_id = 940_004;
+    distant.spawn = [4_000., 0., 0.];
+    sector.mobs = vec![first, second, machine, distant];
+    let bind = Ipv4Addr::new(127, 0, 0, 2);
+    let mut game = GameState::new(sector.clone(), bind, root.clone()).unwrap();
+    login(&mut game, enforcer, 24801, "enforcer");
+    login(&mut game, scout, 24802, "scout");
+    game.sessions.get_mut(&enforcer).unwrap().position = [0.; 3];
+    game.sessions.get_mut(&scout).unwrap().position = [0.; 3];
+    game.update_views();
+    let scout_energy = game.sessions[&scout].energy_balance().0;
+    activate(&mut game, scout, MOB_ID, 23); // Wrong class.
+    assert_eq!(game.sessions[&scout].energy_balance().0, scout_energy);
+    let enforcer_energy = game.sessions[&enforcer].energy_balance().0;
+    activate(&mut game, enforcer, MOB_ID + 2, 23); // Mechanical primary.
+    assert_eq!(game.sessions[&enforcer].energy_balance().0, enforcer_energy);
+    activate(&mut game, enforcer, MOB_ID, 23);
+    assert_eq!(
+        game.sessions[&enforcer].energy_balance().0,
+        enforcer_energy - 80.
+    );
+    let blocked = root.join("combat/1076.json.next");
+    fs::create_dir(&blocked).unwrap();
+    game.advance(1.6).unwrap();
+    assert!(lock_combat(game.combats.get(&sector.id).unwrap())
+        .unwrap()
+        .actors[0]
+        .bio
+        .is_empty());
+    fs::remove_dir(blocked).unwrap();
+    advance(&mut game, 0.1);
+    let effect = {
+        let world = lock_combat(game.combats.get(&sector.id).unwrap()).unwrap();
+        assert_eq!(world.actors[0].bio.len(), 1);
+        assert_eq!(world.actors[1].bio.len(), 1);
+        assert!(world.actors[2].bio.is_empty());
+        assert!(world.actors[3].bio.is_empty());
+        assert!(world.actors[0].bio_reload_factor() > 1.);
+        world.actors[0].bio[0].effect
+    };
+    drop(game);
+    let restored = GameState::new(sector, bind, root.clone()).unwrap();
+    let world = lock_combat(restored.combats.get(&1076).unwrap()).unwrap();
+    assert_eq!(world.actors[0].bio[0].effect, effect);
+    assert_eq!(world.actors[1].bio.len(), 1);
+    drop(world);
+    fs::remove_dir_all(root).unwrap();
+}
+
 /// A Terran area hack persists MOB subsystem effects before acknowledging the cast.
 #[test]
 fn terran_hacking_area_is_generation_pinned_and_restart_safe() {
