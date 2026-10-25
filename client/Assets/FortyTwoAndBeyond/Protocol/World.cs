@@ -652,7 +652,7 @@ namespace FortyTwoAndBeyond.Protocol
                     if (Wire.U16(b, 0) != 7) break;
                     uint source = Wire.U32(b, 2), victim = Wire.U32(b, 6);
                     ushort duration = Wire.U16(b, 21);
-                    if (duration > 0 && duration <= 10000)
+                    if (duration > 0)
                     {
                         Shots.Enqueue(new ShotEvent(++nextShot, source, victim, Wire.U16(b, 10), duration));
                         while (Shots.Count > 32) Shots.Dequeue();

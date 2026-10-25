@@ -14,13 +14,17 @@ namespace FortyTwoAndBeyond.Client
             public readonly uint Source, Target;
             public readonly LineRenderer Halo, Core;
             public readonly Color Color;
+            public readonly ShotTravelKind Kind;
+            public readonly Vector3 LaunchPoint;
             public readonly float Started, Lifetime;
 
             /// <summary>Keep a two-layer shot and its server-derived expiry together.</summary>
-            public Beam(uint source, uint target, LineRenderer halo, LineRenderer core, Color color, float lifetime)
+            public Beam(uint source, uint target, LineRenderer halo, LineRenderer core, Color color,
+                ShotTravelKind kind, Vector3 launchPoint, float lifetime)
             {
                 Source = source; Target = target; Halo = halo; Core = core; Color = color;
-                Started = Time.unscaledTime; Lifetime = lifetime;
+                Kind = kind; LaunchPoint = launchPoint; Started = Time.unscaledTime;
+                Lifetime = lifetime;
             }
         }
 
@@ -119,21 +123,29 @@ namespace FortyTwoAndBeyond.Client
             {
                 if (shot.Sequence <= lastShotSequence) continue;
                 lastShotSequence = shot.Sequence;
-                if (snapshot.WarpPhase != WarpPhase.Idle || !TryPoint(shot.Source, out _) ||
+                if (snapshot.WarpPhase != WarpPhase.Idle || !TryPoint(shot.Source, out Vector3 launch) ||
                     !TryPoint(shot.Target, out _)) continue;
+                ShotTravelKind kind = ShotPresentation.Classify(shot, snapshot.PlayerId,
+                    snapshot.Mounted, snapshot.Ammo);
                 Color tint = shot.Source == playerId ? new Color(.3f, .86f, 1f) :
                     new Color(1f, .37f, .18f);
-                LineRenderer halo = Line("Weapon corona", .14f, tint, 2);
-                LineRenderer core = Line("Weapon core", .025f, Color.white, 2);
+                if (kind == ShotTravelKind.Missile && shot.Source == playerId)
+                    tint = new Color(1f, .72f, .33f);
+                LineRenderer halo = Line(kind == ShotTravelKind.Beam ? "Weapon corona" :
+                    "Traveling round corona", .14f, tint, 2);
+                LineRenderer core = Line(kind == ShotTravelKind.Beam ? "Weapon core" :
+                    "Traveling round core", .025f, Color.white, 2);
                 if (halo == null || core == null) continue;
-                beams.Add(new Beam(shot.Source, shot.Target, halo, core, tint,
-                    Mathf.Clamp(shot.Duration / 1000f, .22f, .9f)));
+                beams.Add(new Beam(shot.Source, shot.Target, halo, core, tint, kind, launch,
+                    kind == ShotTravelKind.Beam ? Mathf.Clamp(shot.Duration / 1000f, .22f, .9f) :
+                    Mathf.Clamp(shot.Duration / 1000f, .12f, 65.5f)));
                 if (beams.Count > 32) RemoveBeam(0);
             }
             foreach (DamageEvent damage in snapshot.Damages)
             {
                 if (damage.Sequence <= lastDamageSequence) continue;
                 lastDamageSequence = damage.Sequence;
+                RetireTravelingShot(damage.Source, damage.Target);
                 if (snapshot.WarpPhase != WarpPhase.Idle || !TryPoint(damage.Target, out _) ||
                     damage.Amount <= 0) continue;
                 bool critical = damage.Outcome == DamageOutcome.Critical;
@@ -172,6 +184,15 @@ namespace FortyTwoAndBeyond.Client
             SetLootActivity(snapshot);
             SetMiningVisual(prospectVisual, snapshot.MiningProspect, snapshot);
             SetMiningVisual(tractorVisual, snapshot.MiningTractor, snapshot);
+        }
+
+        /// <summary>End the oldest matching traveling round on a server hit or miss.</summary>
+        private void RetireTravelingShot(uint source, uint target)
+        {
+            for (int index = 0; index < beams.Count; index++)
+                if (beams[index].Kind != ShotTravelKind.Beam && beams[index].Source == source &&
+                    beams[index].Target == target)
+                { RemoveBeam(index); return; }
         }
 
         /// <summary>Keep each server-owned prospect or ore tractor visual independent.</summary>
@@ -280,16 +301,29 @@ namespace FortyTwoAndBeyond.Client
             {
                 Beam beam = beams[index];
                 float age = Time.unscaledTime - beam.Started;
-                if (age >= beam.Lifetime || !TryPoint(beam.Source, out Vector3 from) ||
-                    !TryPoint(beam.Target, out Vector3 to))
+                if (age >= beam.Lifetime || !TryPoint(beam.Target, out Vector3 to) ||
+                    beam.Kind == ShotTravelKind.Beam && !TryPoint(beam.Source, out _))
                 { RemoveBeam(index); continue; }
                 float fade = 1 - age / beam.Lifetime;
-                Vector3 direction = (to - from).normalized;
-                Vector3 offset = direction * .18f;
-                beam.Halo.SetPosition(0, from + offset); beam.Halo.SetPosition(1, to - offset);
-                beam.Core.SetPosition(0, from + offset); beam.Core.SetPosition(1, to - offset);
-                beam.Halo.widthMultiplier = .14f * fade;
-                beam.Core.widthMultiplier = .025f * fade;
+                Vector3 start, end;
+                if (beam.Kind == ShotTravelKind.Beam)
+                {
+                    TryPoint(beam.Source, out Vector3 from);
+                    Vector3 offset = (to - from).normalized * .18f;
+                    start = from + offset; end = to - offset;
+                }
+                else
+                {
+                    float progress = Mathf.Clamp01(age / beam.Lifetime);
+                    float tail = Mathf.Min(.2f, 1.1f / Mathf.Max(.01f,
+                        Vector3.Distance(beam.LaunchPoint, to)));
+                    start = Vector3.Lerp(beam.LaunchPoint, to, Mathf.Max(0, progress - tail));
+                    end = Vector3.Lerp(beam.LaunchPoint, to, progress);
+                }
+                beam.Halo.SetPosition(0, start); beam.Halo.SetPosition(1, end);
+                beam.Core.SetPosition(0, start); beam.Core.SetPosition(1, end);
+                beam.Halo.widthMultiplier = (beam.Kind == ShotTravelKind.Beam ? .14f : .18f) * fade;
+                beam.Core.widthMultiplier = (beam.Kind == ShotTravelKind.Beam ? .025f : .045f) * fade;
                 Color corona = beam.Color; corona.a = .28f * fade;
                 Color core = Color.white; core.a = .9f * fade;
                 beam.Halo.startColor = beam.Halo.endColor = corona;

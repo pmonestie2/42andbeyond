@@ -1400,7 +1400,7 @@ namespace FortyTwoAndBeyond.Client
                 device ? !DeviceEffects.IsInstant(mounted.ActivationLabel) && snapshot.ActiveDeviceLabel.Length > 0 ?
                     snapshot.ActiveDeviceLabel.ToUpperInvariant() + " ACTIVE" :
                     mounted.ActivationLabel.Length > 20 ? "ACTIVATE SELECTED EFFECT" :
-                    "ACTIVATE " + mounted.ActivationLabel.ToUpperInvariant() : "SELECT WEAPON OR DEVICE",
+                    "ACTIVATE " + mounted.ActivationLabel.ToUpperInvariant() : "SELECT A SYSTEM",
                 weapon ? hostileButton : primaryButton))
             {
                 if (weapon) client.ActivateWeapon(selectedMount);

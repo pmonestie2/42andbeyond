@@ -178,7 +178,9 @@ Select a mob in Contacts or click its ship in space for shield and hull readings
 Hostile contacts have red markers; other NPCs have gold markers. Press F or use
 **Fire weapons** to target and fire; press F again or use **Stop weapons** to stop.
 The server controls firing, hits, damage, movement and death. The client shows
-weapon streaks and hit numbers. The target panel distinguishes armed weapons
+beam streaks, traveling launcher rounds, and hit numbers from native launch and
+damage reports. A resolved hit or miss retires the matching in-flight round.
+The target panel distinguishes armed weapons
 from a shot confirmed by the server, and briefly shows server hit, miss, or
 critical results. Its range, arc, ammo, and cooldown cues are guidance from
 the latest server state; the server decides whether a shot can fire. The ship
@@ -334,6 +336,9 @@ To capture the two simultaneous mining phases against a temporary ore field:
 
 ```sh
 python3 client/Tests/run_mining_overlap_visual.py --unity /Applications/Unity/Hub/Editor/6000.3.13f1/Unity.app/Contents/MacOS/Unity
+
+# Capture a native missile launch in flight before its server damage result.
+python3 client/Tests/run_projectile_visual.py --unity /Applications/Unity/Hub/Editor/6000.3.13f1/Unity.app/Contents/MacOS/Unity
 ```
 
 Verified on macOS: C# protocol checks; actual local bridge login, character

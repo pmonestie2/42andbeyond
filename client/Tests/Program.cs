@@ -13,7 +13,7 @@ internal static class Program
     {
         CheckReassembly(); CheckWorld(); CheckMissionJournal(); CheckMissionDialogue();
         CheckExperience(); CheckMiningPhases(); CheckLootTractor(); CheckWarpPhases(); CheckNavigationSelection(); CheckWarpTargets(); CheckWeaponReady();
-        CheckDamageResults(); CheckCombatEngagement(); CheckContactSelection(); CheckTargetVerbs(); CheckDeviceEffects();
+        CheckDamageResults(); CheckCombatEngagement(); CheckShotPresentation(); CheckContactSelection(); CheckTargetVerbs(); CheckDeviceEffects();
         CheckNativeDeviceBuff(); CheckPeerScanBuff(); CheckSupportObjectEffects();
         CheckAmmunitionTransfer(); CheckFlightThrottle(); CheckFormationAnchor();
         CheckStationLayout(); CheckStationWalk(); CheckDemoRoster(); CheckAddress(); PeerChecks.Decode();
@@ -536,6 +536,54 @@ internal static class Program
         Assert(behind.Engagement.Weapons[0].OutsideFiringArc &&
             !behind.Engagement.Weapons[1].OutsideFiringArc,
             "Directional weapon arc guidance disagreed with the server's 40-degree cone or missile exception.");
+    }
+
+    /// <summary>Use native launch asset and mounted/ammo metadata for traveling rounds.</summary>
+    private static void CheckShotPresentation()
+    {
+        ItemTemplateInfo nativeBeam = ItemTemplateInfo.Decode(FixtureBytes("weapon769.hex"));
+        ItemTemplateInfo nativeRounds = ItemTemplateInfo.Decode(FixtureBytes("ammo507.hex"));
+        Assert(nativeBeam.Id == 769 && nativeBeam.Type == 14 &&
+            nativeBeam.Name == "Pulse Laser" && nativeBeam.UseEffect == 35 &&
+            nativeRounds.Id == 507 && nativeRounds.Type == 10 &&
+            nativeRounds.Name == "Dragonclaw Missile" && nativeRounds.UseEffect == 886,
+            "Native 0x25 weapon or ammunition effect asset was decoded at the wrong offset.");
+        var catalog = new System.Collections.Generic.Dictionary<uint, ItemTemplateInfo>
+        {
+            [10] = new ItemTemplateInfo(10, 14, "Beam", "", useEffect: 35),
+            [11] = new ItemTemplateInfo(11, 15, "Missile launcher", "", useEffect: 36),
+            [12] = new ItemTemplateInfo(12, 16, "Projectile launcher", "", useEffect: 37),
+            [13] = new ItemTemplateInfo(13, 10, "Missile ammunition", "", useEffect: 886),
+            [14] = new ItemTemplateInfo(14, 10, "Projectile ammunition", "", useEffect: 887)
+        };
+        var mounted = new ItemView[20]; var ammo = new ItemView[20];
+        mounted[3] = new ItemView(3, new ItemState { Template = 10 }, catalog);
+        mounted[4] = new ItemView(4, new ItemState { Template = 11 }, catalog);
+        mounted[5] = new ItemView(5, new ItemState { Template = 12 }, catalog);
+        ammo[4] = new ItemView(4, new ItemState { Template = 13 }, catalog);
+        ammo[5] = new ItemView(5, new ItemState { Template = 14 }, catalog);
+        var beam = new ShotEvent(1, 1, 2, 35, 500);
+        var missile = new ShotEvent(2, 1, 2, 886, 1800);
+        var projectile = new ShotEvent(3, 1, 2, 887, 900);
+        Assert(ShotPresentation.Classify(beam, 1, mounted, ammo) == ShotTravelKind.Beam &&
+            ShotPresentation.Classify(missile, 1, mounted, ammo) == ShotTravelKind.Missile &&
+            ShotPresentation.Classify(projectile, 1, mounted, ammo) == ShotTravelKind.Projectile,
+            "Native shot assets did not resolve their beam, missile and projectile mounts.");
+        Assert(ShotPresentation.Classify(new ShotEvent(4, 9, 1, 999, 1000), 1,
+                mounted, ammo) == ShotTravelKind.Beam &&
+            ShotPresentation.Classify(new ShotEvent(5, 9, 1, 999, 1500), 1,
+                mounted, ammo) == ShotTravelKind.Projectile,
+            "Unknown peer effects should preserve the native NPC beam duration boundary.");
+        byte[] distant = Wire.Body(writer =>
+        {
+            writer.Write((ushort)7); writer.Write(1u); writer.Write(2u);
+            writer.Write((ushort)886); writer.Write((byte)0); writer.Write(7u);
+            writer.Write(1000u); writer.Write((ushort)12000);
+        });
+        var world = new World();
+        world.Apply(new Frame(0x0b, distant), 1);
+        Assert(world.Shots.Last().Duration == 12000,
+            "A valid long-range native missile was discarded before presentation.");
     }
 
     /// <summary>Reconcile local clicks with a target shared by the server.</summary>
