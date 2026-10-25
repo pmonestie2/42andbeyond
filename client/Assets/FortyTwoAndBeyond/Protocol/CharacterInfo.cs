@@ -13,6 +13,8 @@ namespace FortyTwoAndBeyond.Protocol
         public readonly int Slot;
         public readonly string Name;
         public readonly string ClassName;
+        public readonly string SectorName;
+        public readonly uint SectorId;
         public readonly uint CombatLevel, TradeLevel, ExploreLevel;
         private static readonly string[] Classes =
         {
@@ -23,12 +25,14 @@ namespace FortyTwoAndBeyond.Protocol
 
         /// <summary>Keep the server's character identity and earned tracks immutable.</summary>
         public CharacterInfo(int slot, string name, uint race, uint profession,
-            uint combatLevel, uint tradeLevel, uint exploreLevel)
+            uint combatLevel, uint tradeLevel, uint exploreLevel,
+            uint sectorId, string sectorName)
         {
             if (race > 2 || profession > 2)
                 throw new InvalidDataException("Invalid native character class.");
             Slot = slot; Name = name; ClassName = Classes[race * 3 + profession];
             CombatLevel = combatLevel; TradeLevel = tradeLevel; ExploreLevel = exploreLevel;
+            SectorId = sectorId; SectorName = sectorName;
         }
 
         /// <returns>CharacterInfo[]: The occupied slots in one native character roster.</returns>
@@ -49,7 +53,8 @@ namespace FortyTwoAndBeyond.Protocol
                 found.Add(new CharacterInfo(slot, name,
                     Wire.U32(body, avatar + 46), Wire.U32(body, avatar + 50),
                     Wire.U32(body, record + 40, true), Wire.U32(body, record + 44, true),
-                    Wire.U32(body, record + 48, true)));
+                    Wire.U32(body, record + 48, true), Wire.U32(body, record + 4, true),
+                    Wire.Text(body, record + 52, 81)));
             }
             return found.ToArray();
         }

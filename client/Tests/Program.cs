@@ -74,8 +74,9 @@ internal static class Program
         Assert(characters.Length == 1 && characters[0].Slot == 0 &&
             characters[0].ClassName == "Jenquai Explorer" &&
             characters[0].CombatLevel == 1 && characters[0].TradeLevel == 0 &&
-            characters[0].ExploreLevel == 0,
-            "Native roster lost class or earned track levels.");
+            characters[0].ExploreLevel == 0 && characters[0].SectorId == 1076 &&
+            characters[0].SectorName == "Asteroid Belt Alpha",
+            "Native roster lost class, earned levels, or starting sector.");
         byte[] invalidClass = (byte[])body.Clone(); invalidClass[179] = 3;
         Reject(() => CharacterInfo.DecodeRoster(invalidClass));
         Reject(() => CharacterInfo.DecodeRoster(new byte[20]));
