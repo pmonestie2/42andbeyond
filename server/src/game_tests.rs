@@ -493,6 +493,120 @@ fn hull_patch_repairs_self_and_peer_once_after_restart() {
     fs::remove_dir_all(root).unwrap();
 }
 
+/// Area repair charges once and persists exactly one grant for nearby group members.
+#[test]
+fn area_shield_and_hull_repair_only_nearby_group_members_once() {
+    let root = std::env::temp_dir().join(format!("enb-area-repair-{}", rand::random::<u64>()));
+    let accounts = AccountDirectory::new(&root);
+    let alice = accounts
+        .create_class(
+            "alice".into(),
+            "example",
+            "Alice".into(),
+            crate::classes::CharacterClass::parse("tt").unwrap(),
+        )
+        .unwrap()
+        .account
+        .character
+        .game_id;
+    let bob = accounts
+        .create("bob".into(), "example", "Bob".into())
+        .unwrap()
+        .account
+        .character
+        .game_id;
+    let outsider = accounts
+        .create("outsider".into(), "example", "Outsider".into())
+        .unwrap()
+        .account
+        .character
+        .game_id;
+    let catalog = crate::items::ItemCatalog::load().unwrap();
+    let profile = crate::account::Account::load(&root).unwrap().character;
+    let mut inventory = crate::inventory::Inventory::starter_for(&profile, &catalog).unwrap();
+    inventory.equipped[1].as_mut().unwrap().template = 3337;
+    fs::write(
+        root.join("inventory.json"),
+        serde_json::to_vec(&inventory).unwrap(),
+    )
+    .unwrap();
+    let sector: Sector = serde_json::from_str(include_str!("../data/sector.json")).unwrap();
+    let bind = Ipv4Addr::new(127, 0, 0, 2);
+    let mut game = GameState::new(sector.clone(), bind, root.clone()).unwrap();
+    login(&mut game, alice, 22971, "alice");
+    login(&mut game, bob, 22972, "bob");
+    login(&mut game, outsider, 22973, "outsider");
+    game.groups.invite(alice, bob).unwrap();
+    game.groups.accept(bob).unwrap();
+    let center = game.sessions[&alice].position;
+    game.sessions.get_mut(&bob).unwrap().position = [center[0] + 1000., center[1], center[2]];
+    game.sessions.get_mut(&outsider).unwrap().position = [center[0] + 500., center[1], center[2]];
+    for id in [alice, bob, outsider] {
+        let ship = game.sessions.get_mut(&id).unwrap();
+        ship.set_shield_for_test(0.);
+        ship.set_hull_for_test(ship.hull_balance().1 * 0.1);
+        ship.checkpoint_session(true).unwrap();
+    }
+    game.update_views();
+    let energy = game.sessions[&alice].energy_balance().0;
+    activate(&mut game, alice, outsider, 14);
+    assert_eq!(game.sessions[&alice].energy_balance().0, energy - 300.);
+    advance(&mut game, 4.2);
+    assert!(game.sessions[&alice].shield_balance().0 > 0.);
+    assert!(game.sessions[&bob].shield_balance().0 > 0.);
+    assert!(game.energy_ledger.shield_balance(outsider).is_none());
+    let after_shield = game.sessions[&bob].shield_balance().0;
+    assert_eq!(game.energy_ledger.revision(), 1);
+    drop(game);
+    let mut restored = GameState::new(sector, bind, root.clone()).unwrap();
+    restored.deliver_shield_recharges().unwrap();
+    assert_eq!(restored.sessions[&bob].shield_balance().0, after_shield);
+    assert_eq!(restored.energy_ledger.revision(), 1);
+    restored.update_views();
+    let outside_hull = restored.sessions[&outsider].hull_balance().0;
+    activate(&mut restored, alice, outsider, 9);
+    advance(&mut restored, 4.2);
+    assert!(restored.sessions[&bob].hull_balance().0 > outside_hull);
+    assert_eq!(restored.sessions[&outsider].hull_balance().0, outside_hull);
+    assert_eq!(restored.energy_ledger.revision(), 2);
+    restored.sessions.get_mut(&bob).unwrap().position = [center[0] + 2500., center[1], center[2]];
+    restored
+        .sessions
+        .get_mut(&bob)
+        .unwrap()
+        .set_shield_for_test(0.);
+    restored
+        .sessions
+        .get_mut(&bob)
+        .unwrap()
+        .checkpoint_session(true)
+        .unwrap();
+    restored.update_views();
+    activate(&mut restored, alice, outsider, 61);
+    let temporary = root.join("energy_transfers.local.json.tmp");
+    fs::create_dir(&temporary).unwrap();
+    assert!(restored.advance(5.2).is_err());
+    assert_eq!(restored.energy_ledger.revision(), 2);
+    assert!(restored.sessions[&alice]
+        .pending_shield_recharge()
+        .is_some());
+    fs::remove_dir(&temporary).unwrap();
+    drop(restored);
+    let mut replayed = GameState::new(
+        serde_json::from_str(include_str!("../data/sector.json")).unwrap(),
+        bind,
+        root.clone(),
+    )
+    .unwrap();
+    replayed.deliver_shield_recharges().unwrap();
+    assert_eq!(replayed.energy_ledger.revision(), 3);
+    assert!(replayed.sessions[&bob].shield_balance().0 > 0.);
+    assert!(replayed.energy_ledger.shield_balance(outsider).is_none());
+    replayed.deliver_shield_recharges().unwrap();
+    assert_eq!(replayed.energy_ledger.revision(), 3);
+    fs::remove_dir_all(root).unwrap();
+}
+
 /// Native rank-five support and rank-one self repair retain paid casts.
 #[test]
 fn combat_repair_ranks_resume_and_self_rank_ignores_selected_peer() {

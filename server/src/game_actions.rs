@@ -389,17 +389,21 @@ impl GameState {
                     caster.message("Recharge Shields target left range before completion.");
                     continue;
                 }
-                let recipient = &self.sessions[&cast.target];
-                let (shield, capacity) = recipient.shield_balance();
-                let target_after = (shield + cast.amount).min(capacity);
+                let recipients = self.repair_recipients(source, cast.target, cast.radius);
+                let targets = recipients
+                    .into_iter()
+                    .map(|id| {
+                        let (shield, capacity) = self.sessions[&id].shield_balance();
+                        (id, (shield + cast.amount).min(capacity))
+                    })
+                    .collect();
                 let source_energy = caster.energy_balance().0;
-                self.energy_ledger.recharge_shields(
+                self.energy_ledger.recharge_shields_area(
                     source,
-                    cast.target,
                     epoch,
                     cast.effect,
                     source_energy,
-                    target_after,
+                    targets,
                 )?;
             }
             let energy = self.energy_ledger.balance(source).unwrap();
@@ -413,17 +417,20 @@ impl GameState {
                     "Shield recharge sender checkpoint retry for {source}: {error}"
                 );
             }
-            let shield = self.energy_ledger.shield_balance(cast.target).unwrap();
-            if let Err(error) = self
-                .sessions
-                .get_mut(&cast.target)
-                .unwrap()
-                .apply_shield_balance(shield)
-            {
-                crate::server_error!(
-                    "Shield recharge recipient checkpoint retry for {}: {error}",
-                    cast.target
-                );
+            let revision = energy.revision;
+            for (&target, recipient) in &mut self.sessions {
+                let Some(shield) = self
+                    .energy_ledger
+                    .shield_balance(target)
+                    .filter(|balance| balance.revision == revision)
+                else {
+                    continue;
+                };
+                if let Err(error) = recipient.apply_shield_balance(shield) {
+                    crate::server_error!(
+                        "Shield recharge recipient checkpoint retry for {target}: {error}"
+                    );
+                }
             }
             let caster = self.sessions.get_mut(&source).unwrap();
             caster.clear_shield_recharge()?;
@@ -469,17 +476,21 @@ impl GameState {
                     caster.message("Hull repair target left range before completion.");
                     continue;
                 }
-                let recipient = &self.sessions[&cast.target];
-                let (hull, capacity) = recipient.hull_balance();
-                let target_after = (hull + cast.amount).min(capacity);
+                let recipients = self.repair_recipients(source, cast.target, cast.radius);
+                let targets = recipients
+                    .into_iter()
+                    .map(|id| {
+                        let (hull, capacity) = self.sessions[&id].hull_balance();
+                        (id, (hull + cast.amount).min(capacity))
+                    })
+                    .collect();
                 let source_energy = caster.energy_balance().0;
-                self.energy_ledger.repair_hull(
+                self.energy_ledger.repair_hulls(
                     source,
-                    cast.target,
                     epoch,
                     cast.effect,
                     source_energy,
-                    target_after,
+                    targets,
                 )?;
             }
             let energy = self.energy_ledger.balance(source).unwrap();
@@ -491,23 +502,51 @@ impl GameState {
             {
                 crate::server_error!("Hull repair sender checkpoint retry for {source}: {error}");
             }
-            let hull = self.energy_ledger.hull_balance(cast.target).unwrap();
-            if let Err(error) = self
-                .sessions
-                .get_mut(&cast.target)
-                .unwrap()
-                .apply_hull_balance(hull)
-            {
-                crate::server_error!(
-                    "Hull repair recipient checkpoint retry for {}: {error}",
-                    cast.target
-                );
+            let revision = energy.revision;
+            for (&target, recipient) in &mut self.sessions {
+                let Some(hull) = self
+                    .energy_ledger
+                    .hull_balance(target)
+                    .filter(|balance| balance.revision == revision)
+                else {
+                    continue;
+                };
+                if let Err(error) = recipient.apply_hull_balance(hull) {
+                    crate::server_error!(
+                        "Hull repair recipient checkpoint retry for {target}: {error}"
+                    );
+                }
             }
             let caster = self.sessions.get_mut(&source).unwrap();
             caster.clear_hull_repair()?;
             caster.publish_hull_repair(cast.target, cast.effect, cast.range == 0.);
         }
         Ok(())
+    }
+
+    /// Returns:
+    ///     Vec<u32>: Primary repair target and eligible nearby accepted group members.
+    fn repair_recipients(&self, source: u32, primary: u32, radius: f32) -> Vec<u32> {
+        let caster = &self.sessions[&source];
+        let center = self.sessions[&primary].position;
+        let mut recipients = vec![primary];
+        if radius > 0. {
+            for member in self.groups.members(source) {
+                if member == primary {
+                    continue;
+                }
+                if let Some(recipient) = self.sessions.get(&member) {
+                    if recipient.shield_recharge_available()
+                        && recipient.sector.id == caster.sector.id
+                        && distance(recipient.position, center) <= radius
+                        && caster.can_recharge_peer(member)
+                    {
+                        recipients.push(member);
+                    }
+                }
+            }
+        }
+        recipients
     }
 
     /// Settle one equipment-repair stream tick across the caster and area recipients.

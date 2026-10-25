@@ -330,15 +330,38 @@ impl EnergyLedger {
         source_energy: f32,
         target_hull: f32,
     ) -> io::Result<u64> {
+        self.repair_hulls(
+            source,
+            epoch,
+            effect,
+            source_energy,
+            BTreeMap::from([(target, target_hull)]),
+        )
+    }
+
+    /// Atomically repair every eligible area recipient with the caster's reactor receipt.
+    ///
+    /// Returns:
+    ///     u64: One world revision shared by all repaired hulls.
+    pub fn repair_hulls(
+        &mut self,
+        source: u32,
+        epoch: u64,
+        effect: u32,
+        source_energy: f32,
+        targets: BTreeMap<u32, f32>,
+    ) -> io::Result<u64> {
         if source == 0
-            || target == 0
             || epoch == 0
             || effect == 0
             || self.hull_repair_seen(source, epoch, effect)
             || !source_energy.is_finite()
             || !(0. ..=1_000_000_000.).contains(&source_energy)
-            || !target_hull.is_finite()
-            || !(0. ..=1_000_000_000.).contains(&target_hull)
+            || targets.is_empty()
+            || targets.len() > 6
+            || targets.iter().any(|(target, hull)| {
+                *target == 0 || !hull.is_finite() || !(0. ..=1_000_000_000.).contains(hull)
+            })
         {
             return Err(invalid("Invalid or repeated Hull Patch cast."));
         }
@@ -354,13 +377,15 @@ impl EnergyLedger {
                 energy: source_energy,
             },
         );
-        next.hulls.insert(
-            target,
-            HullBalance {
-                revision: next.revision,
-                hull: target_hull,
-            },
-        );
+        for (target, hull) in targets {
+            next.hulls.insert(
+                target,
+                HullBalance {
+                    revision: next.revision,
+                    hull,
+                },
+            );
+        }
         next.last_hull_repair.insert(
             source,
             TransferSequence {
@@ -404,15 +429,38 @@ impl EnergyLedger {
         source_energy: f32,
         target_shield: f32,
     ) -> io::Result<u64> {
+        self.recharge_shields_area(
+            source,
+            epoch,
+            effect,
+            source_energy,
+            BTreeMap::from([(target, target_shield)]),
+        )
+    }
+
+    /// Atomically recharge every eligible area recipient with the caster's reactor receipt.
+    ///
+    /// Returns:
+    ///     u64: One world revision shared by all recharged shields.
+    pub fn recharge_shields_area(
+        &mut self,
+        source: u32,
+        epoch: u64,
+        effect: u32,
+        source_energy: f32,
+        targets: BTreeMap<u32, f32>,
+    ) -> io::Result<u64> {
         if source == 0
-            || target == 0
             || epoch == 0
             || effect == 0
             || self.recharge_seen(source, epoch, effect)
             || !source_energy.is_finite()
             || !(0. ..=1_000_000_000.).contains(&source_energy)
-            || !target_shield.is_finite()
-            || !(0. ..=1_000_000_000.).contains(&target_shield)
+            || targets.is_empty()
+            || targets.len() > 6
+            || targets.iter().any(|(target, shield)| {
+                *target == 0 || !shield.is_finite() || !(0. ..=1_000_000_000.).contains(shield)
+            })
         {
             return Err(invalid("Invalid or repeated shield recharge."));
         }
@@ -428,13 +476,15 @@ impl EnergyLedger {
                 energy: source_energy,
             },
         );
-        next.shields.insert(
-            target,
-            ShieldBalance {
-                revision: next.revision,
-                shield: target_shield,
-            },
-        );
+        for (target, shield) in targets {
+            next.shields.insert(
+                target,
+                ShieldBalance {
+                    revision: next.revision,
+                    shield,
+                },
+            );
+        }
         next.last_recharge.insert(
             source,
             TransferSequence {

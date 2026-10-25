@@ -389,6 +389,8 @@ pub struct PendingShieldRecharge {
     pub effect: u32,
     pub amount: f32,
     pub range: f32,
+    #[serde(default)]
+    pub radius: f32,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -397,6 +399,8 @@ pub struct PendingHullRepair {
     pub effect: u32,
     pub amount: f32,
     pub range: f32,
+    #[serde(default)]
+    pub radius: f32,
 }
 
 impl PendingHullRepair {
@@ -410,6 +414,8 @@ impl PendingHullRepair {
             && self.amount <= 51_840.
             && self.range.is_finite()
             && (0. ..=10_000.).contains(&self.range)
+            && self.radius.is_finite()
+            && (0. ..=4_000.).contains(&self.radius)
     }
 }
 
@@ -423,6 +429,8 @@ impl PendingShieldRecharge {
             && self.amount > 0.
             && self.range.is_finite()
             && (0. ..=10_000.).contains(&self.range)
+            && self.radius.is_finite()
+            && (0. ..=4_000.).contains(&self.radius)
     }
 }
 
@@ -435,12 +443,12 @@ impl Cast {
                 self.ability == 65 && plan.valid() && self.remaining <= plan.charge_seconds
             })
             && self.recharge_amount.is_none_or(|amount| {
-                matches!(self.ability, 32 | 89 | 91)
+                matches!(self.ability, 14 | 32 | 61 | 89 | 91)
                     && amount.is_finite()
                     && (1. ..=12_960.).contains(&amount)
             })
             && self.hull_repair_amount.is_none_or(|amount| {
-                matches!(self.ability, 31 | 77 | 95)
+                matches!(self.ability, 9 | 31 | 60 | 77 | 95)
                     && amount.is_finite()
                     && (1. ..=12_960.).contains(&amount)
             })

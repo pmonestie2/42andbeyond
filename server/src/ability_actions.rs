@@ -98,7 +98,8 @@ impl PlayerSession {
                 1 => 90.,
                 3 => 360.,
                 5 => 1440.,
-                _ => return Err(invalid("This area repair rank is not implemented yet.")),
+                6 | 7 => 1440.,
+                _ => return Err(invalid("Unknown repair ability rank.")),
             }
         } else {
             0.
@@ -223,6 +224,7 @@ impl PlayerSession {
         }
         if ability.kind == AbilityKind::RechargeShields {
             if ability.rank == 1
+                || ability.radius > 0
                 || requested_target == self.player_id()
                 || requested_target == u32::MAX
             {
@@ -241,6 +243,7 @@ impl PlayerSession {
         }
         if ability.kind == AbilityKind::HullPatch {
             if ability.rank == 1
+                || ability.radius > 0
                 || requested_target == self.player_id()
                 || requested_target == u32::MAX
             {
@@ -647,6 +650,7 @@ impl PlayerSession {
                     effect,
                     amount,
                     range: ability.range as f32,
+                    radius: ability.radius as f32,
                 });
             }
             AbilityKind::HullPatch => {
@@ -657,6 +661,7 @@ impl PlayerSession {
                     effect,
                     amount,
                     range: ability.range as f32,
+                    radius: ability.radius as f32,
                 });
             }
             AbilityKind::Rally => {

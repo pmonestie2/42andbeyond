@@ -64,8 +64,12 @@ mean the corresponding gameplay system is complete.
   completion effects distinguish the self flash from the peer beam. A saved
   completed-cast outbox and one world-ledger revision couple caster reactor
   energy with recipient shields; failed writes and short replacement retry
-  without a duplicate heal. Area Recharge Shields ranks and other class
-  abilities remain pending.
+  without a duplicate heal. Ranks six and seven now recharge the caster and
+  nearby accepted group members within 1,500/3,000 units through one atomic
+  world receipt. Native rank-six/seven range bands are 3,750/4,000; the area
+  radii, 300/350 energy, four/five-second charge and rank-five amount per
+  effective skill level are documented local tuning because the archived
+  area handler is absent. Other class abilities remain pending.
 - Terran Traders and Terran Scouts now have native rank-one Patch Hull,
   rank-three Repair Hull and rank-five Combat Hull Repair. Rank one always
   repairs self; higher ranks repair a selected visible pilot within the
@@ -75,7 +79,11 @@ mean the corresponding gameplay system is complete.
   Reactor cost, hull gain and authenticated cast identity settle through the
   same atomic world file and saved outbox as Recharge Shields. Disposable
   self/peer, range, failed-write and replacement tests cover exactly-once
-  repair. Area hull ranks remain gated pending native area behavior.
+  repair. Ranks six and seven use the same group-scoped area and atomic
+  multi-recipient settlement as Recharge Shields. Disposable outsider,
+  failed-ledger-write and restart tests cover area delivery. The area radius,
+  energy and charge time are local tuning; legacy-client graphical behavior
+  remains unverified.
 - Nine race/profession identities, public SQL class skill ceilings, racial starter
   gear, class ship models and weapon/device mount limits. Shared implemented
   abilities respect class ownership; other class ability handlers remain pending.
