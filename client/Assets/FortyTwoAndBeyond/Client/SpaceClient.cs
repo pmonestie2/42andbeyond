@@ -31,6 +31,7 @@ namespace FortyTwoAndBeyond.Client
         private TurboHud turboHud;
         private readonly FlightThrottle flightThrottle = new FlightThrottle();
         private readonly StationWalkState stationWalk = new StationWalkState();
+        private readonly LootSweep lootSweep = new LootSweep();
         public bool AbilitiesOpen => abilityHud != null && abilityHud.IsOpen;
         public bool Incapacitated => snapshot != null && snapshot.Station == null &&
             snapshot.MaxHull > 0 && snapshot.Hull <= 0;
@@ -62,6 +63,9 @@ namespace FortyTwoAndBeyond.Client
         public string DemoRosterError => demoRoster?.Error;
         public string DemoRosterHost { get; private set; }
         public bool Ready => worker != null && worker.Running && snapshot != null && snapshot.Ready;
+        public bool LootAllActive => lootSweep.Active;
+        public string LootAllStatus => lootSweep.Status;
+        public int LootAllCollectedStacks => lootSweep.CollectedStacks;
         public bool Chart => chart;
         public float ChartRadiusKm => mapZoom / 10f;
         public MapObject Target => snapshot?.Objects.FirstOrDefault(item => item.Id == navigationSelection.TargetId);
@@ -222,6 +226,15 @@ namespace FortyTwoAndBeyond.Client
                     next.AngularY != snapshot.AngularY || next.AngularZ != snapshot.AngularZ ||
                     !next.Orientation.SequenceEqual(snapshot.Orientation));
                 snapshot = next; if (worker.Error == null) status = next.Status;
+                if (lootSweep.Active)
+                {
+                    CorpseLoot contents = next.Loot.FirstOrDefault(item => item.Id == lootSweep.CorpseId);
+                    int? slot = lootSweep.Observe(next.OpenLootId, next.SelectedTargetId,
+                        contents, next.LootActivity,
+                        next.Station != null || next.WarpPhase != WarpPhase.Idle,
+                        System.Diagnostics.Stopwatch.GetTimestamp());
+                    if (slot.HasValue) TakeLoot(lootSweep.CorpseId, slot.Value);
+                }
                 lastSnapshotAt = Time.unscaledTime;
                 if (sector != next.Sector) { ClearWorld(); sector = next.Sector; positioned = false; }
                 hud?.ObserveAuthoritativeTarget(next);
@@ -780,9 +793,24 @@ namespace FortyTwoAndBeyond.Client
         /// <summary>Close the current wreck window through its native server action.</summary>
         public void CloseLoot(uint id)
         {
+            if (lootSweep.CorpseId == id) lootSweep.Cancel("Collect All stopped.");
             if (Ready && snapshot.OpenLootId == id)
                 worker.Submit(new ClientCommand(CommandKind.CloseLoot, id));
         }
+
+        /// <summary>Begin one-at-a-time wreck pickup after each native stock update.</summary>
+        public void CollectAllLoot(uint id)
+        {
+            if (!Ready) return;
+            CorpseLoot contents = snapshot.Loot.FirstOrDefault(item => item.Id == id);
+            int? slot = lootSweep.Begin(id, snapshot.OpenLootId, snapshot.SelectedTargetId,
+                contents, snapshot.LootActivity, System.Diagnostics.Stopwatch.GetTimestamp());
+            if (slot.HasValue) TakeLoot(id, slot.Value);
+        }
+
+        /// <summary>Stop future wreck requests while any current tractor finishes normally.</summary>
+        public void StopCollectAllLoot()
+        { lootSweep.Cancel("Collect All stopped after the current tractor."); }
 
         /// <summary>Tractor one server-owned wreck slot into cargo.</summary>
         public void TakeLoot(uint id, int slot)
@@ -954,6 +982,7 @@ namespace FortyTwoAndBeyond.Client
         /// <summary>Release scene instances belonging to the departed sector.</summary>
         private void ClearWorld()
         {
+            lootSweep.Cancel("");
             navigationSelection.Reset();
             pendingNavigationTarget = 0;
             hud?.ResetTargetSelection();

@@ -12,7 +12,7 @@ internal static class Program
     private static void Main(string[] args)
     {
         CheckReassembly(); CheckWorld(); CheckMissionJournal(); CheckMissionDialogue();
-        CheckExperience(); CheckHullProgression(); CheckMiningPhases(); CheckLootTractor(); CheckWarpPhases(); CheckNavigationSelection(); CheckWarpTargets(); CheckWeaponReady();
+        CheckExperience(); CheckHullProgression(); CheckMiningPhases(); CheckLootTractor(); CheckLootSweep(); CheckWarpPhases(); CheckNavigationSelection(); CheckWarpTargets(); CheckWeaponReady();
         CheckDamageResults(); CheckCombatEngagement(); CheckShotPresentation(); CheckContactSelection(); CheckTargetVerbs(); CheckDeviceEffects();
         CheckNativeDeviceBuff(); CheckPeerScanBuff(); CheckSupportObjectEffects();
         CheckAmmunitionTransfer(); CheckFlightThrottle(); CheckFormationAnchor();
@@ -347,6 +347,60 @@ internal static class Program
         byte[] invalid = (byte[])tractor.Clone();
         Array.Copy(BitConverter.GetBytes(600001u), 0, invalid, 23, 4);
         Reject(() => world.Apply(new Frame(0x2014, invalid), 1));
+    }
+
+    /// <summary>Advance Collect All only after native tractor and wreck-stock confirmation.</summary>
+    private static void CheckLootSweep()
+    {
+        var catalog = new System.Collections.Generic.Dictionary<uint, ItemTemplateInfo>
+        {
+            [11] = new ItemTemplateInfo(11, 0, "First item", ""),
+            [12] = new ItemTemplateInfo(12, 0, "Second item", "")
+        };
+        var items = new ItemState[6];
+        items[0] = new ItemState { Template = 11, Quantity = 2 };
+        items[1] = new ItemState { Template = 12, Quantity = 3 };
+        CorpseLoot full = new CorpseLoot(77, items, catalog);
+        long now = Stopwatch.GetTimestamp();
+        var sweep = new LootSweep();
+        Assert(sweep.Begin(77, 77, 77, full, null, now) == 0 && sweep.Active,
+            "Collect All did not request the first server-listed wreck slot.");
+        Assert(sweep.Observe(77, 77, full, null, false, now + Stopwatch.Frequency) == null,
+            "Collect All repeated a request before server tractor acknowledgment.");
+        byte[] body = Wire.Body(writer =>
+        {
+            writer.Write(1u); writer.Write(10u); writer.Write(11u);
+            writer.Write((ushort)233); writer.Write(600u); writer.Write((ushort)3);
+            writer.Write(System.Text.Encoding.ASCII.GetBytes("Ore"));
+            writer.Write(2000u); writer.Write(200f);
+            writer.Write(10f); writer.Write(20f); writer.Write(30f);
+        });
+        LootActivity tractor = LootActivity.FromTractor(body, 1, 77);
+        Assert(sweep.Observe(77, 77, full, tractor, false,
+            now + 2 * Stopwatch.Frequency) == null && sweep.CollectedStacks == 0,
+            "An active native tractor was mistaken for a completed pickup.");
+        Assert(sweep.Observe(77, 77, full, null, false,
+            now + 3 * Stopwatch.Frequency) == null,
+            "Effect removal alone advanced Collect All before the stock changed.");
+        items[0] = null;
+        CorpseLoot afterFirst = new CorpseLoot(77, items, catalog);
+        Assert(sweep.Observe(77, 77, afterFirst, null, false,
+            now + 4 * Stopwatch.Frequency) == 1 && sweep.CollectedStacks == 1,
+            "Collect All did not advance to the next stock slot after authoritative depletion.");
+        sweep.Observe(77, 77, afterFirst, tractor, false, now + 5 * Stopwatch.Frequency);
+        items[1] = null;
+        Assert(sweep.Observe(77, 77, new CorpseLoot(77, items, catalog), null,
+            false, now + 6 * Stopwatch.Frequency) == null && !sweep.Active &&
+            sweep.Status == "COLLECTED 2 STACKS",
+            "Collect All did not finish after both server-owned stacks were removed.");
+        Assert(sweep.Begin(77, 77, 77, full, null, now) == 0 &&
+            sweep.Observe(0, 0, full, null, false, now + Stopwatch.Frequency) == null &&
+            !sweep.Active,
+            "Closing or retargeting a wreck left Collect All issuing requests.");
+        Assert(sweep.Begin(77, 77, 77, full, null, now) == 0 &&
+            sweep.Observe(77, 77, full, null, false,
+                now + 5 * Stopwatch.Frequency) == null && !sweep.Active,
+            "Unacknowledged pickup retried instead of stopping after server rejection.");
     }
 
     /// <summary>Preserve explicit free flight while refreshing sector destinations.</summary>

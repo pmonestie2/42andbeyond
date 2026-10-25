@@ -847,7 +847,7 @@ namespace FortyTwoAndBeyond.Client
             if (wreck == null) return;
             bool open = snapshot.OpenLootId == wreckId;
             bool tractoring = snapshot.LootActivity != null && snapshot.LootActivity.CorpseId == wreckId;
-            float height = open ? tractoring ? 272 : 250 : 126;
+            float height = open ? tractoring ? 332 : 306 : 126;
             float x = CanvasWidth - 740, y = CanvasHeight - height - 122;
             Panel(new Rect(x, y, 360, height));
             GUI.Label(new Rect(x + 12, y + 8, open ? 250 : 336, 22), wreck.Name, body);
@@ -864,10 +864,25 @@ namespace FortyTwoAndBeyond.Client
             GUI.enabled = true;
             if (!open) return;
             CorpseLoot contents = snapshot.Loot.FirstOrDefault(item => item.Id == wreckId);
+            bool collecting = client.LootAllActive;
+            bool hasStock = contents?.Items.Any(item => item != null) == true;
+            GUI.enabled = client.Ready && (collecting || hasStock && !tractoring);
+            if (GUI.Button(new Rect(x + 12, y + 94, 150, 30),
+                collecting ? "STOP QUEUE" : hasStock ? "COLLECT ALL" : "NO ITEMS", button))
+            {
+                if (collecting) client.StopCollectAllLoot();
+                else client.CollectAllLoot(wreckId);
+            }
+            GUI.enabled = true;
+            GUI.Label(new Rect(x + 174, y + 99, 174, 23), collecting ?
+                client.LootAllStatus : "ONE SERVER CAST AT A TIME", small);
+            int usedCargo = snapshot.Cargo.Count(item => item != null);
+            GUI.Label(new Rect(x + 12, y + 127, 336, 20),
+                $"HOLD {usedCargo}/{snapshot.CargoCapacity}  ·  SERVER CHECKS STACKING", small);
             if (tractoring)
-                GUI.Label(new Rect(x + 12, y + 94, 336, 20),
+                GUI.Label(new Rect(x + 12, y + 153, 336, 20),
                     $"TRACTORING  {snapshot.LootProgress * 100:0}%  ·  {snapshot.LootRemainingSeconds:0.0}s", small);
-            float contentTop = tractoring ? 119 : 96;
+            float contentTop = tractoring ? 179 : 153;
             GUILayout.BeginArea(new Rect(x + 12, y + contentTop, 336, height - contentTop - 12));
             lootScroll = GUILayout.BeginScrollView(lootScroll);
             if (contents == null) GUILayout.Label("Reading wreck contents…", small);
@@ -877,7 +892,7 @@ namespace FortyTwoAndBeyond.Client
                 if (stock.Length == 0) GUILayout.Label("No items remain", small);
                 foreach (ItemView item in stock)
                 {
-                    GUI.enabled = !tractoring;
+                    GUI.enabled = !tractoring && !collecting;
                     if (GUILayout.Button("TRACTOR  " + item.Name + "  ×" + item.Quantity, button,
                         GUILayout.Height(34))) client.TakeLoot(wreckId, item.Slot);
                 }
