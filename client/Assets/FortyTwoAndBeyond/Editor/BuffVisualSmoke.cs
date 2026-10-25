@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using FortyTwoAndBeyond.Client;
 using FortyTwoAndBeyond.Protocol;
 using UnityEditor;
@@ -26,7 +27,7 @@ namespace FortyTwoAndBeyond.Editor
             EditorApplication.update += Tick;
         }
 
-        /// <summary>Activate the equipped Turbo Weapons device and capture its native visual.</summary>
+        /// <summary>Bind Turbo Weapons to the quick bar, activate it, and capture its visual.</summary>
         private static void Tick()
         {
             if (EditorApplication.isCompiling || EditorApplication.isUpdating) return;
@@ -56,7 +57,17 @@ namespace FortyTwoAndBeyond.Editor
             {
                 if (!snapshot.Mounted.Any(item => item?.ActivationLabel == "Turbo Weapons"))
                 { Fail("Disposable pje pilot has no mounted Turbo Weapons device."); return; }
-                client.ActivateTurboWeapons();
+                AbilityHud hud = typeof(SpaceClient).GetField("abilityHud",
+                    BindingFlags.Instance | BindingFlags.NonPublic)?.GetValue(client) as AbilityHud;
+                if (hud == null) { Fail("Ability quick bar was not created."); return; }
+                typeof(AbilityHud).GetMethod("LoadSlots", BindingFlags.Instance | BindingFlags.NonPublic)
+                    ?.Invoke(hud, new object[] { snapshot.PlayerId });
+                int[] slots = typeof(AbilityHud).GetField("slots",
+                    BindingFlags.Instance | BindingFlags.NonPublic)?.GetValue(hud) as int[];
+                if (slots == null) { Fail("Ability quick bar has no slots."); return; }
+                ItemView turbo = snapshot.Mounted.First(item => item?.ActivationLabel == "Turbo Weapons");
+                slots[0] = -(int)turbo.Template - 2;
+                hud.ActivateSlot(0, snapshot);
                 stage = 1;
                 return;
             }
@@ -83,7 +94,7 @@ namespace FortyTwoAndBeyond.Editor
             if (EditorApplication.timeSinceStartup < captureAt) return;
             if (!File.Exists("Builds/verification/turbo-buff.png"))
             { Fail("Timed buff screenshot was not written."); return; }
-            Debug.Log("PASS: native Turbo Weapons buff icon, timer, and ship field captured.");
+            Debug.Log("PASS: mounted Turbo Weapons quick bar activation, buff icon, timer, and ship field captured.");
             EditorApplication.update -= Tick;
             EditorApplication.Exit(0);
         }

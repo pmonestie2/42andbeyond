@@ -16,6 +16,16 @@ account stops provisioning without overwriting it. The roster is published
 only after all nine accounts are ready; ordinary local accounts are never
 advertised.
 
+`server/data/demo_accounts.json` defines the nine identities, Turbo Weapons
+templates, skill devices and optional activated-item armories. The server reads
+this table at startup and validates each grant against the public item catalog
+and the pilot's class. Already owned items are not duplicated. Optional
+`"equip": true` places a grant in an unchanged mount; otherwise it goes into
+the vault. `ppw` has Projectile Handling and Turbo Weapons mounted, with other
+class-legal implemented activated choices in its vault. The three PW device
+mounts cannot hold all choices simultaneously. Account passwords remain hashed
+in per-account state files; the table contains no passwords.
+
 | Account and password | Class |
 | --- | --- |
 | `pte` | Terran Enforcer |

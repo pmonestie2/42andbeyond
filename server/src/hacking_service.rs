@@ -11,11 +11,11 @@ pub(crate) struct HackingOutcome {
 
 impl PlayerSession {
     /// Returns:
-    ///     u64: Generation of a selected visible nonorganic hostile MOB.
+    ///     u64: Generation of a selected visible nonorganic MOB.
     pub(crate) fn hacking_target_generation(&self, target: u32) -> io::Result<u64> {
         let index = target
             .checked_sub(MOB_ID)
-            .ok_or_else(|| invalid("Select a hostile MOB for Hacking."))?
+            .ok_or_else(|| invalid("Select a mechanical MOB for Hacking."))?
             as usize;
         let combat = lock_combat(&self.combat)?;
         let mob = combat
@@ -24,12 +24,9 @@ impl PlayerSession {
             .ok_or_else(|| invalid("Hacking target is missing."))?;
         if !self.mob_visible_in_scan(index, mob)
             || mob.state == MobState::Dead
-            || self.mob_relationship(mob) != 0
             || matches!(mob.definition.mob_type, 2 | 3)
         {
-            return Err(invalid(
-                "Hacking requires a visible nonorganic hostile MOB.",
-            ));
+            return Err(invalid("Hacking requires a visible nonorganic MOB."));
         }
         Ok(mob.death_generation)
     }
@@ -66,7 +63,6 @@ impl PlayerSession {
         if primary.state == MobState::Dead
             || primary.death_generation != generation
             || !self.mob_visible_in_scan(index, primary)
-            || self.mob_relationship(primary) != 0
             || matches!(primary.definition.mob_type, 2 | 3)
             || distance(primary.position, self.position) > band.range
         {
@@ -81,9 +77,7 @@ impl PlayerSession {
                     object_id: MOB_ID + i as u32,
                     generation: mob.death_generation,
                     position: mob.position,
-                    alive: mob.state != MobState::Dead
-                        && self.mob_visible_in_scan(i, mob)
-                        && self.mob_relationship(mob) == 0,
+                    alive: mob.state != MobState::Dead && self.mob_visible_in_scan(i, mob),
                     organic: matches!(mob.definition.mob_type, 2 | 3),
                     // The authoritative MOB simulation currently has one weapon.
                     weapon_slots: usize::from(mob.combat.dps > 0.),

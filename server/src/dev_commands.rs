@@ -6,33 +6,51 @@ use crate::sectors::SectorCatalog;
 struct SpawnRequest<'a> {
     query: &'a str,
     count: usize,
+    level: Option<u32>,
 }
 
 impl<'a> SpawnRequest<'a> {
+    /// Returns:
+    ///     Self: Validated template, count, and optional combat level.
     fn parse(argument: &'a str) -> io::Result<Self> {
-        let argument = argument.trim();
+        let mut argument = argument.trim();
+        let mut level = None;
+        let tail = argument.rsplit(char::is_whitespace).next().unwrap_or("");
+        if let Some(value) = tail.strip_prefix("level=") {
+            let parsed = value.parse::<u32>().map_err(|_| {
+                invalid("Use /d_spawn MOB_NAME_OR_TEMPLATE_ID [COUNT] [level=1..66].")
+            })?;
+            if !(1..=66).contains(&parsed) {
+                return Err(invalid("Developer MOB level must be between 1 and 66."));
+            }
+            level = Some(parsed);
+            argument = argument[..argument.len() - tail.len()].trim_end();
+        }
         if argument.is_empty() {
             return Ok(Self {
                 query: "46",
                 count: 1,
+                level,
             });
         }
         if let Some((query, count)) = argument.rsplit_once(char::is_whitespace) {
             if let Ok(count) = count.parse::<usize>() {
                 if !(1..=32).contains(&count) {
                     return Err(invalid(
-                        "Use /d_spawn MOB_NAME_OR_TEMPLATE_ID [COUNT], with count 1 through 32.",
+                        "Use /d_spawn MOB_NAME_OR_TEMPLATE_ID [COUNT] [level=1..66], with count 1 through 32.",
                     ));
                 }
                 return Ok(Self {
                     query: query.trim(),
                     count,
+                    level,
                 });
             }
         }
         Ok(Self {
             query: argument,
             count: 1,
+            level,
         })
     }
 }
@@ -55,22 +73,29 @@ impl GameState {
             definition.source_id = 0; // shared world assigns the durable dev identity
             definition.spawn_group = 0;
             definition.spawn_region = None;
+            if let Some(level) = request.level {
+                definition.level = level;
+                definition.combat_override = None;
+            }
             definitions.push(definition);
         }
+        let stats = crate::mob_stats::MobStats::derive(&definitions[0]);
+        let level = definitions[0].level;
         let ids = lock_combat(&self.sessions[&source].combat)?.spawn_developer(definitions)?;
         let first = ids
             .first()
             .copied()
             .ok_or_else(|| invalid("Developer spawn produced no actors."))?;
         self.sessions.get_mut(&source).unwrap().message(&format!(
-            "Dev spawn: {} x {} (template {}), 1000m ahead; first object {}.",
-            request.count, template.name, template.template_id, first
+            "Dev spawn: {} x {} (template {}, level {}, shields {:.0}), 1000m ahead; first object {}.",
+            request.count, template.name, template.template_id, level, stats.shield, first
         ));
         crate::server_log!(
-            "Dev spawn: {}; template={}; count={}; first_object={first}",
+            "Dev spawn: {}; template={}; count={}; level={level}; shield={:.0}; first_object={first}",
             self.sessions[&source].account.character.name,
             template.template_id,
-            request.count
+            request.count,
+            stats.shield
         );
         Ok(())
     }
@@ -107,12 +132,22 @@ mod tests {
         let default = SpawnRequest::parse("").unwrap();
         assert_eq!(default.query, "46");
         assert_eq!(default.count, 1);
+        assert_eq!(default.level, None);
         let single = SpawnRequest::parse("1429").unwrap();
         assert_eq!(single.query, "1429");
         assert_eq!(single.count, 1);
         let multi = SpawnRequest::parse("The Controller 3").unwrap();
         assert_eq!(multi.query, "The Controller");
         assert_eq!(multi.count, 3);
+        let leveled = SpawnRequest::parse("Achilles Drone 3 level=50").unwrap();
+        assert_eq!(leveled.query, "Achilles Drone");
+        assert_eq!(leveled.count, 3);
+        assert_eq!(leveled.level, Some(50));
+        assert_eq!(SpawnRequest::parse("46 level=66").unwrap().level, Some(66));
+        assert_eq!(SpawnRequest::parse("level=50").unwrap().query, "46");
+        assert!(SpawnRequest::parse("46 level=0").is_err());
+        assert!(SpawnRequest::parse("46 level=67").is_err());
+        assert!(SpawnRequest::parse("46 level=bogus").is_err());
         assert!(SpawnRequest::parse("46 0").is_err());
         assert!(SpawnRequest::parse("46 33").is_err());
     }
@@ -204,8 +239,14 @@ mod tests {
             HashMap::from([(a, 1), (b, 1)])
         );
         chat(&mut resumed, "/d_spawn 46 2").unwrap();
+        chat(&mut resumed, "/d_spawn 46 1 level=50").unwrap();
         let world = lock_combat(&resumed.sessions[&a].combat).unwrap();
-        assert_eq!(world.actors.len(), before + 3);
+        assert_eq!(world.actors.len(), before + 4);
+        let leveled = world.actors.last().unwrap();
+        assert_eq!(leveled.definition.level, 50);
+        assert!(leveled.definition.combat_override.is_none());
+        assert!((leveled.max_shield - 160_740.).abs() < 1.);
+        assert_eq!(leveled.shield, leveled.max_shield);
         let identities: HashSet<_> = world
             .actors
             .iter()

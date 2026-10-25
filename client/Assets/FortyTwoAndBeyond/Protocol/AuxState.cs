@@ -126,7 +126,7 @@ namespace FortyTwoAndBeyond.Protocol
         {
             var reader = new AuxState(body); Flags fields = reader.Mask(58);
             uint? privateWarp = null, globalWarp = null;
-            buffRevisions = new TimedDeviceBuff[5];
+            buffRevisions = new TimedDeviceBuff[6];
             for (int i = 0; i <= 45; i++)
             {
                 if (!fields.Present[i] && fields.Default[i] && (i == 4 || i == 6 || i >= 35 && i <= 41))
@@ -197,7 +197,7 @@ namespace FortyTwoAndBeyond.Protocol
             return new ShipDefenseState(known, deflects);
         }
 
-        /// <summary>Read independent self and recipient revisions from native slots zero through four.</summary>
+        /// <summary>Read equipment, recipient, and Rally revisions from native slots zero through five.</summary>
         private void ReadBuff(TimedDeviceBuff[] revisions)
         {
             Flags slots = Mask(16);

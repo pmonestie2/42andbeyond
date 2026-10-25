@@ -20,16 +20,19 @@ namespace FortyTwoAndBeyond.Editor
         private static bool uiSmoke;
         private static bool smallUiSmoke;
         private static bool productionSmoke;
+        private static bool artOnlySmoke;
         private static ClientWorker peer;
 
         /// <summary>Resume the smoke driver after the Play-mode domain reload.</summary>
         static VisualSmoke()
         {
             if (Array.IndexOf(Environment.GetCommandLineArgs(), "--42andbeyond-visual-smoke") < 0 &&
+                Array.IndexOf(Environment.GetCommandLineArgs(), "--42andbeyond-art-smoke") < 0 &&
                 Array.IndexOf(Environment.GetCommandLineArgs(), "--42andbeyond-production-smoke") < 0) return;
             uiSmoke = Array.IndexOf(Environment.GetCommandLineArgs(), "--42andbeyond-ui-smoke") >= 0;
             smallUiSmoke = Array.IndexOf(Environment.GetCommandLineArgs(), "--42andbeyond-small-ui-smoke") >= 0;
             productionSmoke = Array.IndexOf(Environment.GetCommandLineArgs(), "--42andbeyond-production-smoke") >= 0;
+            artOnlySmoke = Array.IndexOf(Environment.GetCommandLineArgs(), "--42andbeyond-art-smoke") >= 0;
             deadline = EditorApplication.timeSinceStartup + (uiSmoke || productionSmoke ? 90 : 300);
             EditorApplication.update += Tick;
         }
@@ -84,6 +87,12 @@ namespace FortyTwoAndBeyond.Editor
             {
                 ScreenCapture.CaptureScreenshot("Builds/verification/chase.png");
                 captureAt = EditorApplication.timeSinceStartup + 2; stage = 2; return;
+            }
+            if (artOnlySmoke && stage == 2)
+            {
+                if (!File.Exists("Builds/verification/chase.png")) return;
+                Debug.Log("PASS: flight art captured against disposable server.");
+                ClosePeer(); EditorApplication.update -= Tick; EditorApplication.Exit(0); return;
             }
             if (stage == 2)
             {

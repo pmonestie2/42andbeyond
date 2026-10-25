@@ -526,7 +526,8 @@ namespace FortyTwoAndBeyond.Protocol
         public string ActiveDeviceLabel { get; private set; } = "";
         public long ActiveDeviceEndsAt { get; private set; }
         private readonly TimedDeviceBuff[] buffs = { TimedDeviceBuff.Empty, TimedDeviceBuff.Empty,
-            TimedDeviceBuff.Empty, TimedDeviceBuff.Empty, TimedDeviceBuff.Empty };
+            TimedDeviceBuff.Empty, TimedDeviceBuff.Empty, TimedDeviceBuff.Empty,
+            TimedDeviceBuff.Empty };
         private readonly System.Collections.Generic.List<int> pendingBuffVisuals =
             new System.Collections.Generic.List<int>();
         public TimedDeviceBuff ActiveBuff => buffs[0];
@@ -534,6 +535,20 @@ namespace FortyTwoAndBeyond.Protocol
         public TimedDeviceBuff ShieldBuff => buffs[2];
         public TimedDeviceBuff ReactorBuff => buffs[3];
         public TimedDeviceBuff SignatureBuff => buffs[4];
+        public TimedDeviceBuff RallyBuff => buffs[5];
+
+        /// <returns>ushort: The server's visual descriptor for a Rally buff token.</returns>
+        private static ushort RallyDescriptor(string name)
+        {
+            switch (name)
+            {
+                case "Damage_Tactics": return 333;
+                case "Defense_Tactics": return 675;
+                case "Firing_Tactics": return 676;
+                case "Stealth_Tactics": return 327;
+                default: return 0;
+            }
+        }
         public bool TurboWeaponsActive => ActiveDeviceLabel == "Turbo Weapons";
         public long CastEndsAt { get; private set; }
         public Dictionary<uint, long> AbilityCooldownEnds { get; } = new Dictionary<uint, long>();
@@ -724,11 +739,16 @@ namespace FortyTwoAndBeyond.Protocol
                     }
                     if (objectEffect?.OwnerId == player)
                     {
+                        if (buffs[5].Active && RallyDescriptor(buffs[5].Name) == objectEffect.Descriptor)
+                            buffs[5] = buffs[5].WithVisual(objectEffect.EffectId,
+                                objectEffect.Descriptor);
                         int slot = pendingBuffVisuals.FindIndex(index => buffs[index].Active &&
                             (index == 1 && objectEffect.Descriptor == 462 ||
                              (index == 2 || index == 3) && objectEffect.Descriptor == 553 ||
                              index == 0 && objectEffect.Descriptor == 553));
-                        if (slot < 0 && objectEffect.Descriptor != 462 && objectEffect.Descriptor != 553)
+                        if (slot < 0 && objectEffect.Descriptor != 462 && objectEffect.Descriptor != 553 &&
+                            objectEffect.Descriptor != 333 && objectEffect.Descriptor != 675 &&
+                            objectEffect.Descriptor != 676 && objectEffect.Descriptor != 327)
                             slot = pendingBuffVisuals.FindIndex(index => index == 0 && buffs[0].Active);
                         if (slot >= 0)
                         {
@@ -881,6 +901,14 @@ namespace FortyTwoAndBeyond.Protocol
                             buffs[slot] = revisions[slot];
                             pendingBuffVisuals.Remove(slot);
                             if (buffs[slot].Active && slot < 4) pendingBuffVisuals.Add(slot);
+                            if (slot == 5 && buffs[slot].Active)
+                            {
+                                ushort descriptor = RallyDescriptor(buffs[slot].Name);
+                                NativeObjectEffect visual = ObjectEffects.Values.FirstOrDefault(effect =>
+                                    effect.OwnerId == player && effect.Descriptor == descriptor);
+                                if (visual != null)
+                                    buffs[slot] = buffs[slot].WithVisual(visual.EffectId, descriptor);
+                            }
                             if (slot == 0)
                             {
                                 ActiveDeviceLabel = buffs[0].Active ? buffs[0].Name : "";
@@ -1057,6 +1085,7 @@ namespace FortyTwoAndBeyond.Protocol
         public readonly DeviceBuffView DeviceBuff;
         public readonly DeviceBuffView PeerBuff;
         public readonly DeviceBuffView ShieldBuff, ReactorBuff, SignatureBuff;
+        public readonly DeviceBuffView RallyBuff;
         public readonly float ActiveDeviceRemainingSeconds;
         public readonly float CastRemainingSeconds;
         public readonly IReadOnlyDictionary<uint, float> AbilityCooldownSeconds;
@@ -1122,6 +1151,8 @@ namespace FortyTwoAndBeyond.Protocol
             ReactorBuff = world.ReactorBuff.Active ? new DeviceBuffView(world.ReactorBuff,
                 world.EstimatedServerTick(now)) : null;
             SignatureBuff = world.SignatureBuff.Active ? new DeviceBuffView(world.SignatureBuff,
+                world.EstimatedServerTick(now)) : null;
+            RallyBuff = world.RallyBuff.Active ? new DeviceBuffView(world.RallyBuff,
                 world.EstimatedServerTick(now)) : null;
             CastingAbilityId = world.CastingAbilityId;
             TurboWeaponsActive = world.TurboWeaponsActive;

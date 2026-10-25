@@ -60,6 +60,8 @@ pub(super) struct Checkpoint {
     #[serde(default)]
     active_device: Option<session_equipment::ActiveDevice>,
     #[serde(default)]
+    additional_active_devices: Vec<session_equipment::ActiveDevice>,
+    #[serde(default)]
     peer_buff: Option<crate::peer_buffs::PeerBuff>,
     #[serde(default)]
     peer_buffs: Vec<crate::peer_buffs::PeerBuff>,
@@ -422,6 +424,20 @@ impl PlayerSession {
         self.active_device = saved
             .active_device
             .filter(|active| active.valid_for(&self.inventory, &self.items, unix_ms()));
+        self.additional_active_devices = saved
+            .additional_active_devices
+            .into_iter()
+            .filter(|active| active.valid_for(&self.inventory, &self.items, unix_ms()))
+            .collect();
+        let mut effects = std::collections::HashSet::new();
+        if let Some(active) = &self.active_device {
+            effects.insert(active.effect);
+        }
+        self.additional_active_devices
+            .retain(|active| effects.insert(active.effect));
+        if self.active_device.is_none() && !self.additional_active_devices.is_empty() {
+            self.active_device = Some(self.additional_active_devices.remove(0));
+        }
         self.peer_buffs = if saved.peer_buffs.is_empty() {
             saved.peer_buff.into_iter().collect()
         } else {
@@ -529,6 +545,7 @@ impl PlayerSession {
             self.refresh_equipment()?;
         } else {
             self.active_device = None;
+            self.additional_active_devices.clear();
         }
         if let Some(join) = &self.handoff {
             self.pending.push(Frame::new(0x3a, join.clone()));
@@ -698,6 +715,7 @@ impl PlayerSession {
             weapon_cooldowns: self.weapon_cooldowns,
             weapon_firing: self.weapon_firing,
             active_device: self.active_device.clone(),
+            additional_active_devices: self.additional_active_devices.clone(),
             peer_buff: None,
             peer_buffs: self.peer_buffs.clone(),
             peer_buff_revision: self.peer_buff_revision,

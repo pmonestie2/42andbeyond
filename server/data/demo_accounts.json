@@ -1,0 +1,77 @@
+{
+  "version": 1,
+  "accounts": [
+    {
+      "code": "te", "username": "pte", "character": "PlayTE", "turbo": 2363,
+      "skill_devices": [{"template": 2341, "effect": "SKILL_RALLY"}],
+      "armory": []
+    },
+    {
+      "code": "tt", "username": "ptt", "character": "PlayTT", "turbo": 2265,
+      "skill_devices": [{"template": 2346, "effect": "SKILL_BEFRIEND"}],
+      "armory": []
+    },
+    {
+      "code": "ts", "username": "pts", "character": "PlayTS", "turbo": 2265,
+      "skill_devices": [{"template": 2419, "effect": "STAT_TRACTORBEAM_SPEED"}],
+      "armory": []
+    },
+    {
+      "code": "jd", "username": "pjd", "character": "PlayJD", "turbo": 2363,
+      "skill_devices": [
+        {"template": 6135, "effect": "SKILL_SUMMON"},
+        {"template": 2492, "effect": "STAT_FOLD_SPACE_DISTANCE"}
+      ],
+      "armory": []
+    },
+    {
+      "code": "js", "username": "pjs", "character": "PlayJS", "turbo": 2265,
+      "skill_devices": [
+        {"template": 2447, "effect": "SKILL_RECHARGE_SHIELDS"},
+        {"template": 2409, "effect": "Scan Boost (Activated)"}
+      ],
+      "armory": []
+    },
+    {
+      "code": "je", "username": "pje", "character": "PlayJE", "turbo": 2412,
+      "skill_devices": [
+        {"template": 2491, "effect": "SKILL_ENVIRONMENT_SHIELD"},
+        {"template": 2484, "effect": "STAT_WORMHOLE_CREATION_TIME"}
+      ],
+      "armory": []
+    },
+    {
+      "code": "pw", "username": "ppw", "character": "PlayPW", "turbo": 2363,
+      "skill_devices": [{"template": 2384, "effect": "SKILL_SELF_DESTRUCT"}],
+      "armory": [
+        {"template": 1828, "effect": "Scan Boost (Activated)"},
+        {"template": 2172, "effect": "Recharge Reactor (Activated)"},
+        {"template": 3878, "effect": "Recharge Shields (Activated)"},
+        {"template": 2042, "effect": "Deflect Impact (Activated)"},
+        {"template": 5893, "effect": "Deflect Explosive (Activated)"},
+        {"template": 5895, "effect": "Deflect Plasma (Activated)"},
+        {"template": 6172, "effect": "Deflect Energy (Activated)"},
+        {"template": 2380, "effect": "Improved Beam Handling (Activated)"},
+        {"template": 2389, "effect": "Improved Projectile Handling (Activated)", "equip": true},
+        {"template": 2337, "effect": "Turbo (Activated)"},
+        {"template": 5894, "effect": "Maximize Shields (Activated)"},
+        {"template": 2391, "effect": "Reroute Shield Energy (Instant)"},
+        {"template": 3292, "effect": "Increase Maneuverability (Activated)"},
+        {"template": 3319, "effect": "Turbo (Activated)"}
+      ]
+    },
+    {
+      "code": "pp", "username": "ppp", "character": "PlayPP", "turbo": 2265,
+      "skill_devices": [{"template": 2349, "effect": "SKILL_RECHARGE_SHIELDS"}],
+      "armory": []
+    },
+    {
+      "code": "ps", "username": "pps", "character": "PlayPS", "turbo": 2265,
+      "skill_devices": [
+        {"template": 2471, "effect": "SKILL_POWERDOWN"},
+        {"template": 2468, "effect": "SKILL_GRAVITY_LINK"}
+      ],
+      "armory": []
+    }
+  ]
+}

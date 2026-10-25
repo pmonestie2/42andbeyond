@@ -1,5 +1,10 @@
 # 42 and Beyond: Unity Client
 
+The HUD bundles IBM Plex Sans Regular, Medium, and SemiBold from
+[IBM's Plex repository](https://github.com/IBM/plex). The font files are licensed
+under the SIL Open Font License; see
+`Assets/FortyTwoAndBeyond/Resources/Fonts/OFL.txt`.
+
 A desktop space client for the existing local Rust server, with a solid 3D ship,
 procedural asteroids, stations, gates, a docking bay, a distant ringed planet,
 and a sector chart.
@@ -395,3 +400,44 @@ source. The JPEG is unchanged; its URL, SHA-256 and NASA usage guidance are in
 [`SaturnNASA-SOURCE.md`](Assets/FortyTwoAndBeyond/Resources/SaturnNASA-SOURCE.md).
 The spacecraft source and CC BY 3.0 attribution are in
 [`ViktorShips/README.md`](Assets/FortyTwoAndBeyond/Resources/ViktorShips/README.md).
+
+### Optional local EVE ships
+
+The client can use two hulls from Pierre's local
+`EVE Online - Updated Blender Shader` scene. With `cc3.obj` and `gc3.obj` plus
+their baked albedo and glow maps in `Resources/EveShips/`, the Caldari hull
+appears as the pilot ship and the Gallente hull appears on small mechanical
+MOBs. The existing packaged models remain the fallback. Run Blender with
+`--python client/Tools/export_eve_ships.py` to regenerate the six files from
+the local `.blend` file. The original scene was assembled by Kaneda Emperis
+with the EVE Creative Discord group, according to its included readme.
+The exported EVE game art is kept out of Git and is only packaged into local
+builds made on a machine that has those files.
+
+### Optional procedural planet
+
+The local `~/Downloads/procedural-planet-shader.zip` contains a volcanic planet
+mesh and baked surface maps. Run `python3 client/Tools/export_planet_pack.py`
+from the repository root to extract them into the git-ignored
+`Resources/PlanetPack/` directory. The Unity client uses the bundled
+`ProceduralPlanet` surface and `PlanetAtmosphere` shaders for this world; if
+the local assets are absent it displays the packaged Saturn scene instead.
+The original archive remains unchanged and is not added to Git.
+
+### Procedural sky and optional space packs
+
+`Tools/generate_space_sky.py` generates the bundled `ProceduralSpace.png`
+panorama from seed `42042`. It builds a seamless galactic band, dark dust lanes,
+nebula color, and stars offline so the sky shader samples one texture at runtime.
+Run `python3 client/Tools/generate_space_sky.py` from the repository root to
+reproduce it. The earlier `SpaceNebula.png` remains a fallback.
+
+`~/Downloads/asteroids-pack-metallic-version.zip` and
+`~/Downloads/blackhole.zip` can be imported with
+`python3 client/Tools/export_space_packs.py --blender /opt/homebrew/bin/blender`.
+The ten UV-textured asteroid shapes replace nearby rocky silhouettes, and the
+black hole's exported ring and core appear in the distant scenery. Their
+resized maps and meshes are kept in git-ignored `Resources/AsteroidPack/` and
+`Resources/BlackHolePack/` because the archives contain no redistribution
+terms. Existing packaged rocks and scenery remain available when the local
+assets are absent.

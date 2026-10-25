@@ -110,6 +110,15 @@ mod self_destruct_service;
 mod session_checkpoint;
 #[path = "session_equipment.rs"]
 mod session_equipment;
+
+/// Returns:
+///     bool: Whether an activated item has a server-side gameplay rule.
+pub(crate) fn supports_activated_item(template: &crate::items::ItemTemplate) -> bool {
+    session_equipment::device_effect(template).is_some()
+        || session_equipment::reroute_shield_energy(template).is_some()
+        || energy_transfer::transfer_reactor_energy(template).is_some()
+        || crate::peer_buffs::friendly_offer(template).is_some()
+}
 #[path = "session_peers.rs"]
 mod session_peers;
 #[path = "session_resources.rs"]
@@ -250,6 +259,7 @@ pub struct PlayerSession {
     weapon_cooldowns: [f32; 20],
     weapon_firing: [bool; 20],
     active_device: Option<session_equipment::ActiveDevice>,
+    additional_active_devices: Vec<session_equipment::ActiveDevice>,
     peer_buffs: Vec<crate::peer_buffs::PeerBuff>,
     peer_buff_revision: u64,
     rally_buff: Option<crate::rally::RallyBuff>,
@@ -462,6 +472,7 @@ impl PlayerSession {
             weapon_cooldowns: [0.; 20],
             weapon_firing: [false; 20],
             active_device: None,
+            additional_active_devices: Vec::new(),
             peer_buffs: Vec::new(),
             peer_buff_revision: 0,
             rally_buff: None,
@@ -514,17 +525,24 @@ impl PlayerSession {
             &mut *lock_combat(&session.combat)?,
             crate::resources::unix_ms(),
         );
-        if let Err(error) = session.restore_session() {
-            crate::server_error!("Session recovery skipped: {error}");
-            session.abort_all_mining("Session recovery could not complete.")?;
-            session.cancel_looting("Session recovery could not complete.")?;
-            session.logged_in = false;
-            session.selected_peer = None;
-            session.endpoint = None;
-            session.comms = None;
-            session.handoff = None;
-            session.pending.clear();
-            session.forget_session()?;
+        let restored_transport = match session.restore_session() {
+            Ok(restored) => restored,
+            Err(error) => {
+                crate::server_error!("Session recovery skipped: {error}");
+                session.abort_all_mining("Session recovery could not complete.")?;
+                session.cancel_looting("Session recovery could not complete.")?;
+                session.logged_in = false;
+                session.selected_peer = None;
+                session.endpoint = None;
+                session.comms = None;
+                session.handoff = None;
+                session.pending.clear();
+                session.forget_session()?;
+                false
+            }
+        };
+        if !restored_transport {
+            session.restore_logged_out_devices()?;
         }
         session.refresh_equipment()?;
         if grant_applied {
@@ -849,6 +867,7 @@ impl PlayerSession {
                     },
                 ));
                 self.publish_reputation();
+                self.publish_active_device_resume();
                 let shared = Arc::clone(&self.combat);
                 let combat = lock_combat(&shared)?;
                 self.mob_visible.fill(false);
@@ -1359,9 +1378,20 @@ impl PlayerSession {
             .as_ref()
             .filter(|active| active.valid_for(&candidate, &self.items, crate::resources::unix_ms()))
             .cloned();
+        let additional_active_devices = self
+            .additional_active_devices
+            .iter()
+            .filter(|active| active.valid_for(&candidate, &self.items, crate::resources::unix_ms()))
+            .cloned()
+            .collect::<Vec<_>>();
         let mut active_modifiers = active_device
             .as_ref()
             .map_or_else(Vec::new, session_equipment::ActiveDevice::modifiers);
+        active_modifiers.extend(
+            additional_active_devices
+                .iter()
+                .flat_map(session_equipment::ActiveDevice::modifiers),
+        );
         active_modifiers.extend(
             self.peer_buffs
                 .iter()
@@ -1457,6 +1487,7 @@ impl PlayerSession {
         self.inventory = candidate;
         self.skill_catalog = candidate_skills;
         self.active_device = active_device;
+        self.additional_active_devices = additional_active_devices;
         self.reputation = reputation;
         self.equipment = equipment;
         self.apply_equipment_parameters();
@@ -1541,7 +1572,9 @@ impl PlayerSession {
             });
         }
         if let Some(nav) = self.sector.navpoints.iter().find(|nav| {
-            nav.id == id && nav.navigation_type > 0 && self.sector.bounds.contains(nav.position)
+            nav.id == id
+                && (nav.navigation_type > 0 || nav.object_type == 37)
+                && self.sector.bounds.contains(nav.position)
         }) {
             return Ok(Waypoint {
                 id,
@@ -1549,6 +1582,7 @@ impl PlayerSession {
                 stand_off: match nav.object_type {
                     11 => 1500.,
                     12 => 4500.,
+                    37 if nav.navigation_type == 0 => (nav.radius + 300.).max(900.),
                     _ => 100.,
                 },
             });
@@ -1567,7 +1601,10 @@ impl PlayerSession {
                 });
             }
         }
-        Err(invalid("Warp target is not a known object in this sector."))
+        Err(invalid(&format!(
+            "Warp target {id} is not a known object in sector {}.",
+            self.sector.id
+        )))
     }
     fn apply_motion_report(&mut self, body: &[u8]) -> io::Result<()> {
         if !matches!(body.len(), 12 | 16 | 24 | 28) {
@@ -1733,6 +1770,7 @@ impl PlayerSession {
         self.resource_window = None;
         self.npc_interaction = None;
         self.save()?;
+        self.save_logged_out_devices()?;
         self.logged_in = false;
         self.handoff = None;
         self.docking_target = None;
@@ -1747,6 +1785,7 @@ impl PlayerSession {
         self.attacker_ids.clear();
         self.stop_weapons();
         self.active_device = None;
+        self.additional_active_devices.clear();
         self.peer_buffs.clear();
         self.peer_buff_revision = 0;
         self.rally_buff = None;
@@ -6016,8 +6055,19 @@ mod tests {
         ship.toggle_all_weapons();
         ship.fire_weapons_with_roll(|| 5000).unwrap();
         assert_eq!(ship.weapon_cooldowns[3], boosted_reload);
+        ship.energy = ordinary_energy;
+        let old_expiry = ship.active_device.as_ref().unwrap().expires_at_ms;
         ship.activate_equipped_item(&activation).unwrap();
-        assert!(ship.energy > 0.);
+        assert!(ship.active_device.as_ref().unwrap().expires_at_ms >= old_expiry);
+        let renewed_visual_id = ship
+            .active_device
+            .as_ref()
+            .unwrap()
+            .visual_id(ship.player_id());
+        assert!(ship
+            .pending
+            .iter()
+            .any(|frame| { frame.opcode == 0x0f && frame.body == visual_id.to_le_bytes() }));
 
         let mut restored =
             PlayerSession::new(ship.sector.clone(), ship.bind, ship.state_dir.clone()).unwrap();
@@ -6025,7 +6075,7 @@ mod tests {
         assert_eq!(restored.equipment.weapons[0].reload, boosted_reload);
         assert!(restored.pending.iter().any(|frame| {
             frame.opcode == 0x09
-                && u32::from_le_bytes(frame.body[7..11].try_into().unwrap()) == visual_id
+                && u32::from_le_bytes(frame.body[7..11].try_into().unwrap()) == renewed_visual_id
         }));
         assert!(restored.pending.iter().any(|frame| {
             frame.opcode == 0x1d
@@ -6050,6 +6100,89 @@ mod tests {
         assert!(restored.pending.iter().any(|frame| {
             frame.opcode == 0x1b && frame.body.len() > 20 && frame.body[12] & 0x40 != 0
         }));
+    }
+
+    /// Different device effects stack, repeated activation renews, and logout retains leases.
+    #[test]
+    fn progen_devices_stack_renew_and_survive_logout() {
+        let root =
+            std::env::temp_dir().join(format!("enb-pw-device-leases-{}", rand::random::<u64>()));
+        let mut account = Account::create("pw".into(), "pw", "Warrior".into()).unwrap();
+        account.character.race = 2;
+        account.character.profession = 0;
+        account.save_new(&root).unwrap();
+        let sector: Sector = serde_json::from_str(include_str!("../data/sector.json")).unwrap();
+        let bind = Ipv4Addr::new(127, 0, 0, 2);
+        let mut ship = PlayerSession::new(sector.clone(), bind, root.clone()).unwrap();
+        ship.logged_in = true;
+        ship.selected_peer = Some("127.0.0.1".parse().unwrap());
+        ship.endpoint = Some("127.0.0.1:22570".parse().unwrap());
+        let mut inventory = ship.inventory.clone();
+        inventory.equipped[1] = Some(crate::inventory::ItemInstance::stock(3349, 1));
+        inventory.equipped[3] = Some(crate::inventory::ItemInstance::stock(3178, 1));
+        inventory.ammunition[3] = Some(crate::inventory::ItemInstance::stock(751, 1000));
+        inventory.equipped[9] = Some(crate::inventory::ItemInstance::stock(2363, 1));
+        inventory.equipped[10] = Some(crate::inventory::ItemInstance::stock(2389, 1));
+        ship.commit_inventory(inventory).unwrap();
+        let turbo = [ship.player_id().to_le_bytes().as_slice(), &[2, 9]].concat();
+        let sting = [ship.player_id().to_le_bytes().as_slice(), &[2, 10]].concat();
+        let ordinary_reload = ship.equipment.weapons[0].reload;
+        ship.energy = 10_000.;
+        ship.activate_equipped_item(&turbo).unwrap();
+        let turbo_reload = ship.equipment.weapons[0].reload;
+        let turbo_damage = ship.equipment.weapons[0].damage;
+        let turbo_accuracy = ship.equipment.weapons[0].hit_chances;
+        assert!(turbo_reload < ordinary_reload);
+        ship.energy = 10_000.;
+        ship.activate_equipped_item(&sting).unwrap();
+        assert_eq!(ship.equipment.weapons[0].reload, turbo_reload);
+        // The stronger equipped projectile-damage bonus still wins its stat.
+        assert_eq!(ship.equipment.weapons[0].damage, turbo_damage);
+        assert_ne!(ship.equipment.weapons[0].hit_chances, turbo_accuracy);
+        assert_eq!(
+            ship.active_device.as_ref().unwrap().effect,
+            session_equipment::ActiveEffect::TurboWeapons
+        );
+        assert_eq!(
+            ship.additional_active_devices[0].effect,
+            session_equipment::ActiveEffect::ProjectileHandling
+        );
+        let status = ship.pending.iter().rev().find(|frame| frame.opcode == 0x1b &&
+            frame.body.windows(b"Turbo Weapons".len())
+                .any(|window| window == b"Turbo Weapons")).unwrap();
+        assert!(!status.body.contains(&b'+'));
+        ship.additional_active_devices[0].expires_at_ms = crate::resources::unix_ms() + 10;
+        let old_expiry = ship.additional_active_devices[0].expires_at_ms;
+        ship.energy = 10_000.;
+        ship.activate_equipped_item(&sting).unwrap();
+        assert_eq!(ship.additional_active_devices.len(), 1);
+        assert!(ship.additional_active_devices[0].expires_at_ms > old_expiry);
+        ship.logout().unwrap();
+        assert!(!root.join("session.local.json").exists());
+        let mut relog = PlayerSession::new(sector, bind, root.clone()).unwrap();
+        assert!(!relog.logged_in);
+        assert_eq!(
+            relog.active_device.as_ref().unwrap().effect,
+            session_equipment::ActiveEffect::TurboWeapons
+        );
+        assert_eq!(
+            relog.additional_active_devices[0].effect,
+            session_equipment::ActiveEffect::ProjectileHandling
+        );
+        assert_eq!(relog.equipment.weapons[0].reload, turbo_reload);
+        relog.publish_active_device_resume();
+        assert!(relog.pending.iter().any(|frame| frame
+            .body
+            .windows(b"Improved Projectile Handling".len())
+            .any(|window| window == b"Improved Projectile Handling")));
+        relog.active_device.as_mut().unwrap().expires_at_ms = crate::resources::unix_ms() - 1;
+        relog.advance_active_device().unwrap();
+        assert_eq!(
+            relog.active_device.as_ref().unwrap().effect,
+            session_equipment::ActiveEffect::ProjectileHandling
+        );
+        assert!(relog.additional_active_devices.is_empty());
+        fs::remove_dir_all(root).unwrap();
     }
 
     /// Instant shield rerouting spends owned resources once and survives replacement.
@@ -6949,6 +7082,26 @@ mod tests {
         assert_eq!(session.warp.phase, WarpPhase::Recovering);
         session.logout().unwrap();
         assert_eq!(session.warp.phase, WarpPhase::Idle);
+    }
+
+    /// Archived static asteroids are visible warp targets even without a navigation marker.
+    #[test]
+    fn static_asteroid_warp_target_uses_its_visible_hull_radius() {
+        let mut session = session();
+        session.sector =
+            serde_json::from_str(include_str!("../data/asteroid_belt_alpha.json")).unwrap();
+        let asteroid = session
+            .sector
+            .navpoints
+            .iter()
+            .find(|nav| nav.id == 105514)
+            .unwrap();
+        assert_eq!(asteroid.object_type, 37);
+        assert_eq!(asteroid.navigation_type, 0);
+        let route = session.warp_waypoint(asteroid.id).unwrap();
+        assert_eq!(route.position, asteroid.position);
+        assert_eq!(route.stand_off, (asteroid.radius + 300.).max(900.));
+        assert!(session.warp_waypoint(u32::MAX).is_err());
     }
 
     #[test]

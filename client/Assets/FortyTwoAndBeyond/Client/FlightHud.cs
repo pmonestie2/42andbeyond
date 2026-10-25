@@ -19,7 +19,7 @@ namespace FortyTwoAndBeyond.Client
         public float Scale => Mathf.Max(.01f, Mathf.Min(1f, Screen.width / 1280f, Screen.height / 760f));
         private float CanvasWidth => Screen.width / Scale;
         private float CanvasHeight => Screen.height / Scale;
-        private readonly Color cyan = new Color(.3f, .85f, 1), white = new Color(.86f, .93f, 1), muted = new Color(.46f, .62f, .72f), gold = new Color(1, .72f, .3f), crewColor = new Color(.39f, 1f, .68f);
+        private readonly Color cyan = new Color(.3f, .85f, 1), white = new Color(.91f, .95f, 1), muted = new Color(.68f, .79f, .86f), gold = new Color(1, .72f, .3f), crewColor = new Color(.39f, 1f, .68f);
         private GUIStyle heading, body, wrappedBody, small, commsPreview, section, button, selected, playerButton, hostileButton, damageStyle, input, primaryButton, equipmentRow, equipmentText, equipmentMeta, vitalText, buffText, contactName, hostileName, playerName, contactMeta, dialogueText, dialogueChoice, dialogueMeta;
         private Texture2D buttonTexture, selectedTexture, panelTexture, radarTexture, weaveTexture, frameTexture;
         internal GUIStyle BodyStyle => body;
@@ -31,12 +31,13 @@ namespace FortyTwoAndBeyond.Client
             communicationsOpen;
         private bool clearInputFocus;
         private ControlAction? bindingAction;
-        private Vector2 settingsScroll, characterScroll;
+        private Vector2 settingsScroll, characterScroll, demoScroll;
         private int selectedCargo = -1, selectedMount = -1;
         private Vector2 cargoScroll, mountScroll;
         private Vector2 effectScroll;
         public bool EquipmentOpen => equipmentOpen;
         public bool SettingsOpen => settingsOpen;
+        public bool GroupInviteOpen => client.CurrentSnapshot?.Confirmation?.Kind == ConfirmationKind.Group;
         private readonly ContactSelection contactSelection = new ContactSelection();
         private uint contactId => contactSelection.SelectedId;
         private float serverSelectedUntil;
@@ -191,24 +192,32 @@ namespace FortyTwoAndBeyond.Client
         private void EnsureStyles()
         {
             if (heading != null) return;
-            heading = new GUIStyle(GUI.skin.label) { fontSize = 27, fontStyle = FontStyle.Bold }; heading.normal.textColor = white;
-            body = new GUIStyle(GUI.skin.label) { fontSize = 16, fontStyle = FontStyle.Bold }; body.normal.textColor = white;
+            Font regularFont = Resources.Load<Font>("Fonts/IBMPlexSans-Regular");
+            Font mediumFont = Resources.Load<Font>("Fonts/IBMPlexSans-Medium");
+            Font semiboldFont = Resources.Load<Font>("Fonts/IBMPlexSans-SemiBold");
+            heading = new GUIStyle(GUI.skin.label) { font = semiboldFont, fontSize = 27,
+                fontStyle = FontStyle.Normal }; heading.normal.textColor = white;
+            body = new GUIStyle(GUI.skin.label) { font = mediumFont, fontSize = 16,
+                fontStyle = FontStyle.Normal }; body.normal.textColor = white;
             wrappedBody = new GUIStyle(body) { wordWrap = true };
-            small = new GUIStyle(GUI.skin.label) { fontSize = 13 }; small.normal.textColor = muted;
+            small = new GUIStyle(GUI.skin.label) { font = regularFont, fontSize = 14 };
+            small.normal.textColor = muted;
             commsPreview = new GUIStyle(small) { wordWrap = false, clipping = TextClipping.Clip };
-            vitalText = new GUIStyle(small) { fontSize = 11, fontStyle = FontStyle.Bold };
+            vitalText = new GUIStyle(small) { font = semiboldFont, fontSize = 12 };
             vitalText.normal.textColor = white;
-            buffText = new GUIStyle(small) { fontSize = 12, fontStyle = FontStyle.Bold };
+            buffText = new GUIStyle(small) { font = mediumFont, fontSize = 13 };
             buffText.normal.textColor = white;
-            contactName = new GUIStyle(wrappedBody) { fontSize = 15 };
+            contactName = new GUIStyle(wrappedBody) { fontSize = 16 };
             hostileName = new GUIStyle(contactName); hostileName.normal.textColor = new Color(1f, .58f, .46f);
             playerName = new GUIStyle(contactName); playerName.normal.textColor = cyan;
             contactMeta = new GUIStyle(small) { wordWrap = true };
             dialogueText = new GUIStyle(wrappedBody) { fontSize = 17, padding = new RectOffset(4, 4, 5, 7) };
             dialogueMeta = new GUIStyle(small) { fontSize = 13, wordWrap = true };
             dialogueMeta.normal.textColor = new Color(.66f, .8f, .89f);
-            section = new GUIStyle(GUI.skin.label) { fontSize = 15, fontStyle = FontStyle.Bold }; section.normal.textColor = cyan;
-            damageStyle = new GUIStyle(GUI.skin.label) { fontSize = 20, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            section = new GUIStyle(GUI.skin.label) { font = semiboldFont, fontSize = 15,
+                fontStyle = FontStyle.Normal }; section.normal.textColor = cyan;
+            damageStyle = new GUIStyle(GUI.skin.label) { font = semiboldFont, fontSize = 20,
+                fontStyle = FontStyle.Normal, alignment = TextAnchor.MiddleCenter };
             damageStyle.normal.textColor = gold;
             panelTexture = SurfaceTexture(new Color(.028f, .045f, .065f, .92f),
                 new Color(.006f, .014f, .027f, .94f), 64, 64);
@@ -220,7 +229,8 @@ namespace FortyTwoAndBeyond.Client
             selectedTexture = SurfaceTexture(new Color(.09f, .23f, .29f, .98f),
                 new Color(.035f, .1f, .15f, .98f), 32, 32);
             radarTexture = RadarTexture();
-            button = new GUIStyle(GUI.skin.button) { fontSize = 15, fontStyle = FontStyle.Bold, wordWrap = true,
+            button = new GUIStyle(GUI.skin.button) { font = mediumFont, fontSize = 15,
+                fontStyle = FontStyle.Normal, wordWrap = true,
                 alignment = TextAnchor.MiddleLeft, padding = new RectOffset(10, 8, 4, 4) };
             button.normal.background = buttonTexture; button.normal.textColor = white;
             button.hover.background = selectedTexture; button.hover.textColor = cyan;
@@ -228,17 +238,18 @@ namespace FortyTwoAndBeyond.Client
             selected = new GUIStyle(button); selected.normal.background = selectedTexture; selected.normal.textColor = cyan;
             playerButton = new GUIStyle(button); playerButton.normal.textColor = cyan;
             hostileButton = new GUIStyle(button); hostileButton.normal.textColor = new Color(1f, .53f, .4f);
-            input = new GUIStyle(GUI.skin.textField) { fontSize = 16, padding = new RectOffset(10, 10, 7, 7) };
+            input = new GUIStyle(GUI.skin.textField) { font = regularFont, fontSize = 16,
+                padding = new RectOffset(10, 10, 7, 7) };
             input.normal.background = buttonTexture; input.focused.background = selectedTexture;
             input.normal.textColor = white; input.focused.textColor = white;
             primaryButton = new GUIStyle(button) { alignment = TextAnchor.MiddleCenter, fontSize = 17 };
             primaryButton.normal.background = selectedTexture; primaryButton.normal.textColor = white;
             primaryButton.hover.background = selectedTexture; primaryButton.hover.textColor = cyan;
             equipmentRow = new GUIStyle(button) { fontSize = 13, padding = new RectOffset(8, 6, 4, 4) };
-            equipmentText = new GUIStyle(GUI.skin.label) { fontSize = 13, fontStyle = FontStyle.Bold,
+            equipmentText = new GUIStyle(GUI.skin.label) { font = mediumFont, fontSize = 14,
                 wordWrap = true, alignment = TextAnchor.MiddleLeft };
             equipmentText.normal.textColor = white;
-            equipmentMeta = new GUIStyle(GUI.skin.label) { fontSize = 12, fontStyle = FontStyle.Bold,
+            equipmentMeta = new GUIStyle(GUI.skin.label) { font = regularFont, fontSize = 13,
                 alignment = TextAnchor.MiddleLeft };
             equipmentMeta.normal.textColor = muted;
         }
@@ -741,7 +752,9 @@ namespace FortyTwoAndBeyond.Client
         /// <summary>Draw the account form without saving credentials.</summary>
         private void Connection(ref string host, ref string username, ref string password)
         {
-            var rect = new Rect(CanvasWidth / 2 - 220, CanvasHeight / 2 - 260, 440, 520); Panel(rect);
+            var rect = new Rect((CanvasWidth - 500) * .5f,
+                (CanvasHeight - 660) * .5f, 500, 660);
+            Panel(rect);
             if (frameTexture != null)
             {
                 Color previous = GUI.color;
@@ -749,43 +762,55 @@ namespace FortyTwoAndBeyond.Client
                 GUI.DrawTexture(rect, frameTexture, ScaleMode.StretchToFill);
                 GUI.color = previous;
             }
-            GUILayout.BeginArea(new Rect(rect.x + 24, rect.y + 20, 392, 480));
-            GUILayout.Label("42 AND BEYOND", heading); GUILayout.Label("CAPTAIN'S TERMINAL  /  LOCAL UNIVERSE", small); GUILayout.Space(10);
-            GUILayout.Label("Server IPv4", small);
-            GUILayout.BeginHorizontal();
-            host = GUILayout.TextField(host, input);
-            if (GUILayout.Button("DISCOVER", button, GUILayout.Width(112))) client.DiscoverDemoAccounts(host);
-            GUILayout.EndHorizontal();
-            GUILayout.Space(10);
-            GUILayout.Label("PUBLISHED SANDBOX PILOTS", section);
-            GUILayout.Label("Choose a class to fill its public demo login.", small);
+            float x = rect.x + 24;
+            GUI.Label(new Rect(x, rect.y + 19, 452, 36), "42 AND BEYOND", heading);
+            GUI.Label(new Rect(x, rect.y + 55, 452, 22),
+                "CAPTAIN'S TERMINAL  /  LOCAL UNIVERSE", small);
+            GUI.Label(new Rect(x, rect.y + 91, 452, 18), "Server IPv4", small);
+            host = GUI.TextField(new Rect(x, rect.y + 113, 324, 34), host, input);
+            if (GUI.Button(new Rect(x + 332, rect.y + 113, 120, 34), "DISCOVER", button))
+                client.DiscoverDemoAccounts(host);
+            GUI.Label(new Rect(x, rect.y + 168, 452, 22), "PUBLISHED SANDBOX PILOTS", section);
+            GUI.Label(new Rect(x, rect.y + 192, 452, 20),
+                "Choose a class to fill its public demo login.", small);
             DemoAccount[] demos = host == client.DemoRosterHost ? client.DemoAccounts : null;
+            Rect roster = new Rect(x, rect.y + 219, 452, 208);
+            int rows = demos == null ? 0 : (demos.Length + 2) / 3;
+            float contentHeight = Mathf.Max(roster.height, rows * 46);
+            demoScroll = GUI.BeginScrollView(roster, demoScroll,
+                new Rect(0, 0, roster.width - 18, contentHeight));
             if (demos == null)
-                GUILayout.Label(host == client.DemoRosterHost ?
+                GUI.Label(new Rect(5, 5, roster.width - 30, 60), host == client.DemoRosterHost ?
                     client.DemoRosterError ?? "Reading the server's demo roster…" :
-                    "Select Discover after changing the server address.", small);
+                    "Select Discover after changing the server address.", wrappedBody);
             else if (demos.Length == 0)
-                GUILayout.Label("This server advertises no demo pilots.", small);
+                GUI.Label(new Rect(5, 5, roster.width - 30, 48),
+                    "This server advertises no demo pilots.", small);
             else
             {
-                for (int row = 0; row < demos.Length; row += 3)
+                float buttonWidth = (roster.width - 30) / 3;
+                for (int index = 0; index < demos.Length; index++)
                 {
-                    GUILayout.BeginHorizontal();
-                    for (int column = row; column < row + 3 && column < demos.Length; column++)
-                    {
-                        DemoAccount demo = demos[column];
-                        if (GUILayout.Button(demo.ClassName, button, GUILayout.Width(126), GUILayout.Height(33)))
-                        { username = demo.Username; password = demo.Password; }
-                    }
-                    GUILayout.EndHorizontal();
+                    DemoAccount demo = demos[index];
+                    Rect choice = new Rect(index % 3 * (buttonWidth + 6), index / 3 * 46,
+                        buttonWidth, 40);
+                    if (GUI.Button(choice, new GUIContent(demo.ClassName, demo.Username),
+                        demo.Username == username ? selected : button))
+                    { username = demo.Username; password = demo.Password; }
                 }
             }
-            GUILayout.Space(12);
-            GUILayout.Label("ACCOUNT LOGIN", section);
-            GUILayout.Label("Account", small); username = GUILayout.TextField(username, input);
-            GUILayout.Label("Password", small); password = GUILayout.PasswordField(password, '*', input); GUILayout.Space(10);
-            if (GUILayout.Button("ENTER SPACE", primaryButton, GUILayout.Height(39))) client.StartLocalSession(host, username, password);
-            GUILayout.Label(client.Status, small); GUILayout.EndArea();
+            GUI.EndScrollView();
+            Fill(new Rect(x, rect.y + 438, 452, 1), new Color(.3f, .7f, .84f, .4f));
+            GUI.Label(new Rect(x, rect.y + 448, 452, 24), "ACCOUNT LOGIN", section);
+            GUI.Label(new Rect(x, rect.y + 477, 452, 18), "Account", small);
+            username = GUI.TextField(new Rect(x, rect.y + 497, 452, 34), username, input);
+            GUI.Label(new Rect(x, rect.y + 538, 452, 18), "Password", small);
+            password = GUI.PasswordField(new Rect(x, rect.y + 558, 452, 34), password, '*', input);
+            if (GUI.Button(new Rect(x, rect.y + 600, 452, 38), "ENTER SPACE", primaryButton))
+                client.StartLocalSession(host, username, password);
+            string status = client.Status ?? "";
+            GUI.Label(new Rect(x, rect.y + 643, 452, 18),
+                new GUIContent(FitCommsPreview(status, 452), status), commsPreview);
         }
 
         /// <summary>Draw distance-sorted destinations and selected-target actions.</summary>
@@ -932,7 +957,10 @@ namespace FortyTwoAndBeyond.Client
             if (target.MaxHull > 0) Meter(new Rect(x + 204, y + 112 + nameExtra, 169, 7), "", target.Hull / target.MaxHull, gold);
             if (!target.IsPlayer)
             {
+                bool hacked = snapshot.ObjectEffects.Any(effect =>
+                    effect.OwnerId == target.Id && effect.Descriptor == 193);
                 GUI.Label(new Rect(x + 15, y + 134 + nameExtra, 355, 18),
+                    hacked ? "SYSTEMS HACKED  ·  SERVER CONFIRMED" :
                     Time.unscaledTime < serverSelectedUntil ? "TARGET UPDATED BY SERVER" :
                     CombatGuidance(engagement, firingAtTarget), small);
                 if (engagement?.LastResult != null && engagement.LastResultAgeSeconds <= 2f)
@@ -1124,9 +1152,15 @@ namespace FortyTwoAndBeyond.Client
                 }
                 if (!active && labeled >= 9) continue;
                 Rect label = default; bool placed = false;
+                const float labelWidth = 226;
+                float nameHeight = Mathf.Max(21,
+                    contactName.CalcHeight(new GUIContent(item.Name), labelWidth - 18));
+                float labelHeight = nameHeight + 25;
                 foreach (Vector2 offset in LabelOffsets)
                 {
-                    Rect candidate = new Rect(x + offset.x, y + offset.y, 182, 38);
+                    Rect candidate = new Rect(offset.x < 0 ? x - labelWidth - 12 : x + 12,
+                        offset.y < 0 ? y - labelHeight - 10 : y + 12,
+                        labelWidth, labelHeight);
                     if (candidate.xMin < 339 || candidate.xMax > CanvasWidth - 349 ||
                         candidate.yMin < 112 || candidate.yMax > CanvasHeight - 143 ||
                         occupied.Any(other => other.Overlaps(candidate))) continue;
@@ -1137,8 +1171,9 @@ namespace FortyTwoAndBeyond.Client
                 Color color = active ? gold : item.Kind == 11 ? new Color(.8f, .68f, 1f) : cyan;
                 Fill(label, new Color(.004f, .018f, .035f, .9f));
                 Fill(new Rect(label.x, label.y, 3, label.height), color);
-                GUI.Label(new Rect(label.x + 9, label.y + 1, 170, 18), item.Name, body);
-                GUI.Label(new Rect(label.x + 9, label.y + 20, 170, 17),
+                GUI.Label(new Rect(label.x + 9, label.y + 2, labelWidth - 18, nameHeight),
+                    item.Name, contactName);
+                GUI.Label(new Rect(label.x + 9, label.y + nameHeight + 2, labelWidth - 18, 20),
                     (item.Kind == 11 ? "GATE" : item.Kind == 12 ? "STATION" : "NAV") + "   ·   " +
                     (item.Position.Distance(snapshot.Position) / 1000).ToString("0.0") + " km", small);
             }
@@ -1172,9 +1207,15 @@ namespace FortyTwoAndBeyond.Client
                 Fill(new Rect(p.x + radius - 5, p.y + radius, 5, 1), color); Fill(new Rect(p.x + radius, p.y + radius - 5, 1, 5), color);
                 Rect chosen = default;
                 bool placed = false;
+                const float labelWidth = 218;
+                float nameHeight = Mathf.Max(21,
+                    contactName.CalcHeight(new GUIContent(item.Name), labelWidth - 18));
+                float labelHeight = nameHeight + 25;
                 foreach (Vector2 offset in LabelOffsets)
                 {
-                    var candidate = new Rect(p.x + offset.x, p.y + offset.y, 172, 36);
+                    var candidate = new Rect(offset.x < 0 ? p.x - labelWidth - 12 : p.x + 12,
+                        offset.y < 0 ? p.y - labelHeight - 10 : p.y + 12,
+                        labelWidth, labelHeight);
                     if (candidate.xMin < 24 || candidate.xMax > CanvasWidth - 332 ||
                         candidate.yMin < 95 || candidate.yMax > CanvasHeight - 122 ||
                         occupied.Any(other => other.Overlaps(candidate))) continue;
@@ -1184,10 +1225,10 @@ namespace FortyTwoAndBeyond.Client
                 shown++; occupied.Add(chosen);
                 Fill(chosen, new Color(.004f, .018f, .035f, .82f));
                 Fill(new Rect(chosen.x, chosen.y, 2, chosen.height), color);
-                GUI.color = color;
-                GUI.Label(new Rect(chosen.x + 7, chosen.y + 1, chosen.width - 10, chosen.height - 2),
-                    $"{item.Name}\n{distance / 1000:0.0} km", small);
-                GUI.color = Color.white;
+                GUI.Label(new Rect(chosen.x + 9, chosen.y + 2, labelWidth - 18, nameHeight),
+                    item.Name, contactName);
+                GUI.Label(new Rect(chosen.x + 9, chosen.y + nameHeight + 2,
+                    labelWidth - 18, 20), $"{distance / 1000:0.0} km", small);
             }
         }
 
@@ -1220,9 +1261,15 @@ namespace FortyTwoAndBeyond.Client
                 Fill(new Rect(point.x + radius - 1, point.y + radius - 7, 2, 9), color);
                 if (client.Chart && !active) continue;
                 Rect label = default;
+                const float labelWidth = 260;
+                float nameHeight = Mathf.Max(21,
+                    contactName.CalcHeight(new GUIContent(player.Name), labelWidth - 18));
+                float labelHeight = nameHeight + (active ? 43 : 26);
                 foreach (Vector2 offset in ContactLabelOffsets)
                 {
-                    Rect candidate = new Rect(point.x + offset.x, point.y + offset.y, 250, active ? 58 : 41);
+                    Rect candidate = new Rect(offset.x < 0 ? point.x - labelWidth - 14 : point.x + 14,
+                        offset.y < 0 ? point.y - labelHeight - 10 : point.y + 12,
+                        labelWidth, labelHeight);
                     if (candidate.x < 292 || candidate.xMax > CanvasWidth - 315 ||
                         candidate.y < 95 || candidate.yMax > CanvasHeight - 108 ||
                         occupied.Any(area => area.Overlaps(candidate))) continue;
@@ -1232,16 +1279,17 @@ namespace FortyTwoAndBeyond.Client
                 if (label.width == 0) continue;
                 occupied.Add(label);
                 float labelX = label.x, labelY = label.y;
-                Fill(new Rect(labelX, labelY, 250, active ? 58 : 41), new Color(.004f, .012f, .024f, .94f));
-                Fill(new Rect(labelX, labelY, 3, active ? 58 : 41), color);
-                GUI.Label(new Rect(labelX + 9, labelY + 3, 237, 19), player.Name, body);
-                GUI.Label(new Rect(labelX + 9, labelY + 22, 237, 17),
+                Fill(label, new Color(.004f, .012f, .024f, .94f));
+                Fill(new Rect(labelX, labelY, 3, labelHeight), color);
+                GUI.Label(new Rect(labelX + 9, labelY + 2, labelWidth - 18, nameHeight),
+                    player.Name, contactName);
+                GUI.Label(new Rect(labelX + 9, labelY + nameHeight + 2, labelWidth - 18, 20),
                     (crewMember ? "CREW" : player.IsPlayer ? "PLAYER" : player.Hostile ? "HOSTILE" : "MOB") +
                     "   ·   " + (player.Position.Distance(snapshot.Position) / 1000).ToString("0.00") + " km", small);
                 if (active)
                 {
-                    if (player.Shield >= 0) Meter(new Rect(labelX + 9, labelY + 43, 81, 5), "", player.Shield, cyan);
-                    if (player.MaxHull > 0) Meter(new Rect(labelX + 98, labelY + 43, 81, 5), "", player.Hull / player.MaxHull, gold);
+                    if (player.Shield >= 0) Meter(new Rect(labelX + 9, labelY + nameHeight + 26, 81, 5), "", player.Shield, cyan);
+                    if (player.MaxHull > 0) Meter(new Rect(labelX + 98, labelY + nameHeight + 26, 81, 5), "", player.Hull / player.MaxHull, gold);
                 }
             }
         }
@@ -1255,10 +1303,16 @@ namespace FortyTwoAndBeyond.Client
                 if (point.z <= 0 || point.x < 30 || point.x > CanvasWidth - 335 || point.y < 90 || point.y > CanvasHeight - 140) continue;
                 bool active = wreckId == item.Id;
                 Fill(new Rect(point.x - 5, point.y - 5, active ? 10 : 6, 2), gold);
-                GUI.color = gold;
-                GUI.Label(new Rect(point.x + 11, point.y - 9, 180, 35),
-                    item.Name + "  /  WRECK\n" + (item.Position.Distance(snapshot.Position) / 1000).ToString("0.0") + " km", small);
-                GUI.color = Color.white;
+                const float labelWidth = 220;
+                float nameHeight = Mathf.Max(21,
+                    contactName.CalcHeight(new GUIContent(item.Name), labelWidth - 18));
+                Rect label = new Rect(point.x + 11, point.y - 9, labelWidth, nameHeight + 26);
+                Fill(label, new Color(.004f, .012f, .024f, .88f));
+                Fill(new Rect(label.x, label.y, 3, label.height), gold);
+                GUI.Label(new Rect(label.x + 9, label.y + 2, labelWidth - 18, nameHeight),
+                    item.Name, contactName);
+                GUI.Label(new Rect(label.x + 9, label.y + nameHeight + 3, labelWidth - 18, 20),
+                    "WRECK  ·  " + (item.Position.Distance(snapshot.Position) / 1000).ToString("0.0") + " km", small);
             }
         }
 
@@ -1453,8 +1507,8 @@ namespace FortyTwoAndBeyond.Client
             bool deviceActive = snapshot.DeviceBuff != null || !string.IsNullOrEmpty(snapshot.ActiveDeviceLabel);
             int buffCount = (deviceActive ? 1 : 0) + (snapshot.PeerBuff != null ? 1 : 0) +
                 (snapshot.ShieldBuff != null ? 1 : 0) + (snapshot.ReactorBuff != null ? 1 : 0) +
-                (snapshot.SignatureBuff != null ? 1 : 0);
-            float height = 87 + ((buffCount + 1) / 2) * 30;
+                (snapshot.SignatureBuff != null ? 1 : 0) + (snapshot.RallyBuff != null ? 1 : 0);
+            float height = 87 + buffCount * 30;
             bool miningPanel = snapshot.ResourceWindowOpen || snapshot.MiningActivity != null;
             float x = miningPanel ? 24 : 365;
             Rect panel = new Rect(x, CanvasHeight - (miningPanel ? 241 : 125) - height, 420, height);
@@ -1491,13 +1545,27 @@ namespace FortyTwoAndBeyond.Client
                 DrawBuffRow(panel, buffIndex++, snapshot.ReactorBuff.Name,
                     snapshot.ReactorBuff.RemainingSeconds, new Color(.48f, 1f, .72f));
             if (snapshot.SignatureBuff != null)
-                DrawBuffRow(panel, buffIndex, snapshot.SignatureBuff.Name,
+                DrawBuffRow(panel, buffIndex++, snapshot.SignatureBuff.Name,
                     snapshot.SignatureBuff.RemainingSeconds, new Color(.72f, .67f, 1f));
+            if (snapshot.RallyBuff != null)
+                DrawBuffRow(panel, buffIndex, snapshot.RallyBuff.Name,
+                    snapshot.RallyBuff.RemainingSeconds, RallyColor(snapshot.RallyBuff.Name));
+        }
+
+        /// <returns>Color: The accent shared by a Rally status and its ship field.</returns>
+        private static Color RallyColor(string name)
+        {
+            if (name == "Damage_Tactics") return new Color(1f, .44f, .2f);
+            if (name == "Defense_Tactics") return new Color(.35f, .82f, 1f);
+            if (name == "Firing_Tactics") return new Color(1f, .78f, .28f);
+            return new Color(.76f, .56f, 1f);
         }
 
         /// <returns>string: A short buff label that keeps the complete native name in its tooltip.</returns>
         private static string BuffCaption(string name)
         {
+            if (name.EndsWith("_Tactics", StringComparison.Ordinal))
+                return name.Replace('_', ' ').ToUpperInvariant();
             if (name.IndexOf("SCAN", StringComparison.OrdinalIgnoreCase) >= 0) return "SCAN RANGE";
             if (name.IndexOf("SHIELD", StringComparison.OrdinalIgnoreCase) >= 0) return "SHIELD REGEN";
             if (name.IndexOf("REACTOR", StringComparison.OrdinalIgnoreCase) >= 0 ||
@@ -1506,17 +1574,17 @@ namespace FortyTwoAndBeyond.Client
             return name.ToUpperInvariant();
         }
 
-        /// <summary>Show one authoritative timed buff in the compact two-column grid.</summary>
+        /// <summary>Show one authoritative timed buff with room for its complete name.</summary>
         private void DrawBuffRow(Rect panel, int index, string name, float remaining, Color accent)
         {
-            float x = panel.x + 10 + index % 2 * 202;
-            float y = panel.y + 86 + index / 2 * 30;
-            Fill(new Rect(x, y, 196, 25), new Color(.06f, .15f, .2f, .8f));
+            float x = panel.x + 10;
+            float y = panel.y + 86 + index * 30;
+            Fill(new Rect(x, y, panel.width - 20, 25), new Color(.06f, .15f, .2f, .8f));
             Fill(new Rect(x + 5, y + 5, 15, 15), accent);
             Fill(new Rect(x + 9, y + 8, 7, 9), new Color(.07f, .14f, .19f));
-            GUI.Label(new Rect(x + 26, y + 3, 125, 20),
+            GUI.Label(new Rect(x + 26, y + 3, panel.width - 110, 20),
                 new GUIContent(BuffCaption(name), name), buffText);
-            GUI.Label(new Rect(x + 153, y + 3, 41, 20),
+            GUI.Label(new Rect(x + panel.width - 70, y + 3, 42, 20),
                 remaining < 0 ? "SYNC" : $"{Mathf.CeilToInt(remaining)}s", buffText);
         }
 
@@ -1534,7 +1602,7 @@ namespace FortyTwoAndBeyond.Client
             if (Event.current.type == EventType.KeyDown && Event.current.keyCode == KeyCode.Return &&
                 GUI.GetNameOfFocusedControl() == "Group invite")
             { InviteByName(); Event.current.Use(); }
-            if (snapshot.Confirmation != null && snapshot.Confirmation.Kind != ConfirmationKind.Jumpstart)
+            if (snapshot.Confirmation != null && snapshot.Confirmation.Kind == ConfirmationKind.Other)
             {
                 GUILayout.Label(snapshot.Confirmation.Text, body);
                 GUILayout.BeginHorizontal();
@@ -1589,6 +1657,45 @@ namespace FortyTwoAndBeyond.Client
             }
         }
 
+        /// <summary>Present an incoming group invitation above every flight or station panel.</summary>
+        public void DrawGroupInvitePopup(Snapshot snapshot)
+        {
+            if (snapshot?.Confirmation?.Kind != ConfirmationKind.Group) return;
+            EnsureStyles();
+            Fill(new Rect(0, 0, CanvasWidth, CanvasHeight), new Color(.005f, .012f, .025f, .77f));
+            Rect card = new Rect((CanvasWidth - 520) * .5f, (CanvasHeight - 252) * .5f, 520, 252);
+            Panel(card);
+            Fill(new Rect(card.x + 22, card.y + 25, 4, 78), crewColor);
+            GUI.Label(new Rect(card.x + 42, card.y + 22, 440, 30), "CREW INVITATION", heading);
+            GUI.Label(new Rect(card.x + 42, card.y + 55, 440, 22),
+                "A PILOT HAS INVITED YOU TO JOIN THEIR GROUP", section);
+            GUI.Label(new Rect(card.x + 42, card.y + 96, 438, 62),
+                snapshot.Confirmation.Text, wrappedBody);
+            GUI.Label(new Rect(card.x + 42, card.y + 167, 438, 18),
+                "ACCEPT TO JOIN  ·  ESC TO DECLINE", small);
+            if (GUI.Button(new Rect(card.x + 42, card.y + 198, 202, 38), "Decline", button))
+                client.AnswerConfirmation(false);
+            if (GUI.Button(new Rect(card.x + 258, card.y + 198, 222, 38), "Accept invitation", primaryButton))
+                client.AnswerConfirmation(true);
+        }
+
+        /// <summary>Consume invite input before controls behind the popup receive it.</summary>
+        public void HandleGroupInviteInput(Event currentEvent, float scale)
+        {
+            if (!GroupInviteOpen || currentEvent == null) return;
+            if (currentEvent.type == EventType.MouseDown && currentEvent.button == 0)
+            {
+                Rect card = new Rect((CanvasWidth - 520) * .5f, (CanvasHeight - 252) * .5f, 520, 252);
+                Vector2 point = currentEvent.mousePosition / scale;
+                if (new Rect(card.x + 42, card.y + 198, 202, 38).Contains(point))
+                    client.AnswerConfirmation(false);
+                else if (new Rect(card.x + 258, card.y + 198, 222, 38).Contains(point))
+                    client.AnswerConfirmation(true);
+            }
+            if (currentEvent.isMouse || currentEvent.isKey)
+                currentEvent.Use();
+        }
+
         /// <summary>Draw cargo, hardpoints and a large item inspection bay.</summary>
         private void Equipment(Snapshot snapshot)
         {
@@ -1640,17 +1747,14 @@ namespace FortyTwoAndBeyond.Client
                 actor.Id == snapshot.SelectedTargetId && actor.HasPosition &&
                 (!targetedSupport || snapshot.Group.Members.Any(member => member.Id == actor.Id))) : null;
             GUI.enabled = client.Ready && !client.Incapacitated && snapshot.Station == null &&
-                (weapon || device && (DeviceEffects.IsInstant(mounted.ActivationLabel) ||
-                    targetedSupport || snapshot.ActiveDeviceLabel.Length == 0) && (!needsPeer || recipient != null));
+                (weapon || device && (!needsPeer || recipient != null));
             if (GUI.Button(new Rect(detailX, actionY + 23, detailWidth, 43),
                 weapon ? (mounted.WeaponState & 1) != 0 ? "STOP SELECTED WEAPON" : "FIRE SELECTED WEAPON" :
                 needsPeer ? recipient == null ? "SELECT A PILOT FIRST" :
                     "TRANSFER TO " + recipient.Name.ToUpperInvariant() :
                 targetedSupport ? recipient == null ? "ACTIVATE ON SELF" :
                     "SUPPORT " + recipient.Name.ToUpperInvariant() :
-                device ? !DeviceEffects.IsInstant(mounted.ActivationLabel) && snapshot.ActiveDeviceLabel.Length > 0 ?
-                    snapshot.ActiveDeviceLabel.ToUpperInvariant() + " ACTIVE" :
-                    mounted.ActivationLabel.Length > 20 ? "ACTIVATE SELECTED EFFECT" :
+                device ? mounted.ActivationLabel.Length > 20 ? "ACTIVATE SELECTED EFFECT" :
                     "ACTIVATE " + mounted.ActivationLabel.ToUpperInvariant() : "SELECT A SYSTEM",
                 weapon ? hostileButton : primaryButton))
             {

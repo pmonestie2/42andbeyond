@@ -28,6 +28,9 @@ Docked sessions and authorized pending handoffs are checkpointed too. Docking
 clearance, source/destination, nonce and transport state survive short outages.
 An ordinary logout deletes the checkpoint. Expired or incompatible checkpoints
 require normal login. Account passwords and pending login tickets are excluded.
+Equipped item buffs with remaining duration are saved separately in
+`active_devices.local.json` on logout. A normal login validates their catalog
+rules and equipped items before restoring the leases and their ship modifiers.
 
 Simulation pauses during an outage; the wire clock advances by the outage so
 client timestamps remain monotonic. Packet resends cover datagrams constructed

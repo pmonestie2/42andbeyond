@@ -22,3 +22,14 @@ __pycache__/
 # Optional, privately extracted original-client HUD tile (never redistribute).
 /client/Assets/FortyTwoAndBeyond/Resources/LegacyHud01.dds
 /client/Assets/FortyTwoAndBeyond/Resources/LegacyHud01.dds.meta
+# Optional ships exported from the user's local EVE Blender file; keep game art local.
+/client/Assets/FortyTwoAndBeyond/Resources/EveShips/
+/client/Assets/FortyTwoAndBeyond/Resources/EveShips.meta
+# Optional planet exported from the user's local procedural planet archive.
+/client/Assets/FortyTwoAndBeyond/Resources/PlanetPack/
+/client/Assets/FortyTwoAndBeyond/Resources/PlanetPack.meta
+# Optional locally exported FBX packs without redistribution terms.
+/client/Assets/FortyTwoAndBeyond/Resources/AsteroidPack/
+/client/Assets/FortyTwoAndBeyond/Resources/AsteroidPack.meta
+/client/Assets/FortyTwoAndBeyond/Resources/BlackHolePack/
+/client/Assets/FortyTwoAndBeyond/Resources/BlackHolePack.meta

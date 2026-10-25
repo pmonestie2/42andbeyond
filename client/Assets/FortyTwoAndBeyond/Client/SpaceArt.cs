@@ -14,15 +14,22 @@ namespace FortyTwoAndBeyond.Client
         private readonly Mesh[] rocks = new Mesh[8];
         private readonly Mesh ring, shipHull, suitArmor, gateArc, gateLightRing;
         private readonly GameObject corvetteAsset, frigateAsset, destroyerAsset, cruiserAsset, carrierAsset;
+        private readonly GameObject eveCaldariAsset, eveGallenteAsset;
         private readonly GameObject[] proteronAssets = new GameObject[5];
         private readonly Material[] proteronSurfaces = new Material[5];
         private readonly Material[] hostileProteronSurfaces = new Material[5];
         private readonly GameObject[] moonRockHigh = new GameObject[2], moonRockLow = new GameObject[2];
+        private readonly GameObject[] packAsteroids = new GameObject[10];
+        private readonly Material packRockSurface;
+        private readonly GameObject blackHoleRing, blackHoleCore;
+        private readonly Material blackHoleDiskSurface, blackHoleCloudSurface,
+            blackHoleCoreSurface, blackHolePhotonSurface, blackHoleLensSurface;
         private readonly Material[] moonStone = new Material[2], moonOre = new Material[2],
             moonMetal = new Material[2], moonHydrocarbon = new Material[2];
         private readonly Material corvetteSurface, frigateSurface, destroyerSurface, cruiserSurface, carrierSurface;
         private readonly Material hostileFrigateSurface, hostileDestroyerSurface, hostileCruiserSurface,
             hostileCarrierSurface;
+        private readonly Material eveCaldariSurface, eveGallenteSurface, eveGallenteHostileSurface;
         private readonly Material hull, trim, dark, glass, glow, amber, hostile, crewSignal,
             mineral, metalSeam, hydrocarbon, gasVapor, rock, oreRock, field;
         private readonly Material gateArmor, gateInset, gateCircuit;
@@ -92,7 +99,9 @@ namespace FortyTwoAndBeyond.Client
             oreRock.SetFloat("_DetailGain", 1.35f);
             field = ShaderMaterial("42 and Beyond/GateField");
             Sky = ShaderMaterial("42 and Beyond/SpaceSky");
-            Sky.SetTexture("_NebulaTex", LoadDetail("SpaceNebula"));
+            Texture2D proceduralSky = Resources.Load<Texture2D>("ProceduralSpace");
+            Sky.SetTexture("_NebulaTex", proceduralSky != null ? proceduralSky : LoadDetail("SpaceNebula"));
+            Sky.SetFloat("_Exposure", proceduralSky != null ? 1.65f : .16f);
             Shader effectShader = Resources.Load<Shader>("BeamAdditive");
             if (effectShader != null) { EffectLine = new Material(effectShader); materials.Add(EffectLine); }
             corvetteAsset = Resources.Load<GameObject>("ViktorShips/corvette03");
@@ -109,6 +118,12 @@ namespace FortyTwoAndBeyond.Client
             hostileDestroyerSurface = HostileSurface(destroyerSurface);
             hostileCruiserSurface = HostileSurface(cruiserSurface);
             hostileCarrierSurface = HostileSurface(carrierSurface);
+            eveCaldariAsset = Resources.Load<GameObject>("EveShips/cc3");
+            eveGallenteAsset = Resources.Load<GameObject>("EveShips/gc3");
+            eveCaldariSurface = EveSurface("cc3", Color.white, new Color(.3f, .8f, 1f));
+            eveGallenteSurface = EveSurface("gc3", Color.white, new Color(.3f, 1f, .55f));
+            eveGallenteHostileSurface = EveSurface("gc3", new Color(1f, .72f, .7f),
+                new Color(1f, .25f, .16f));
             string[] proteronNames = { "archimedes", "dalton", "hippocrates", "pythagoras", "watson" };
             for (int index = 0; index < proteronNames.Length; index++)
             {
@@ -129,6 +144,49 @@ namespace FortyTwoAndBeyond.Client
                     new Color(1f, .51f, .2f), .57f);
                 moonHydrocarbon[index] = MoonSurface(name, new Color(.28f, .23f, .29f),
                     new Color(.92f, .31f, .38f), .72f);
+            }
+            for (int index = 0; index < packAsteroids.Length; index++)
+                packAsteroids[index] = Resources.Load<GameObject>(
+                    "AsteroidPack/Asteroid_no_" + (index + 1));
+            Texture2D packColor = Resources.Load<Texture2D>("AsteroidPack/rock_color");
+            if (packColor != null)
+            {
+                packRockSurface = ShaderMaterial("42 and Beyond/AsteroidPack");
+                packRockSurface.SetTexture("_MainTex", packColor);
+                packRockSurface.SetTexture("_NormalTex", Resources.Load<Texture2D>("AsteroidPack/rock_normal"));
+                packRockSurface.SetTexture("_MetalTex", Resources.Load<Texture2D>("AsteroidPack/rock_metal"));
+                packRockSurface.SetTexture("_RoughnessTex", Resources.Load<Texture2D>("AsteroidPack/rock_roughness"));
+                packRockSurface.SetTexture("_AoTex", Resources.Load<Texture2D>("AsteroidPack/rock_ao"));
+                packRockSurface.SetColor("_Tint", new Color(.78f, .84f, .92f));
+            }
+            blackHoleRing = Resources.Load<GameObject>("BlackHolePack/Blackhole_ring");
+            blackHoleCore = Resources.Load<GameObject>("BlackHolePack/Blackhole_core");
+            Texture2D ringColor = Resources.Load<Texture2D>("BlackHolePack/ring_color");
+            if (blackHoleRing != null && blackHoleCore != null && ringColor != null)
+            {
+                blackHoleDiskSurface = ShaderMaterial("42 and Beyond/BlackHoleDisk");
+                blackHoleDiskSurface.SetTexture("_MainTex", ringColor);
+                blackHoleDiskSurface.SetTexture("_OpacityTex",
+                    Resources.Load<Texture2D>("BlackHolePack/ring_opacity"));
+                blackHoleDiskSurface.SetColor("_Tint", new Color(1.6f, .98f, .6f));
+                blackHoleDiskSurface.SetFloat("_Opacity", .82f);
+                Texture2D clouds = Resources.Load<Texture2D>("BlackHolePack/ring_clouds");
+                if (clouds != null)
+                {
+                    blackHoleCloudSurface = ShaderMaterial("42 and Beyond/BlackHoleDisk");
+                    blackHoleCloudSurface.SetTexture("_MainTex", clouds);
+                    blackHoleCloudSurface.SetTexture("_OpacityTex",
+                        Resources.Load<Texture2D>("BlackHolePack/ring_opacity"));
+                    blackHoleCloudSurface.SetColor("_Tint", new Color(.65f, .78f, 1.12f));
+                    blackHoleCloudSurface.SetFloat("_Opacity", .42f);
+                }
+                blackHoleCoreSurface = ShaderMaterial("42 and Beyond/BlackHoleCore");
+                blackHolePhotonSurface = ShaderMaterial("42 and Beyond/BlackHolePhoton");
+                blackHolePhotonSurface.SetColor("_Tint", new Color(1f, .76f, .5f, .6f));
+                blackHolePhotonSurface.SetFloat("_Intensity", 1.1f);
+                blackHoleLensSurface = ShaderMaterial("42 and Beyond/BlackHolePhoton");
+                blackHoleLensSurface.SetColor("_Tint", new Color(.2f, .42f, .9f, .11f));
+                blackHoleLensSurface.SetFloat("_Intensity", .4f);
             }
             ring = Torus(1, .12f, 48, 8); meshes.Add(ring);
             gateArc = GateArc(); meshes.Add(gateArc);
@@ -250,6 +308,21 @@ namespace FortyTwoAndBeyond.Client
             return surface;
         }
 
+        /// <returns>Material: A lit surface for an optional locally exported EVE hull.</returns>
+        private Material EveSurface(string name, Color tint, Color glowColor)
+        {
+            Shader shader = Resources.Load<Shader>("EveShip");
+            Texture2D albedo = Resources.Load<Texture2D>("EveShips/" + name + "_albedo");
+            if (shader == null || albedo == null) return null;
+            var surface = new Material(shader); materials.Add(surface);
+            surface.SetTexture("_MainTex", albedo);
+            surface.SetTexture("_GlowTex", Resources.Load<Texture2D>("EveShips/" + name + "_glow"));
+            surface.SetColor("_Tint", tint);
+            surface.SetColor("_GlowColor", glowColor);
+            surface.SetFloat("_Lift", name == "gc3" ? 1.85f : 1.35f);
+            return surface;
+        }
+
         /// <returns>Material: A faction-tinted PBR ship surface, or null without its packaged maps.</returns>
         private Material ProteronSurface(string assetName, Color accent)
         {
@@ -311,6 +384,9 @@ namespace FortyTwoAndBeyond.Client
         public Transform Ship(Transform parent)
         {
             Transform root = Root(parent, "Explorer spacecraft");
+            if (Imported(root, eveCaldariAsset, "Locally exported Caldari hull", Vector3.one * .36f,
+                    eveCaldariSurface) != null)
+                return root;
             if (Imported(root, proteronAssets[4], "Proteron Watson explorer", Vector3.one * .31f,
                     proteronSurfaces[4]) != null)
                 return root;
@@ -587,6 +663,16 @@ namespace FortyTwoAndBeyond.Client
             string modelName = "Viktor Hahn frigate";
             if (nativeAsset == 1022 || nativeAsset == 1023)
             {
+                Transform imported = Imported(root, eveGallenteAsset,
+                    "Locally exported Gallente hull", Vector3.one * .69f,
+                    isHostile ? eveGallenteHostileSurface : eveGallenteSurface);
+                if (imported != null)
+                {
+                    Transform distant = Imported(root, destroyerAsset, "Distant destroyer silhouette",
+                        Vector3.one * .55f, isHostile ? hostileDestroyerSurface : destroyerSurface);
+                    SetLod(root, imported, distant, .08f);
+                    return root;
+                }
                 asset = destroyerAsset; surface = isHostile ? hostileDestroyerSurface : destroyerSurface;
                 size = .55f; modelName = "Viktor Hahn destroyer";
                 proteron = 3; proteronSize = .28f;
@@ -667,7 +753,8 @@ namespace FortyTwoAndBeyond.Client
             else
             {
                 float radius = item.Navigable ? .4f : item.Asset == 491 ? 3.8f : item.Asset == 490 ? 2.7f : 1.6f;
-                if (!MoonRock(root, item.Id, moonStone,
+                if (!PackRock(root, item.Id, radius * 1.75f) &&
+                    !MoonRock(root, item.Id, moonStone,
                         new Vector3(radius * .68f, radius * .55f, radius * .78f)))
                 {
                     int variant = (int)(item.Id % (uint)rocks.Length);
@@ -757,7 +844,8 @@ namespace FortyTwoAndBeyond.Client
                 family == ResourceFamily.Hydrocarbon ? moonHydrocarbon : moonMetal;
             Vector3 scale = family == ResourceFamily.Hydrocarbon ?
                 new Vector3(1.45f, .85f, 1.35f) : new Vector3(1.35f, 1.05f, 1.3f);
-            if (!MoonRock(root, id, surface, scale))
+            bool packed = family == ResourceFamily.Metallic && PackRock(root, id, 2.7f);
+            if (!packed && !MoonRock(root, id, surface, scale))
                 Model(root, rocks[(int)(id % (uint)rocks.Length)], surface[0] ?? oreRock,
                     Vector3.zero, new Vector3(2.1f, 1.5f, 1.9f));
             int features = family == ResourceFamily.Crystalline ? 5 : 3;
@@ -795,6 +883,19 @@ namespace FortyTwoAndBeyond.Client
                 scale, material);
             SetLod(root, detailed, silhouette, .07f);
             return true;
+        }
+
+        /// <returns>bool: Whether a locally exported, UV-textured asteroid was placed.</returns>
+        private bool PackRock(Transform root, uint id, float diameter)
+        {
+            GameObject asset = packAsteroids[(int)(id % (uint)packAsteroids.Length)];
+            if (asset == null || packRockSurface == null) return false;
+            MeshFilter filter = asset.GetComponentInChildren<MeshFilter>();
+            if (filter == null || filter.sharedMesh == null) return false;
+            Vector3 size = filter.sharedMesh.bounds.size;
+            float scale = diameter / Mathf.Max(size.x, size.y, size.z, .01f);
+            return Imported(root, asset, "Metallic asteroid pack hull", Vector3.one * scale,
+                packRockSurface) != null;
         }
 
         /// <summary>Assemble a segmented jump gate with armored arcs and a recessed energy field.</summary>
@@ -855,6 +956,25 @@ namespace FortyTwoAndBeyond.Client
         public Transform Environment(Transform parent)
         {
             Transform root = Root(parent, "Distant sky scenery");
+            BlackHole(root);
+            GameObject volcanicMesh = Resources.Load<GameObject>("PlanetPack/planet");
+            Texture2D volcanicMap = Resources.Load<Texture2D>("PlanetPack/planet_diffuse");
+            if (volcanicMesh != null && volcanicMap != null)
+            {
+                Material surface = ShaderMaterial("42 and Beyond/ProceduralPlanet");
+                surface.SetTexture("_MainTex", volcanicMap);
+                surface.SetTexture("_NormalTex", Resources.Load<Texture2D>("PlanetPack/planet_normal"));
+                surface.SetTexture("_RoughnessTex", Resources.Load<Texture2D>("PlanetPack/planet_roughness"));
+                surface.SetTexture("_AoTex", Resources.Load<Texture2D>("PlanetPack/planet_ao"));
+                Vector3 location = new Vector3(6500, -2000, 16000);
+                Transform world = Imported(root, volcanicMesh, "Procedural volcanic world",
+                    Vector3.one * (4400f / 1.711f), surface);
+                world.localPosition = location;
+                world.localRotation = Quaternion.Euler(-14, 28, -18);
+                Material atmosphere = ShaderMaterial("42 and Beyond/PlanetAtmosphere");
+                Part(root, PrimitiveType.Sphere, location, Vector3.one * 4570, atmosphere);
+                return root;
+            }
             Material planetMaterial = ShaderMaterial("42 and Beyond/Planet");
             Texture2D saturn = Resources.Load<Texture2D>("SaturnNASA");
             if (saturn != null)
@@ -870,6 +990,28 @@ namespace FortyTwoAndBeyond.Client
             Transform rings = Model(planet, belt, ringMaterial, Vector3.zero, Vector3.one * .5f);
             rings.localRotation = Quaternion.Euler(65, 0, 0);
             return root;
+        }
+
+        /// <summary>Place the locally exported accretion disk around an opaque dark core.</summary>
+        private void BlackHole(Transform root)
+        {
+            if (blackHoleDiskSurface == null || blackHoleCoreSurface == null) return;
+            Transform body = Root(root, "Distant accretion disk");
+            body.localPosition = new Vector3(0, -7500, 17000);
+            body.localRotation = Quaternion.Euler(7, -14, 24);
+            Imported(body, blackHoleCore, "Black hole event horizon", Vector3.one * 3000,
+                blackHoleCoreSurface);
+            Transform disk = Imported(body, blackHoleRing, "Black hole accretion disk",
+                Vector3.one * 1350, blackHoleDiskSurface);
+            if (disk != null) disk.localRotation = Quaternion.Euler(66, -12, 8);
+            Transform clouds = Imported(body, blackHoleRing, "Black hole outer plasma",
+                Vector3.one * 1430, blackHoleCloudSurface);
+            if (clouds != null) clouds.localRotation = Quaternion.Euler(61, 19, -28);
+            Transform photon = Model(body, gateLightRing, blackHolePhotonSurface, Vector3.zero,
+                Vector3.one * 1450);
+            photon.localRotation = Quaternion.Euler(68, -9, 5);
+            Model(body, gateLightRing, blackHoleLensSurface, Vector3.zero,
+                Vector3.one * 2250);
         }
 
         /// <returns>Mesh: A tapered octagonal armor shell shared by the station pilot's suit.</returns>

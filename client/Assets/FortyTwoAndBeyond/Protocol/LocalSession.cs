@@ -416,8 +416,7 @@ namespace FortyTwoAndBeyond.Protocol
             if (Ready && gate == 0 && World.Station == null && World.Equipment.Hull > 0 &&
                 World.Warp.Phase != WarpPhase.Charging && World.Warp.Phase != WarpPhase.Traveling &&
                 DeviceEffects.MountedSlot(template.ActivationLabel, template.Type, slot,
-                    World.Equipment.DeviceMounts) &&
-                (DeviceEffects.IsInstant(template.ActivationLabel) || World.ActiveDeviceLabel.Length == 0))
+                    World.Equipment.DeviceMounts))
                 SendDeviceActivation(slot, Player, template.ActivationLabel);
         }
 
@@ -431,9 +430,7 @@ namespace FortyTwoAndBeyond.Protocol
             if (item?.Present != true ||
                 !World.ItemCatalog.TryGetValue(item.Template, out ItemTemplateInfo template) ||
                 !DeviceEffects.MountedSlot(template.ActivationLabel, template.Type, slot,
-                    World.Equipment.DeviceMounts) ||
-                !DeviceEffects.IsInstant(template.ActivationLabel) && !template.TargetsPeer &&
-                    World.ActiveDeviceLabel.Length > 0)
+                    World.Equipment.DeviceMounts))
                 return;
             bool transfer = DeviceEffects.RequiresPeer(template.ActivationLabel);
             if ((target == Player && transfer) ||
@@ -466,8 +463,7 @@ namespace FortyTwoAndBeyond.Protocol
         public void ActivateTurboWeapons()
         {
             if (!Ready || gate != 0 || World.Station != null || World.Equipment.Hull <= 0 ||
-                World.Warp.Phase == WarpPhase.Charging || World.Warp.Phase == WarpPhase.Traveling ||
-                World.ActiveDeviceLabel.Length > 0) return;
+                World.Warp.Phase == WarpPhase.Charging || World.Warp.Phase == WarpPhase.Traveling) return;
             int first = 9, last = Math.Min(World.Equipment.Mounted.Length, first + (int)World.Equipment.DeviceMounts);
             for (int slot = first; slot < last; slot++)
             {

@@ -424,6 +424,9 @@ pub fn run(config: Config, stop: Arc<AtomicBool>) -> io::Result<()> {
             accept_connections(listener, bridge, game, stop, connections, ids)
         }));
     }
+    crate::server_log!("╔════════════════════════════════════════════╗");
+    crate::server_log!("║          42AndBeyond in Rust!!             ║");
+    crate::server_log!("╚════════════════════════════════════════════╝");
     crate::server_log!(
         "Rust ENB sandbox ready: {} (shared sectors and player sessions)",
         config.bind

@@ -77,8 +77,9 @@ namespace FortyTwoAndBeyond.Client
             float canvasHeight = Screen.height / flightHud.Scale;
             int buffCount = (snapshot.DeviceBuff != null || !string.IsNullOrEmpty(snapshot.ActiveDeviceLabel) ? 1 : 0) +
                 (snapshot.PeerBuff != null ? 1 : 0) + (snapshot.ShieldBuff != null ? 1 : 0) +
-                (snapshot.ReactorBuff != null ? 1 : 0) + (snapshot.SignatureBuff != null ? 1 : 0);
-            float systemHeight = 87 + ((buffCount + 1) / 2) * 30;
+                (snapshot.ReactorBuff != null ? 1 : 0) + (snapshot.SignatureBuff != null ? 1 : 0) +
+                (snapshot.RallyBuff != null ? 1 : 0);
+            float systemHeight = 87 + buffCount * 30;
             return new Rect(365 + 307, canvasHeight - 125 - systemHeight + 5, 104, 25);
         }
 

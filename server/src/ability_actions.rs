@@ -706,14 +706,19 @@ impl PlayerSession {
                     | AbilityKind::ShieldInversion
             );
         if enemy {
+            let target_prompt = if ability.kind == AbilityKind::Hacking {
+                "Select a mechanical MOB first."
+            } else {
+                "Select a hostile MOB first."
+            };
             let index = self
                 .target
                 .checked_sub(MOB_ID)
-                .ok_or_else(|| invalid("Select a hostile MOB first."))?;
+                .ok_or_else(|| invalid(target_prompt))?;
             let mob = combat
                 .actors
                 .get(index as usize)
-                .ok_or_else(|| invalid("Select a hostile MOB first."))?;
+                .ok_or_else(|| invalid(target_prompt))?;
             let range = match ability.kind {
                 AbilityKind::Hacking => {
                     crate::hacking::tier(
@@ -772,7 +777,6 @@ impl PlayerSession {
                 || matches!(
                     ability.kind,
                     AbilityKind::Menace
-                        | AbilityKind::Hacking
                         | AbilityKind::EnergyLeech
                         | AbilityKind::Biorepression
                         | AbilityKind::Enrage
@@ -1087,8 +1091,8 @@ impl PlayerSession {
                         (cooldown * 1000.) as u32,
                     ));
                     self.message(match outcome {
-                        Some(result) if result.affected > 0 => "Hacking disabled hostile systems.",
-                        Some(result) if result.resisted > 0 => "Hostile systems resisted Hacking.",
+                        Some(result) if result.affected > 0 => "Hacking disabled MOB systems.",
+                        Some(result) if result.resisted > 0 => "MOB systems resisted Hacking.",
                         _ => "Hacking target was lost before completion.",
                     });
                     return Ok(());

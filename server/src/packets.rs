@@ -1881,9 +1881,7 @@ pub fn login_world(
             }
         }
     }
-    frames.push(message(
-        "Welcome to the local Rust sandbox. No connection to the live game service.",
-    ));
+    frames.push(message("WELCOME TO 42ANDBEYOND - RUST BACKEND"));
     frames.push(Frame::new(
         5,
         (profile.game_id & 0xffffff).to_le_bytes().to_vec(),

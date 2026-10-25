@@ -4546,6 +4546,7 @@ fn terran_hacking_area_is_generation_pinned_and_restart_safe() {
     first.spawn = [1_000., 0., 0.];
     first.mob_type = 0;
     first.aggressive = false;
+    first.faction = 3; // Neutral to this Terran Enforcer; still hackable.
     let mut second = first.clone();
     second.source_id = 910_002;
     second.spawn = [1_500., 0., 0.];

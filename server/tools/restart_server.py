@@ -81,13 +81,16 @@ def process_identity(pid: int) -> tuple[Path, float] | None:
                 raise
         finally:
             handle.Close()
-    result = subprocess.run(['ps', '-p', str(pid), '-o', 'lstart=', '-o', 'comm='],
+    result = subprocess.run(['ps', '-p', str(pid), '-o', 'lstart=', '-o', 'stat=', '-o', 'comm='],
         capture_output=True, text=True, env={**os.environ, 'LC_ALL': 'C'})
     line = result.stdout.strip()
     if result.returncode or len(line) < 26:
         return None
+    state, _, command = line[24:].strip().partition(' ')
+    if state.startswith('Z') or not command.strip():
+        return None
     started = time.mktime(time.strptime(line[:24], '%a %b %d %H:%M:%S %Y'))
-    return Path(line[24:].strip()).resolve(), started
+    return Path(command.strip()).resolve(), started
 
 
 def restart(state: Path, *, no_build: bool, release: bool = False) -> int:

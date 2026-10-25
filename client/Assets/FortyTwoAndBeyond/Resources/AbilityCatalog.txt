@@ -1,33 +1,128 @@
 0	12	Advanced Cloak	Allows the ship to move at full speed while cloaked.  This ability drains 1.5 energy per second while active.	cloak	3	30.0	3.0	5.0	3000
+1	37	Advanced Power Down	Toggle Power Down while stopped; hostile ships lose target. Higher tiers restore shield and reactor recharge while down.	power_down	3	75	0.0	3.0	0
+2	37	Advanced Power Down 2	Toggle Power Down while stopped; hostile ships lose target. Higher tiers restore shield and reactor recharge while down.	power_down	5	150	0.0	3.0	0
+3	37	Advanced Power Down 3	Toggle Power Down while stopped; hostile ships lose target. Higher tiers restore shield and reactor recharge while down.	power_down	6	300	0.0	3.0	0
+4	37	Advanced Power Down 4	Toggle Power Down while stopped; hostile ships lose target. Higher tiers restore shield and reactor recharge while down.	power_down	7	600	0.0	3.0	0
+6	22	Anger	Force hostile MOB aggression; higher ranks impair beam and projectile accuracy or affect a formation.	enrage	1	35.0	1.5	10.0	5000
+7	22	Anger Group	Force hostile MOB aggression; higher ranks impair beam and projectile accuracy or affect a formation.	enrage	6	300.0	1.5	10.0	6250
+8	47	Area Equipment Repair	Toggle area equipment repair around self or a selected visible pilot.	equipment_repair	6	0.0	0.0	0.0	3750
+9	27	Area Hull Repair	Repairs a selected friendly ship and nearby allies at a lower amount.	hull_patch	6	500.0	5.0	0.0	3750
+10	25	Area Immobilization Field	Immobilize hostile MOBs within 3000 meters of the selected target.	gravity_link	7	55.0	1.0	10.0	6500
+11	33	Area Intimidation	Frighten hostile ships into flight. Higher tiers disrupt special abilities and weapons or affect an area.	menace	6	90	1.5	15.0	3750
+12	25	Area Mass Field	Slow hostile MOBs within 1500 meters of the selected target.	gravity_link	6	50.0	1.0	10.0	6250
+13	26	Area Multi-Hack	Attempt system and weapon hacks on nearby mechanical MOBs.	hacking	7	240.0	2.0	15.0	2500
+14	46	Area Shield Recharge	Recharges a selected friendly ship and nearby allies at a lower amount.	recharge_shields	6	500.0	5.0	0.0	3750
+15	2	Area Soothe	Soothe NPCs near the selected target.	befriend	7	90.0	1.5	15.0	6500
+16	26	Area System Hack	Attempt system hacks on nearby mechanical MOBs.	hacking	6	180.0	2.0	15.0	2250
+17	24	Area Teleport	Teleport nearby group ships 6800 units along your heading.	fold	7	300.0	3.0	5.0	6000
+18	33	Area Terrify	Frighten hostile ships into flight. Higher tiers disrupt special abilities and weapons or affect an area.	menace	7	120	1.5	15.0	4000
 19	15	Asteroid Belt Beta Gate	Creates a temporary wormhole, teleporting all group members to Asteroid Belt Beta.	wormhole	5	150.0	3.0	10.0	3000
+20	2	Befriend	Temporarily improve a target NPC’s reaction toward you.	befriend	1	20.0	1.5	15.0	5000
+21	3	Biocessation	Attempt to temporarily disable one organic MOB weapon.	biorepression	7	130.0	1.5	15.0	2500
+22	3	Biorepress	Slow the weapon fire of one organic MOB.	biorepression	1	25.0	1.5	15.0	1000
+23	3	Biorepression Sphere	Slow organic MOB weapons near the selected target.	biorepression	5	80.0	1.5	15.0	2000
+24	3	Biosuppress	Slow an organic MOB's weapons and warning actions.	biorepression	3	50.0	1.5	15.0	1500
+25	3	Biosuppression Sphere	Slow organic MOB weapons and warning actions in an area.	biorepression	6	100.0	1.5	15.0	2250
 26	15	Carpenter Gate	Creates a temporary wormhole, teleporting all group members to Carpenter.	wormhole	6	250.0	3.0	10.0	3000
+27	22	Cause Aggression	Force hostile MOB aggression; higher ranks impair beam and projectile accuracy or affect a formation.	enrage	3	75.0	1.5	10.0	5500
 28	12	Cloak	When activated, completely hides the ship from sensor detection.  The ship must be at a complete stop to cloak, and can only move at half speed while cloaked.  Cloaking takes 7 seconds to initialize and uses 0.5 energy per second thereafter.	cloak	1	9.0	3.0	5.0	3000
 29	12	Combat Cloak	Eliminates the requirement for the ship to be motionless before cloaking, and doubles unmodified beam weapon base damage for 5 seconds after cloaking is disengaged.  This ability consumes 3 energy per second while active.	cloak	5	100.0	3.0	5.0	3000
+30	47	Combat Equipment Repair	Toggle faster combat equipment repair for self or a selected visible pilot.	equipment_repair	5	0.0	0.0	0.0	3500
 31	27	Combat Hull Repair	Restore the selected pilot's hull.	hull_patch	5	250.0	3.0	0.0	3004
 32	46	Combat Shield Recharge	Restore the selected pilot's shields.	recharge_shields	5	250.0	3.0	0.0	3004
 33	14	Compulsory Contemplation	Confuses a single target, preventing movement, skill, item, and weapon use until the effect is broken.	contemplation	1	1000.0	1.0	10.0	3000
+34	44	Damage Tactics	Rally group combat tactics for ten minutes.	rally	1	75.0	2.0	30.0	5000
+35	44	Defense Tactics	Rally group combat tactics for ten minutes.	rally	3	150.0	2.0	30.0	5500
+36	24	Directional Teleport	Teleport the selected target 6500 units along its heading.	fold	6	180.0	3.0	5.0	6500
 37	15	Endriago Gate	Creates a temporary wormhole, teleporting all group members to Endriago.	wormhole	7	350.0	3.0	10.0	3000
+38	19	Energy Drain	Drain reactor power from a hostile MOB, delaying its weapons.	energy_leech	1	35.0	2.0	10.0	1000
+39	19	Energy Leech	Drain a hostile MOB reactor and restore some power to your ship.	energy_leech	3	75.0	2.0	10.0	1500
+40	19	Energy Leeching Sphere	Drain reactors from hostile MOBs around the selected target.	energy_leech	6	300.0	2.0	10.0	2250
+41	22	Enrage	Force hostile MOB aggression; higher ranks impair beam and projectile accuracy or affect a formation.	enrage	5	150.0	1.5	10.0	6000
+42	22	Enrage Group	Force hostile MOB aggression; higher ranks impair beam and projectile accuracy or affect a formation.	enrage	7	600.0	1.5	10.0	6500
+43	2	Entrance	Calm an NPC and weaken its psionic resistance.	befriend	5	55.0	1.5	15.0	6000
 44	23	Environment Barrier	creates a shield around a friendly target that protects the ship from environmental effects (reducing their power by 50%) and reduces incoming damage by 5%.	environment	1	35.0	1.0	10.0	3000
 45	23	Environment Shield	Creates a shield that reduces environmental effects by 100% and reduces incoming damage by 10%, reflecting up to 10 points of damage back to the attacker.  Energy damage is not reflected.	environment	5	250.0	1.0	10.0	3000
+46	44	Firing Tactics	Rally group combat tactics for ten minutes.	rally	5	250.0	2.0	30.0	6000
+47	25	Gravity Field	Slow one hostile MOB and increase Impact/Explosive damage.	gravity_link	3	35.0	1.0	10.0	5500
 48	23	Greater Environment Shield	Creates a shield that reduces environmental effects by 100%, reduces incoming damage by 10% (reflecting up to 25 points back to attacker), and converts 5% (maximum of 10 points) of incoming damage to reactor energy.  Energy damage is not reflected or converted.	environment	6	500.0	1.0	10.0	3000
+49	42	Greater Psionic Shield	Place a temporary psionic barrier on a selected pilot; absorb damage and add 30 psionic resistance.	psionic_shield	6	225	2.0	30.0	3750
+50	48	Greater Repulsor Field	Reflect bounded post-resist hostile damage as Energy while this field is active.	repulsor_field	6	500	2.0	30.0	3750
 51	12	Group Cloak	Completely cloaks all group members within 1000 units.  Warp travel is allowed while cloaked.  This ability drains 10 energy per second while active.	cloak	7	350.0	3.0	5.0	3000
 52	53	Group Leech	Drains shields from a single hostile and transfers a portion of that as energy to the player and group.	leech	5	150.0	1.0	10.0	3000
 53	53	Group Leeching Sphere	Drains shields from all targets within 3000 units of the target and transfers a portion of that as energy to player and group.	leech	7	600.0	1.0	10.0	3000
+54	54	Group Sap	Drain one hostile shield and distribute the restored energy to nearby crew.	shield_sap	5	150.0	3.0	0.0	2000
+55	54	Group Sapping Sphere	Drain nearby hostile shields and distribute restored energy to nearby crew.	shield_sap	7	600.0	3.0	0.0	2500
 56	12	Group Stealth	Cloaks the ship and creates a stealth field around all group members within 1000 units.  Warp travel is allowed while cloaked.  This ability drains 6 energy per second while active.	cloak	6	200.0	3.0	5.0	3000
+57	26	Hack Systems	Attempt to disable a mechanical MOB’s engine, reactor, or shield system.	hacking	1	30.0	2.0	15.0	1000
+58	26	Hack Weapons	Attempt to disable a mechanical MOB’s weapon.	hacking	3	60.0	2.0	15.0	1500
+59	25	Immobilization Field	Immobilize one hostile MOB and increase Impact/Explosive damage.	gravity_link	5	45.0	1.0	10.0	6000
+60	27	Improved Area Hull Repair	Repairs a selected friendly ship and nearby allies at a lower amount.	hull_patch	7	1000.0	5.0	0.0	4000
+61	46	Improved Area Recharge	Recharges a selected friendly ship and nearby allies at a lower amount.	recharge_shields	7	1000.0	5.0	0.0	4000
+62	47	Improved Area Repair	Toggle improved area equipment repair around self or a selected visible pilot.	equipment_repair	7	0.0	0.0	0.0	4000
+63	2	Improved Befriend	Befriend and calm a target NPC, reducing its attack acquisition range.	befriend	3	35.0	1.5	15.0	5500
+64	33	Intimidate	Frighten hostile ships into flight. Higher tiers disrupt special abilities and weapons or affect an area.	menace	1	25	1.5	15.0	2500
 65	31	Jumpstart	Attempts to resuscitate an incapacitated player, reducing experience debt from last death by 7% per skill level.  Larger ships will require additional energy to resuscitate.	jumpstart	1	140.0	7.0	10.0	2750
 66	15	Jupiter Gate	Creates a temporary wormhole, teleporting all group members to Jupiter.	wormhole	2	50.0	3.0	10.0	3000
 67	15	Kailaasa Gate	Creates a temporary wormhole, teleporting all group members to Kailaasa.	wormhole	1	35.0	3.0	10.0	3000
 68	23	Lesser Environment Shield	Creates a shield that reduces environmental effects by 100% and reduces incoming damage by 10%.	environment	3	100.0	1.0	10.0	3000
+69	42	Lesser Psionic Shield	Place a temporary psionic barrier on a selected pilot; absorb damage and add 30 psionic resistance.	psionic_shield	3	100	2.0	30.0	3000
+70	48	Lesser Repulsor Field	Reflect bounded post-resist hostile damage as Energy while this field is active.	repulsor_field	3	125	2.0	30.0	3000
+72	48	Major Repulsor Field	Reflect bounded post-resist hostile damage as Energy while this field is active.	repulsor_field	7	1000	2.0	30.0	4000
+73	25	Mass Field	Temporarily slow one hostile MOB.	gravity_link	1	25.0	1.0	10.0	5000
+74	51	Megacharge Shields	Increase shield capacity, recharge, and at the highest tier all damage resistances for ten minutes.	shield_charging	7	200	2.0	30.0	4000
+75	48	Minor Repulsor Field	Reflect bounded post-resist hostile damage as Energy while this field is active.	repulsor_field	1	50	2.0	30.0	2500
+76	26	Multi-Hack	Attempt a system and weapon hack and jam communications.	hacking	5	120.0	2.0	15.0	2000
 77	27	Patch Hull	Restore your own damaged hull after a short charge.	hull_patch	1	50.0	0.0	0.0	0
+78	37	Power Down	Toggle Power Down while stopped; hostile ships lose target. Higher tiers restore shield and reactor recharge while down.	power_down	1	35	0.0	3.0	0
+79	42	Psionic Barrier	Place a temporary psionic barrier on a selected pilot; absorb damage and add 30 psionic resistance.	psionic_shield	1	50	2.0	30.0	2500
+80	42	Psionic Invulnerability	Place a temporary psionic barrier on a selected pilot; absorb damage and add 30 psionic resistance.	psionic_shield	7	300	2.0	30.0	4000
+81	42	Psionic Shield	Place a temporary psionic barrier on a selected pilot; absorb damage and add 30 psionic resistance.	psionic_shield	5	150	2.0	30.0	3500
+82	43	Reactor Boost	Increase your reactor capacity for ten minutes.	reactor_optimization	1	75.0	2.0	30.0	0
+83	43	Reactor Surge	Increase your reactor capacity and recharge for ten minutes.	reactor_optimization	3	100.0	2.0	30.0	0
+84	43	Reactor Extension	Increase your reactor capacity or a selected pilot's for ten minutes.	reactor_optimization	5	125.0	2.0	30.0	3500
+85	43	Reactor Augmentation	Increase reactor capacity and recharge for yourself or a selected pilot.	reactor_optimization	6	150.0	2.0	30.0	3750
+86	43	Reactor Optimization	Greatly increase reactor capacity and recharge for yourself or a selected pilot.	reactor_optimization	7	200.0	2.0	30.0	4000
 89	46	Recharge Shields	Recharge the selected pilot's shields after a short charge.	recharge_shields	3	125.0	1.0	0.0	3004
+90	47	Regenerate Equipment	Toggle self equipment regeneration. Repairs damaged mounted items over time while drawing reactor energy.	equipment_repair	1	0.0	0.0	0.0	0
 91	46	Regenerate Shields	Restore your own shields.	recharge_shields	1	50.0	0.0	0.0	0
+92	19	Render Energy	Drain a hostile MOB reactor and share recovered power with the group.	energy_leech	5	150.0	2.0	10.0	2000
+93	19	Render Energy Sphere	Drain nearby hostile MOB reactors and share recovered power with the group.	energy_leech	7	600.0	2.0	10.0	2500
+94	47	Repair Equipment	Toggle repair of self or a selected visible pilot’s mounted equipment.	equipment_repair	3	0.0	0.0	0.0	3000
 95	27	Repair Hull	Repair the selected pilot's hull after a short charge.	hull_patch	3	125.0	1.0	0.0	3004
+96	48	Repulsor Field	Reflect bounded post-resist hostile damage as Energy while this field is active.	repulsor_field	5	250	2.0	30.0	3500
+97	56	Return Friend	Return a selected group pilot to their registered port.	summon	7	600.0	3.0	5.0	6500
+98	54	Sapping Sphere	Drain hostile shields around the target and restore your own shield.	shield_sap	6	300.0	3.0	0.0	2250
+99	33	Scare	Frighten hostile ships into flight. Higher tiers disrupt special abilities and weapons or affect an area.	menace	3	45	1.5	15.0	3000
+100	50	Self Destruct I	Blast nearby hostile MOBs, empty shields and reactor, and temporarily disable actions.	self_destruct	1	0.0	3.0	60.0	0
+101	50	Self Destruct II	Blast nearby hostile MOBs, empty shields and reactor, and temporarily disable actions.	self_destruct	3	0.0	3.0	60.0	0
+102	50	Self Destruct III	Blast nearby hostile MOBs, empty shields and reactor, and temporarily disable actions.	self_destruct	5	0.0	3.0	60.0	0
+103	50	Self Destruct IV	Blast nearby hostile MOBs, empty shields and reactor, and temporarily disable actions.	self_destruct	6	0.0	3.0	60.0	0
+104	50	Self Destruct V	Blast nearby hostile MOBs, empty shields and reactor, and temporarily disable actions.	self_destruct	7	0.0	3.0	60.0	0
+105	52	Shield Burn	Convert shield power into timed energy damage against a hostile target.	shield_inversion	5	0.0	2.0	20.0	2000
 106	53	Shield Drain	Drains shields from an enemy target.	leech	1	35.0	1.0	10.0	3000
+107	52	Shield Flare	Convert shield power into timed energy damage against a hostile target.	shield_inversion	6	0.0	2.0	20.0	2250
 108	53	Shield Leech	Drains shields from a single hostile and transfers a portion of that as energy to the player.	leech	3	75.0	1.0	10.0	3000
 109	53	Shield Leeching Sphere	Drains shields from all targets within 1500 units of the target and transfers a portion of that as energy to the player.	leech	6	300.0	1.0	10.0	3000
+110	52	Shield Nova	Convert shield power into timed energy damage against a hostile target.	shield_inversion	7	0.0	2.0	20.0	2500
+111	52	Shield Ram	Convert shield power into timed energy damage against a hostile target.	shield_inversion	1	0.0	2.0	20.0	1000
+112	54	Shield Sap	Drain part of one hostile target's shield.	shield_sap	1	35.0	3.0	0.0	1000
+113	52	Shield Spike	Convert shield power into timed energy damage against a hostile target.	shield_inversion	3	0.0	2.0	20.0	1500
+114	54	Shield Transfer	Drain one hostile shield and restore part of your own shield.	shield_sap	3	75.0	3.0	0.0	1500
+115	2	Soothe	Soothe an NPC with a stronger calm and psionic vulnerability.	befriend	6	70.0	1.5	15.0	6250
+116	44	Stealth Tactics	Rally group combat tactics for ten minutes.	rally	7	400.0	2.0	30.0	6500
+117	56	Summon Enemy	Summon an enemy to point-blank range.	summon	1	35.0	3.0	5.0	5000
+118	56	Summon Enemy Group	Summon a selected enemy formation to your position.	summon	6	300.0	3.0	5.0	6250
+119	56	Summon Friend	Summon a selected group pilot to your position.	summon	3	75.0	3.0	5.0	5500
+120	56	Summon Group	Summon group pilots in the same sector within 250000 units.	summon	5	150.0	3.0	5.0	250000
+121	51	Supercharge Shields	Increase shield capacity, recharge, and at the highest tier all damage resistances for ten minutes.	shield_charging	1	75	2.0	30.0	0
+122	51	Supercharge Target	Increase shield capacity, recharge, and at the highest tier all damage resistances for ten minutes.	shield_charging	5	125	2.0	30.0	3500
 123	15	Swooping Eagle Gate	Creates a temporary wormhole, teleporting all group members to Swooping Eagle.	wormhole	3	75.0	3.0	10.0	3000
 124	24	Teleport Enemy	Teleports enemy NPCs away from the ship.	fold	3	75.0	1.0	10.0	6000
 125	24	Teleport Friend	Allows other group members within 6000 units to be teleported away from danger.	fold	5	150.0	1.0	10.0	6000
 126	24	Teleport Self	Teleports the ship 5000 units in a random direction.	fold	1	35.0	1.0	10.0	6000
+127	33	Terrify	Frighten hostile ships into flight. Higher tiers disrupt special abilities and weapons or affect an area.	menace	5	65	1.5	15.0	3500
 128	23	Ultra Environment Shield	Creates a shield that reduces environmental effects by 100%, reduces incoming damage by 10% (reflecting up to 50 points back to attacker), and converts 5% (maximum of 10 points) of incoming damage to reactor energy for all group members.  Energy damage is not reflected or converted.	environment	7	1000.0	1.0	10.0	3000
+129	51	Ultracharge Shields	Increase shield capacity, recharge, and at the highest tier all damage resistances for ten minutes.	shield_charging	3	100	2.0	30.0	0
+130	51	Ultracharge Target	Increase shield capacity, recharge, and at the highest tier all damage resistances for ten minutes.	shield_charging	6	150	2.0	30.0	3750
 131	15	Valkyrie Twins Gate	Creates a temporary wormhole, teleporting all group members to Valkyrie Twins.	wormhole	4	100.0	3.0	10.0	3000

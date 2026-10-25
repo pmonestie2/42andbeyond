@@ -3,7 +3,7 @@
 use super::*;
 use crate::items::{ItemCatalog, ItemTemplate, Modifier};
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq, Serialize, Deserialize)]
 pub(super) enum ActiveEffect {
     #[default]
     TurboWeapons,
@@ -99,11 +99,21 @@ pub(super) struct ActiveDevice {
     pub expires_at_ms: u64,
 }
 
+#[derive(Serialize, Deserialize)]
+struct LoggedOutDevices {
+    version: u32,
+    active_device: Option<ActiveDevice>,
+    additional_active_devices: Vec<ActiveDevice>,
+}
+
 impl ActiveDevice {
     /// Returns:
     ///     u32: Stable native visual identity across a short server replacement.
     pub(super) fn visual_id(&self, player_id: u32) -> u32 {
-        (self.expires_at_ms as u32) ^ player_id
+        (self.expires_at_ms as u32)
+            ^ player_id
+            ^ self.template.rotate_left(11)
+            ^ (u32::from(self.slot) << 24)
     }
 
     /// Returns:
@@ -193,7 +203,7 @@ fn modifier_matches(saved: Option<&Modifier>, catalog: Option<&Modifier>) -> boo
 ///
 /// Returns:
 ///     Option<(ActiveEffect, f32, u32, Option<Modifier>, u64)>: Frozen effect rules.
-fn device_effect(
+pub(super) fn device_effect(
     template: &ItemTemplate,
 ) -> Option<(ActiveEffect, f32, u32, Option<Modifier>, u64)> {
     if template.activated.len() != 1 {
@@ -295,7 +305,7 @@ fn device_effect(
 
 /// Returns:
 ///     Option<(f32, f32)>: Shield cost and reactor gain as catalog percentages.
-fn reroute_shield_energy(template: &ItemTemplate) -> Option<(f32, f32)> {
+pub(super) fn reroute_shield_energy(template: &ItemTemplate) -> Option<(f32, f32)> {
     let effect = template.activated.first()?;
     if !matches!(template.item_type, 7 | 11)
         || template.activated.len() != 1
@@ -324,30 +334,59 @@ fn reroute_shield_energy(template: &ItemTemplate) -> Option<(f32, f32)> {
 }
 
 impl PlayerSession {
-    /// Publish the catalog buff name and visual for the current timed device.
-    fn publish_active_device_presentation(&mut self, remaining_ms: u64) {
-        let Some(active) = self.active_device.as_ref() else {
-            return;
+    /// Persist unexpired item buffs independently of the transport checkpoint.
+    pub(super) fn save_logged_out_devices(&self) -> io::Result<()> {
+        let saved = LoggedOutDevices {
+            version: 1,
+            active_device: self.active_device.clone(),
+            additional_active_devices: self.additional_active_devices.clone(),
         };
-        let Some(effect) = self
-            .items
-            .get(active.template)
-            .ok()
-            .and_then(|template| template.activated.first())
-        else {
-            return;
-        };
-        let name = if effect.buff_name.is_empty() {
-            active.effect.label()
+        crate::durable_json::replace(&self.state_dir.join("active_devices.local.json"), &saved)
+    }
+
+    /// Restore item leases after an ordinary logout and validate equipped gear.
+    pub(super) fn restore_logged_out_devices(&mut self) -> io::Result<()> {
+        let path = self.state_dir.join("active_devices.local.json");
+        if !path.exists() {
+            return Ok(());
+        }
+        let saved: LoggedOutDevices = serde_json::from_slice(&fs::read(path)?)?;
+        if saved.version != 1 || saved.additional_active_devices.len() > 20 {
+            return Err(invalid("Invalid logged-out device leases."));
+        }
+        let now = crate::resources::unix_ms();
+        let mut seen = std::collections::HashSet::new();
+        let mut active = saved
+            .active_device
+            .into_iter()
+            .chain(saved.additional_active_devices)
+            .filter(|device| device.valid_for(&self.inventory, &self.items, now))
+            .filter(|device| seen.insert(device.effect))
+            .collect::<Vec<_>>();
+        self.active_device = if active.is_empty() {
+            None
         } else {
-            effect.buff_name.as_str()
+            Some(active.remove(0))
         };
+        self.additional_active_devices = active;
+        Ok(())
+    }
+
+    /// Keep the primary device's native status label stable as other devices stack.
+    fn publish_active_device_presentation(&mut self) {
+        let name = self.active_device.as_ref().map_or("", |device| device.effect.label());
+        let remaining_ms = self.active_device.as_ref().map_or(0, |device|
+            device.expires_at_ms.saturating_sub(crate::resources::unix_ms()));
         let removal_tick = self.tick_ms().wrapping_add(remaining_ms as u32);
         self.pending.push(packets::ship_active_buff(
             self.player_id(),
             name,
-            removal_tick,
+            if self.active_device.is_none() { 0 } else { removal_tick },
         ));
+    }
+
+    /// Publish one catalog visual for an active item's remaining lease.
+    fn publish_active_device_visual(&mut self, active: &ActiveDevice) {
         if let Some(visual) = active.visual_asset(&self.items) {
             self.pending.push(packets::object_effect(
                 self.player_id(),
@@ -374,6 +413,14 @@ impl PlayerSession {
                 active.valid_for(&self.inventory, &self.items, crate::resources::unix_ms())
             })
             .map_or_else(Vec::new, ActiveDevice::modifiers);
+        modifiers.extend(
+            self.additional_active_devices
+                .iter()
+                .filter(|active| {
+                    active.valid_for(&self.inventory, &self.items, crate::resources::unix_ms())
+                })
+                .flat_map(ActiveDevice::modifiers),
+        );
         modifiers.extend(
             self.peer_buffs
                 .iter()
@@ -616,7 +663,8 @@ impl PlayerSession {
             let Some(item) = self.inventory.equipped[slot].as_ref() else {
                 return Err(invalid("No equipped item in this mount."));
             };
-            let template = self.items.get(item.template)?;
+            let item_template = item.template;
+            let template = self.items.get(item_template)?;
             if item.structure <= 0. {
                 return Err(invalid("Damaged device cannot be activated."));
             }
@@ -690,17 +738,7 @@ impl PlayerSession {
                 return Ok(());
             };
             let now_ms = crate::resources::unix_ms();
-            if self
-                .active_device
-                .as_ref()
-                .is_some_and(|active| active.valid_for(&self.inventory, &self.items, now_ms))
-            {
-                self.pending.push(packets::message(&format!(
-                    "{} is already active.",
-                    self.active_device.as_ref().unwrap().effect.label()
-                )));
-                return Ok(());
-            }
+            self.advance_active_device()?;
             if self.energy < activation_cost {
                 self.pending.push(packets::message(&format!(
                     "Insufficient reactor energy for {}.",
@@ -710,26 +748,62 @@ impl PlayerSession {
             }
             let previous_energy = self.energy;
             let previous_active = self.active_device.clone();
-            self.energy -= activation_cost;
-            self.active_device = Some(ActiveDevice {
+            let previous_additional = self.additional_active_devices.clone();
+            let new_active = ActiveDevice {
                 slot: slot as u8,
-                template: item.template,
+                template: item_template,
                 effect,
                 value: bonus,
                 operation,
                 secondary,
                 expires_at_ms: now_ms.saturating_add(duration_ms),
-            });
+            };
+            let replaced = if self
+                .active_device
+                .as_ref()
+                .is_some_and(|active| active.effect == effect)
+            {
+                self.active_device.replace(new_active.clone())
+            } else if let Some(existing) = self
+                .additional_active_devices
+                .iter_mut()
+                .find(|active| active.effect == effect)
+            {
+                Some(std::mem::replace(existing, new_active.clone()))
+            } else if self.active_device.is_none() {
+                self.active_device = Some(new_active.clone());
+                None
+            } else {
+                if self.additional_active_devices.len() >= 20 {
+                    return Err(invalid("Too many simultaneous activated items."));
+                }
+                self.additional_active_devices.push(new_active.clone());
+                None
+            };
+            self.energy -= activation_cost;
             if let Err(error) = self.checkpoint_session(true) {
                 self.energy = previous_energy;
                 self.active_device = previous_active;
+                self.additional_active_devices = previous_additional;
                 return Err(error);
             }
             self.refresh_equipment()?;
-            self.publish_active_device_presentation(duration_ms);
+            if let Some(old) = &replaced {
+                if old.visual_asset(&self.items).is_some() {
+                    self.pending
+                        .push(packets::remove_effect(old.visual_id(self.player_id())));
+                }
+            }
+            self.publish_active_device_presentation();
+            self.publish_active_device_visual(&new_active);
             self.pending.push(packets::message(&format!(
-                "{} active for {} seconds.",
+                "{} {} for {} seconds.",
                 effect.label(),
+                if replaced.is_some() {
+                    "renewed"
+                } else {
+                    "active"
+                },
                 duration_ms / 1000
             )));
         }
@@ -738,16 +812,32 @@ impl PlayerSession {
 
     /// Expire the self-buff before this tick's weapon firing is simulated.
     pub(super) fn advance_active_device(&mut self) -> io::Result<()> {
-        if self.active_device.as_ref().is_some_and(|active| {
-            !active.valid_for(&self.inventory, &self.items, crate::resources::unix_ms())
-                || self.hull <= 0.
-                || self.sector.station.is_some()
-        }) {
-            let active = self.active_device.take().unwrap();
-            self.checkpoint_session(true)?;
-            self.refresh_equipment()?;
-            self.pending
-                .push(packets::ship_active_buff(self.player_id(), "", 0));
+        let now = crate::resources::unix_ms();
+        let invalid = |active: &ActiveDevice| {
+            !active.valid_for(&self.inventory, &self.items, now) || self.hull <= 0.
+        };
+        let mut ended = Vec::new();
+        if self.active_device.as_ref().is_some_and(invalid) {
+            ended.push(self.active_device.take().unwrap());
+        }
+        self.additional_active_devices.retain(|active| {
+            if invalid(active) {
+                ended.push(active.clone());
+                false
+            } else {
+                true
+            }
+        });
+        if ended.is_empty() {
+            return Ok(());
+        }
+        if self.active_device.is_none() && !self.additional_active_devices.is_empty() {
+            self.active_device = Some(self.additional_active_devices.remove(0));
+        }
+        self.checkpoint_session(true)?;
+        self.refresh_equipment()?;
+        self.publish_active_device_presentation();
+        for active in ended {
             if active.visual_asset(&self.items).is_some() {
                 self.pending
                     .push(packets::remove_effect(active.visual_id(self.player_id())));
@@ -762,13 +852,22 @@ impl PlayerSession {
 
     /// Reaffirm a durable self-buff after a transport session resumes.
     pub(super) fn publish_active_device_resume(&mut self) {
-        if let Some(active) = &self.active_device {
+        if self.active_device.is_some() || !self.additional_active_devices.is_empty() {
+            self.publish_active_device_presentation();
+        }
+        for active in self
+            .active_device
+            .iter()
+            .chain(&self.additional_active_devices)
+            .cloned()
+            .collect::<Vec<_>>()
+        {
             let remaining = active
                 .expires_at_ms
                 .saturating_sub(crate::resources::unix_ms())
                 .div_ceil(1000);
             let label = active.effect.label();
-            self.publish_active_device_presentation(remaining * 1000);
+            self.publish_active_device_visual(&active);
             self.pending.push(packets::message(&format!(
                 "{label} active for {remaining} seconds."
             )));
@@ -779,6 +878,29 @@ impl PlayerSession {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Every granted PW self-device has an implemented activation rule.
+    #[test]
+    fn published_pw_self_devices_have_supported_activation_rules() {
+        let items = ItemCatalog::load().unwrap();
+        let config = crate::demo_accounts::load_demo_accounts().unwrap();
+        let pw = config
+            .accounts
+            .iter()
+            .find(|entry| entry.code == "pw")
+            .unwrap();
+        for grant in &pw.armory {
+            let item = items.get(grant.template).unwrap();
+            if grant.effect == "Reroute Shield Energy (Instant)"
+                || grant.effect == "Scan Boost (Activated)"
+            {
+                continue;
+            }
+            assert!(device_effect(item).is_some(), "item {}", grant.template);
+        }
+        assert!(reroute_shield_energy(items.get(2391).unwrap()).is_some());
+        assert!(crate::peer_buffs::friendly_offer(items.get(1828).unwrap()).is_some());
+    }
 
     /// Every public reactor or device variant retains the bounded instant rule.
     #[test]

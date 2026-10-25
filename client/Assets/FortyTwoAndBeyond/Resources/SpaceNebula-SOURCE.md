@@ -11,4 +11,6 @@ Prompt:
 > Lighting/mood: low-key, cinematic, realistic, deep contrast.  
 > Constraints: background only; no ships, spacecraft, planets, UI, text, logos, symbols, borders, watermark, or large white streaks. The image should remain subtle behind foreground actors.
 
-The `SpaceSky` shader maps this image onto the background and blends the panorama seam. Procedural stars remain as a restrained overlay.
+The `SpaceSky` shader uses this image only when the generated
+`ProceduralSpace.png` panorama is absent. The primary panorama is created by
+`client/Tools/generate_space_sky.py` and includes its stars and nebula offline.

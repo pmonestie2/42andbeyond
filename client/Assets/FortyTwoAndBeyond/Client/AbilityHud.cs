@@ -36,10 +36,15 @@ namespace FortyTwoAndBeyond.Client
         private readonly AbilityDefinition[] catalog;
         private readonly Dictionary<uint, string> skillNames = new Dictionary<uint, string>();
         private readonly int[] slots = { -1, -1, -1, -1, -1, -1 };
+        private GUIStyle quickbarName, abilityName, abilityMeta;
         private Vector2 scroll;
         private bool open;
         private bool trainingTab;
+        private bool equipmentTab;
         private int assigningSlot = -1;
+        private int dragBinding = int.MinValue;
+        private bool draggingAbility, dragCanActivate;
+        private Vector2 dragStart;
         private uint slotOwner;
         private uint pendingSupportTarget;
         private float pendingSupportAt;
@@ -76,8 +81,8 @@ namespace FortyTwoAndBeyond.Client
             Vector2 point = new Vector2(Input.mousePosition.x / flightHud.Scale,
                 (Screen.height - Input.mousePosition.y) / flightHud.Scale);
             return ButtonRect().Contains(point) ||
-                (open ? PanelRect().Contains(point) :
-                    client.CurrentSnapshot?.Station == null && QuickbarRect().Contains(point));
+                (open && PanelRect().Contains(point)) ||
+                client.CurrentSnapshot?.Station == null && QuickbarRect().Contains(point);
         }
 
         /// <returns>Rect: Bounds of the ability panel's persistent toolbar button.</returns>
@@ -90,19 +95,122 @@ namespace FortyTwoAndBeyond.Client
         /// <returns>Rect: Bounds of the scrollable ability panel.</returns>
         private Rect PanelRect()
         {
-            float height = Mathf.Min(600, CanvasHeight - 145);
+            float height = Mathf.Min(600, CanvasHeight - 220);
             return new Rect((CanvasWidth - 520) * .5f, 82, 520, height);
         }
 
         /// <returns>Rect: Bounds of the six flight ability slots.</returns>
         private Rect QuickbarRect()
-        { return new Rect((CanvasWidth - 560) * .5f, CanvasHeight - 112, 560, 60); }
+        { return new Rect((CanvasWidth - 720) * .5f, CanvasHeight - 117, 720, 68); }
+
+        /// <returns>Vector2: Pointer in the HUD's scaled, top-left canvas coordinates.</returns>
+        private Vector2 CanvasPointer()
+        { return new Vector2(Input.mousePosition.x / flightHud.Scale,
+            (Screen.height - Input.mousePosition.y) / flightHud.Scale); }
+
+        /// <returns>int: Quick bar slot under the pointer, or minus one.</returns>
+        private int QuickbarSlotAt(Vector2 point)
+        {
+            Rect bar = QuickbarRect();
+            for (int i = 0; i < slots.Length; i++)
+                if (new Rect(bar.x + 9 + i * 118, bar.y + 8, 110, 52).Contains(point)) return i;
+            return -1;
+        }
+
+        /// <summary>Save one per-character ability or equipped device assignment.</summary>
+        private void BindSlot(int slot, int binding)
+        {
+            slots[slot] = binding;
+            PlayerPrefs.SetInt($"42andBeyond.ability.{slotOwner}.{slot}", binding);
+            PlayerPrefs.Save(); assigningSlot = -1;
+        }
+
+        /// <returns>int: A device template encoded apart from existing ability IDs and empty slots.</returns>
+        private static int DeviceBinding(uint template)
+        { return -(int)template - 2; }
+
+        /// <returns>ItemView: The currently mounted and activatable device for a saved binding.</returns>
+        private static ItemView BoundDevice(Snapshot snapshot, int binding)
+        {
+            if (snapshot == null || binding >= -1 || binding == int.MinValue) return null;
+            uint template = (uint)(-binding - 2);
+            for (int slot = 0; slot < snapshot.Mounted.Length; slot++)
+            {
+                ItemView item = snapshot.Mounted[slot];
+                if (item?.Template == template && DeviceEffects.MountedSlot(
+                    item.ActivationLabel, item.Type, slot, snapshot.DeviceMounts)) return item;
+            }
+            return null;
+        }
+
+        /// <summary>Activate a saved ability or the matching currently mounted device.</summary>
+        private void ActivateBinding(int binding, Snapshot snapshot)
+        {
+            if (binding < -1)
+            {
+                ItemView device = BoundDevice(snapshot, binding);
+                if (device != null) client.ActivateDevice(device.Slot);
+                return;
+            }
+            if (binding < 0 || !snapshot.AvailableAbilities.Contains((uint)binding)) return;
+            if (!AbilityTargets.Directed((uint)binding) && SupportTargetPending(snapshot) ||
+                binding == 125 && !CrewRecipientSelected(snapshot)) return;
+            ActivateForSelectedTarget((uint)binding, snapshot);
+        }
+
+        /// <summary>Finish a row click or drag using the pointer's screen position.</summary>
+        private void HandleAbilityDrag(Snapshot snapshot)
+        {
+            if (dragBinding == int.MinValue) return;
+            Event current = Event.current;
+            if (current.type == EventType.KeyDown && current.keyCode == KeyCode.Escape)
+            { dragBinding = int.MinValue; draggingAbility = false; current.Use(); return; }
+            if (current.type == EventType.MouseDrag)
+            {
+                if (Vector2.Distance(CanvasPointer(), dragStart) > 8) draggingAbility = true;
+                current.Use(); return;
+            }
+            if (current.type != EventType.MouseUp || current.button != 0) return;
+            int binding = dragBinding;
+            if (draggingAbility)
+            {
+                int slot = QuickbarSlotAt(CanvasPointer());
+                if (slot >= 0) BindSlot(slot, binding);
+            }
+            else if (assigningSlot >= 0) BindSlot(assigningSlot, binding);
+            else if (dragCanActivate) ActivateBinding(binding, snapshot);
+            dragBinding = int.MinValue; draggingAbility = false; current.Use();
+        }
+
+        /// <returns>string: Target and range guidance for a Hacking row.</returns>
+        private static string HackingTargetHint(Snapshot snapshot)
+        {
+            ShipActor target = snapshot.Mobs.FirstOrDefault(actor =>
+                actor.Id == snapshot.SelectedTargetId && actor.HasPosition);
+            if (target == null) return "SELECT A MECHANICAL MOB";
+            uint rank = snapshot.Skills.FirstOrDefault(skill => skill.Id == 26)?.Rank ?? 0;
+            float range = 1000 + 250 * Mathf.Max(0, (int)rank - 1);
+            float distance = snapshot.Position.Distance(target.Position);
+            return distance > range ? $"OUT OF RANGE  ·  {distance:0} / {range:0} M" :
+                $"TARGET {target.Name.ToUpperInvariant()}  ·  {distance:0} M";
+        }
+
+        /// <summary>Build readable text styles from the shared packaged HUD font.</summary>
+        private void EnsureStyles()
+        {
+            if (quickbarName != null) return;
+            quickbarName = new GUIStyle(flightHud.SectionStyle) { fontSize = 12, wordWrap = true };
+            abilityName = new GUIStyle(flightHud.BodyStyle) { fontSize = 16, wordWrap = true };
+            abilityMeta = new GUIStyle(flightHud.SmallStyle) { fontSize = 14, wordWrap = true };
+        }
 
         /// <summary>Load a separate ability layout for each server character identity.</summary>
         private void LoadSlots(uint playerId)
         {
             if (slotOwner == playerId) return;
-            slotOwner = playerId; assigningSlot = -1; pendingSupportTarget = 0; trainingTab = false;
+            slotOwner = playerId; assigningSlot = -1; pendingSupportTarget = 0;
+            trainingTab = equipmentTab = false;
+            dragBinding = int.MinValue; draggingAbility = false;
             for (int i = 0; i < slots.Length; i++)
                 slots[i] = PlayerPrefs.GetInt($"42andBeyond.ability.{playerId}.{i}", -1);
         }
@@ -112,10 +220,7 @@ namespace FortyTwoAndBeyond.Client
         {
             if (snapshot == null || index < 0 || index >= slots.Length) return;
             LoadSlots(snapshot.PlayerId);
-            if (slots[index] < 0 || !snapshot.AvailableAbilities.Contains((uint)slots[index])) return;
-            if (!AbilityTargets.Directed((uint)slots[index]) && SupportTargetPending(snapshot) ||
-                slots[index] == 125 && !CrewRecipientSelected(snapshot)) return;
-            ActivateForSelectedTarget((uint)slots[index], snapshot);
+            ActivateBinding(slots[index], snapshot);
         }
 
         /// <summary>Preserve the intended support recipient across target selection.</summary>
@@ -196,23 +301,38 @@ namespace FortyTwoAndBeyond.Client
         /// <summary>Show bound abilities and their configured keys during flight.</summary>
         private void Quickbar(Snapshot snapshot)
         {
+            EnsureStyles();
             Rect bar = QuickbarRect(); flightHud.Panel(bar);
             for (int i = 0; i < slots.Length; i++)
             {
                 int id = slots[i];
-                AbilityDefinition ability = catalog.FirstOrDefault(item => item.id == id);
+                AbilityDefinition ability = id >= 0 ? catalog.FirstOrDefault(item => item.id == id) : null;
+                ItemView device = BoundDevice(snapshot, id);
                 string key = client.Bindings.Display((ControlAction)((int)ControlAction.AbilityOne + i));
-                string name = ability == null ? "ASSIGN" : ability.name.Length > 9 ?
-                    ability.name.Substring(0, 8) + "…" : ability.name;
-                Rect slot = new Rect(bar.x + 9 + i * 90, bar.y + 10, 84, 40);
-                if (GUI.Button(slot, GUIContent.none, flightHud.ButtonStyle))
+                string name = ability?.name ?? device?.ActivationLabel ??
+                    (id < -1 ? "Equip device" : "Assign action");
+                Rect slot = new Rect(bar.x + 9 + i * 118, bar.y + 8, 110, 52);
+                if (GUI.Button(slot, new GUIContent("", name), flightHud.ButtonStyle))
                 {
-                    if (ability == null) { open = true; assigningSlot = i; }
+                    if (ability == null && device == null)
+                    { open = true; equipmentTab = id < -1; trainingTab = false; assigningSlot = i; }
                     else ActivateSlot(i, snapshot);
                 }
-                GUI.Label(new Rect(slot.x + 7, slot.y + 1, 70, 19), key, flightHud.BodyStyle);
-                GUI.Label(new Rect(slot.x + 7, slot.y + 20, 72, 17), name,
-                    ability == null ? flightHud.SmallStyle : flightHud.SectionStyle);
+                GUI.Label(new Rect(slot.x + 7, slot.y + 2, 96, 18), key, flightHud.SmallStyle);
+                GUI.Label(new Rect(slot.x + 7, slot.y + 20, 96, 31), name,
+                    ability == null && device == null ? flightHud.SmallStyle : quickbarName);
+                if (draggingAbility && QuickbarSlotAt(CanvasPointer()) == i)
+                    GUI.Box(new Rect(slot.x + 1, slot.y + 1, slot.width - 2, slot.height - 2),
+                        GUIContent.none, flightHud.SectionStyle);
+            }
+            if (draggingAbility)
+            {
+                AbilityDefinition dragged = dragBinding >= 0 ?
+                    catalog.FirstOrDefault(item => item.id == dragBinding) : null;
+                ItemView device = BoundDevice(snapshot, dragBinding);
+                Vector2 point = CanvasPointer();
+                GUI.Label(new Rect(point.x + 14, point.y - 15, 195, 34),
+                    dragged?.name ?? device?.ActivationLabel ?? "Action", flightHud.BodyStyle);
             }
         }
 
@@ -303,37 +423,82 @@ namespace FortyTwoAndBeyond.Client
                 client.Status, flightHud.SmallStyle);
         }
 
+        /// <summary>Offer only currently mounted devices with server-supported activation effects.</summary>
+        private void DrawEquipment(Snapshot snapshot, Rect panel)
+        {
+            GUILayout.BeginArea(new Rect(panel.x + 18, panel.y + 300,
+                panel.width - 36, panel.height - 349));
+            scroll = GUILayout.BeginScrollView(scroll);
+            int shown = 0;
+            for (int slot = 0; slot < snapshot.Mounted.Length; slot++)
+            {
+                ItemView item = snapshot.Mounted[slot];
+                if (item == null || !DeviceEffects.MountedSlot(item.ActivationLabel,
+                    item.Type, slot, snapshot.DeviceMounts)) continue;
+                shown++;
+                int binding = DeviceBinding(item.Template);
+                Rect row = GUILayoutUtility.GetRect(0, 56, GUILayout.ExpandWidth(true),
+                    GUILayout.Height(56));
+                GUI.Box(row, new GUIContent("", item.Name), flightHud.ButtonStyle);
+                if (GUI.enabled && Event.current.type == EventType.MouseDown &&
+                    Event.current.button == 0 && row.Contains(Event.current.mousePosition))
+                {
+                    dragBinding = binding; dragStart = CanvasPointer();
+                    dragCanActivate = true; draggingAbility = false;
+                    Event.current.Use();
+                }
+                GUI.Label(new Rect(row.x + 12, row.y + 5, row.width - 24, 24),
+                    item.ActivationLabel, abilityName);
+                GUI.Label(new Rect(row.x + 12, row.y + 31, row.width - 24, 20),
+                    item.Name + "  ·  MOUNT " + (slot + 1), abilityMeta);
+            }
+            if (shown == 0)
+                GUILayout.Label("No activatable equipment is mounted on this ship.",
+                    flightHud.SmallStyle);
+            GUILayout.EndScrollView(); GUILayout.EndArea();
+        }
+
         /// <summary>Show only abilities that this character received in native RPG packets.</summary>
         public void Draw(Snapshot snapshot)
         {
-            if (snapshot == null) { open = false; return; }
+            if (snapshot == null) { open = false; dragBinding = int.MinValue; return; }
+            EnsureStyles();
             LoadSlots(snapshot.PlayerId);
-            if (snapshot.Station != null) { DrawDockedTraining(snapshot); return; }
+            if (snapshot.Station != null)
+            { dragBinding = int.MinValue; draggingAbility = false; DrawDockedTraining(snapshot); return; }
+            if (!GUI.enabled) { dragBinding = int.MinValue; draggingAbility = false; }
+            else HandleAbilityDrag(snapshot);
             if (GUI.Button(ButtonRect(), open ? "Close skills" : "Skills", flightHud.ButtonStyle))
                 open = !open;
             if (!open) { Quickbar(snapshot); return; }
             Rect panel = PanelRect(); flightHud.Panel(panel);
             GUI.Label(new Rect(panel.x + 18, panel.y + 15, 380, 28),
-                trainingTab ? "CLASS SKILLS" : "CLASS ABILITIES", flightHud.BodyStyle);
+                trainingTab ? "CLASS SKILLS" : equipmentTab ? "EQUIPPED DEVICES" :
+                "CLASS ABILITIES", flightHud.BodyStyle);
             if (GUI.Button(new Rect(panel.xMax - 48, panel.y + 12, 30, 28), "×", flightHud.ButtonStyle))
             { open = false; return; }
             GUI.Label(new Rect(panel.x + 18, panel.y + 42, panel.width - 36, 20),
-                assigningSlot < 0 ? "Select a target first for combat or group abilities." :
-                $"Choose an ability below for slot {assigningSlot + 1}.", flightHud.SmallStyle);
+                assigningSlot < 0 ? "Drag an action to the bottom bar · click a row to use it." :
+                $"Choose an action for slot {assigningSlot + 1}.", flightHud.SmallStyle);
             for (int i = 0; i < slots.Length; i++)
             {
                 int id = slots[i];
-                AbilityDefinition bound = catalog.FirstOrDefault(item => item.id == id);
-                string label = client.Bindings.Display((ControlAction)((int)ControlAction.AbilityOne + i)) + "  " +
-                    (bound == null ? "Empty" : bound.name.Length > 8 ? bound.name.Substring(0, 8) + "…" : bound.name);
+                AbilityDefinition bound = id >= 0 ? catalog.FirstOrDefault(item => item.id == id) : null;
+                ItemView device = BoundDevice(snapshot, id);
+                string label = client.Bindings.Display((ControlAction)((int)ControlAction.AbilityOne + i)) +
+                    (bound == null && device == null ? "  +" : "  ●");
                 if (GUI.Button(new Rect(panel.x + 18 + i * 81, panel.y + 68, 77, 37),
-                    label, flightHud.ButtonStyle)) assigningSlot = i;
+                    new GUIContent(label, bound?.name ?? device?.ActivationLabel ?? "Empty slot"),
+                    flightHud.ButtonStyle))
+                    assigningSlot = i;
             }
             DrawExperience(panel, snapshot.Experience);
             if (GUI.Button(new Rect(panel.x + 18, panel.y + 265, 132, 29), "ABILITIES",
-                flightHud.ButtonStyle)) { trainingTab = false; scroll = Vector2.zero; }
+                flightHud.ButtonStyle)) { trainingTab = equipmentTab = false; scroll = Vector2.zero; }
             if (GUI.Button(new Rect(panel.x + 158, panel.y + 265, 132, 29), "TRAINING",
-                flightHud.ButtonStyle)) { trainingTab = true; scroll = Vector2.zero; }
+                flightHud.ButtonStyle)) { trainingTab = true; equipmentTab = false; scroll = Vector2.zero; }
+            if (GUI.Button(new Rect(panel.x + 298, panel.y + 265, 132, 29), "EQUIPMENT",
+                flightHud.ButtonStyle)) { trainingTab = false; equipmentTab = true; scroll = Vector2.zero; }
             if (trainingTab)
             {
                 GUI.Label(new Rect(panel.x + 18, panel.y + 209, panel.width - 36, 35),
@@ -342,15 +507,26 @@ namespace FortyTwoAndBeyond.Client
                 DrawTraining(snapshot, panel);
                 GUI.Label(new Rect(panel.x + 18, panel.yMax - 43, panel.width - 36, 35),
                     client.Status, flightHud.SmallStyle);
+                Quickbar(snapshot);
                 return;
             }
             SupportTargetBar(snapshot, panel);
+            if (equipmentTab)
+            {
+                DrawEquipment(snapshot, panel);
+                Quickbar(snapshot);
+                GUI.Label(new Rect(panel.x + 18, panel.yMax - 43, panel.width - 36, 35),
+                    client.Status, flightHud.SmallStyle);
+                return;
+            }
             AbilityDefinition[] available = catalog.Where(item => item.id >= 0 && snapshot.AvailableAbilities.Contains((uint)item.id))
                 .OrderBy(item => item.name).ToArray();
             GUILayout.BeginArea(new Rect(panel.x + 18, panel.y + 300, panel.width - 36, panel.height - 349));
             scroll = GUILayout.BeginScrollView(scroll);
             if (available.Length == 0)
-                GUILayout.Label("Waiting for class abilities from the server…", flightHud.SmallStyle);
+                GUILayout.Label(snapshot.AvailableAbilities.Length == 0 ?
+                    "Waiting for class abilities from the server…" :
+                    "Ability display catalog is out of date.", flightHud.SmallStyle);
             foreach (AbilityDefinition ability in available)
             {
                 snapshot.AbilityCooldownSeconds.TryGetValue((uint)ability.skill, out float recovery);
@@ -359,27 +535,39 @@ namespace FortyTwoAndBeyond.Client
                     "Jumpstart an incapacitated ship. Energy depends on its hull upgrade. " +
                     "Charge 5 s · No cooldown · Hull restored: 10% per trained skill level." :
                     $"{ability.description}\nEnergy {ability.energy:0} · Charge {ability.charge:0.#} s · Cooldown {ability.cooldown:0.#} s · Range {ability.range} m";
-                string label = recovery > 0 ? $"{ability.name}  ·  READY IN {recovery:0.#} S" :
+                string status = recovery > 0 ? $"READY IN {recovery:0.#} S" :
                     charging && snapshot.CastingAbilityId == (uint)ability.id ?
-                    $"{ability.name}  ·  CHARGING {snapshot.CastRemainingSeconds:0.#} S" :
-                    ability.id == 65 ? "Jumpstart  ·  ENERGY DEPENDS ON TARGET" :
-                    $"{ability.name}  ·  RANK {ability.rank}  ·  {ability.energy:0} ENERGY";
-                GUI.enabled = assigningSlot >= 0 || recovery <= 0 && !charging &&
+                    $"CHARGING {snapshot.CastRemainingSeconds:0.#} S" :
+                    ability.id == 65 ? "ENERGY DEPENDS ON TARGET" :
+                    $"RANK {ability.rank}  ·  {ability.energy:0} ENERGY";
+                if (ability.kind == "hacking" && recovery <= 0 && !charging)
+                    status = HackingTargetHint(snapshot);
+                float rowWidth = panel.width - 52;
+                float nameHeight = Mathf.Max(22,
+                    abilityName.CalcHeight(new GUIContent(ability.name), rowWidth - 24));
+                float metaHeight = Mathf.Max(20,
+                    abilityMeta.CalcHeight(new GUIContent(status), rowWidth - 24));
+                float rowHeight = nameHeight + metaHeight + 16;
+                bool canActivate = recovery <= 0 && !charging &&
                     (AbilityTargets.Directed((uint)ability.id) || !SupportTargetPending(snapshot)) &&
                     (ability.id != 125 || CrewRecipientSelected(snapshot));
-                if (GUILayout.Button(new GUIContent(label, description), flightHud.ButtonStyle, GUILayout.Height(34)))
+                Rect row = GUILayoutUtility.GetRect(0, rowHeight, GUILayout.ExpandWidth(true),
+                    GUILayout.Height(rowHeight));
+                GUI.Box(row, new GUIContent("", description), flightHud.ButtonStyle);
+                if (GUI.enabled && Event.current.type == EventType.MouseDown && Event.current.button == 0 &&
+                    row.Contains(Event.current.mousePosition))
                 {
-                    if (assigningSlot >= 0)
-                    {
-                        slots[assigningSlot] = ability.id;
-                        PlayerPrefs.SetInt($"42andBeyond.ability.{slotOwner}.{assigningSlot}", ability.id);
-                        PlayerPrefs.Save(); assigningSlot = -1;
-                    }
-                    else ActivateForSelectedTarget((uint)ability.id, snapshot);
+                    dragBinding = ability.id; dragStart = CanvasPointer();
+                    dragCanActivate = canActivate; draggingAbility = false;
+                    Event.current.Use();
                 }
-                GUI.enabled = true;
+                GUI.Label(new Rect(row.x + 12, row.y + 5, row.width - 24, nameHeight),
+                    ability.name, abilityName);
+                GUI.Label(new Rect(row.x + 12, row.y + nameHeight + 6,
+                    row.width - 24, metaHeight), status, abilityMeta);
             }
             GUILayout.EndScrollView(); GUILayout.EndArea();
+            Quickbar(snapshot);
             string tooltip = GUI.tooltip;
             GUI.Label(new Rect(panel.x + 18, panel.yMax - 43, panel.width - 36, 35),
                 string.IsNullOrEmpty(tooltip) ? client.Status : tooltip, flightHud.SmallStyle);

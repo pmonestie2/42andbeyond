@@ -12,11 +12,24 @@ python3 server/tools/run_server.py --bind 127.0.0.1
 python3 server/tools/create_account.py
 ```
 
+For the installed Mac server, use `./serverctl status`, `./serverctl stop`, and
+`./serverctl start` (`./serverctrl` is an alias). Start shows the red banner and
+follows the timestamped server log. Ctrl+C closes the log view while the server
+keeps running. Use `./serverctl start --no-follow` to return immediately. Start
+reuses the last recorded bind address, content, state, and executable. The
+default first start binds to loopback; use
+`./serverctl start --bind 192.168.47.1` for the local Windows VM. The command
+waits for readiness, prints the PID and log path, and never stops an unrelated
+process. The server log is `server/logs/server.log`.
+
 For a stopped server, seed the nine public class demos with
 `server/target/debug/beyond-server --seed-demo-accounts --state-dir server/state`.
 The accounts are `pte`, `ptt`, `pts`, `pjd`, `pjs`, `pje`, `ppw`, `ppp`, `pps`; each password matches its
 username. Rerunning the command preserves their inventory and credits. See
 `docs/DEMO_ACCOUNTS.md` for the class list and roster protocol.
+The editable account and gear table is `data/demo_accounts.json`; the server
+reads it at startup. Each account's credentials, inventory and character state
+remain separate JSON files under `state/accounts/`.
 
 `target/debug/beyond-server` is the executable (`.exe` on Windows). It accepts
 `--bind`, `--content`, `--state-dir`, `--check`, and `--create-account`; run

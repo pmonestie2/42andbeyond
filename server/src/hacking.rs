@@ -1,4 +1,4 @@
-//! Terran Hacking tiers and deterministic hostile-system attempt planning.
+//! Terran Hacking tiers and deterministic MOB-system attempt planning.
 //!
 //! PlayerSkills.h and PlayerClass.cpp verify native IDs and effect descriptor
 //! 193. The executable AHacking handler is absent from the pinned C++ tree.

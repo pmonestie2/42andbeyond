@@ -107,6 +107,12 @@ namespace FortyTwoAndBeyond.Client
         private ushort peerDescriptor;
         private readonly LineRenderer[] recipientRings = new LineRenderer[2];
         private readonly uint[] recipientEffectIds = new uint[2];
+        private LineRenderer rallyFloor, rallyOrbit, rallyFront, rallyTrace, rallyBurst;
+        private readonly LineRenderer[] rallyLines = new LineRenderer[5];
+        private Light rallyLight;
+        private uint rallyEffectId;
+        private ushort rallyDescriptor;
+        private float rallyStartedAt;
         private WarpPhase warpPhase;
         private bool warpArrived;
         private float warpChangedAt;
@@ -171,6 +177,7 @@ namespace FortyTwoAndBeyond.Client
             SetPeerBuff(snapshot.PeerBuff, snapshot.Station != null);
             SetResourceBuff(0, snapshot.ShieldBuff, snapshot.Station != null);
             SetResourceBuff(1, snapshot.ReactorBuff, snapshot.Station != null);
+            SetRallyBuff(snapshot.RallyBuff, snapshot.Station != null);
             foreach (ShotEvent shot in snapshot.Shots)
             {
                 if (shot.Sequence <= lastShotSequence) continue;
@@ -535,6 +542,135 @@ namespace FortyTwoAndBeyond.Client
             TickDeviceBuff();
             TickPeerBuff();
             TickResourceBuffs();
+            TickRallyBuff();
+        }
+
+        /// <returns>Color: The distinct luminous color of one server-published Rally tier.</returns>
+        private static Color RallyTint(ushort descriptor)
+        {
+            switch (descriptor)
+            {
+                case 333: return new Color(1f, .36f, .15f);
+                case 675: return new Color(.25f, .76f, 1f);
+                case 676: return new Color(1f, .72f, .17f);
+                default: return new Color(.7f, .46f, 1f);
+            }
+        }
+
+        /// <summary>Create a ship-local tactical field only for a confirmed Rally visual.</summary>
+        private void SetRallyBuff(DeviceBuffView buff, bool docked)
+        {
+            if (docked || buff == null || !buff.VisualActive ||
+                buff.VisualDescriptor != 333 && buff.VisualDescriptor != 675 &&
+                buff.VisualDescriptor != 676 && buff.VisualDescriptor != 327)
+            { ClearRallyBuff(); return; }
+            if (rallyFloor != null && rallyEffectId == buff.VisualEffectId &&
+                rallyDescriptor == buff.VisualDescriptor) return;
+            ClearRallyBuff();
+            rallyEffectId = buff.VisualEffectId;
+            rallyDescriptor = buff.VisualDescriptor;
+            rallyStartedAt = Time.unscaledTime;
+            Color tint = RallyTint(rallyDescriptor);
+            rallyFloor = Line("Rally tactical seal", .055f, tint, 65);
+            rallyOrbit = Line("Rally counter orbit", .025f, tint, 65);
+            rallyFront = Line("Rally forward crescent", .05f, tint, 33);
+            rallyTrace = Line("Rally traveling arc", .08f, tint, 17);
+            rallyBurst = Line("Rally activation pulse", .075f, tint, 65);
+            rallyLines[0] = rallyFloor; rallyLines[1] = rallyOrbit; rallyLines[2] = rallyFront;
+            rallyLines[3] = rallyTrace; rallyLines[4] = rallyBurst;
+            foreach (LineRenderer line in rallyLines)
+                if (line != null) { line.useWorldSpace = false; line.enabled = false; }
+            if (rallyFloor == null) return;
+            var source = new GameObject("Rally ship glow", typeof(Light));
+            source.transform.SetParent(player, false);
+            source.transform.localPosition = new Vector3(0, -.4f, .35f);
+            rallyLight = source.GetComponent<Light>();
+            rallyLight.type = LightType.Point;
+            rallyLight.color = tint;
+            rallyLight.range = 2.7f;
+            rallyLight.shadows = LightShadows.None;
+            rallyLight.renderMode = LightRenderMode.ForceVertex;
+        }
+
+        /// <summary>Animate a tier-specific seal below the ship and a crescent ahead of it.</summary>
+        private void TickRallyBuff()
+        {
+            if (rallyFloor == null || rallyOrbit == null || rallyFront == null ||
+                rallyTrace == null || rallyBurst == null) return;
+            float time = Time.unscaledTime;
+            float pulse = .78f + .22f * Mathf.Sin(time * (rallyDescriptor == 676 ? 7f : 3.5f));
+            Color tint = RallyTint(rallyDescriptor);
+            Vector3 center = player.position;
+            Quaternion orientation = player.rotation;
+            foreach (LineRenderer line in rallyLines)
+            { line.transform.position = center; line.transform.rotation = orientation; line.enabled = true; }
+            for (int point = 0; point < 65; point++)
+            {
+                float angle = point * Mathf.PI * 2f / 64f;
+                float shape = 1f;
+                if (rallyDescriptor == 333)
+                    shape += .075f * Mathf.Pow(Mathf.Abs(Mathf.Sin(angle * 8f - time * .8f)), 8f);
+                else if (rallyDescriptor == 675)
+                {
+                    float edge = Mathf.Repeat(angle + Mathf.PI / 6f, Mathf.PI / 3f) - Mathf.PI / 6f;
+                    shape = Mathf.Cos(Mathf.PI / 6f) / Mathf.Cos(edge);
+                }
+                else if (rallyDescriptor == 676)
+                    shape += .035f * Mathf.Sin(angle * 12f - time * 2.8f);
+                else
+                    shape += .065f * Mathf.Sin(angle * 5f - time * 1.5f);
+                float outer = 1.07f * shape;
+                rallyFloor.SetPosition(point, new Vector3(Mathf.Cos(angle) * outer,
+                    -.53f + .025f * Mathf.Sin(angle * 4f + time * 2f),
+                    Mathf.Sin(angle) * outer * .7f));
+                float innerAngle = angle - time * (rallyDescriptor == 676 ? 1.1f : .42f);
+                rallyOrbit.SetPosition(point, new Vector3(Mathf.Cos(innerAngle) * .79f,
+                    -.43f, Mathf.Sin(innerAngle) * .52f));
+                float age = time - rallyStartedAt;
+                float burstRadius = .45f + age * 1.45f;
+                rallyBurst.SetPosition(point, new Vector3(Mathf.Cos(angle) * burstRadius,
+                    -.55f, Mathf.Sin(angle) * burstRadius * .7f));
+            }
+            for (int point = 0; point < 33; point++)
+            {
+                float angle = -Mathf.PI * .5f + point * Mathf.PI / 32f;
+                float radius = rallyDescriptor == 675 ? .89f : .82f;
+                rallyFront.SetPosition(point, new Vector3(Mathf.Sin(angle) * radius,
+                    -.04f + Mathf.Cos(angle) * radius * .72f,
+                    .87f + .055f * Mathf.Sin(time * 2f + angle * 3f)));
+            }
+            for (int point = 0; point < 17; point++)
+            {
+                float angle = time * (rallyDescriptor == 676 ? 3.2f : 1.4f) + point * .85f / 16f;
+                rallyTrace.SetPosition(point, new Vector3(Mathf.Cos(angle) * 1.1f,
+                    -.49f, Mathf.Sin(angle) * .76f));
+            }
+            tint.a = (rallyDescriptor == 327 ? .23f : .36f) * pulse;
+            rallyFloor.startColor = rallyFloor.endColor = tint;
+            tint.a = .21f * pulse;
+            rallyOrbit.startColor = rallyOrbit.endColor = tint;
+            tint.a = (rallyDescriptor == 327 ? .32f : .53f) * pulse;
+            rallyFront.startColor = rallyFront.endColor = tint;
+            tint.a = .65f * pulse;
+            rallyTrace.startColor = rallyTrace.endColor = tint;
+            float burstFade = Mathf.Clamp01(1f - (time - rallyStartedAt) / 1.15f);
+            tint.a = .7f * burstFade;
+            rallyBurst.startColor = rallyBurst.endColor = tint;
+            rallyBurst.enabled = burstFade > 0;
+            if (rallyLight != null) rallyLight.intensity = (rallyDescriptor == 327 ? .45f : .8f) * pulse;
+        }
+
+        /// <summary>Remove the Rally field when its native visual ends or the scene resets.</summary>
+        private void ClearRallyBuff()
+        {
+            foreach (LineRenderer line in rallyLines)
+                if (line != null) Object.Destroy(line.gameObject);
+            for (int index = 0; index < rallyLines.Length; index++) rallyLines[index] = null;
+            if (rallyLight != null) Object.Destroy(rallyLight.gameObject);
+            rallyFloor = rallyOrbit = rallyFront = rallyTrace = rallyBurst = null;
+            rallyLight = null;
+            rallyEffectId = 0;
+            rallyDescriptor = 0;
         }
 
         /// <summary>Expand and fade only wreck-confirmed fragments around the former MOB.</summary>
@@ -1057,6 +1193,7 @@ namespace FortyTwoAndBeyond.Client
             ClearPeerBuff();
             ClearResourceBuff(0);
             ClearResourceBuff(1);
+            ClearRallyBuff();
             ClearWarp(); warpPhase = WarpPhase.Idle; warpArrived = false;
             driveSpeed = 0;
             for (int side = 0; side < 2; side++)

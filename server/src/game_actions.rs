@@ -1029,7 +1029,7 @@ impl GameState {
                     let message = format!("{}: {:.0}, {:.0}, {:.0}", session.sector.name, session.position[0], session.position[1], session.position[2]);
                     self.sessions.get_mut(&source).unwrap().message(&message);
                 }
-                "help" => self.sessions.get_mut(&source).unwrap().message("Commands: /who, /where, /invite NAME, /accept, /decline, /leave, /kick NAME, /disband, /ability NUMBER, /call SKILL NAME, /acceptcall, /declinecall, /jumpstart, /tow, /launch, /equip CARGO_SLOT MOUNT_SLOT, /unequip MOUNT_SLOT. Dev: /d_spawn [MOB_NAME_OR_ID] [COUNT], /d_jump SECTOR_NAME_OR_ID. Slots are zero-based."),
+                "help" => self.sessions.get_mut(&source).unwrap().message("Commands: /who, /where, /invite NAME, /accept, /decline, /leave, /kick NAME, /disband, /ability NUMBER, /call SKILL NAME, /acceptcall, /declinecall, /jumpstart, /tow, /launch, /equip CARGO_SLOT MOUNT_SLOT, /unequip MOUNT_SLOT. Dev: /d_spawn [MOB_NAME_OR_ID] [COUNT] [level=1..66], /d_jump SECTOR_NAME_OR_ID. Slots are zero-based."),
                 _ => return Err(invalid("Unknown local command. Use /help.")),
             }
             return Ok(());

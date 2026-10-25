@@ -16,29 +16,58 @@ use std::path::{Path, PathBuf};
 
 pub const CODES: [&str; 9] = ["te", "tt", "ts", "jd", "js", "je", "pw", "pp", "ps"];
 const ROSTER: &str = "demo_roster.local.json";
-const TURBO_WARRIOR: u32 = 2363;
-const TURBO_JENQUAI_EXPLORER: u32 = 2412;
-const TURBO_GENERAL: u32 = 2265;
 
-/// Public, class-legal devices whose implemented equipped or activated rules
-/// let each demo pilot exercise its trained space skills. Turbo stays mounted.
-const CLASS_DEVICES: [&[(u32, &str)]; 9] = [
-    &[(2341, "SKILL_RALLY")],
-    &[(2346, "SKILL_BEFRIEND")],
-    &[(2419, "STAT_TRACTORBEAM_SPEED")],
-    &[(6135, "SKILL_SUMMON"), (2492, "STAT_FOLD_SPACE_DISTANCE")],
-    &[
-        (2447, "SKILL_RECHARGE_SHIELDS"),
-        (2409, "Scan Boost (Activated)"),
-    ],
-    &[
-        (2491, "SKILL_ENVIRONMENT_SHIELD"),
-        (2484, "STAT_WORMHOLE_CREATION_TIME"),
-    ],
-    &[(2384, "SKILL_SELF_DESTRUCT")],
-    &[(2349, "SKILL_RECHARGE_SHIELDS")],
-    &[(2471, "SKILL_POWERDOWN"), (2468, "SKILL_GRAVITY_LINK")],
-];
+#[derive(Deserialize)]
+pub(crate) struct DemoItem {
+    pub template: u32,
+    pub effect: String,
+    #[serde(default)]
+    pub equip: bool,
+}
+
+#[derive(Deserialize)]
+pub(crate) struct DemoAccount {
+    pub code: String,
+    pub username: String,
+    pub character: String,
+    pub turbo: u32,
+    pub skill_devices: Vec<DemoItem>,
+    pub armory: Vec<DemoItem>,
+}
+
+#[derive(Deserialize)]
+pub(crate) struct DemoAccounts {
+    version: u32,
+    pub accounts: Vec<DemoAccount>,
+}
+
+/// Load and validate the editable demo account and equipment table.
+///
+/// Returns:
+///     DemoAccounts: Nine ordered account definitions from repository JSON.
+///
+/// Raises:
+///     io::Error: The table has invalid identities or an unsupported version.
+pub(crate) fn load_demo_accounts() -> io::Result<DemoAccounts> {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("data/demo_accounts.json");
+    let config: DemoAccounts = serde_json::from_slice(&fs::read(path)?)?;
+    if config.version != 1 || config.accounts.len() != CODES.len() {
+        return Err(invalid("Invalid demo account table version or size."));
+    }
+    for (expected, account) in CODES.iter().zip(&config.accounts) {
+        CharacterClass::parse(&account.code)?;
+        if account.code != *expected
+            || account.username != format!("p{expected}")
+            || account.character != format!("Play{}", expected.to_ascii_uppercase())
+            || account.skill_devices.is_empty()
+            || account.skill_devices.iter().any(|item| item.equip)
+            || account.armory.iter().any(|item| item.effect.is_empty())
+        {
+            return Err(invalid("Invalid demo account identity or equipment table."));
+        }
+    }
+    Ok(config)
+}
 
 #[derive(Serialize, Deserialize)]
 struct DemoRoster {
@@ -117,13 +146,13 @@ fn legacy_inventory(profile: &CharacterProfile, items: &ItemCatalog) -> io::Resu
 
 /// Returns:
 ///     u32: Class-legal public Turbo Weapons device template.
-fn turbo_template(profile: &CharacterProfile, items: &ItemCatalog) -> io::Result<u32> {
+fn turbo_template(
+    account: &DemoAccount,
+    profile: &CharacterProfile,
+    items: &ItemCatalog,
+) -> io::Result<u32> {
     let skills = SkillCatalog::for_profile(profile)?;
-    let id = match profile.class().0 {
-        0 | 3 | 6 => TURBO_WARRIOR,
-        5 => TURBO_JENQUAI_EXPLORER,
-        _ => TURBO_GENERAL,
-    };
+    let id = account.turbo;
     let template = items.get(id)?;
     if template.item_type != 11
         || template
@@ -141,11 +170,17 @@ fn turbo_template(profile: &CharacterProfile, items: &ItemCatalog) -> io::Result
 ///
 /// Returns:
 ///     Inventory: A class-legal revised demo loadout.
-fn expected_inventory(profile: &CharacterProfile, items: &ItemCatalog) -> io::Result<Inventory> {
+fn expected_inventory(
+    account: &DemoAccount,
+    profile: &CharacterProfile,
+    items: &ItemCatalog,
+) -> io::Result<Inventory> {
     let mut inventory = legacy_inventory(profile, items)?;
     let slot = 9 + profile.class().devices() - 1;
-    let old =
-        inventory.equipped[slot].replace(ItemInstance::stock(turbo_template(profile, items)?, 1));
+    let old = inventory.equipped[slot].replace(ItemInstance::stock(
+        turbo_template(account, profile, items)?,
+        1,
+    ));
     if let Some(old) = old {
         let vault_slot = inventory
             .vault
@@ -168,11 +203,12 @@ fn expected_inventory(profile: &CharacterProfile, items: &ItemCatalog) -> io::Re
 ///     io::Error: Every device mount has earned gear or no vault space remains.
 fn turbo_upgrade(
     current: &Inventory,
+    account: &DemoAccount,
     profile: &CharacterProfile,
     items: &ItemCatalog,
 ) -> io::Result<Option<Inventory>> {
     let class = profile.class();
-    let turbo_id = turbo_template(profile, items)?;
+    let turbo_id = turbo_template(account, profile, items)?;
     let mut mounts = 9..9 + class.devices();
     if mounts.clone().any(|slot| {
         current.equipped[slot]
@@ -203,6 +239,74 @@ fn turbo_upgrade(
     let skills = SkillCatalog::for_profile(profile)?;
     candidate.validate_for_profile(profile, items, &skills)?;
     Ok(Some(candidate))
+}
+
+/// Grant configured activated items without replacing custom equipment.
+fn grant_armory(
+    inventory: &mut Inventory,
+    baseline: &Inventory,
+    account: &DemoAccount,
+    profile: &CharacterProfile,
+    items: &ItemCatalog,
+    skills: &SkillCatalog,
+) -> io::Result<()> {
+    for grant in &account.armory {
+        let template_id = grant.template;
+        let template = items.get(template_id)?;
+        if !matches!(template.item_type, 7 | 11)
+            || template.activated.len() != 1
+            || template.activated[0].description != grant.effect
+            || !crate::player_session::supports_activated_item(template)
+        {
+            return Err(invalid("Demo activated item catalog changed."));
+        }
+        template
+            .check_requirements(profile, skills, [50, 50, 50])
+            .map_err(|error| {
+                invalid(&format!(
+                    "Demo {} item {template_id}: {error}",
+                    account.username
+                ))
+            })?;
+        if inventory
+            .equipped
+            .iter()
+            .chain(inventory.cargo.iter())
+            .chain(inventory.vault.iter())
+            .flatten()
+            .any(|item| item.template == template_id)
+        {
+            continue;
+        }
+        // Equip only into an unchanged starter mount, retaining the old item.
+        let stock_mount = (0..inventory.equipped.len()).find(|&slot| {
+            profile
+                .class()
+                .check_mount(slot, template.item_type)
+                .is_ok()
+                && inventory.equipped[slot] == baseline.equipped[slot]
+        });
+        if grant.equip && stock_mount.is_some() {
+            let slot = stock_mount.unwrap();
+            let Some(vault_slot) = inventory.vault.iter_mut().find(|slot| slot.is_none()) else {
+                crate::server_log!(
+                    "Demo {}: vault full; preserving starter mount {slot}.",
+                    account.username
+                );
+                continue;
+            };
+            *vault_slot = inventory.equipped[slot].take();
+            inventory.equipped[slot] = Some(ItemInstance::stock(template_id, 1));
+        } else if let Some(vault_slot) = inventory.vault.iter_mut().find(|slot| slot.is_none()) {
+            *vault_slot = Some(ItemInstance::stock(template_id, 1));
+        } else {
+            crate::server_log!(
+                "Demo {}: vault full; could not grant item {template_id}.",
+                account.username
+            );
+        }
+    }
+    Ok(())
 }
 
 /// Persist a new state file or resume a matching interrupted temp write.
@@ -236,31 +340,33 @@ fn save_new_bytes(path: &Path, bytes: &[u8]) -> io::Result<()> {
 ///     io::Error: A conflicting account or preexisting inventory needs review.
 pub fn seed(root: &Path) -> io::Result<Vec<String>> {
     let items = ItemCatalog::load()?;
+    let config = load_demo_accounts()?;
     let accounts = AccountDirectory::new(root);
     let published = roster_path(root).exists();
     if published {
         published_codes(root)?;
     }
     // Validate every class loadout before the first account file is created.
-    let planned = CODES
+    let planned = config
+        .accounts
         .iter()
-        .map(|code| {
-            let class = CharacterClass::parse(code)?;
+        .map(|account| {
+            let class = CharacterClass::parse(&account.code)?;
             let profile = CharacterProfile {
                 game_id: 0,
-                name: format!("Play{}", code.to_ascii_uppercase()),
+                name: account.character.clone(),
                 race: class.race(),
                 profession: class.profession(),
             };
             Ok((
-                *code,
+                account,
                 profile.clone(),
-                expected_inventory(&profile, &items)?,
+                expected_inventory(account, &profile, &items)?,
             ))
         })
         .collect::<io::Result<Vec<_>>>()?;
-    for (code, profile, inventory) in planned {
-        let username = format!("p{code}");
+    for (account, profile, inventory) in planned {
+        let username = account.username.clone();
         let existing = accounts
             .load()?
             .into_iter()
@@ -289,7 +395,7 @@ pub fn seed(root: &Path) -> io::Result<Vec<String>> {
         if path.exists() {
             let existing: Inventory = serde_json::from_slice(&fs::read(&path)?)?;
             if published {
-                if let Some(candidate) = turbo_upgrade(&existing, &profile, &items)? {
+                if let Some(candidate) = turbo_upgrade(&existing, account, &profile, &items)? {
                     crate::durable_json::replace(&path, &candidate)?;
                 }
             } else {
@@ -306,7 +412,11 @@ pub fn seed(root: &Path) -> io::Result<Vec<String>> {
     if !published {
         let roster = DemoRoster {
             version: 1,
-            codes: CODES.iter().map(|code| (*code).to_owned()).collect(),
+            codes: config
+                .accounts
+                .iter()
+                .map(|account| account.code.clone())
+                .collect(),
         };
         let path = roster_path(root);
         save_new_bytes(&path, &serde_json::to_vec_pretty(&roster)?)?;
@@ -327,13 +437,19 @@ pub fn upgrade_published_devices(root: &Path) -> io::Result<Vec<String>> {
         return Ok(Vec::new());
     }
     let items = ItemCatalog::load()?;
+    let config = load_demo_accounts()?;
     let accounts = AccountDirectory::new(root).load()?;
     let mut changed = Vec::new();
     for code in published {
-        let username = format!("p{code}");
+        let account = config
+            .accounts
+            .iter()
+            .find(|entry| entry.code == code)
+            .ok_or_else(|| invalid("Published demo account is absent from the table."))?;
+        let username = &account.username;
         let stored = accounts
             .iter()
-            .find(|entry| entry.account.username == username)
+            .find(|entry| entry.account.username == username.as_str())
             .ok_or_else(|| invalid("Published demo account disappeared."))?;
         let profile = &stored.account.character;
         let skills = SkillCatalog::for_profile(profile)?;
@@ -344,18 +460,20 @@ pub fn upgrade_published_devices(root: &Path) -> io::Result<Vec<String>> {
         current.validate_for_profile(profile, &items, &skills)?;
         let baseline = legacy_inventory(profile, &items)?;
         let mut candidate = current.clone();
-        for &(template_id, expected_effect) in CLASS_DEVICES[profile.class().0] {
+        for grant in &account.skill_devices {
+            let template_id = grant.template;
+            let expected_effect = &grant.effect;
             let template = items.get(template_id)?;
             if template.item_type != 11
                 || !template.equipped.iter().any(|effect| {
                     effect
                         .modifiers
                         .iter()
-                        .any(|modifier| modifier.stat == expected_effect)
+                        .any(|modifier| modifier.stat == expected_effect.as_str())
                 }) && !template
                     .activated
                     .iter()
-                    .any(|effect| effect.description == expected_effect)
+                    .any(|effect| effect.description == expected_effect.as_str())
             {
                 return Err(invalid(
                     "Demo skill device no longer matches public catalog.",
@@ -408,6 +526,7 @@ pub fn upgrade_published_devices(root: &Path) -> io::Result<Vec<String>> {
             }
             candidate.equipped[slot] = Some(ItemInstance::stock(template_id, 1));
         }
+        grant_armory(&mut candidate, &baseline, account, profile, &items, &skills)?;
         if candidate != original {
             candidate.validate_for_profile(profile, &items, &skills)?;
             crate::durable_json::replace(&path, &candidate)?;
@@ -427,29 +546,27 @@ pub fn published_codes(root: &Path) -> io::Result<Vec<String>> {
         return Ok(Vec::new());
     }
     let marker: DemoRoster = serde_json::from_slice(&fs::read(path)?)?;
+    let config = load_demo_accounts()?;
     if marker.version != 1
         || marker.codes
-            != CODES
+            != config
+                .accounts
                 .iter()
-                .map(|code| (*code).to_owned())
+                .map(|account| account.code.clone())
                 .collect::<Vec<_>>()
     {
         return Err(invalid("Invalid published demo roster."));
     }
     let accounts = AccountDirectory::new(root).load()?;
     let mut result = Vec::new();
-    for code in CODES {
-        if !marker.codes.iter().any(|entry| entry == code) {
-            continue;
-        }
-        let username = format!("p{code}");
-        let class = CharacterClass::parse(code)?;
+    for account in &config.accounts {
+        let class = CharacterClass::parse(&account.code)?;
         if accounts.iter().any(|stored| {
-            stored.account.username == username
+            stored.account.username == account.username
                 && stored.account.character.class() == class
                 && stored.directory.join("inventory.json").is_file()
         }) {
-            result.push(code.to_owned());
+            result.push(account.code.clone());
         }
     }
     Ok(result)
@@ -511,16 +628,22 @@ mod tests {
                 inventory.equipped[9..].iter().flatten().count(),
                 stored.account.character.class().devices()
             );
-            let turbo = turbo_template(&stored.account.character, &items).unwrap();
+            let account = load_demo_accounts()
+                .unwrap()
+                .accounts
+                .into_iter()
+                .find(|account| account.code == code)
+                .unwrap();
+            let turbo = turbo_template(&account, &stored.account.character, &items).unwrap();
             assert!(inventory.equipped[9..]
                 .iter()
                 .flatten()
                 .any(|item| item.template == turbo));
-            for &(template, _) in CLASS_DEVICES[stored.account.character.class().0] {
+            for grant in &account.skill_devices {
                 assert!(inventory.equipped[9..]
                     .iter()
                     .flatten()
-                    .any(|item| item.template == template));
+                    .any(|item| item.template == grant.template));
             }
             if stored.account.character.race != 1 {
                 assert!(stats.weapons.iter().all(|weapon| weapon.rounds > 0));
@@ -561,7 +684,8 @@ mod tests {
         fs::write(&te_inventory, serde_json::to_vec(&spent).unwrap()).unwrap();
         assert_eq!(seed(&root).unwrap(), CODES.map(str::to_owned));
         let after: Inventory = serde_json::from_slice(&fs::read(&te_inventory).unwrap()).unwrap();
-        let turbo = turbo_template(&te_profile, &items).unwrap();
+        let config = load_demo_accounts().unwrap();
+        let turbo = turbo_template(&config.accounts[0], &te_profile, &items).unwrap();
         let slot = 9 + te_profile.class().devices() - 1;
         assert_eq!(after.equipped[slot].as_ref().unwrap().template, turbo);
         assert!(after
@@ -667,6 +791,52 @@ mod tests {
             .unwrap()
             .contains(&"te".to_owned()));
         assert_eq!(fs::read(&te_path).unwrap(), parked_bytes);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    /// The published PW receives activatable choices without losing owned gear.
+    #[test]
+    fn pw_activatable_upgrade_equips_projectile_handling_and_keeps_owned_items() {
+        let root =
+            std::env::temp_dir().join(format!("beyond-demo-pw-actives-{}", rand::random::<u64>()));
+        seed(&root).unwrap();
+        let path = root.join("accounts/ppw/inventory.json");
+        let mut before: Inventory = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        let equipped_before = before.equipped[9..12].to_vec();
+        before.credits = 123;
+        fs::write(&path, serde_json::to_vec(&before).unwrap()).unwrap();
+        assert!(upgrade_published_devices(&root)
+            .unwrap()
+            .contains(&"pw".to_owned()));
+        let after: Inventory = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        assert!(after.equipped[9..12]
+            .iter()
+            .flatten()
+            .any(|item| item.template == 2389));
+        for item in equipped_before.into_iter().flatten() {
+            assert!(after
+                .equipped
+                .iter()
+                .chain(after.vault.iter())
+                .flatten()
+                .any(|owned| owned == &item));
+        }
+        assert_eq!(after.credits, 123);
+        let config = load_demo_accounts().unwrap();
+        for grant in &config.accounts[6].armory {
+            assert!(after
+                .equipped
+                .iter()
+                .chain(after.cargo.iter())
+                .chain(after.vault.iter())
+                .flatten()
+                .any(|item| item.template == grant.template));
+        }
+        let saved = fs::read(&path).unwrap();
+        assert!(!upgrade_published_devices(&root)
+            .unwrap()
+            .contains(&"pw".to_owned()));
+        assert_eq!(fs::read(&path).unwrap(), saved);
         fs::remove_dir_all(root).unwrap();
     }
 

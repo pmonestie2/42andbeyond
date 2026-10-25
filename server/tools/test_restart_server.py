@@ -164,6 +164,16 @@ class ReadinessTests(unittest.TestCase):
         registered.assert_not_called()
 
 
+@unittest.skipIf(os.name == 'nt', 'POSIX process table lifecycle')
+class PosixIdentityTests(unittest.TestCase):
+    def test_zombie_is_exited_even_when_ps_keeps_its_pid(self) -> None:
+        """An unreaped child must not block a new owned server start."""
+        dead = Mock(returncode=0,
+            stdout='Sun Oct 25 09:55:25 2026 Z    <defunct>\n')
+        with patch('restart_server.subprocess.run', return_value=dead):
+            self.assertIsNone(process_identity(41865))
+
+
 @unittest.skipUnless(os.name == 'nt','Windows process handle lifecycle')
 class RestartIdentityTests(unittest.TestCase):
     def test_query_failure_after_exit_is_terminal_only_when_handle_is_signaled(self) -> None:

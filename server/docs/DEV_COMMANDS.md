@@ -9,6 +9,7 @@ they do not require a skill, charge energy or enforce ordinary travel range.
 | `/d_spawn` | Spawn one public Achilles Drone (template 46), 1,000 metres ahead. |
 | `/d_spawn The Controller` | Spawn the chosen public MOB ahead of the ship. |
 | `/d_spawn 46 3` | Spawn three instances of template 46 in a separated row ahead. |
+| `/d_spawn 46 3 level=50` | Spawn three level 50 Achilles Drones with level-scaled shields and combat stats. |
 | `/d_jump Blackbeard's Wake` | Transfer to the named hosted sector. |
 | `/d_jump BBW` | Sector initials also work when unambiguous. |
 | `/d_jump 3605` | Transfer using the native sector ID. |
@@ -22,8 +23,12 @@ Spawning requires being in space outside warp and gate transitions. Counts are
 1 through 32 per command, with a total sector limit of 256 actors. A batch that
 would cross a sector boundary or exceed capacity is rejected completely. The
 spawned enemy retains its public level, combat parameters, aggression, loot and
-respawn timer. Its unique development-spawn identity and state are saved in the
-shared sector combat file; the imported public world catalog is not edited.
+respawn timer unless `level=1..66` is supplied. A level override uses the native
+level curve for shields, hull, and base damage (equipped weapons keep their own
+damage); it also replaces fixed tutorial combat stats. A level 50 Achilles
+Drone has about 160,739 shields. Its unique development-spawn identity and
+state are saved in the shared sector combat file; the imported public world
+catalog is not edited.
 
 Jumps support hosted space sectors and station interiors. They use the normal
 recoverable sector handoff, so finish the current handoff before another jump.

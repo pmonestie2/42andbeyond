@@ -18,7 +18,8 @@ namespace FortyTwoAndBeyond.Protocol
         /// <returns>bool: Whether the ability requires an acknowledged visible MOB.</returns>
         public static bool Enemy(uint id)
         { return id == 33 || id == 52 || id == 53 || id == 106 || id == 108 ||
-            id == 109 || id == 124; }
+            id == 109 || id == 124 || id == 57 || id == 58 || id == 76 ||
+            id == 16 || id == 13; }
 
         /// <returns>string: A concise name for worker status feedback.</returns>
         public static string Name(uint id)
@@ -39,6 +40,11 @@ namespace FortyTwoAndBeyond.Protocol
             if (id == 108) return "Shield Leech";
             if (id == 109) return "Shield Leeching Sphere";
             if (id == 124) return "Teleport Enemy";
+            if (id == 57) return "Hack Systems";
+            if (id == 58) return "Hack Weapons";
+            if (id == 76) return "Multi-Hack";
+            if (id == 16) return "Area System Hack";
+            if (id == 13) return "Area Multi-Hack";
             return "Environment Shield";
         }
     }

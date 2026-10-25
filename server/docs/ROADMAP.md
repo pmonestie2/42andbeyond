@@ -382,6 +382,11 @@ mean the corresponding gameplay system is complete.
   speed; Improved Beam/Projectile Handling changes both accuracy and damage;
   Shunt to Reactor shifts both recharge rates. Active snapshots freeze every
   catalog modifier and remain readable after replacement. The supported
+  item effects can coexist by effect type; activating one again spends its
+  catalog energy cost and renews its duration. Ordinary logout keeps valid
+  equipped-item leases in per-account JSON and restores them at the next login.
+  The native client's single equipment status slot shows their combined names.
+  The supported
   families cover 170 single-effect device templates before malformed or
   mismatched entries are gated. Supported timed devices now publish the native
   ShipIndex.Buffs slot and catalog object effect (0x09), clear both on expiry,

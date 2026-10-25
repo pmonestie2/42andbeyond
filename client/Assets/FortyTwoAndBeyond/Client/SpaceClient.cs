@@ -9,6 +9,8 @@ namespace FortyTwoAndBeyond.Client
     /// <summary>Own the rendered world and foreground input; networking has a separate owner.</summary>
     public sealed class SpaceClient : MonoBehaviour
     {
+        private const int ForegroundFrameRate = 60;
+        private const int BackgroundFrameRate = 30;
         public const float MetersToWorld = .01f;
         private ClientWorker worker;
         private DemoRosterWorker demoRoster;
@@ -46,8 +48,10 @@ namespace FortyTwoAndBeyond.Client
         private bool chart, positioned;
         private bool chatOpen;
         private int chatOpenedFrame = -1;
-        private int lastFrameRate = 120;
+        private int lastFrameRate = ForegroundFrameRate;
         private int sampledFrames, displayFps;
+        private int guiPasses;
+        private long guiTicks;
         private float sampledSeconds, slowestFrameMs, displayFrameMs, nextPerformanceLog, lastSnapshotAt;
         private float previousYaw, previousPitch, orbitYaw = 22, orbitPitch = 8, zoom = 2.8f, mapZoom = 1400;
         private Vector3 renderedPosition;
@@ -91,7 +95,7 @@ namespace FortyTwoAndBeyond.Client
             bindings = new KeyBindings();
             Application.runInBackground = true;
             QualitySettings.vSyncCount = 0;
-            Application.targetFrameRate = 120;
+            Application.targetFrameRate = ForegroundFrameRate;
             art = new SpaceArt(); stationCharacters = new StationCharacters(art, transform);
             hud = new FlightHud(this); miningHud = new MiningHud(this, hud);
             abilityHud = new AbilityHud(this, hud);
@@ -202,7 +206,7 @@ namespace FortyTwoAndBeyond.Client
         private void Update()
         {
             MeasureFrame();
-            int frameRate = !Application.isFocused ? 60 : 120;
+            int frameRate = Application.isFocused ? ForegroundFrameRate : BackgroundFrameRate;
             if (frameRate != lastFrameRate)
             {
                 Application.targetFrameRate = frameRate;
@@ -258,16 +262,20 @@ namespace FortyTwoAndBeyond.Client
             }
             if (!Ready || !Application.isFocused)
             { flightThrottle.Reset(); StopStationWalk(); return; }
-            if (bindings.Pressed(ControlAction.OpenChat) && !chatOpen && !hud.InputFocused && !hud.SettingsOpen)
+            if (bindings.Pressed(ControlAction.OpenChat) && !chatOpen && !hud.InputFocused &&
+                !hud.SettingsOpen && !hud.GroupInviteOpen)
             {
                 chatOpen = true;
                 chatOpenedFrame = Time.frameCount;
             }
             if (Input.GetKeyDown(KeyCode.Escape))
-            { chatOpen = false; hud.ReleaseInputFocus(); }
+            {
+                if (hud.GroupInviteOpen) AnswerConfirmation(false);
+                else { chatOpen = false; hud.ReleaseInputFocus(); }
+            }
             if (hud.InputFocused && Input.GetMouseButtonDown(0) && !hud.ContainsPointer())
                 hud.ReleaseInputFocus();
-            if (chatOpen || hud.InputFocused || hud.SettingsOpen)
+            if (chatOpen || hud.InputFocused || hud.SettingsOpen || hud.GroupInviteOpen)
             {
                 flightThrottle.Reset();
                 StopStationWalk();
@@ -348,15 +356,20 @@ namespace FortyTwoAndBeyond.Client
             sampledSeconds += delta; sampledFrames++;
             slowestFrameMs = Mathf.Max(slowestFrameMs, delta * 1000);
             if (sampledSeconds < 1) return;
+            float guiMsPerFrame = guiTicks * 1000f /
+                System.Diagnostics.Stopwatch.Frequency / Mathf.Max(1, sampledFrames);
+            float guiPassesPerFrame = guiPasses / (float)Mathf.Max(1, sampledFrames);
             displayFps = Mathf.RoundToInt(sampledFrames / sampledSeconds);
             displayFrameMs = slowestFrameMs;
             sampledFrames = 0; sampledSeconds = slowestFrameMs = 0;
+            guiTicks = 0; guiPasses = 0;
             if (Time.unscaledTime >= nextPerformanceLog)
             {
                 float snapshotAge = snapshot == null ? -1 : Time.unscaledTime - lastSnapshotAt;
                 string currentStatus = (status ?? "").Replace('\r', ' ').Replace('\n', ' ');
                 if (currentStatus.Length > 96) currentStatus = currentStatus.Substring(0, 96);
                 Debug.Log($"42 and Beyond frame pacing: {displayFps} FPS, slowest {displayFrameMs:0.0} ms, " +
+                    $"HUD {guiMsPerFrame:0.00} ms/frame in {guiPassesPerFrame:0.0} passes, " +
                     $"focused {Application.isFocused}, contacts {remoteShips.Count}, worker {worker?.Running == true}, " +
                     $"ready {Ready}, snapshot age {snapshotAge:0.0} s, chat {chatOpen}, " +
                     $"input focus {hud?.InputFocused == true}, settings {hud?.SettingsOpen == true}, " +
@@ -772,9 +785,7 @@ namespace FortyTwoAndBeyond.Client
             if (Ready && !Incapacitated && snapshot.Station == null &&
                 snapshot.WarpPhase != WarpPhase.Charging && snapshot.WarpPhase != WarpPhase.Traveling &&
                 item != null && DeviceEffects.MountedSlot(item.ActivationLabel, item.Type, slot,
-                    snapshot.DeviceMounts) &&
-                (DeviceEffects.IsInstant(item.ActivationLabel) || item.TargetsPeer ||
-                    snapshot.ActiveDeviceLabel.Length == 0))
+                    snapshot.DeviceMounts))
                 worker.Submit(new ClientCommand(CommandKind.ActivateDevice, (uint)slot));
         }
 
@@ -799,7 +810,7 @@ namespace FortyTwoAndBeyond.Client
         /// <summary>Request activation of the equipped Turbo Weapons device.</summary>
         public void ActivateTurboWeapons()
         {
-            if (Ready && !Incapacitated && snapshot.ActiveDeviceLabel.Length == 0 && snapshot.Station == null &&
+            if (Ready && !Incapacitated && snapshot.Station == null &&
                 snapshot.WarpPhase != WarpPhase.Charging && snapshot.WarpPhase != WarpPhase.Traveling &&
                 snapshot.Mounted.Skip(9).Take((int)snapshot.DeviceMounts).Any(item =>
                     item?.Template == 2363 || item?.Template == 2412 || item?.Template == 2265))
@@ -1001,11 +1012,16 @@ namespace FortyTwoAndBeyond.Client
         /// <summary>Draw the HUD on the main thread.</summary>
         private void OnGUI()
         {
+            long guiStartedAt = System.Diagnostics.Stopwatch.GetTimestamp();
             Matrix4x4 previous = GUI.matrix;
+            bool previousEnabled = GUI.enabled;
             float scale = hud.Scale;
             GUI.matrix = Matrix4x4.Scale(new Vector3(scale, scale, 1));
             try
             {
+                bool groupInvite = hud.GroupInviteOpen;
+                if (groupInvite) hud.HandleGroupInviteInput(Event.current, scale);
+                if (groupInvite) GUI.enabled = false;
                 hud.Draw(ref host, ref username, ref password);
                 if (!hud.SettingsOpen && !hud.EquipmentOpen && !AbilitiesOpen && !Incapacitated)
                     defenseHud.Draw(snapshot);
@@ -1025,8 +1041,15 @@ namespace FortyTwoAndBeyond.Client
                     !productionHud.IsOpen && !vaultHud.IsOpen) missionHud.Draw(snapshot);
                 else missionHud.Close();
                 if (!hud.SettingsOpen && Incapacitated) recoveryHud.Draw(snapshot);
+                GUI.enabled = previousEnabled;
+                if (groupInvite) hud.DrawGroupInvitePopup(snapshot);
             }
-            finally { GUI.matrix = previous; }
+            finally
+            {
+                GUI.enabled = previousEnabled; GUI.matrix = previous;
+                guiTicks += System.Diagnostics.Stopwatch.GetTimestamp() - guiStartedAt;
+                guiPasses++;
+            }
         }
 
         /// <summary>Join the worker before removing the connected world's resources.</summary>
@@ -1057,7 +1080,7 @@ namespace FortyTwoAndBeyond.Client
         /// <summary>Release held steering on focus loss while preserving authoritative travel.</summary>
         private void OnApplicationFocus(bool focused)
         {
-            Application.targetFrameRate = focused ? 120 : 60;
+            Application.targetFrameRate = focused ? ForegroundFrameRate : BackgroundFrameRate;
             if (!focused) flightThrottle.Reset();
             if (!focused) StopStationWalk();
             if (focused || worker == null || snapshot?.Station != null) return;
