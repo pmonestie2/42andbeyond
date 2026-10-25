@@ -1,20 +1,44 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
+using System.Text.RegularExpressions;
 
 namespace FortyTwoAndBeyond.Protocol
 {
+    /// <summary>An immutable public equipped effect supplied in a native item template.</summary>
+    public sealed class ItemEffectInfo
+    {
+        private static readonly Regex FirstValue = new Regex(@"%value2\.(\d)f%", RegexOptions.CultureInvariant);
+        public readonly string Label, Detail;
+
+        /// <summary>Keep catalog wording while resolving its first numeric display value.</summary>
+        public ItemEffectInfo(string name, string description, string tooltip, float[] values)
+        {
+            Label = string.IsNullOrWhiteSpace(description) ? name : description;
+            string detail = (tooltip ?? "").Replace("\\n", " ").Trim();
+            if (values != null && values.Length > 0)
+                detail = FirstValue.Replace(detail, match => values[0].ToString(
+                    "F" + Math.Min(3, int.Parse(match.Groups[1].Value, CultureInfo.InvariantCulture)),
+                    CultureInfo.InvariantCulture));
+            Detail = detail.Length == 0 || detail.Contains("%value") ? Label : detail;
+        }
+    }
+
     /// <summary>Server-owned item template information used by the inventory display.</summary>
     public sealed class ItemTemplateInfo
     {
         public readonly uint Id, Type, UseEffect, MaxStack;
         public readonly string Name, ActivationLabel;
         public readonly bool TargetsPeer;
+        public readonly IReadOnlyList<ItemEffectInfo> EquippedEffects;
         /// <summary>Store a bounded item name and its server item type.</summary>
         public ItemTemplateInfo(uint id, uint type, string name, string activationLabel,
-            bool targetsPeer = false, uint useEffect = 0, uint maxStack = 1)
+            bool targetsPeer = false, uint useEffect = 0, uint maxStack = 1,
+            ItemEffectInfo[] equippedEffects = null)
         { Id = id; Type = type; Name = name; ActivationLabel = activationLabel;
-            TargetsPeer = targetsPeer; UseEffect = useEffect; MaxStack = maxStack; }
+            TargetsPeer = targetsPeer; UseEffect = useEffect; MaxStack = maxStack;
+            EquippedEffects = Array.AsReadOnly((ItemEffectInfo[])(equippedEffects ?? Array.Empty<ItemEffectInfo>()).Clone()); }
 
         /// <returns>The native item template's ID, type and display name.</returns>
         public static ItemTemplateInfo Decode(byte[] body)
@@ -38,27 +62,37 @@ namespace FortyTwoAndBeyond.Protocol
             }
             string activationLabel = "";
             bool targetsPeer = false;
+            var equippedEffects = new List<ItemEffectInfo>();
             for (int block = 0; block < 2; block++)
             {
                 int effects = checked((int)Wire.U32(body, offset, true)); offset += 4;
                 if (effects > 64) throw new InvalidDataException("Item effect limit exceeded.");
                 for (int i = 0; i < effects; i++)
                 {
+                    var descriptions = new string[3];
                     for (int part = 0; part < 3; part++)
                     {
                         int length = Wire.U16(body, offset); offset += 2;
+                        descriptions[part] = Wire.Text(body, offset, length);
                         if (block == 0 && effects == 1 && part == 1)
-                        {
-                            string description = Wire.Text(body, offset, length);
-                            activationLabel = DeviceEffects.LabelFor(description);
-                        }
-                        else Wire.Require(body, offset, length);
+                            activationLabel = DeviceEffects.LabelFor(descriptions[part]);
                         offset += length;
                     }
                     Wire.Require(body, offset, 4); offset += 4;
                     int values = checked((int)Wire.U32(body, offset, true)); offset += 4;
                     if (values > 16) throw new InvalidDataException("Item effect values exceed limit.");
-                    Wire.Require(body, offset, values * 4 + 8); offset += values * 4;
+                    Wire.Require(body, offset, values * 4 + 8);
+                    var magnitudes = new float[values];
+                    for (int value = 0; value < values; value++)
+                    {
+                        magnitudes[value] = BitConverter.ToSingle(BitConverter.GetBytes(
+                            Wire.U32(body, offset, true)), 0);
+                        if (float.IsNaN(magnitudes[value]) || float.IsInfinity(magnitudes[value]))
+                            throw new InvalidDataException("Nonfinite item effect value.");
+                        offset += 4;
+                    }
+                    if (block == 1) equippedEffects.Add(new ItemEffectInfo(
+                        descriptions[0], descriptions[1], descriptions[2], magnitudes));
                     uint flag1 = Wire.U32(body, offset), flag2 = Wire.U32(body, offset + 4);
                     offset += 8;
                     if (block == 0 && effects == 1 && type == 11 && flag2 == 1)
@@ -77,7 +111,7 @@ namespace FortyTwoAndBeyond.Protocol
             int nameLength = Wire.U16(body, offset); offset += 2;
             string fullName = Wire.Text(body, offset, nameLength);
             return new ItemTemplateInfo(id, type, fullName.Length > 0 ? fullName : name,
-                activationLabel, targetsPeer, useEffect, maxStack);
+                activationLabel, targetsPeer, useEffect, maxStack, equippedEffects.ToArray());
         }
     }
 
@@ -130,6 +164,7 @@ namespace FortyTwoAndBeyond.Protocol
         public readonly float CooldownSeconds;
         public readonly string Name, Info, ActivationLabel, BuilderName;
         public readonly bool TargetsPeer;
+        public readonly IReadOnlyList<ItemEffectInfo> EquippedEffects;
         public bool Cooling => Type >= 14 && Type <= 16 && (WeaponState & 0x80) != 0;
         public bool OutOfAmmo => (Type == 15 || Type == 16) && (WeaponState & 8) != 0;
         /// <summary>Resolve a worker item against the known server catalog.</summary>
@@ -142,9 +177,11 @@ namespace FortyTwoAndBeyond.Protocol
             Price = item.Price; Info = item.Info; BuilderName = item.BuilderName;
             if (catalog.TryGetValue(item.Template, out ItemTemplateInfo template))
             { Name = template.Name; Type = template.Type; ActivationLabel = template.ActivationLabel;
-                TargetsPeer = template.TargetsPeer; UseEffect = template.UseEffect; MaxStack = template.MaxStack; }
+                TargetsPeer = template.TargetsPeer; UseEffect = template.UseEffect; MaxStack = template.MaxStack;
+                EquippedEffects = template.EquippedEffects; }
             else { Name = "Item #" + item.Template; Type = 0; ActivationLabel = "";
-                TargetsPeer = false; UseEffect = MaxStack = 0; }
+                TargetsPeer = false; UseEffect = MaxStack = 0;
+                EquippedEffects = Array.AsReadOnly(Array.Empty<ItemEffectInfo>()); }
             if (Cooling && ReadyTick != 0 && estimatedServerTick.HasValue)
             {
                 int remainingMs = unchecked((int)(ReadyTick - estimatedServerTick.Value));

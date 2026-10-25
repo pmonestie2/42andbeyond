@@ -15,7 +15,7 @@ internal static class Program
         CheckExperience(); CheckHullProgression(); CheckReputation(); CheckMiningPhases(); CheckLootTractor(); CheckLootSweep(); CheckWarpPhases(); CheckNavigationSelection(); CheckWarpTargets(); CheckWeaponReady();
         CheckDamageResults(); CheckCombatEngagement(); CheckAttackerSelection(); CheckShotPresentation(); CheckContactSelection(); CheckTargetVerbs(); CheckDeviceEffects();
         CheckNativeDeviceBuff(); CheckPeerScanBuff(); CheckConcurrentRecipientBuffs(); CheckSupportObjectEffects();
-        CheckAmmunitionTransfer(); CheckVaultStackPlacement(); CheckFlightThrottle(); CheckFormationAnchor();
+        CheckAmmunitionTransfer(); CheckVaultStackPlacement(); CheckEquippedEffects(); CheckFlightThrottle(); CheckFormationAnchor();
         CheckStationLayout(); CheckStationWalk(); CheckDemoRoster(); CheckAddress(); PeerChecks.Decode();
         Console.WriteLine("PASS: framing, ordering, fragmentation, duplicates, bounds, world decoding, private addresses");
         if (args.Length == 2 && args[0] == "--server") { PeerChecks.Live(args[1]); CheckServer(args[1]); }
@@ -1094,6 +1094,31 @@ internal static class Program
         InventoryTransferPlan? empty = InventoryTransferPlan.Choose(source, cargo, 25, ammunition);
         Assert(empty.HasValue && empty.Value.Slot == 3 && empty.Value.Quantity == 20 && !empty.Value.Merge,
             "An empty unlocked slot was not used for an incompatible stack.");
+    }
+
+    /// <summary>Retain public equipped gear benefits from exact native item packets.</summary>
+    private static void CheckEquippedEffects()
+    {
+        ItemTemplateInfo beam = ItemTemplateInfo.Decode(FixtureBytes("item986.hex").Skip(4).ToArray());
+        ItemTemplateInfo projectile = ItemTemplateInfo.Decode(FixtureBytes("item2089.hex").Skip(4).ToArray());
+        ItemTemplateInfo prospect = ItemTemplateInfo.Decode(FixtureBytes("item1803.hex").Skip(4).ToArray());
+        Assert(beam.Id == 986 && beam.EquippedEffects.Count == 1 &&
+            beam.EquippedEffects[0].Label == "Improved Beam Handling (Equip)" &&
+            beam.EquippedEffects[0].Detail.Contains("2.30 Skill Level"),
+            "Native Beam Skill equipped effect or its first catalog value was lost.");
+        Assert(projectile.Id == 2089 && projectile.EquippedEffects.Count == 4 &&
+            projectile.EquippedEffects.Any(effect => effect.Label == "Projectile Weapon Skill (Equip)" &&
+                effect.Detail.Contains("2.20 Skill Level")),
+            "Native multi-effect Projectile Skill metadata was not retained.");
+        Assert(prospect.Id == 1803 && prospect.EquippedEffects.Count == 1 &&
+            prospect.EquippedEffects[0].Detail.Contains("0.73 Skill Level"),
+            "Native Prospect Skill benefit was not displayed from item metadata.");
+        var catalog = new System.Collections.Generic.Dictionary<uint, ItemTemplateInfo> { [1803] = prospect };
+        ItemView mounted = new ItemView(9, new ItemState { Template = 1803, Quantity = 1 }, catalog);
+        Assert(mounted.EquippedEffects.Count == 1 && mounted.EquippedEffects[0] == prospect.EquippedEffects[0],
+            "The immutable equipment snapshot lost the catalog effect label.");
+        byte[] truncated = FixtureBytes("item986.hex").Skip(4).Take(70).ToArray();
+        Reject(() => ItemTemplateInfo.Decode(truncated));
     }
 
     /// <summary>Decode and rotate the native leader-relative formation offset.</summary>

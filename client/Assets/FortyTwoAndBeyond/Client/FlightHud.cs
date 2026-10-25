@@ -27,13 +27,14 @@ namespace FortyTwoAndBeyond.Client
         internal GUIStyle SectionStyle => section;
         internal GUIStyle ButtonStyle => button;
         private Vector2 scroll;
-        private bool navigation = true, equipmentOpen, settingsOpen, crewTab, inspectMount,
+        private bool navigation = true, equipmentOpen, settingsOpen, crewTab, inspectMount, inspectEffects,
             communicationsOpen;
         private bool clearInputFocus;
         private ControlAction? bindingAction;
         private Vector2 settingsScroll;
         private int selectedCargo = -1, selectedMount = -1;
         private Vector2 cargoScroll, mountScroll;
+        private Vector2 effectScroll;
         public bool EquipmentOpen => equipmentOpen;
         public bool SettingsOpen => settingsOpen;
         private readonly ContactSelection contactSelection = new ContactSelection();
@@ -1597,7 +1598,8 @@ namespace FortyTwoAndBeyond.Client
                 uint iconType = item?.Type ?? (slot == 0 ? 2u : slot == 1 ? 7u : slot == 2 ? 6u : slot < 9 ? 14u : 11u);
                 if (DrawEquipmentRow(slotName, item?.Name ?? "EMPTY", status, iconType,
                     selectedMount == slot, rect.width, item != null && item.OutOfAmmo))
-                    { selectedMount = selectedMount == slot ? -1 : slot; inspectMount = true; }
+                    { selectedMount = selectedMount == slot ? -1 : slot; inspectMount = true;
+                        inspectEffects = item?.EquippedEffects.Count > 0; effectScroll = Vector2.zero; }
             }
             GUILayout.EndScrollView(); GUILayout.EndArea();
         }
@@ -1618,7 +1620,8 @@ namespace FortyTwoAndBeyond.Client
                     (Mathf.Clamp01(item.Structure) * 100).ToString("0") + "% CONDITION";
                 if (DrawEquipmentRow(category, item.Name, status, item.Type,
                     selectedCargo == item.Slot, rect.width, false))
-                    { selectedCargo = selectedCargo == item.Slot ? -1 : item.Slot; inspectMount = false; }
+                    { selectedCargo = selectedCargo == item.Slot ? -1 : item.Slot; inspectMount = false;
+                        inspectEffects = item.EquippedEffects.Count > 0; effectScroll = Vector2.zero; }
             }
             if (used == 0) GUILayout.Label("Cargo hold empty", small);
             GUILayout.EndScrollView(); GUILayout.EndArea();
@@ -1686,16 +1689,52 @@ namespace FortyTwoAndBeyond.Client
             GUI.Label(new Rect(x, y + 162, width, 18),
                 "STRUCTURE  " + (Mathf.Clamp01(item.Structure) * 100).ToString("0") + "%", small);
             Meter(new Rect(x, y + 185, width, 8), "", item.Structure, gold);
-            if (item.Range > 0) GUI.Label(new Rect(x, y + 211, width, 24),
-                "RANGE  " + item.Range.ToString("N0") + " m", body);
-            if (item.Price > 0) GUI.Label(new Rect(x, y + 244, width, 20),
-                "VALUE  " + item.Price.ToString("N0") + " CREDITS", small);
-            GUI.Label(new Rect(x, y + 270, width, 20), "STACK  ×" + item.Quantity, small);
             bool needsPeer = item == mount && (item.TargetsPeer ||
                 DeviceEffects.RequiresPeer(item.ActivationLabel));
-            if (!needsPeer && !string.IsNullOrWhiteSpace(item.Info) && item.Info.Count(char.IsLetter) >= 3 && !item.Info.Contains("^"))
-                GUI.Label(new Rect(x, y + 298, width, rect.height - 312), item.Info, small);
+            if (item.EquippedEffects.Count > 0)
+            {
+                if (GUI.Button(new Rect(x, y + 208, width, 28), inspectEffects ?
+                    "EFFECTS  ·  VIEW STATS" :
+                    "VIEW EFFECTS  ·  " + item.EquippedEffects.Count, button))
+                    { inspectEffects = !inspectEffects; effectScroll = Vector2.zero; }
+            }
+            if (inspectEffects && item.EquippedEffects.Count > 0)
+                DrawItemEffects(item, new Rect(x, y + 242, width,
+                    Mathf.Max(30, rect.height - (needsPeer ? 343 : 253))), item == mount);
+            else
+            {
+                if (item.Range > 0) GUI.Label(new Rect(x, y + 242, width, 24),
+                    "RANGE  " + item.Range.ToString("N0") + " m", body);
+                if (item.Price > 0) GUI.Label(new Rect(x, y + 270, width, 20),
+                    "VALUE  " + item.Price.ToString("N0") + " CREDITS", small);
+                GUI.Label(new Rect(x, y + 296, width, 20), "STACK  ×" + item.Quantity, small);
+                if (!needsPeer && !string.IsNullOrWhiteSpace(item.Info) && item.Info.Count(char.IsLetter) >= 3 && !item.Info.Contains("^"))
+                    GUI.Label(new Rect(x, y + 322, width, rect.height - 330), item.Info, small);
+            }
             if (needsPeer) DrawDeviceRecipient(snapshot, rect, item.TargetsPeer);
+        }
+
+        /// <summary>Show every server-sent equipped catalog effect without predicting combat math.</summary>
+        private void DrawItemEffects(ItemView item, Rect rect, bool installed)
+        {
+            float width = rect.width - 18, height = 24;
+            foreach (ItemEffectInfo effect in item.EquippedEffects)
+                height += 24 + Mathf.Max(20, wrappedBody.CalcHeight(new GUIContent(effect.Detail), width)) + 6;
+            effectScroll = GUI.BeginScrollView(rect, effectScroll,
+                new Rect(0, 0, width, Mathf.Max(rect.height, height)));
+            GUI.Label(new Rect(0, 0, width, 20), item.Structure <= 0 ?
+                "BROKEN · EFFECTS INACTIVE" : installed ?
+                "INSTALLED · SERVER APPLIES" : "EFFECTS WHEN INSTALLED", small);
+            float row = 24;
+            foreach (ItemEffectInfo effect in item.EquippedEffects)
+            {
+                GUI.Label(new Rect(0, row, width, 20), effect.Label, section);
+                row += 24;
+                float detailHeight = Mathf.Max(20, wrappedBody.CalcHeight(new GUIContent(effect.Detail), width));
+                GUI.Label(new Rect(0, row, width, detailHeight), effect.Detail, wrappedBody);
+                row += detailHeight + 6;
+            }
+            GUI.EndScrollView();
         }
 
         /// <summary>Choose a visible pilot while keeping the loadout panel open.</summary>
