@@ -14,6 +14,11 @@ namespace FortyTwoAndBeyond.Client
         private readonly Mesh[] rocks = new Mesh[8];
         private readonly Mesh ring, shipHull;
         private readonly GameObject corvetteAsset, frigateAsset, destroyerAsset, cruiserAsset, carrierAsset;
+        private readonly GameObject[] proteronAssets = new GameObject[5];
+        private readonly Material[] proteronSurfaces = new Material[5];
+        private readonly Material[] hostileProteronSurfaces = new Material[5];
+        private readonly GameObject[] moonRockHigh = new GameObject[2], moonRockLow = new GameObject[2];
+        private readonly Material[] moonStone = new Material[2], moonOre = new Material[2];
         private readonly Material corvetteSurface, frigateSurface, destroyerSurface, cruiserSurface, carrierSurface;
         private readonly Material hostileFrigateSurface, hostileDestroyerSurface, hostileCruiserSurface,
             hostileCarrierSurface;
@@ -66,6 +71,22 @@ namespace FortyTwoAndBeyond.Client
             hostileDestroyerSurface = HostileSurface(destroyerSurface);
             hostileCruiserSurface = HostileSurface(cruiserSurface);
             hostileCarrierSurface = HostileSurface(carrierSurface);
+            string[] proteronNames = { "archimedes", "dalton", "hippocrates", "pythagoras", "watson" };
+            for (int index = 0; index < proteronNames.Length; index++)
+            {
+                proteronAssets[index] = Resources.Load<GameObject>("ProteronShips/" + proteronNames[index]);
+                proteronSurfaces[index] = ProteronSurface(proteronNames[index], new Color(.3f, .88f, 1f));
+                hostileProteronSurfaces[index] = ProteronSurface(proteronNames[index],
+                    new Color(1f, .34f, .23f));
+            }
+            for (int index = 0; index < moonRockHigh.Length; index++)
+            {
+                string name = index == 0 ? "moon_rock_01" : "moon_rock_03";
+                moonRockHigh[index] = Resources.Load<GameObject>("MoonRocks/" + name + "_high");
+                moonRockLow[index] = Resources.Load<GameObject>("MoonRocks/" + name + "_low");
+                moonStone[index] = MoonSurface(name, false);
+                moonOre[index] = MoonSurface(name, true);
+            }
             ring = Torus(1, .12f, 48, 8); meshes.Add(ring);
             shipHull = Hull(); meshes.Add(shipHull);
             for (int i = 0; i < rocks.Length; i++) { rocks[i] = Asteroid(i + 17); meshes.Add(rocks[i]); }
@@ -155,6 +176,49 @@ namespace FortyTwoAndBeyond.Client
             return surface;
         }
 
+        /// <returns>Material: A faction-tinted PBR ship surface, or null without its packaged maps.</returns>
+        private Material ProteronSurface(string assetName, Color accent)
+        {
+            Shader shader = Resources.Load<Shader>("StylizedShip");
+            Texture2D diffuse = Resources.Load<Texture2D>("ProteronShips/" + assetName + "_diffuse");
+            if (shader == null || diffuse == null) return null;
+            var surface = new Material(shader); materials.Add(surface);
+            surface.SetColor("_AccentColor", accent);
+            surface.SetTexture("_MainTex", diffuse);
+            surface.SetTexture("_BumpMap", Resources.Load<Texture2D>("ProteronShips/" + assetName + "_normal"));
+            surface.SetTexture("_MetallicMap", Resources.Load<Texture2D>("ProteronShips/" + assetName + "_metallic"));
+            surface.SetTexture("_RoughnessMap", Resources.Load<Texture2D>("ProteronShips/" + assetName + "_roughness"));
+            surface.SetTexture("_EmissionMap", Resources.Load<Texture2D>("ProteronShips/" + assetName + "_emission"));
+            return surface;
+        }
+
+        /// <returns>Material: A UV-mapped moon-rock surface with an optional mineral accent.</returns>
+        private Material MoonSurface(string assetName, bool mineralized)
+        {
+            Shader shader = Resources.Load<Shader>("StylizedRock");
+            Texture2D diffuse = Resources.Load<Texture2D>("MoonRocks/" + assetName + "_diff");
+            if (shader == null || diffuse == null) return null;
+            var surface = new Material(shader); materials.Add(surface);
+            surface.SetColor("_Tint", mineralized ? new Color(.56f, .7f, .8f) :
+                new Color(.62f, .63f, .7f));
+            surface.SetFloat("_AccentStrength", mineralized ? .72f : 0f);
+            surface.SetTexture("_MainTex", diffuse);
+            surface.SetTexture("_BumpMap", Resources.Load<Texture2D>("MoonRocks/" + assetName + "_normal"));
+            surface.SetTexture("_ArmMap", Resources.Load<Texture2D>("MoonRocks/" + assetName + "_arm"));
+            surface.SetTexture("_VeinTex", LoadDetail("OreRock"));
+            return surface;
+        }
+
+        /// <summary>Switch imported near geometry to a cheap silhouette at small screen size.</summary>
+        private static void SetLod(Transform root, Transform high, Transform low, float transition)
+        {
+            if (high == null || low == null) return;
+            var group = root.gameObject.AddComponent<LODGroup>();
+            group.SetLODs(new[] { new LOD(transition, high.GetComponentsInChildren<Renderer>()),
+                new LOD(.003f, low.GetComponentsInChildren<Renderer>()) });
+            group.RecalculateBounds();
+        }
+
         /// <returns>Transform: A textured ship model instance, or null when its optional asset is absent.</returns>
         private static Transform Imported(Transform parent, GameObject asset, string name, Vector3 scale,
             Material surface)
@@ -173,6 +237,9 @@ namespace FortyTwoAndBeyond.Client
         public Transform Ship(Transform parent)
         {
             Transform root = Root(parent, "Explorer spacecraft");
+            if (Imported(root, proteronAssets[4], "Proteron Watson explorer", Vector3.one * .31f,
+                    proteronSurfaces[4]) != null)
+                return root;
             if (Imported(root, corvetteAsset, "Viktor Hahn corvette", Vector3.one * 1.6f, corvetteSurface) != null)
             {
                 return root;
@@ -284,21 +351,38 @@ namespace FortyTwoAndBeyond.Client
             GameObject asset = frigateAsset;
             Material surface = isHostile ? hostileFrigateSurface : frigateSurface;
             float size = 1.5f;
+            int proteron = 1;
+            float proteronSize = .85f;
             string modelName = "Viktor Hahn frigate";
             if (nativeAsset == 1022 || nativeAsset == 1023)
             {
                 asset = destroyerAsset; surface = isHostile ? hostileDestroyerSurface : destroyerSurface;
                 size = .55f; modelName = "Viktor Hahn destroyer";
+                proteron = 3; proteronSize = .28f;
             }
             else if (nativeAsset == 384)
             {
                 asset = cruiserAsset; surface = isHostile ? hostileCruiserSurface : cruiserSurface;
                 size = .38f; modelName = "Viktor Hahn cruiser";
+                proteron = 0; proteronSize = .36f;
             }
             else if (nativeAsset >= 1030 && nativeAsset <= 1049)
             {
                 asset = carrierAsset; surface = isHostile ? hostileCarrierSurface : carrierSurface;
                 size = .45f; modelName = "Viktor Hahn carrier";
+                proteron = 2; proteronSize = .6f;
+            }
+            Material detailedSurface = isHostile ? hostileProteronSurfaces[proteron] :
+                proteronSurfaces[proteron];
+            Transform detailed = Imported(root, proteronAssets[proteron],
+                "Proteron " + proteronAssets[proteron]?.name, Vector3.one * proteronSize,
+                detailedSurface);
+            if (detailed != null)
+            {
+                Transform silhouette = Imported(root, asset, modelName + " distant LOD", Vector3.one * size,
+                    surface);
+                SetLod(root, detailed, silhouette, .08f);
+                return root;
             }
             if (Imported(root, asset, modelName, Vector3.one * size, surface) != null)
             {
@@ -352,8 +436,13 @@ namespace FortyTwoAndBeyond.Client
             else
             {
                 float radius = item.Navigable ? .4f : item.Asset == 491 ? 3.8f : item.Asset == 490 ? 2.7f : 1.6f;
-                int variant = (int)(item.Id % (uint)rocks.Length);
-                Model(root, rocks[variant], rock, Vector3.zero, new Vector3(radius, radius * .8f, radius * 1.2f));
+                if (!MoonRock(root, item.Id, false,
+                        new Vector3(radius * .68f, radius * .55f, radius * .78f)))
+                {
+                    int variant = (int)(item.Id % (uint)rocks.Length);
+                    Model(root, rocks[variant], rock, Vector3.zero,
+                        new Vector3(radius, radius * .8f, radius * 1.2f));
+                }
             }
             root.localScale *= Mathf.Clamp(item.Scale, .05f, 100);
             return root;
@@ -379,8 +468,9 @@ namespace FortyTwoAndBeyond.Client
         /// <summary>Expose bright mineral seams and facets on mineable asteroids.</summary>
         private void ResourceRock(Transform root, uint id)
         {
-            Model(root, rocks[(int)(id % (uint)rocks.Length)], oreRock, Vector3.zero,
-                new Vector3(2.1f, 1.5f, 1.9f));
+            if (!MoonRock(root, id, true, new Vector3(1.35f, 1.05f, 1.3f)))
+                Model(root, rocks[(int)(id % (uint)rocks.Length)], oreRock, Vector3.zero,
+                    new Vector3(2.1f, 1.5f, 1.9f));
             for (int i = 0; i < 5; i++)
             {
                 float angle = (i * 72 + id % 31) * Mathf.Deg2Rad;
@@ -403,6 +493,20 @@ namespace FortyTwoAndBeyond.Client
                     oreRock, offset, Vector3.one * (.35f + fragment * .08f));
                 chip.localRotation = Quaternion.Euler(fragment * 26, fragment * 71, fragment * 39);
             }
+        }
+
+        /// <returns>bool: Whether a textured moon-rock model was available and placed.</returns>
+        private bool MoonRock(Transform root, uint id, bool mineralized, Vector3 scale)
+        {
+            int variant = (int)(id % (uint)moonRockHigh.Length);
+            Material material = mineralized ? moonOre[variant] : moonStone[variant];
+            Transform detailed = Imported(root, moonRockHigh[variant], "Faceted moon rock",
+                scale, material);
+            if (detailed == null) return false;
+            Transform silhouette = Imported(root, moonRockLow[variant], "Moon rock distant LOD",
+                scale, mineralized ? oreRock : rock);
+            SetLod(root, detailed, silhouette, .07f);
+            return true;
         }
 
         /// <summary>Assemble a traversable circular gate with a recessed energy field.</summary>
