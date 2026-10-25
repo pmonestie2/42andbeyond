@@ -50,8 +50,30 @@ namespace FortyTwoAndBeyond.Client
             }
         }
 
+        private sealed class Destruction
+        {
+            public readonly Vector3 Position;
+            public readonly LineRenderer Ring;
+            public readonly LineRenderer[] Fragments;
+            public readonly Light Flash;
+            public readonly float Started;
+
+            /// <summary>Keep a wreck-confirmed hull breakup with its short lifetime.</summary>
+            public Destruction(Vector3 position, LineRenderer ring, LineRenderer[] fragments, Light flash)
+            {
+                Position = position; Ring = ring; Fragments = fragments; Flash = flash;
+                Started = Time.unscaledTime;
+            }
+        }
+
         private readonly List<Beam> beams = new List<Beam>();
         private readonly List<Impact> impacts = new List<Impact>();
+        private readonly List<Destruction> destructions = new List<Destruction>();
+        private readonly Dictionary<uint, Vector3> mobPositions = new Dictionary<uint, Vector3>();
+        private readonly Dictionary<uint, float> mobSeenAt = new Dictionary<uint, float>();
+        private readonly Dictionary<uint, float> recentMobDamage = new Dictionary<uint, float>();
+        private readonly HashSet<uint> knownWrecks = new HashSet<uint>();
+        private bool wreckBaseline;
         private readonly Dictionary<uint, float> reportedShields = new Dictionary<uint, float>();
         private readonly Transform parent, player;
         private readonly RemoteShips ships;
@@ -142,6 +164,9 @@ namespace FortyTwoAndBeyond.Client
             playerId = snapshot.PlayerId;
             driveSpeed = Mathf.Abs(snapshot.Speed);
             loadout.Apply(snapshot);
+            foreach (ShipActor mob in snapshot.Mobs.Where(actor => actor.HasPosition))
+                if (TryPoint(mob.Id, out Vector3 position))
+                { mobPositions[mob.Id] = position; mobSeenAt[mob.Id] = Time.unscaledTime; }
             SetDeviceBuff(snapshot.DeviceBuff, snapshot.Station != null);
             SetPeerBuff(snapshot.PeerBuff, snapshot.Station != null);
             SetResourceBuff(0, snapshot.ShieldBuff, snapshot.Station != null);
@@ -173,6 +198,8 @@ namespace FortyTwoAndBeyond.Client
                 if (damage.Sequence <= lastDamageSequence) continue;
                 lastDamageSequence = damage.Sequence;
                 RetireTravelingShot(damage.Source, damage.Target);
+                if (damage.Amount > 0 && mobPositions.ContainsKey(damage.Target))
+                    recentMobDamage[damage.Target] = Time.unscaledTime;
                 if (snapshot.WarpPhase != WarpPhase.Idle || !TryPoint(damage.Target, out _) ||
                     damage.Amount <= 0) continue;
                 bool critical = damage.Outcome == DamageOutcome.Critical;
@@ -216,6 +243,7 @@ namespace FortyTwoAndBeyond.Client
                     flash, tint, critical, shielded));
                 if (impacts.Count > 24) RemoveImpact(0);
             }
+            UpdateDestructions(snapshot);
             reportedShields.Clear();
             reportedShields[snapshot.PlayerId] = snapshot.Shield;
             foreach (ShipActor actor in snapshot.Players.Concat(snapshot.Mobs))
@@ -233,6 +261,72 @@ namespace FortyTwoAndBeyond.Client
                 if (beams[index].Kind != ShotTravelKind.Beam && beams[index].Source == source &&
                     beams[index].Target == target)
                 { RemoveBeam(index); return; }
+        }
+
+        /// <summary>Reveal a destroyed MOB only when a new server wreck follows recent damage.</summary>
+        private void UpdateDestructions(Snapshot snapshot)
+        {
+            if (snapshot.Station != null || snapshot.WarpPhase != WarpPhase.Idle)
+            { mobPositions.Clear(); mobSeenAt.Clear(); recentMobDamage.Clear(); knownWrecks.Clear(); wreckBaseline = false; return; }
+            var currentMobs = new HashSet<uint>(snapshot.Mobs.Select(mob => mob.Id));
+            var wrecks = snapshot.Objects.Where(item => item.Kind == 25).ToArray();
+            var currentWrecks = new HashSet<uint>(wrecks.Select(item => item.Id));
+            if (!wreckBaseline) { knownWrecks.UnionWith(currentWrecks); wreckBaseline = true; }
+            knownWrecks.IntersectWith(currentWrecks);
+            foreach (MapObject wreck in wrecks)
+            {
+                if (knownWrecks.Contains(wreck.Id)) continue;
+                Vector3 wreckPoint = player.position + SpaceClient.Convert(wreck.Position) -
+                    SpaceClient.Convert(snapshot.Position);
+                uint killed = 0;
+                float closest = 5f;
+                foreach (var mob in mobPositions)
+                {
+                    if (currentMobs.Contains(mob.Key) ||
+                        !recentMobDamage.TryGetValue(mob.Key, out float damagedAt) ||
+                        Time.unscaledTime - damagedAt > 3f) continue;
+                    float distance = Vector3.Distance(mob.Value, wreckPoint);
+                    if (distance >= closest) continue;
+                    closest = distance; killed = mob.Key;
+                }
+                if (killed == 0) continue;
+                SpawnDestruction(wreckPoint);
+                knownWrecks.Add(wreck.Id);
+                mobPositions.Remove(killed); recentMobDamage.Remove(killed);
+            }
+            foreach (uint id in recentMobDamage.Keys.ToArray())
+                if (Time.unscaledTime - recentMobDamage[id] > 3f)
+                    recentMobDamage.Remove(id);
+            foreach (uint id in mobPositions.Keys.ToArray())
+                if (!currentMobs.Contains(id) &&
+                    (!mobSeenAt.TryGetValue(id, out float seenAt) || Time.unscaledTime - seenAt > 3f))
+                { mobPositions.Remove(id); mobSeenAt.Remove(id); }
+        }
+
+        /// <summary>Start a bounded breakup pulse at a server-created wreck's location.</summary>
+        private void SpawnDestruction(Vector3 position)
+        {
+            LineRenderer ring = Line("Confirmed hull breakup", .09f,
+                new Color(1f, .57f, .26f, .8f), 25, true);
+            if (ring == null) return;
+            ring.useWorldSpace = false;
+            var fragments = new LineRenderer[8];
+            for (int index = 0; index < fragments.Length; index++)
+                fragments[index] = Line("Confirmed hull fragment", .075f,
+                    new Color(1f, .68f, .35f, .8f), 2);
+            Light flash = null;
+            if (destructions.Count < 4)
+            {
+                var source = new GameObject("Confirmed breakup light", typeof(Light));
+                source.transform.SetParent(parent, false);
+                flash = source.GetComponent<Light>();
+                flash.type = LightType.Point; flash.color = new Color(1f, .48f, .18f);
+                flash.range = 5f; flash.intensity = 3f;
+                flash.shadows = LightShadows.None;
+                flash.renderMode = LightRenderMode.ForceVertex;
+            }
+            destructions.Add(new Destruction(position, ring, fragments, flash));
+            if (destructions.Count > 4) RemoveDestruction(0);
         }
 
         /// <summary>Keep each server-owned prospect or ore tractor visual independent.</summary>
@@ -320,8 +414,7 @@ namespace FortyTwoAndBeyond.Client
                 case DamageKind.Chemical: return new Color(.45f, 1f, .43f);
                 case DamageKind.Psionic: return new Color(.83f, .47f, 1f);
                 case DamageKind.System: return new Color(.72f, .6f, 1f);
-                default: return damage.Target == playerId ? new Color(1f, .42f, .2f) :
-                    new Color(.38f, .9f, 1f);
+                default: return new Color(1f, .47f, .23f);
             }
         }
 
@@ -389,13 +482,15 @@ namespace FortyTwoAndBeyond.Client
                 }
                 if (camera != null) impact.Ring.transform.rotation = camera.transform.rotation;
                 float radius = ownImpact ? .1f + age * .3f :
-                    impact.Shielded == true ? .45f + age * 1.25f :
-                    .12f + age * (impact.Critical ? 2f : 1.4f);
+                    impact.Shielded == true ? .32f + age * 1.05f :
+                    .12f + age * (impact.Critical ? 1.5f : 1.1f);
                 for (int point = 0; point < 25; point++)
                 {
                     float angle = point * Mathf.PI * 2 / 24;
-                    impact.Ring.SetPosition(point, new Vector3(Mathf.Cos(angle) * radius,
-                        Mathf.Sin(angle) * radius, 0));
+                    float contour = impact.Shielded == true ?
+                        radius * (1 + .055f * Mathf.Cos(angle * 6)) : radius;
+                    impact.Ring.SetPosition(point, new Vector3(Mathf.Cos(angle) * contour,
+                        Mathf.Sin(angle) * contour, 0));
                 }
                 Color color = impact.Color; color.a = (impact.Shielded == true ? .95f :
                     impact.Critical ? 1f : .85f) * (1 - age / .48f);
@@ -407,8 +502,9 @@ namespace FortyTwoAndBeyond.Client
                     for (int point = 0; point < 25; point++)
                     {
                         float angle = point * Mathf.PI * 2 / 24;
-                        impact.ShieldArc.SetPosition(point, new Vector3(Mathf.Cos(angle) * radius * 1.13f,
-                            Mathf.Sin(angle) * radius * 1.13f, 0));
+                        float contour = radius * (1.12f + .055f * Mathf.Cos(angle * 6));
+                        impact.ShieldArc.SetPosition(point, new Vector3(Mathf.Cos(angle) * contour,
+                            Mathf.Sin(angle) * contour, 0));
                     }
                     Color arc = impact.Color; arc.a = .58f * (1 - age / .48f);
                     impact.ShieldArc.startColor = impact.ShieldArc.endColor = arc;
@@ -430,6 +526,7 @@ namespace FortyTwoAndBeyond.Client
                     ray.enabled = true;
                 }
             }
+            TickDestructions();
             TickMiningVisual(prospectVisual);
             TickMiningVisual(tractorVisual);
             TickLoot();
@@ -438,6 +535,53 @@ namespace FortyTwoAndBeyond.Client
             TickDeviceBuff();
             TickPeerBuff();
             TickResourceBuffs();
+        }
+
+        /// <summary>Expand and fade only wreck-confirmed fragments around the former MOB.</summary>
+        private void TickDestructions()
+        {
+            Camera camera = ViewCamera();
+            Vector3 right = camera != null ? camera.transform.right : Vector3.right;
+            Vector3 up = camera != null ? camera.transform.up : Vector3.up;
+            for (int index = destructions.Count - 1; index >= 0; index--)
+            {
+                Destruction burst = destructions[index];
+                float age = Time.unscaledTime - burst.Started;
+                if (age >= .82f) { RemoveDestruction(index); continue; }
+                float fade = 1 - age / .82f;
+                burst.Ring.transform.position = burst.Position;
+                if (camera != null) burst.Ring.transform.rotation = camera.transform.rotation;
+                float radius = .24f + age * 1.65f;
+                for (int point = 0; point < 25; point++)
+                {
+                    float angle = point * Mathf.PI * 2 / 24;
+                    float contour = radius * (1 + .09f * Mathf.Cos(angle * 8));
+                    burst.Ring.SetPosition(point, new Vector3(Mathf.Cos(angle) * contour,
+                        Mathf.Sin(angle) * contour, 0));
+                }
+                Color ringColor = new Color(1f, .57f, .26f, fade * .75f);
+                burst.Ring.startColor = burst.Ring.endColor = ringColor;
+                burst.Ring.widthMultiplier = .065f * fade;
+                if (burst.Flash != null)
+                {
+                    burst.Flash.transform.position = burst.Position;
+                    burst.Flash.intensity = 3f * fade * fade;
+                }
+                for (int fragment = 0; fragment < burst.Fragments.Length; fragment++)
+                {
+                    LineRenderer shard = burst.Fragments[fragment];
+                    if (shard == null) continue;
+                    float angle = fragment * Mathf.PI * 2 / burst.Fragments.Length;
+                    Vector3 direction = right * Mathf.Cos(angle) + up * Mathf.Sin(angle);
+                    float travel = .18f + age * 2.2f;
+                    shard.SetPosition(0, burst.Position + direction * travel);
+                    shard.SetPosition(1, burst.Position + direction * (travel + .35f * fade));
+                    Color shardColor = new Color(1f, .71f, .38f, fade * .86f);
+                    shard.startColor = shardColor; shardColor.a = 0;
+                    shard.endColor = shardColor;
+                    shard.widthMultiplier = .07f * fade;
+                }
+            }
         }
 
         /// <summary>Animate one authoritative mining beam without changing the other phase.</summary>
@@ -888,11 +1032,25 @@ namespace FortyTwoAndBeyond.Client
             Object.Destroy(impacts[index].Ring.gameObject); impacts.RemoveAt(index);
         }
 
+        /// <summary>Release every scene object created for one confirmed breakup.</summary>
+        private void RemoveDestruction(int index)
+        {
+            Destruction burst = destructions[index];
+            foreach (LineRenderer fragment in burst.Fragments)
+                if (fragment != null) Object.Destroy(fragment.gameObject);
+            if (burst.Flash != null) Object.Destroy(burst.Flash.gameObject);
+            Object.Destroy(burst.Ring.gameObject);
+            destructions.RemoveAt(index);
+        }
+
         /// <summary>Clear effects on sector travel or logout.</summary>
         public void Clear()
         {
             for (int index = beams.Count - 1; index >= 0; index--) RemoveBeam(index);
             for (int index = impacts.Count - 1; index >= 0; index--) RemoveImpact(index);
+            for (int index = destructions.Count - 1; index >= 0; index--) RemoveDestruction(index);
+            mobPositions.Clear(); mobSeenAt.Clear(); recentMobDamage.Clear();
+            knownWrecks.Clear(); wreckBaseline = false;
             ClearMining();
             ClearLoot();
             ClearDeviceBuff();
