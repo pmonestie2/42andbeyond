@@ -76,11 +76,15 @@ impl PlayerSession {
         .ok_or_else(|| invalid("Invalid Psionic Shield damage interception."))?;
         reduced = interception.passed;
         let profile = &self.account.character;
-        let damage_control = if profile.profession == 0 && matches!(profile.race, 0 | 2) {
+        let passive_damage_control = if profile.profession == 0 && matches!(profile.race, 0 | 2) {
             damage_control_fraction(self.skill_catalog.level(17))
         } else {
             0.
         };
+        let damage_control = crate::combat_damage::combined_damage_control(
+            passive_damage_control,
+            self.equipment.ship.hull_damage_multiplier,
+        );
         let result = player_damage(
             reduced,
             kind,
@@ -367,6 +371,27 @@ mod tests {
         assert!(geared.result.reported_damage < baseline.result.reported_damage);
         assert!(geared.reflection > baseline.reflection);
         assert!(geared.energy > baseline.energy);
+    }
+
+    /// Hull integrity gear reduces a committed MOB hit after shields are gone.
+    #[test]
+    fn hull_integrity_gear_reduces_actual_mob_hull_damage() {
+        let mut ship = ship();
+        ship.shield = 0.;
+        let mut shot = hit(&ship, 120);
+        shot.damage = 50.;
+        let baseline = ship.plan_mob_damage(&shot, DamageType::Energy).unwrap();
+        ship.inventory.equipped[3] = Some(crate::inventory::ItemInstance::stock(929, 1));
+        ship.refresh_equipment().unwrap();
+        let geared = ship.plan_mob_damage(&shot, DamageType::Energy).unwrap();
+        assert!(geared.result.hull_damage < baseline.result.hull_damage);
+        assert_eq!(geared.result.shield_damage, 0.);
+        let prior_hull = ship.hull;
+        ship.receive_mob_hit(&shot).unwrap();
+        assert!((ship.hull - (prior_hull - geared.result.hull_damage)).abs() < 0.001);
+        let settled_hull = ship.hull;
+        ship.receive_mob_hit(&shot).unwrap();
+        assert_eq!(ship.hull, settled_hull);
     }
 
     #[test]

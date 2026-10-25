@@ -43,6 +43,8 @@ pub struct ShipStats {
     pub rally_skill_bonus: f32,
     pub power_down_skill_bonus: f32,
     pub wormhole_creation_reduction: f32,
+    /// Received hull damage multiplier from effective hull integrity gear.
+    pub hull_damage_multiplier: f32,
     pub environment_skill_bonus: f32,
     pub environment_duration_bonus: f32,
     pub summon_skill_bonus: f32,
@@ -383,6 +385,10 @@ impl EquipmentStats {
             } else {
                 0.
             },
+            hull_damage_multiplier: 100.
+                / modifiers
+                    .apply_signed("STAT_HULL_DAMAGE_CONTROL", 100.)
+                    .clamp(25., 400.),
             environment_skill_bonus: if skills.level(23) > 0 {
                 modifiers
                     .apply_signed("SKILL_ENVIRONMENT_SHIELD", 0.)
@@ -794,6 +800,37 @@ mod tests {
         let boosted = EquipmentStats::derive(&geared, &catalog, &skills).unwrap();
         assert_eq!(boosted.ship.deflects[0] - below.ship.deflects[0], 49.);
         assert!((boosted.ship.energy_recharge - below.ship.energy_recharge * 2.).abs() < 0.001);
+    }
+
+    /// Public hull integrity gear changes authoritative post-shield damage.
+    #[test]
+    fn hull_damage_control_gear_changes_hull_spill_without_touching_shields() {
+        let catalog = ItemCatalog::load().unwrap();
+        let skills = SkillCatalog::load().unwrap();
+        let mut inventory = Inventory::starter(&catalog).unwrap();
+        let bare = EquipmentStats::derive(&inventory, &catalog, &skills).unwrap();
+        assert_eq!(bare.ship.hull_damage_multiplier, 1.);
+        inventory.equipped[3] = Some(crate::inventory::ItemInstance::stock(929, 1));
+        let geared = EquipmentStats::derive(&inventory, &catalog, &skills).unwrap();
+        assert!((geared.ship.hull_damage_multiplier - 100. / 123.).abs() < 0.001);
+        let damage = |multiplier| {
+            crate::combat_damage::player_damage(
+                100.,
+                crate::combat_damage::DamageType::Impact,
+                crate::combat_damage::PlayerDefense {
+                    shield: 0.,
+                    hull: 1_000.,
+                    deflect_percent: 0.,
+                    damage_control: crate::combat_damage::combined_damage_control(0., multiplier),
+                },
+            )
+            .unwrap()
+            .hull_damage
+        };
+        assert!((damage(geared.ship.hull_damage_multiplier) - 10000. / 123.).abs() < 0.001);
+        inventory.equipped[3].as_mut().unwrap().structure = 0.;
+        let broken = EquipmentStats::derive(&inventory, &catalog, &skills).unwrap();
+        assert_eq!(damage(broken.ship.hull_damage_multiplier), 100.);
     }
 
     /// A public Environment Shield device supplies both catalog skill and duration values.

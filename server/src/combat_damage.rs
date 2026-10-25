@@ -136,6 +136,12 @@ pub fn player_damage(
     Ok(result)
 }
 
+/// Returns:
+///     f32: Fraction passed to native hull spill after passive and hull gear.
+pub fn combined_damage_control(passive_fraction: f32, gear_multiplier: f32) -> f32 {
+    1. - (1. - passive_fraction) * gear_multiplier
+}
+
 /// PlayerSkills.cpp, rank zero has no passive; TE/PW callers apply it to hull.
 pub fn damage_control_fraction(rank: u32) -> f32 {
     if rank == 0 {
