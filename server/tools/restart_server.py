@@ -90,7 +90,17 @@ def process_identity(pid: int) -> tuple[Path, float] | None:
     return Path(line[24:].strip()).resolve(), started
 
 
-def restart(state: Path, *, no_build: bool) -> int:
+def restart(state: Path, *, no_build: bool, release: bool = False) -> int:
+    """Build and replace only the recorded server, restoring its prior image on terminal failure.
+
+    Returns:
+        int: PID of the ready replacement or fallback server.
+
+    Raises:
+        ValueError: When release and no-build modes are requested together.
+    """
+    if no_build and release:
+        raise ValueError('--release requires a build; omit --no-build')
     state = state.resolve()
     status = json.loads((state / 'server.local.json').read_text())
     pid = int(status['pid'])
@@ -109,7 +119,7 @@ def restart(state: Path, *, no_build: bool) -> int:
     if not no_build:
         print(f'Building replacement while owned server PID {pid} stays running', flush=True)
         try:
-            staged = build(target_dir=ROOT / 'target/restart-build')
+            staged = build(release=release, target_dir=ROOT / 'target/restart-build')
         except Exception:
             print('Build failed; no shutdown requested; current server remains running', flush=True)
             raise
@@ -127,7 +137,7 @@ def restart(state: Path, *, no_build: bool) -> int:
         if time.monotonic() >= deadline:
             raise TimeoutError('Owned server did not stop gracefully; no replacement launched')
         time.sleep(.1)
-    binary = executable if staged is None else ROOT / 'target/debug' / executable.name
+    binary = executable if staged is None else ROOT / 'target' / ('release' if release else 'debug') / executable.name
     failure: Exception | None = None
     replacement: subprocess.Popen[bytes] | None = None
     try:
@@ -156,8 +166,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--state-dir', type=Path, default=ROOT / 'state')
     parser.add_argument('--no-build', action='store_true', help='Restart the current binary without building')
+    parser.add_argument('--release', action='store_true', help='Build and stage an optimized release server')
     args = parser.parse_args()
-    restart(args.state_dir, no_build=args.no_build)
+    restart(args.state_dir, no_build=args.no_build, release=args.release)
 
 
 if __name__ == '__main__':

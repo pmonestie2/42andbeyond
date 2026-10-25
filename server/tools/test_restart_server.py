@@ -26,6 +26,10 @@ class RestartDeploymentTests(unittest.TestCase):
         self.staged = self.root / 'target/restart-build/debug/beyond-server.exe'
         self.staged.parent.mkdir(parents=True)
         self.staged.write_bytes(b'new executable')
+        self.release_staged = self.root / 'target/restart-build/release/beyond-server.exe'
+        self.release_staged.parent.mkdir(parents=True)
+        self.release_staged.write_bytes(b'optimized executable')
+        self.release_binary = self.root / 'target/release/beyond-server.exe'
         self.identity = (self.binary, 100.)
         (self.state / 'server.local.json').write_text(json.dumps(dict(
             pid=1234, started_at=100., bind='127.0.0.18',
@@ -41,11 +45,16 @@ class RestartDeploymentTests(unittest.TestCase):
         self.ready = patch('restart_server.wait_ready').start()
         self.registered = patch('restart_server.registered', return_value=False).start()
 
-    def build_before_stop(self, *, target_dir: Path) -> Path:
+    def build_before_stop(self, release: bool, *, target_dir: Path) -> Path:
+        """Return a completed mocked image while checking the old server stays up.
+
+        Returns:
+            Path: Mock build artifact for the requested Cargo profile.
+        """
         self.assertFalse((self.state / 'stop.request').exists())
-        self.assertEqual(self.binary.read_bytes(), b'old executable')
+        self.assertEqual(self.identity[0].read_bytes(), b'old executable')
         self.assertEqual(target_dir, self.root / 'target/restart-build')
-        return self.staged
+        return self.release_staged if release else self.staged
 
     def test_finished_build_is_installed_after_owned_shutdown(self) -> None:
         self.assertEqual(restart(self.state, no_build=False), 2345)
@@ -55,6 +64,46 @@ class RestartDeploymentTests(unittest.TestCase):
         self.launch.assert_called_once()
         self.assertEqual(self.launch.call_args.args[0][0], str(self.binary))
         self.assertFalse(list(self.binary.parent.glob('*.next-*')))
+
+    def test_release_build_stages_optimized_image_after_owned_debug_shutdown(self) -> None:
+        self.assertEqual(restart(self.state, no_build=False, release=True), 2345)
+        self.build.assert_called_once_with(release=True, target_dir=self.root / 'target/restart-build')
+        self.assertEqual(self.binary.read_bytes(), b'old executable')
+        self.assertEqual(self.release_binary.read_bytes(), b'optimized executable')
+        self.assertEqual((self.root / 'target/restart-fallback/beyond-server.exe').read_bytes(), b'old executable')
+        self.assertEqual(self.launch.call_args.args[0][0], str(self.release_binary))
+        self.assertFalse(list(self.release_binary.parent.glob('*.next-*')))
+
+    def test_release_replacement_failure_restores_running_debug_image(self) -> None:
+        failed = Mock(pid=2344)
+        failed.poll.return_value = 2
+        self.launch.side_effect = [failed, self.replacement]
+        self.ready.side_effect = [RuntimeError('startup exited'), None]
+        with self.assertRaisesRegex(RuntimeError, 'previous server is running'):
+            restart(self.state, no_build=False, release=True)
+        self.assertEqual(self.release_binary.read_bytes(), b'optimized executable')
+        self.assertEqual(self.launch.call_count, 2)
+        fallback = Path(self.launch.call_args_list[1].args[0][0])
+        self.assertEqual(fallback.read_bytes(), b'old executable')
+
+    def test_release_replaces_owned_release_image_with_its_own_fallback(self) -> None:
+        self.release_binary.parent.mkdir(parents=True)
+        self.release_binary.write_bytes(b'old executable')
+        self.identity = (self.release_binary, 100.)
+        self.process_identity.side_effect = [self.identity, self.identity, None]
+        status = json.loads((self.state / 'server.local.json').read_text())
+        status['command'][0] = str(self.release_binary)
+        (self.state / 'server.local.json').write_text(json.dumps(status))
+        self.assertEqual(restart(self.state, no_build=False, release=True), 2345)
+        self.assertEqual(self.release_binary.read_bytes(), b'optimized executable')
+        self.assertEqual((self.root / 'target/restart-fallback/beyond-server.exe').read_bytes(), b'old executable')
+
+    def test_release_and_no_build_conflict_before_process_or_state_access(self) -> None:
+        with self.assertRaisesRegex(ValueError, 'requires a build'):
+            restart(self.state, no_build=True, release=True)
+        self.process_identity.assert_not_called()
+        self.build.assert_not_called()
+        self.launch.assert_not_called()
 
     def test_build_failure_leaves_playable_server_untouched(self) -> None:
         self.build.side_effect = RuntimeError('compiler failed')
