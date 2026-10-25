@@ -14,7 +14,7 @@ internal static class Program
         CheckReassembly(); CheckWorld(); CheckMissionJournal(); CheckMissionDialogue();
         CheckExperience(); CheckHullProgression(); CheckMiningPhases(); CheckLootTractor(); CheckLootSweep(); CheckWarpPhases(); CheckNavigationSelection(); CheckWarpTargets(); CheckWeaponReady();
         CheckDamageResults(); CheckCombatEngagement(); CheckShotPresentation(); CheckContactSelection(); CheckTargetVerbs(); CheckDeviceEffects();
-        CheckNativeDeviceBuff(); CheckPeerScanBuff(); CheckSupportObjectEffects();
+        CheckNativeDeviceBuff(); CheckPeerScanBuff(); CheckConcurrentRecipientBuffs(); CheckSupportObjectEffects();
         CheckAmmunitionTransfer(); CheckFlightThrottle(); CheckFormationAnchor();
         CheckStationLayout(); CheckStationWalk(); CheckDemoRoster(); CheckAddress(); PeerChecks.Decode();
         Console.WriteLine("PASS: framing, ordering, fragmentation, duplicates, bounds, world decoding, private addresses");
@@ -802,6 +802,71 @@ internal static class Program
             "Concurrent native self and peer buff visuals did not remain independent.");
     }
 
+    /// <summary>Decode exact server slot-two/three frames without replacing another recipient buff.</summary>
+    private static void CheckConcurrentRecipientBuffs()
+    {
+        byte[] Bytes(string hex) => Enumerable.Range(0, hex.Length / 2)
+            .Select(index => Convert.ToByte(hex.Substring(index * 2, 2), 16)).ToArray();
+        Frame Fixture(string hex)
+        {
+            byte[] frame = Bytes(hex);
+            Assert(Wire.U16(frame, 0) == frame.Length && Wire.U16(frame, 2) == 0x1b,
+                "Server recipient-buff fixture framing changed.");
+            return new Frame(0x1b, frame.Skip(4).ToArray());
+        }
+        const uint player = 0x40000002;
+        var world = new World();
+        world.Apply(new Frame(0x1b, Bytes(
+            "020000402800010200000000400000220000d2001300496e637265617365205363616e2052616e67650088130000")), player);
+        world.Apply(Fixture("30001b00020000402600010200000000400000420000d2001100526567656e657261746520536869656c640040e20100"), player);
+        world.Apply(Fixture("30001b00020000402600010200000000400000820000d2001100526567656e657261746520456e657267790040e20100"), player);
+        Assert(world.PeerBuff.Name == "Increase Scan Range" &&
+            world.ShieldBuff.Name == "Regenerate Shield" && world.ReactorBuff.Name == "Regenerate Energy" &&
+            world.ShieldBuff.RemovalTick == 123456 && world.ReactorBuff.RemovalTick == 123456,
+            "Native recipient slots one through three were not decoded independently.");
+        NativeObjectEffect serverVisual = NativeObjectEffect.Decode(Bytes(
+            "030200001029020300a04c88130000"));
+        Assert(serverVisual.OwnerId == 0x10000002 && serverVisual.Descriptor == 553 &&
+            serverVisual.EffectId == 0x4ca00003 && serverVisual.Tick == 5000,
+            "Server-encoded recipient recharge ObjectEffect fixture changed.");
+        byte[] Visual(uint effectId) => Wire.Body(writer =>
+        {
+            writer.Write((byte)3); writer.Write(player); writer.Write((ushort)553);
+            writer.Write(effectId); writer.Write(120000u);
+        });
+        world.Apply(new Frame(0x09, Visual(0xA0000001)), player);
+        world.Apply(new Frame(0x09, Visual(0xA0000002)), player);
+        Snapshot active = new Snapshot(world, "ready", true);
+        Assert(active.PeerBuff != null && active.ShieldBuff?.VisualEffectId == 0xA0000001 &&
+            active.ReactorBuff?.VisualEffectId == 0xA0000002 &&
+            active.ShieldBuff.VisualDescriptor == 553 && active.ReactorBuff.VisualDescriptor == 553,
+            "Equal visual descriptors were not matched to the correct native buff slots.");
+        world.Apply(Fixture("1f001b00020000401500010200000000400000420000d20000000000000000"), player);
+        world.Apply(new Frame(0x0f, Bytes("010000a0")), player);
+        Snapshot ended = new Snapshot(world, "ready", true);
+        Assert(ended.ShieldBuff == null && ended.ReactorBuff?.VisualEffectId == 0xA0000002 &&
+            ended.PeerBuff?.Name == "Increase Scan Range" && active.ShieldBuff.VisualActive,
+            "Shield expiry removed another recipient buff or mutated an old immutable snapshot.");
+        world.Apply(Fixture("1f001b00020000401500010200000000400000820000d20000000000000000"), player);
+        world.Apply(new Frame(0x0f, Bytes("020000a0")), player);
+        Assert(new Snapshot(world, "ready", true).ReactorBuff == null &&
+            new Snapshot(world, "ready", true).PeerBuff != null,
+            "Reactor expiry removed the still-active recipient scan buff.");
+        world.Apply(new Frame(0x1b, Bytes(
+            "020000402500010200000000400000020100d2001000526564756365205369676e61747572650088130000")), player);
+        Snapshot signature = new Snapshot(world, "ready", true);
+        Assert(signature.SignatureBuff?.Name == "Reduce Signature" &&
+            world.SignatureBuff.RemovalTick == 5000 &&
+            !signature.SignatureBuff.VisualActive && signature.PeerBuff != null,
+            "Native slot-four signature buff gained a nonexistent ObjectEffect or replaced Scan Boost.");
+        world.Apply(new Frame(0x1b, Bytes(
+            "020000401500010200000000400000020100d20000000000000000")), player);
+        Assert(new Snapshot(world, "ready", true).SignatureBuff == null &&
+            signature.SignatureBuff.Name == "Reduce Signature" &&
+            new Snapshot(world, "ready", true).PeerBuff != null,
+            "Signature expiry altered another recipient slot or an immutable older snapshot.");
+    }
+
     /// <summary>Retain server-created support visuals until their native removal packet.</summary>
     private static void CheckSupportObjectEffects()
     {
@@ -829,7 +894,7 @@ internal static class Program
             "Recharge Reactor", "Recharge Shields", "Deflect Impact", "Deflect Explosive",
             "Deflect Plasma", "Deflect Energy", "Deflect EMP", "Deflect Chemical", "Resist Psionic",
             "Turbo Warp", "Improved Beam Handling", "Improved Projectile Handling", "Shunt to Reactor",
-            "Increase Maneuverability", "Maximize Shields"
+            "Increase Maneuverability", "Maximize Shields", "Reduce Ship Signature"
         })
             Assert(DeviceEffects.LabelFor(description + " (Activated)") == description,
                 "A server-supported active device is missing from the catalog allowlist.");
@@ -837,6 +902,10 @@ internal static class Program
             DeviceEffects.LabelFor("Reroute Shield Energy (Instant)") == "Reroute Shield Energy" &&
             DeviceEffects.LabelFor("Transfer Reactor Energy (Instant)") == "Transfer Reactor Energy",
             "Native instant and impulse catalog descriptions lost their UI labels.");
+        foreach (string ally in new[] { "Scan Boost", "Recharge Shields",
+                     "Recharge Reactor", "Reduce Ship Signature" })
+            Assert(DeviceEffects.RequiresPeer(ally, true) && !DeviceEffects.RequiresPeer(ally),
+                "A targeted-friendly device bypassed the selected crew recipient check.");
         Assert(DeviceEffects.MountedSlot("Transfer Reactor Energy", 11, 14, 6) &&
             DeviceEffects.MountedSlot("Reroute Shield Energy", 7, 1, 6) &&
             DeviceEffects.MountedSlot("Increase Maneuverability", 2, 0, 6) &&
@@ -861,7 +930,7 @@ internal static class Program
             "Native recharge-device metadata fixture is malformed.");
         ItemTemplateInfo template = ItemTemplateInfo.Decode(packet.Skip(4).ToArray());
         Assert(template.Id == 1810 && template.Type == 11 &&
-            template.ActivationLabel == "Recharge Reactor",
+            template.ActivationLabel == "Recharge Reactor" && template.TargetsPeer,
             "Native recharge device metadata was not exposed to the equipped-device control.");
         ItemTemplateInfo peerScan = ItemTemplateInfo.Decode(FixtureBytes("item1813.hex"));
         ItemTemplateInfo reactor = ItemTemplateInfo.Decode(FixtureBytes("item3337.hex"));

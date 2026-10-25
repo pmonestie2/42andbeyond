@@ -24,6 +24,7 @@ namespace FortyTwoAndBeyond.Protocol
             ["Transfer Reactor Energy (Instant)"] = "Transfer Reactor Energy",
             ["Recharge Reactor (Activated)"] = "Recharge Reactor",
             ["Recharge Shields (Activated)"] = "Recharge Shields",
+            ["Reduce Ship Signature (Activated)"] = "Reduce Ship Signature",
             ["Deflect Impact (Activated)"] = "Deflect Impact",
             ["Deflect Explosive (Activated)"] = "Deflect Explosive",
             ["Deflect Plasma (Activated)"] = "Deflect Plasma",
@@ -48,7 +49,9 @@ namespace FortyTwoAndBeyond.Protocol
 
         /// <returns>bool: Whether activation needs an acknowledged visible pilot target.</returns>
         public static bool RequiresPeer(string label, bool targetsPeer = false)
-        { return label == "Transfer Reactor Energy" || label == "Scan Boost" && targetsPeer; }
+        { return label == "Transfer Reactor Energy" || targetsPeer &&
+            (label == "Scan Boost" || label == "Recharge Shields" ||
+             label == "Recharge Reactor" || label == "Reduce Ship Signature"); }
 
         /// <returns>bool: Whether the catalog effect may be activated from this unlocked mount.</returns>
         public static bool MountedSlot(string label, uint type, int slot, uint deviceMounts)

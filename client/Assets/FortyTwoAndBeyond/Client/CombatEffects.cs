@@ -77,6 +77,8 @@ namespace FortyTwoAndBeyond.Client
         private LineRenderer peerHalo, peerSweep;
         private uint peerEffectId;
         private ushort peerDescriptor;
+        private readonly LineRenderer[] recipientRings = new LineRenderer[2];
+        private readonly uint[] recipientEffectIds = new uint[2];
         private WarpPhase warpPhase;
         private bool warpArrived;
         private float warpChangedAt;
@@ -119,6 +121,8 @@ namespace FortyTwoAndBeyond.Client
             loadout.Apply(snapshot);
             SetDeviceBuff(snapshot.DeviceBuff, snapshot.Station != null);
             SetPeerBuff(snapshot.PeerBuff, snapshot.Station != null);
+            SetResourceBuff(0, snapshot.ShieldBuff, snapshot.Station != null);
+            SetResourceBuff(1, snapshot.ReactorBuff, snapshot.Station != null);
             foreach (ShotEvent shot in snapshot.Shots)
             {
                 if (shot.Sequence <= lastShotSequence) continue;
@@ -390,6 +394,7 @@ namespace FortyTwoAndBeyond.Client
             TickWarp();
             TickDeviceBuff();
             TickPeerBuff();
+            TickResourceBuffs();
         }
 
         /// <summary>Animate one authoritative mining beam without changing the other phase.</summary>
@@ -508,6 +513,55 @@ namespace FortyTwoAndBeyond.Client
             peerHalo = peerSweep = null;
             peerEffectId = 0;
             peerDescriptor = 0;
+        }
+
+        /// <summary>Bind each native recipient recharge effect to a separate compact ship ring.</summary>
+        private void SetResourceBuff(int slot, DeviceBuffView buff, bool docked)
+        {
+            if (docked || buff == null || !buff.VisualActive)
+            { ClearResourceBuff(slot); return; }
+            if (recipientRings[slot] != null && recipientEffectIds[slot] == buff.VisualEffectId)
+                return;
+            ClearResourceBuff(slot);
+            recipientEffectIds[slot] = buff.VisualEffectId;
+            Color tint = slot == 0 ? new Color(.4f, .77f, 1f) : new Color(.4f, 1f, .69f);
+            recipientRings[slot] = Line(slot == 0 ? "Recipient shield recharge" :
+                "Recipient reactor recharge", .023f, tint, 49);
+            recipientRings[slot].useWorldSpace = false;
+            recipientRings[slot].enabled = false;
+        }
+
+        /// <summary>Keep the two server-owned recharge visuals distinct and inside the ship silhouette.</summary>
+        private void TickResourceBuffs()
+        {
+            for (int slot = 0; slot < recipientRings.Length; slot++)
+            {
+                LineRenderer ring = recipientRings[slot];
+                if (ring == null) continue;
+                float time = Time.unscaledTime;
+                ring.transform.position = player.position;
+                ring.transform.rotation = player.rotation * Quaternion.Euler(
+                    slot == 0 ? 25f : -25f, time * (slot == 0 ? 24f : -21f), 0);
+                float radius = slot == 0 ? .63f : .79f;
+                for (int point = 0; point < 49; point++)
+                {
+                    float angle = point * Mathf.PI * 2f / 48f;
+                    ring.SetPosition(point, new Vector3(Mathf.Cos(angle) * radius,
+                        Mathf.Sin(angle) * radius * .48f, 0));
+                }
+                Color tint = slot == 0 ? new Color(.4f, .77f, 1f) : new Color(.4f, 1f, .69f);
+                tint.a = .18f + .06f * Mathf.Sin(time * 4f + slot);
+                ring.startColor = ring.endColor = tint;
+                ring.enabled = true;
+            }
+        }
+
+        /// <summary>Remove only the expired recipient recharge visual.</summary>
+        private void ClearResourceBuff(int slot)
+        {
+            if (recipientRings[slot] != null) Object.Destroy(recipientRings[slot].gameObject);
+            recipientRings[slot] = null;
+            recipientEffectIds[slot] = 0;
         }
 
         /// <summary>Display a ship-local field only while the native device visual is active.</summary>
@@ -748,6 +802,8 @@ namespace FortyTwoAndBeyond.Client
             ClearLoot();
             ClearDeviceBuff();
             ClearPeerBuff();
+            ClearResourceBuff(0);
+            ClearResourceBuff(1);
             ClearWarp(); warpPhase = WarpPhase.Idle; warpArrived = false;
             reportedShields.Clear();
             loadout.Reset();

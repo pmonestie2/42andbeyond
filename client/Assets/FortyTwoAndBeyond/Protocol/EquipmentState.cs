@@ -61,9 +61,11 @@ namespace FortyTwoAndBeyond.Protocol
                     Wire.Require(body, offset, values * 4 + 8); offset += values * 4;
                     uint flag1 = Wire.U32(body, offset), flag2 = Wire.U32(body, offset + 4);
                     offset += 8;
-                    if (block == 0 && effects == 1 && type == 11 &&
-                        activationLabel == "Scan Boost")
-                        targetsPeer = flag1 == 16 && flag2 == 1;
+                    if (block == 0 && effects == 1 && type == 11 && flag2 == 1)
+                        targetsPeer = (activationLabel == "Scan Boost" ||
+                            activationLabel == "Reduce Ship Signature") && flag1 == 16 ||
+                            (activationLabel == "Recharge Shields" ||
+                             activationLabel == "Recharge Reactor") && flag1 == 64;
                 }
                 if (effects > 0) { Wire.Require(body, offset, 16); offset += 16; }
             }

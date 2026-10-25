@@ -520,10 +520,15 @@ namespace FortyTwoAndBeyond.Protocol
         public uint CastingAbilityId { get; private set; } = uint.MaxValue;
         public string ActiveDeviceLabel { get; private set; } = "";
         public long ActiveDeviceEndsAt { get; private set; }
-        public TimedDeviceBuff ActiveBuff { get; private set; } = TimedDeviceBuff.Empty;
-        public TimedDeviceBuff PeerBuff { get; private set; } = TimedDeviceBuff.Empty;
-        private bool awaitingDeviceVisual;
-        private bool awaitingPeerVisual;
+        private readonly TimedDeviceBuff[] buffs = { TimedDeviceBuff.Empty, TimedDeviceBuff.Empty,
+            TimedDeviceBuff.Empty, TimedDeviceBuff.Empty, TimedDeviceBuff.Empty };
+        private readonly System.Collections.Generic.List<int> pendingBuffVisuals =
+            new System.Collections.Generic.List<int>();
+        public TimedDeviceBuff ActiveBuff => buffs[0];
+        public TimedDeviceBuff PeerBuff => buffs[1];
+        public TimedDeviceBuff ShieldBuff => buffs[2];
+        public TimedDeviceBuff ReactorBuff => buffs[3];
+        public TimedDeviceBuff SignatureBuff => buffs[4];
         public bool TurboWeaponsActive => ActiveDeviceLabel == "Turbo Weapons";
         public long CastEndsAt { get; private set; }
         public Dictionary<uint, long> AbilityCooldownEnds { get; } = new Dictionary<uint, long>();
@@ -619,7 +624,7 @@ namespace FortyTwoAndBeyond.Protocol
                 case 0x4f:
                     if (b.Length != 6) throw new InvalidDataException("Invalid station identity.");
                     Station = b[4] == 0 ? new StationState(Wire.U32(b, 0)) : null;
-                    if (Station != null) { ActiveDeviceLabel = ""; ActiveDeviceEndsAt = 0; ActiveBuff = TimedDeviceBuff.Empty; PeerBuff = TimedDeviceBuff.Empty; awaitingDeviceVisual = false; awaitingPeerVisual = false; Formation = null; ObjectEffects.Clear(); }
+                    if (Station != null) { ActiveDeviceLabel = ""; ActiveDeviceEndsAt = 0; for (int slot = 0; slot < buffs.Length; slot++) buffs[slot] = TimedDeviceBuff.Empty; pendingBuffVisuals.Clear(); Formation = null; ObjectEffects.Clear(); }
                     Production = new ProductionState();
                     StationAvatars.Clear();
                     Dialogue = null; Vendor = Array.Empty<ItemState>();
@@ -700,17 +705,21 @@ namespace FortyTwoAndBeyond.Protocol
                         if (ObjectEffects.Count >= 256) ObjectEffects.Clear();
                         ObjectEffects[((ulong)objectEffect.OwnerId << 32) | objectEffect.EffectId] = objectEffect;
                     }
-                    if (awaitingDeviceVisual && objectEffect?.OwnerId == player && ActiveBuff.Active &&
-                        !(awaitingPeerVisual && objectEffect.Descriptor == 462))
+                    if (objectEffect?.OwnerId == player)
                     {
-                        ActiveBuff = ActiveBuff.WithVisual(objectEffect.EffectId, objectEffect.Descriptor);
-                        awaitingDeviceVisual = false;
-                    }
-                    if (awaitingPeerVisual && objectEffect?.OwnerId == player && PeerBuff.Active &&
-                        objectEffect.Descriptor == 462)
-                    {
-                        PeerBuff = PeerBuff.WithVisual(objectEffect.EffectId, objectEffect.Descriptor);
-                        awaitingPeerVisual = false;
+                        int slot = pendingBuffVisuals.FindIndex(index => buffs[index].Active &&
+                            (index == 1 && objectEffect.Descriptor == 462 ||
+                             (index == 2 || index == 3) && objectEffect.Descriptor == 553 ||
+                             index == 0 && objectEffect.Descriptor == 553));
+                        if (slot < 0 && objectEffect.Descriptor != 462 && objectEffect.Descriptor != 553)
+                            slot = pendingBuffVisuals.FindIndex(index => index == 0 && buffs[0].Active);
+                        if (slot >= 0)
+                        {
+                            int index = pendingBuffVisuals[slot];
+                            buffs[index] = buffs[index].WithVisual(objectEffect.EffectId,
+                                objectEffect.Descriptor);
+                            pendingBuffVisuals.RemoveAt(slot);
+                        }
                     }
                     break;
                 case 0x0f:
@@ -721,10 +730,10 @@ namespace FortyTwoAndBeyond.Protocol
                     if (MiningProspect?.EffectId == removedEffect) MiningProspect = null;
                     if (MiningTractor?.EffectId == removedEffect) MiningTractor = null;
                     if (LootActivity?.EffectId == Wire.U32(b, 0)) LootActivity = null;
-                    if (ActiveBuff.VisualDescriptor != 0 && ActiveBuff.VisualEffectId == Wire.U32(b, 0))
-                        ActiveBuff = ActiveBuff.WithVisual(0, 0);
-                    if (PeerBuff.VisualDescriptor != 0 && PeerBuff.VisualEffectId == removedEffect)
-                        PeerBuff = PeerBuff.WithVisual(0, 0);
+                    for (int slot = 0; slot < buffs.Length; slot++)
+                        if (buffs[slot].VisualDescriptor != 0 &&
+                            buffs[slot].VisualEffectId == removedEffect)
+                            buffs[slot] = buffs[slot].WithVisual(0, 0);
                     break;
                 case 4:
                     Wire.Require(b, 0, 23);
@@ -748,7 +757,7 @@ namespace FortyTwoAndBeyond.Protocol
                 case 0x1d:
                     Wire.Require(b, 0, 3);
                     string message = Wire.Text(b, 3, b.Length - 3);
-                    awaitingDeviceVisual = false;
+                    pendingBuffVisuals.Remove(0);
                     if (message.StartsWith("Prospected ", StringComparison.Ordinal)) MiningTractor = null;
                     if (message.StartsWith("Prospecting interrupted", StringComparison.Ordinal) ||
                         message.StartsWith("Reactor depleted while prospecting", StringComparison.Ordinal))
@@ -831,19 +840,19 @@ namespace FortyTwoAndBeyond.Protocol
                     else if (Wire.U32(b, 0) == player)
                     {
                         WarpState warp = AuxState.ReadOwn(b, Equipment,
-                            out TimedDeviceBuff buff, out TimedDeviceBuff peerBuff);
+                            out TimedDeviceBuff[] revisions);
                         if (warp != null) Warp = warp;
-                        if (buff != null)
+                        for (int slot = 0; slot < buffs.Length; slot++)
                         {
-                            ActiveBuff = buff;
-                            awaitingDeviceVisual = buff.Active;
-                            ActiveDeviceLabel = buff.Active ? buff.Name : "";
-                            if (!buff.Active) ActiveDeviceEndsAt = 0;
-                        }
-                        if (peerBuff != null)
-                        {
-                            PeerBuff = peerBuff;
-                            awaitingPeerVisual = peerBuff.Active;
+                            if (revisions[slot] == null) continue;
+                            buffs[slot] = revisions[slot];
+                            pendingBuffVisuals.Remove(slot);
+                            if (buffs[slot].Active && slot < 4) pendingBuffVisuals.Add(slot);
+                            if (slot == 0)
+                            {
+                                ActiveDeviceLabel = buffs[0].Active ? buffs[0].Name : "";
+                                if (!buffs[0].Active) ActiveDeviceEndsAt = 0;
+                            }
                         }
                     }
                     else if (Station != null && Production.LabId != 0 &&
@@ -1009,6 +1018,7 @@ namespace FortyTwoAndBeyond.Protocol
         public readonly string ActiveDeviceLabel;
         public readonly DeviceBuffView DeviceBuff;
         public readonly DeviceBuffView PeerBuff;
+        public readonly DeviceBuffView ShieldBuff, ReactorBuff, SignatureBuff;
         public readonly float ActiveDeviceRemainingSeconds;
         public readonly float CastRemainingSeconds;
         public readonly IReadOnlyDictionary<uint, float> AbilityCooldownSeconds;
@@ -1063,6 +1073,12 @@ namespace FortyTwoAndBeyond.Protocol
             DeviceBuff = world.ActiveBuff.Active ? new DeviceBuffView(world.ActiveBuff,
                 world.EstimatedServerTick(now)) : null;
             PeerBuff = world.PeerBuff.Active ? new DeviceBuffView(world.PeerBuff,
+                world.EstimatedServerTick(now)) : null;
+            ShieldBuff = world.ShieldBuff.Active ? new DeviceBuffView(world.ShieldBuff,
+                world.EstimatedServerTick(now)) : null;
+            ReactorBuff = world.ReactorBuff.Active ? new DeviceBuffView(world.ReactorBuff,
+                world.EstimatedServerTick(now)) : null;
+            SignatureBuff = world.SignatureBuff.Active ? new DeviceBuffView(world.SignatureBuff,
                 world.EstimatedServerTick(now)) : null;
             CastingAbilityId = world.CastingAbilityId;
             TurboWeaponsActive = world.TurboWeaponsActive;

@@ -394,10 +394,10 @@ namespace FortyTwoAndBeyond.Protocol
             if (needsPeer &&
                 (!World.Players.TryGetValue(World.Equipment.TargetId, out peer) || !peer.HasPosition ||
                     template.TargetsPeer && !World.Group.Members.Any(member => member.Id == peer.Id)))
-            { Status = template.TargetsPeer ? "Select a visible crew pilot for Scan Boost" :
+            { Status = template.TargetsPeer ? "Select a visible crew pilot for " + template.ActivationLabel :
                 "Select a nearby pilot before transferring reactor energy"; return; }
             Send(0x5d, Wire.Body(w => { w.Write(Player); w.Write((byte)2); w.Write((byte)slot); }));
-            Status = template.TargetsPeer ? "Sending Scan Boost to " + peer.Name :
+            Status = template.TargetsPeer ? "Sending " + template.ActivationLabel + " to " + peer.Name :
                 needsPeer ? "Transferring reactor energy to " + peer.Name : "Activating " + template.Name;
         }
 
