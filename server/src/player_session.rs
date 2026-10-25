@@ -3997,7 +3997,7 @@ mod tests {
         ship.account.character.profession = 0;
         ship.skill_catalog = SkillCatalog::for_profile(&ship.account.character).unwrap();
         ship.inventory.faction_standings.insert(6, 5000.);
-        ship.inventory.missions.completed.extend([102, 104]);
+        ship.inventory.missions.completed.extend([102, 104, 105]);
         ship.refresh_equipment().unwrap();
         ship.sector = ship.sectors.sector(10151).unwrap();
         ship.logged_in = true;
@@ -4690,6 +4690,127 @@ mod tests {
         )
         .unwrap();
         assert_eq!(saved, resumed.inventory);
+        drop(resumed);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    /// A fresh Enforcer delivers the authored message to the selected space NPC once.
+    #[test]
+    fn native_enforcer_space_message_consumes_owned_item_after_durable_dialogue() {
+        let root = std::env::temp_dir().join(format!("enb-te-message-{}", rand::random::<u64>()));
+        let directory = crate::accounts::AccountDirectory::new(&root);
+        let stored = directory
+            .create_class_progression(
+                "enforcer".into(),
+                "pass",
+                "Enforcer".into(),
+                crate::classes::CharacterClass::parse("te").unwrap(),
+            )
+            .unwrap();
+        let initial = SectorCatalog::load().unwrap().sector(1076).unwrap();
+        let mut ship = PlayerSession::new(
+            initial.clone(),
+            Ipv4Addr::LOCALHOST,
+            stored.directory.clone(),
+        )
+        .unwrap();
+        let mut prior = ship.inventory.clone();
+        prior.missions.completed.extend([102, 104]);
+        ship.commit_inventory(prior).unwrap();
+        ship.logged_in = true;
+        enter_npc_room(&mut ship, 46);
+        ship.open_npc(46).unwrap();
+        assert_eq!(ship.npc_interaction.as_ref().unwrap().mission, Some(105));
+        let before = ship.inventory.clone();
+        let temporary = ship.state_dir.join("inventory.json.tmp");
+        std::fs::create_dir(&temporary).unwrap();
+        assert!(npc_choice(&mut ship, 2).is_err());
+        assert_eq!(ship.inventory, before);
+        std::fs::remove_dir(&temporary).unwrap();
+        npc_choice(&mut ship, 2).unwrap();
+        assert_eq!(ship.inventory.missions.active[0].stage, 1);
+        assert!(ship
+            .inventory
+            .cargo
+            .iter()
+            .flatten()
+            .any(|item| item.template == 5226));
+        let granted = ship.inventory.clone();
+        assert!(npc_choice(&mut ship, 2).is_err());
+        assert_eq!(ship.inventory, granted);
+        ship.close_npc();
+        ship.station_request(10151, 1).unwrap();
+        ship.logged_in = true;
+        assert_eq!(ship.sector.id, 1015);
+        let nav = ship
+            .sector
+            .navpoints
+            .iter()
+            .find(|nav| nav.source_id == 13451)
+            .unwrap()
+            .clone();
+        let target = [ship.player_id().to_le_bytes(), nav.id.to_le_bytes()].concat();
+        ship.position = [
+            nav.position[0] + nav.radius + 4999.,
+            nav.position[1],
+            nav.position[2],
+        ];
+        ship.handle_input(0x17, &target).unwrap();
+        assert_eq!(ship.npc_interaction.as_ref().unwrap().mission, Some(105));
+        assert_eq!(
+            ship.npc_interaction.as_ref().unwrap().space_object,
+            Some(nav.id)
+        );
+        let outsider = directory
+            .create_class_progression(
+                "outsider".into(),
+                "pass",
+                "Outsider".into(),
+                crate::classes::CharacterClass::parse("te").unwrap(),
+            )
+            .unwrap();
+        let mut peer =
+            PlayerSession::new(initial.clone(), Ipv4Addr::LOCALHOST, outsider.directory).unwrap();
+        peer.sector = peer.sectors.sector(1015).unwrap();
+        peer.position = ship.position;
+        peer.logged_in = true;
+        peer.handle_input(
+            0x17,
+            &[peer.player_id().to_le_bytes(), nav.id.to_le_bytes()].concat(),
+        )
+        .unwrap();
+        assert!(peer.npc_interaction.is_none());
+        drop(peer);
+        npc_choice(&mut ship, 2).unwrap();
+        ship.position[0] += 3.;
+        assert!(npc_choice(&mut ship, 3).is_err());
+        assert_eq!(ship.inventory, granted);
+        ship.position[0] -= 3.;
+        let temporary = ship.state_dir.join("inventory.json.tmp");
+        std::fs::create_dir(&temporary).unwrap();
+        assert!(npc_choice(&mut ship, 3).is_err());
+        assert_eq!(ship.inventory, granted);
+        std::fs::remove_dir(&temporary).unwrap();
+        npc_choice(&mut ship, 3).unwrap();
+        assert!(ship.inventory.missions.completed.contains(&105));
+        assert!(!ship
+            .inventory
+            .cargo
+            .iter()
+            .flatten()
+            .any(|item| item.template == 5226));
+        assert_eq!(ship.inventory.explore_xp, granted.explore_xp + 5000);
+        assert_eq!(ship.inventory.trade_xp, granted.trade_xp + 5000);
+        let state = ship.state_dir.clone();
+        drop(ship);
+        let resumed = PlayerSession::new(initial, Ipv4Addr::LOCALHOST, state).unwrap();
+        assert!(resumed.inventory.missions.completed.contains(&105));
+        assert!(!resumed
+            .inventory
+            .cargo
+            .iter()
+            .flatten()
+            .any(|item| item.template == 5226));
         drop(resumed);
         std::fs::remove_dir_all(root).unwrap();
     }

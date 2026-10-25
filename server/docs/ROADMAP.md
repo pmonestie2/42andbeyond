@@ -201,11 +201,12 @@ mean the corresponding gameplay system is complete.
   the class ceiling instead of the pilot's current rank, allowing a supported
   mission to grant its first rank durably.
 - The public mission catalog loads all 364 imported definitions; the runtime
-  currently offers seventeen wired NPC missions: Finer Points of Negotiation
+  currently offers eighteen wired NPC missions: Finer Points of Negotiation
   (3), Reactor Leak (5), Supply Run (6), Waste Disposal (48), The Cleaner (59),
   Defense of the Sharim (81), Going for
   Repairs (90), Basic Shooting Range (102), its
-  prerequisite-gated sequel Kill Scuttle Larva (104), repeatable Eliminate
+  prerequisite-gated sequel Kill Scuttle Larva (104), Message For The First
+  Sergeant (105), repeatable Eliminate
   Scuttle Infestation (303), and Cash for 'Roids (341), plus the six Scout hull
   upgrades (245, 246, 258–261) at NPC27.
   The Scout rewards advance exactly one stage at native total-level gates.
@@ -231,6 +232,12 @@ mean the corresponding gameplay system is complete.
   final inventory writes cannot advance or multiply the reward.
   Corpse/XP validation now admits public level-zero MOBs, preserving their
   death generation, loot stock and combat awards across world reload.
+  A completed Scuttle Larva mission unlocks the Enforcer's message delivery:
+  accepting at Luna NPC46 grants the authored message in the same durable
+  journal/item commit, then selecting public space NPC13451 within 5,000 m
+  opens its 0x54 dialogue. Final choice consumes the owned message and grants
+  Explore/Trade XP atomically. Wrong pilots, lost range and failed writes do
+  not complete the delivery; restart retains either stage or reward.
   Skill unlocks are recorded durably, while the sandbox class catalog still grants
   those skills at their ceiling. Defense of the Sharim now runs three public
   MOB kill stages with archived dialogue, permanent-decline branch and a final

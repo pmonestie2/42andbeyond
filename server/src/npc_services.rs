@@ -105,7 +105,7 @@ impl PlayerSession {
         let Some((mission, stage)) = self.inventory.missions.active.iter().find_map(|progress| {
             let definition = catalog.get(progress.id).ok()?;
             let current = definition.stages.get(progress.stage as usize)?;
-            (progress.id == 48
+            (matches!(progress.id, 48 | 105)
                 && current.completion.iter().any(|objective| {
                     objective.kind == 19 && objective.data == i64::from(source_id)
                 }))
@@ -311,7 +311,18 @@ impl PlayerSession {
         } else {
             candidate.missions.complete(mission, &catalog)?;
         }
-        for reward in &current_stage.rewards {
+        self.mission_rewards_candidate(candidate, &current_stage.rewards)
+    }
+
+    /// Returns:
+    ///     Inventory: Candidate with validated public rewards applied atomically.
+    fn mission_rewards_candidate(
+        &self,
+        candidate: Inventory,
+        rewards: &[crate::missions::MissionReward],
+    ) -> io::Result<Inventory> {
+        let mut candidate = candidate;
+        for reward in rewards {
             let signed = match &reward.data {
                 crate::missions::MissionRewardData::Number(value) => *value,
                 crate::missions::MissionRewardData::Script(_) => {
@@ -482,6 +493,10 @@ impl PlayerSession {
                 candidate
                     .missions
                     .start(mission, crate::resources::unix_ms(), &catalog)?;
+                candidate = self.mission_rewards_candidate(
+                    candidate,
+                    &catalog.get(mission)?.stages[0].rewards,
+                )?;
             } else {
                 candidate = self.mission_transition_candidate(
                     mission,
