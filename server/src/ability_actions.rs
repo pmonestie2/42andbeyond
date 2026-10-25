@@ -28,6 +28,7 @@ impl PlayerSession {
         );
         let durable_rally = ability.kind == AbilityKind::Rally;
         let durable_optimization = ability.kind == AbilityKind::ReactorOptimization;
+        let durable_sap = ability.kind == AbilityKind::ShieldSap;
         let durable_gravity = ability.kind == AbilityKind::GravityLink;
         if ability.kind == AbilityKind::Jumpstart {
             self.jumpstart_definition()?;
@@ -62,6 +63,9 @@ impl PlayerSession {
         if durable_optimization && self.skills.pending_reactor_optimization.is_some() {
             return Err(invalid("Previous Reactor Optimization is still settling."));
         }
+        if durable_sap && self.skills.pending_shield_sap.is_some() {
+            return Err(invalid("Previous Shield Sap is still settling."));
+        }
         let self_jumpstart = ability.kind == AbilityKind::Jumpstart
             && (requested_target == self.player_id() || requested_target == u32::MAX);
         if self.hull <= 0. && !self_jumpstart {
@@ -74,6 +78,9 @@ impl PlayerSession {
         }
         if durable_repair && self.mining.is_some() {
             return Err(invalid("Stop prospecting before using repair abilities."));
+        }
+        if durable_sap && self.mining.is_some() {
+            return Err(invalid("Stop prospecting before using Shield Sap."));
         }
         if self
             .skills
@@ -89,6 +96,16 @@ impl PlayerSession {
         {
             return Err(invalid("Reactor Optimization rank is not trained."));
         }
+        if durable_sap
+            && crate::shield_sap::tier(ability.id, self.skill_catalog.level(54)).is_none()
+        {
+            return Err(invalid("Shield Sap rank is not trained."));
+        }
+        let sap_generation = if durable_sap {
+            Some(self.shield_sap_target_generation(target)?)
+        } else {
+            None
+        };
         let gravity_generation = if durable_gravity {
             Some(self.gravity_target_generation(target)?)
         } else {
@@ -164,6 +181,7 @@ impl PlayerSession {
             AbilityKind::Rally => 0,
             AbilityKind::ReactorOptimization => 0,
             AbilityKind::GravityLink => 0,
+            AbilityKind::ShieldSap => 733,
             AbilityKind::EquipmentRepair => unreachable!("toggle handled before charged cast"),
         };
         if ability.kind == AbilityKind::Jumpstart {
@@ -204,8 +222,10 @@ impl PlayerSession {
             recharge_amount,
             hull_repair_amount,
             gravity_generation,
+            sap_generation,
         });
-        if durable_repair || durable_rally || durable_gravity || durable_optimization {
+        if durable_repair || durable_rally || durable_gravity || durable_optimization || durable_sap
+        {
             if let Err(error) = self.checkpoint_session(true) {
                 self.energy += energy;
                 self.skills.cast = None;
@@ -294,7 +314,10 @@ impl PlayerSession {
             ability.kind,
             AbilityKind::Contemplation | AbilityKind::Leech
         ) || ability.id == 124
-            || ability.kind == AbilityKind::GravityLink;
+            || matches!(
+                ability.kind,
+                AbilityKind::GravityLink | AbilityKind::ShieldSap
+            );
         if enemy {
             let index = self
                 .target
@@ -424,15 +447,25 @@ impl PlayerSession {
                     || self.gate_transit.is_some()
                     || self.sector.station.is_some()
                     || !self.logged_in);
+            let invalid_sap = definition.kind == AbilityKind::ShieldSap
+                && (self.warp.active()
+                    || self.gate_transit.is_some()
+                    || self.sector.station.is_some()
+                    || self.mining.is_some()
+                    || !self.logged_in);
             if (self.hull <= 0. && !self_jumpstart)
                 || invalid_jumpstart
                 || invalid_recharge
                 || invalid_gravity
+                || invalid_sap
                 || definition.kind == AbilityKind::Cloak
                     && definition.rank < 5
                     && self.motion.speed.abs() > 0.1
             {
-                if definition.kind == AbilityKind::GravityLink {
+                if matches!(
+                    definition.kind,
+                    AbilityKind::GravityLink | AbilityKind::ShieldSap
+                ) {
                     if let Err(error) = self.checkpoint_session(true) {
                         self.skills.cast = Some(cast);
                         return Err(error);
@@ -495,14 +528,7 @@ impl PlayerSession {
                     self.tick_ms(),
                     (cooldown * 1000.) as u32,
                 ));
-                if let Err(error) = self.apply_ability(
-                    &ability,
-                    cast.target,
-                    cast.effect,
-                    cast.jumpstart.as_ref(),
-                    cast.recharge_amount,
-                    cast.hull_repair_amount,
-                ) {
+                if let Err(error) = self.apply_ability(&ability, &cast) {
                     self.pending.push(packets::message(&error.to_string()));
                 } else {
                     crate::server_log!(
@@ -516,15 +542,13 @@ impl PlayerSession {
         Ok(())
     }
 
-    fn apply_ability(
-        &mut self,
-        ability: &AbilityDefinition,
-        target: u32,
-        effect: u32,
-        jumpstart: Option<&crate::skills::JumpstartPlan>,
-        recharge_amount: Option<f32>,
-        hull_repair_amount: Option<f32>,
-    ) -> io::Result<()> {
+    fn apply_ability(&mut self, ability: &AbilityDefinition, cast: &Cast) -> io::Result<()> {
+        let target = cast.target;
+        let effect = cast.effect;
+        let jumpstart = cast.jumpstart.as_ref();
+        let recharge_amount = cast.recharge_amount;
+        let hull_repair_amount = cast.hull_repair_amount;
+        let sap_generation = cast.sap_generation;
         let shared = Arc::clone(&self.combat);
         let mut combat = lock_combat(&shared)?;
         match ability.kind {
@@ -723,6 +747,16 @@ impl PlayerSession {
                         trained_rank: self.skill_catalog.level(43),
                     });
             }
+            AbilityKind::ShieldSap => {
+                self.skills.pending_shield_sap = Some(crate::shield_sap::PendingShieldSap {
+                    target,
+                    target_generation: sap_generation
+                        .ok_or_else(|| invalid("Shield Sap cast lost its MOB generation."))?,
+                    effect,
+                    ability: ability.id,
+                    trained_rank: self.skill_catalog.level(54),
+                });
+            }
             AbilityKind::GravityLink => {
                 return Err(invalid(
                     "Gravity Link settles through its durable MOB cast.",
@@ -739,6 +773,7 @@ impl PlayerSession {
                 | AbilityKind::HullPatch
                 | AbilityKind::Rally
                 | AbilityKind::ReactorOptimization
+                | AbilityKind::ShieldSap
         ) {
             self.checkpoint_session(true)?;
         }

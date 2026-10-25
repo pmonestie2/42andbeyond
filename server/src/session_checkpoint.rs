@@ -262,6 +262,11 @@ impl PlayerSession {
                 .is_some_and(|optimization| !optimization.valid())
             || saved
                 .skills
+                .pending_shield_sap
+                .as_ref()
+                .is_some_and(|sap| !sap.valid())
+            || saved
+                .skills
                 .equipment_repair
                 .as_ref()
                 .is_some_and(|repair| !repair.valid(self.skill_catalog.level(47)))

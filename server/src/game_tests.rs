@@ -798,6 +798,196 @@ fn reactor_optimization_selected_peer_is_durable_and_idempotent() {
     fs::remove_dir_all(root).unwrap();
 }
 
+/// Group Sapping Sphere drains two MOBs once and heals only frozen nearby crew.
+#[test]
+fn shield_sap_area_and_group_awards_survive_torn_recipient_restart() {
+    let root = std::env::temp_dir().join(format!("enb-sap-game-{}", rand::random::<u64>()));
+    let accounts = AccountDirectory::new(&root);
+    let warrior = accounts
+        .create_class(
+            "warrior".into(),
+            "example",
+            "Warrior".into(),
+            crate::classes::CharacterClass::parse("pw").unwrap(),
+        )
+        .unwrap()
+        .account
+        .character
+        .game_id;
+    let crew = accounts
+        .create("crew".into(), "example", "Crew".into())
+        .unwrap()
+        .account
+        .character
+        .game_id;
+    let outsider = accounts
+        .create("outsider".into(), "example", "Outsider".into())
+        .unwrap()
+        .account
+        .character
+        .game_id;
+    let mut sector: Sector = serde_json::from_str(include_str!("../data/sector.json")).unwrap();
+    sector.mobs[0].spawn = [900., 0., 0.];
+    sector.mobs[0].aggressive = false;
+    let mut second = sector.mobs[0].clone();
+    second.source_id += 1;
+    second.name = "Second Drone".into();
+    second.spawn = [1_200., 0., 0.];
+    sector.mobs.push(second);
+    let profile = crate::account::Account::load(&root).unwrap().character;
+    let mut inventory = crate::inventory::Inventory::starter_for(
+        &profile,
+        &crate::items::ItemCatalog::load().unwrap(),
+    )
+    .unwrap();
+    inventory.equipped[1].as_mut().unwrap().template = 3337;
+    fs::write(
+        root.join("inventory.json"),
+        serde_json::to_vec(&inventory).unwrap(),
+    )
+    .unwrap();
+    let bind = Ipv4Addr::new(127, 0, 0, 2);
+    let mut game = GameState::new(sector.clone(), bind, root.clone()).unwrap();
+    login(&mut game, warrior, 22981, "warrior");
+    login(&mut game, crew, 22982, "crew");
+    login(&mut game, outsider, 22983, "outsider");
+    game.groups.invite(warrior, crew).unwrap();
+    game.groups.accept(crew).unwrap();
+    game.sessions.get_mut(&warrior).unwrap().position = [0., 0., 0.];
+    game.sessions.get_mut(&crew).unwrap().position = [500., 0., 0.];
+    game.sessions.get_mut(&outsider).unwrap().position = [600., 0., 0.];
+    let wrong_class_energy = game.sessions[&outsider].energy_balance().0;
+    activate(&mut game, outsider, MOB_ID, 112);
+    assert_eq!(
+        game.sessions[&outsider].energy_balance().0,
+        wrong_class_energy
+    );
+    game.sessions
+        .get_mut(&warrior)
+        .unwrap()
+        .set_energy_for_test(1000.);
+    game.sessions
+        .get_mut(&warrior)
+        .unwrap()
+        .set_shield_for_test(0.);
+    game.sessions
+        .get_mut(&crew)
+        .unwrap()
+        .set_shield_for_test(0.);
+    game.sessions
+        .get_mut(&outsider)
+        .unwrap()
+        .set_shield_for_test(0.);
+    game.sessions.get_mut(&warrior).unwrap().position = [5_000., 0., 0.];
+    game.update_views();
+    activate(&mut game, warrior, MOB_ID, 55);
+    assert_eq!(game.sessions[&warrior].energy_balance().0, 1000.);
+    game.sessions.get_mut(&warrior).unwrap().position = [0., 0., 0.];
+    game.update_views();
+    activate(&mut game, warrior, MOB_ID, 55);
+    assert_eq!(game.sessions[&warrior].energy_balance().0, 400.);
+    let torn = root.join("accounts/crew/session.local.json.tmp");
+    game.sessions
+        .get_mut(&crew)
+        .unwrap()
+        .checkpoint_session(true)
+        .unwrap();
+    fs::create_dir(&torn).unwrap();
+    advance(&mut game, 3.1);
+    let receipt = lock_combat(&game.sessions[&warrior].combat)
+        .unwrap()
+        .shield_sap_receipt(
+            warrior,
+            game.sessions[&warrior].energy_transfer_epoch(),
+            1_000_001 + (warrior & 0xffff) * 1_000_000,
+        )
+        .unwrap();
+    assert_eq!(receipt.targets, vec![MOB_ID, MOB_ID + 1]);
+    assert_eq!(receipt.recipients.len(), 2);
+    assert!(receipt.drained > 0.);
+    assert!(game.energy_ledger.shield_balance(outsider).is_none());
+    assert!(game.sessions[&warrior].shield_balance().0 > 0.);
+    // The in-memory recipient may already reflect the award even when its
+    // checkpoint fails; the world ledger must restore it after replacement.
+    let drained_shields: Vec<f32> = lock_combat(&game.sessions[&warrior].combat)
+        .unwrap()
+        .actors
+        .iter()
+        .map(|mob| mob.shield)
+        .collect();
+    fs::remove_dir(&torn).unwrap();
+    drop(game);
+    let mut resumed = GameState::new(sector, bind, root.clone()).unwrap();
+    assert!(resumed.sessions[&crew].shield_balance().0 > 0.);
+    assert!(resumed.energy_ledger.shield_balance(outsider).is_none());
+    let persisted_shields: Vec<f32> = lock_combat(&resumed.sessions[&warrior].combat)
+        .unwrap()
+        .actors
+        .iter()
+        .map(|mob| mob.shield)
+        .collect();
+    assert_eq!(persisted_shields, drained_shields);
+    let revision = resumed.energy_ledger.revision();
+    resumed.deliver_shield_saps().unwrap();
+    assert_eq!(resumed.energy_ledger.revision(), revision);
+    drop(resumed);
+    fs::remove_dir_all(root).unwrap();
+}
+
+/// A failed shield ledger cannot redrain the MOB when a pending cast resumes.
+#[test]
+fn shield_sap_combat_receipt_survives_world_ledger_failure() {
+    let root = std::env::temp_dir().join(format!("enb-sap-gap-{}", rand::random::<u64>()));
+    let warrior = AccountDirectory::new(&root)
+        .create_class(
+            "warrior".into(),
+            "example",
+            "Warrior".into(),
+            crate::classes::CharacterClass::parse("pw").unwrap(),
+        )
+        .unwrap()
+        .account
+        .character
+        .game_id;
+    let mut sector: Sector = serde_json::from_str(include_str!("../data/sector.json")).unwrap();
+    sector.mobs[0].spawn = [900., 0., 0.];
+    sector.mobs[0].aggressive = false;
+    let bind = Ipv4Addr::new(127, 0, 0, 2);
+    let mut game = GameState::new(sector.clone(), bind, root.clone()).unwrap();
+    login(&mut game, warrior, 22991, "warrior");
+    game.sessions.get_mut(&warrior).unwrap().position = [0., 0., 0.];
+    game.sessions
+        .get_mut(&warrior)
+        .unwrap()
+        .set_shield_for_test(0.);
+    game.update_views();
+    activate(&mut game, warrior, MOB_ID, 114);
+    let poisoned = root.join("energy_transfers.local.json.tmp");
+    fs::create_dir(&poisoned).unwrap();
+    assert!(game.advance(3.1).is_err());
+    let drained_shield = lock_combat(&game.sessions[&warrior].combat).unwrap().actors[0].shield;
+    assert!(drained_shield < 150.);
+    assert_eq!(game.energy_ledger.revision(), 0);
+    fs::remove_dir(&poisoned).unwrap();
+    drop(game);
+    let mut resumed = GameState::new(sector, bind, root.clone()).unwrap();
+    assert!(resumed.sessions[&warrior].pending_shield_sap().is_some());
+    resumed.deliver_shield_saps().unwrap();
+    assert_eq!(resumed.energy_ledger.revision(), 1);
+    assert_eq!(
+        lock_combat(&resumed.sessions[&warrior].combat)
+            .unwrap()
+            .actors[0]
+            .shield,
+        drained_shield
+    );
+    assert!(resumed.sessions[&warrior].shield_balance().0 > 0.);
+    resumed.deliver_shield_saps().unwrap();
+    assert_eq!(resumed.energy_ledger.revision(), 1);
+    drop(resumed);
+    fs::remove_dir_all(root).unwrap();
+}
+
 /// PW area Gravity Link and PS single-target casts survive restart without
 /// doubling reactor cost or widening either pilot's target selection.
 #[test]

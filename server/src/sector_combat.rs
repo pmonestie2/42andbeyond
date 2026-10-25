@@ -9,6 +9,8 @@ use std::collections::BTreeMap;
 use std::io;
 use std::path::PathBuf;
 use std::time::Instant;
+#[path = "shield_sap_combat.rs"]
+mod sap;
 #[path = "combat_storage.rs"]
 mod storage;
 use std::sync::{Mutex, MutexGuard};
@@ -24,6 +26,7 @@ pub struct SectorCombat {
     effects: Vec<crate::projectiles::ProjectileVisual>,
     reports: Vec<crate::projectiles::DamageReport>,
     accepted: BTreeMap<u32, u64>,
+    sap_receipts: BTreeMap<u32, crate::shield_sap::SapReceipt>,
     path: Option<PathBuf>,
     sector: u32,
     next_developer_spawn: u32,
@@ -44,6 +47,7 @@ impl SectorCombat {
             effects: Vec::new(),
             reports: Vec::new(),
             accepted: BTreeMap::new(),
+            sap_receipts: BTreeMap::new(),
             path: None,
             sector: 0,
             next_developer_spawn: storage::DEVELOPER_SOURCE_BASE,

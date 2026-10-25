@@ -94,6 +94,8 @@ mod session_resources;
 mod session_tick;
 #[path = "shield_recharge.rs"]
 mod shield_recharge;
+#[path = "shield_sap_service.rs"]
+mod shield_sap_service;
 #[path = "skill_status.rs"]
 mod skill_status;
 #[cfg(test)]
@@ -3268,6 +3270,65 @@ mod tests {
             ship.skills.cooldowns.remove(&43);
         }
         fs::remove_dir_all(root).unwrap();
+    }
+
+    /// All five PW Shield Sap buttons charge the archived energy and effect.
+    #[test]
+    fn warrior_shield_sap_five_tiers_charge_and_freeze_mob_generation() {
+        let root = std::env::temp_dir().join(format!("enb-sap-tiers-{}", rand::random::<u64>()));
+        let mut account = Account::create("warrior".into(), "pass", "Warrior".into()).unwrap();
+        account.character.race = 2;
+        account.character.profession = 0;
+        account.save_new(&root).unwrap();
+        let mut sector: Sector = serde_json::from_str(include_str!("../data/sector.json")).unwrap();
+        sector.mobs[0].spawn = [900., 0., 0.];
+        let mut ship =
+            PlayerSession::new(sector, Ipv4Addr::new(127, 0, 0, 2), root.clone()).unwrap();
+        ship.logged_in = true;
+        ship.target = MOB_ID;
+        ship.mob_visible[0] = true;
+        for (ability, cost) in [(112, 35.), (114, 75.), (54, 150.), (98, 300.), (55, 600.)] {
+            ship.energy = 1000.;
+            ship.begin_ability_for(ability, MOB_ID).unwrap();
+            assert_eq!(ship.energy, 1000. - cost);
+            let cast_effect = ship.skills.cast.as_ref().unwrap().effect;
+            assert!(ship.pending.iter().any(|frame| {
+                frame.opcode == 9 && frame.body.get(5..7) == Some(733u16.to_le_bytes().as_slice())
+            }));
+            ship.advance_abilities(3.1).unwrap();
+            let pending = ship.skills.pending_shield_sap.take().unwrap();
+            assert_eq!(pending.ability, ability);
+            assert_eq!(pending.target, MOB_ID);
+            assert_eq!(pending.effect, cast_effect);
+            assert_eq!(pending.target_generation, 0);
+        }
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    /// Completion uses the archived native target beam and steal orb assets.
+    #[test]
+    fn shield_sap_completion_emits_native_139_and_146_target_effects() {
+        let mut ship = session();
+        ship.publish_shield_sap(23, &[MOB_ID, MOB_ID + 1]);
+        let effects: Vec<&Frame> = ship
+            .pending
+            .iter()
+            .filter(|frame| frame.opcode == 0x0b)
+            .collect();
+        assert_eq!(effects.len(), 4);
+        for (index, frame) in effects.iter().enumerate() {
+            let asset = if index % 2 == 0 { 139u16 } else { 146u16 };
+            let target = MOB_ID + index as u32 / 2;
+            assert_eq!(frame.body.get(6..10), Some(target.to_le_bytes().as_slice()));
+            assert_eq!(frame.body.get(10..12), Some(asset.to_le_bytes().as_slice()));
+            assert_eq!(
+                frame.body.get(21..23),
+                Some(1000u16.to_le_bytes().as_slice())
+            );
+        }
+        for effect in 24..=27 {
+            assert!(ship.pending.contains(&packets::remove_effect(effect)));
+        }
     }
 
     /// Legacy status icons resolve the underscore BuffType, including resume.

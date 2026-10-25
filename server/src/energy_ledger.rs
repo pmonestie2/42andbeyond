@@ -90,6 +90,8 @@ struct LedgerData {
     reactor_optimization_buffs: BTreeMap<u32, ReactorOptimizationBuff>,
     #[serde(default)]
     last_reactor_optimization: BTreeMap<u32, TransferSequence>,
+    #[serde(default)]
+    last_shield_sap: BTreeMap<u32, TransferSequence>,
 }
 
 pub struct EnergyLedger {
@@ -120,6 +122,7 @@ impl EnergyLedger {
                 last_rally: BTreeMap::new(),
                 reactor_optimization_buffs: BTreeMap::new(),
                 last_reactor_optimization: BTreeMap::new(),
+                last_shield_sap: BTreeMap::new(),
             }
         };
         if data.version != 1
@@ -209,6 +212,10 @@ impl EnergyLedger {
             })
             || data
                 .last_reactor_optimization
+                .iter()
+                .any(|(source, last)| *source == 0 || last.epoch == 0 || last.sequence == 0)
+            || data
+                .last_shield_sap
                 .iter()
                 .any(|(source, last)| *source == 0 || last.epoch == 0 || last.sequence == 0)
             || data
@@ -699,6 +706,83 @@ impl EnergyLedger {
             .path
             .parent()
             .ok_or_else(|| invalid("Reactor Optimization ledger has no directory."))?;
+        fs::create_dir_all(directory)?;
+        let temporary = self.path.with_extension("json.tmp");
+        let mut file = File::create(&temporary)?;
+        file.write_all(&serde_json::to_vec_pretty(&next)?)?;
+        file.sync_all()?;
+        fs::rename(temporary, &self.path)?;
+        self.data = next;
+        Ok(self.data.revision)
+    }
+
+    /// Returns:
+    ///     bool: Whether this Shield Sap cast already settled caster/recipient resources.
+    pub fn shield_sap_seen(&self, source: u32, epoch: u64, effect: u32) -> bool {
+        self.data
+            .last_shield_sap
+            .get(&source)
+            .is_some_and(|last| last.epoch == epoch && effect <= last.sequence)
+    }
+
+    /// Commit charged reactor energy and frozen group shield awards once.
+    ///
+    /// Returns:
+    ///     u64: Atomic world revision shared by the caster and recipients.
+    pub fn settle_shield_sap(
+        &mut self,
+        source: u32,
+        receipt: &crate::shield_sap::SapReceipt,
+        source_energy: f32,
+        shields: Vec<(u32, f32)>,
+    ) -> io::Result<u64> {
+        if source < 0x4000_0001
+            || !receipt.valid()
+            || self.shield_sap_seen(source, receipt.epoch, receipt.effect)
+            || !source_energy.is_finite()
+            || !(0. ..=1_000_000_000.).contains(&source_energy)
+            || shields.len() != receipt.recipients.len()
+            || shields.iter().enumerate().any(|(index, (target, shield))| {
+                !receipt.recipients.contains(target)
+                    || !shield.is_finite()
+                    || !(0. ..=1_000_000_000.).contains(shield)
+                    || shields[..index].iter().any(|(prior, _)| prior == target)
+            })
+        {
+            return Err(invalid("Invalid or repeated Shield Sap settlement."));
+        }
+        let mut next = self.data.clone();
+        next.revision = next
+            .revision
+            .checked_add(1)
+            .ok_or_else(|| invalid("Shield Sap revision exhausted."))?;
+        next.balances.insert(
+            source,
+            EnergyBalance {
+                revision: next.revision,
+                energy: source_energy,
+            },
+        );
+        for (target, shield) in shields {
+            next.shields.insert(
+                target,
+                ShieldBalance {
+                    revision: next.revision,
+                    shield,
+                },
+            );
+        }
+        next.last_shield_sap.insert(
+            source,
+            TransferSequence {
+                epoch: receipt.epoch,
+                sequence: receipt.effect,
+            },
+        );
+        let directory = self
+            .path
+            .parent()
+            .ok_or_else(|| invalid("Shield Sap ledger has no directory."))?;
         fs::create_dir_all(directory)?;
         let temporary = self.path.with_extension("json.tmp");
         let mut file = File::create(&temporary)?;

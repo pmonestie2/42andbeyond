@@ -37,6 +37,7 @@ pub mod resources;
 pub mod sector_combat;
 pub mod sectors;
 pub mod server;
+pub mod shield_sap;
 pub mod skills;
 pub mod warp;
 mod world_random;

@@ -25,6 +25,8 @@ use std::time::{Duration, Instant};
 mod actions;
 #[path = "dev_commands.rs"]
 mod dev_commands;
+#[path = "shield_sap_game.rs"]
+mod shield_sap_game;
 #[cfg(test)]
 #[path = "game_tests.rs"]
 mod tests;
@@ -659,6 +661,7 @@ impl GameState {
         self.deliver_equipment_repairs()?;
         self.deliver_rallies()?;
         self.deliver_reactor_optimizations()?;
+        self.deliver_shield_saps()?;
         self.deliver_support()?;
         for id in &ids {
             self.attach_session(*id)?;

@@ -170,6 +170,20 @@ mean the corresponding gameplay system is complete.
   so warp prevention has no current NPC effect. Archived EffectID 219 could
   not be checked against the installed client effect.ini; no 0x09 visual is
   emitted, and legacy visual verification remains open.
+- JS Reactor Optimization skill 43 supports all five tiers (82–86), with
+  self-only early ranks and selected-peer ranks 5–7. A ten-minute native AUX
+  status and authoritative post-equipment capacity/recharge bonuses survive
+  replacement through one atomic energy/status ledger. The rank percentages,
+  duration and ranges follow [Net-7](https://net7wiki.bmsite.net/index.php?title=Reactor_Optimization);
+  energy/charge/cooldown and the status token are documented local choices.
+  No unverified ObjectEffect is sent; see `REACTOR_OPTIMIZATION.md`.
+- PW Shield Sap skill 54 supports all five tiers (112/114/54/98/55), including
+  target-centered area drain and nearby group distribution. A durable sector
+  combat receipt prevents retry damage; the world ledger atomically awards
+  caster energy and recipient shields. The archived 733 charge and 139/146
+  target effects are emitted. Area/group branches complete archived stubs
+  following the [public tier descriptions](https://net7wiki.bmsite.net/index.php?title=Shield_Sap);
+  see `SHIELD_SAP.md` for the recipient-range choice and restart ordering.
 - Persistent cargo/equipment/vault inventory and credits, split/merge/swap
   transfers, mount/class/skill/quantity validation, trade/no-store vault rules,
   atomic replacement before publication and restart reconciliation.

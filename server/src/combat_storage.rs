@@ -21,6 +21,8 @@ struct SavedCombat {
     actors: Vec<Mob>,
     projectiles: Vec<Projectile>,
     accepted: BTreeMap<u32, u64>,
+    #[serde(default)]
+    sap_receipts: BTreeMap<u32, crate::shield_sap::SapReceipt>,
     #[serde(default = "initial_developer_source")]
     next_developer_spawn: u32,
     #[serde(default)]
@@ -44,6 +46,11 @@ impl SectorCombat {
                     || saved.projectiles.len() > 16384
                     || saved.npc_shots.len() > 16384
                     || saved.accepted.len() > 65535
+                    || saved.sap_receipts.len() > 65535
+                    || saved
+                        .sap_receipts
+                        .iter()
+                        .any(|(source, receipt)| *source < 0x4000_0001 || !receipt.valid())
                     || saved.accepted.iter().any(|(owner, sequence)| {
                         !(0x40000001..=0x4000ffff).contains(owner) || *sequence == 0
                     })
@@ -84,6 +91,7 @@ impl SectorCombat {
                     return Err(invalid("Invalid saved NPC projectile identity."));
                 }
                 world.npc_sequence = saved.npc_sequence;
+                world.sap_receipts = saved.sap_receipts;
                 world.npc_shots = saved.npc_shots;
                 for actor in &world.actors {
                     if actor.definition.source_id >= DEVELOPER_SOURCE_BASE {
@@ -329,6 +337,7 @@ impl SectorCombat {
                     actors: self.actors.clone(),
                     projectiles: self.projectiles.clone(),
                     accepted: self.accepted.clone(),
+                    sap_receipts: self.sap_receipts.clone(),
                     next_developer_spawn: self.next_developer_spawn,
                     npc_shots: self.npc_shots.clone(),
                     npc_sequence: self.npc_sequence,
