@@ -14,7 +14,7 @@ namespace FortyTwoAndBeyond.Editor
     [InitializeOnLoad]
     public static class RechargeAbilityVisualSmoke
     {
-        private static bool connected, chosen, activated, captured, hull;
+        private static bool connected, chosen, activated, captured, hull, ranks;
         private static double deadline, nextCapture;
 
         /// <summary>Register this disposable visual check only for its opt-in flag.</summary>
@@ -22,7 +22,8 @@ namespace FortyTwoAndBeyond.Editor
         {
             string[] args = Environment.GetCommandLineArgs();
             hull = Array.IndexOf(args, "--42andbeyond-hull-smoke") >= 0;
-            if (!hull && Array.IndexOf(args, "--42andbeyond-recharge-smoke") < 0)
+            ranks = Array.IndexOf(args, "--42andbeyond-support-ranks-smoke") >= 0;
+            if (!hull && !ranks && Array.IndexOf(args, "--42andbeyond-recharge-smoke") < 0)
                 return;
             deadline = EditorApplication.timeSinceStartup + 90;
             EditorApplication.update += Tick;
@@ -52,7 +53,9 @@ namespace FortyTwoAndBeyond.Editor
             if (client.ConnectionError != null) { Fail(client.ConnectionError); return; }
             Snapshot snapshot = client.CurrentSnapshot;
             if (snapshot?.Ready != true || snapshot.Station != null ||
-                !snapshot.AvailableAbilities.Contains(hull ? 95u : 89u) ||
+                !snapshot.AvailableAbilities.Contains(ranks ? 32u : hull ? 95u : 89u) ||
+                ranks && (!snapshot.AvailableAbilities.Contains(31u) ||
+                    !snapshot.AvailableAbilities.Contains(91u)) ||
                 hull && !snapshot.AvailableAbilities.Contains(77u)) return;
             AbilityHud hud = typeof(SpaceClient).GetField("abilityHud",
                 BindingFlags.Instance | BindingFlags.NonPublic)?.GetValue(client) as AbilityHud;
@@ -62,21 +65,24 @@ namespace FortyTwoAndBeyond.Editor
             open.SetValue(hud, true);
             if (!activated)
             {
-                activated = true; client.ActivateAbilityFor(hull ? 95u : 89u, snapshot.PlayerId);
+                activated = true;
+                client.ActivateAbilityFor(ranks ? 32u : hull ? 95u : 89u, snapshot.PlayerId);
                 nextCapture = EditorApplication.timeSinceStartup + 1;
                 return;
             }
             if (!client.Status.Contains(hull ? "Hull repair completed." :
                 "Recharge Shields completed.") ||
                 EditorApplication.timeSinceStartup < nextCapture) return;
-            string path = hull ? "Builds/verification/hull-ability.png" :
+            string path = ranks ? "Builds/verification/support-ranks.png" :
+                hull ? "Builds/verification/hull-ability.png" :
                 "Builds/verification/recharge-ability.png";
             if (!captured)
             { Directory.CreateDirectory("Builds/verification");
               ScreenCapture.CaptureScreenshot(path); captured = true;
               nextCapture = EditorApplication.timeSinceStartup + .6; return; }
             if (!File.Exists(path) || EditorApplication.timeSinceStartup < nextCapture) return;
-            Debug.Log(hull ? "PASS: native Patch/Repair Hull visible and self cast completed." :
+            Debug.Log(ranks ? "PASS: rank 1/5 support abilities visible and self cast completed." :
+                hull ? "PASS: native Patch/Repair Hull visible and self cast completed." :
                 "PASS: native Recharge Shields visible and self cast completed.");
             EditorApplication.update -= Tick;
             EditorApplication.Exit(0);

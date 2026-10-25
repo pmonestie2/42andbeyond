@@ -3,6 +3,8 @@
 26	15	Carpenter Gate	Creates a temporary wormhole, teleporting all group members to Carpenter.	wormhole	6	250.0	3.0	10.0	3000
 28	12	Cloak	When activated, completely hides the ship from sensor detection.  The ship must be at a complete stop to cloak, and can only move at half speed while cloaked.  Cloaking takes 7 seconds to initialize and uses 0.5 energy per second thereafter.	cloak	1	9.0	3.0	5.0	3000
 29	12	Combat Cloak	Eliminates the requirement for the ship to be motionless before cloaking, and doubles unmodified beam weapon base damage for 5 seconds after cloaking is disengaged.  This ability consumes 3 energy per second while active.	cloak	5	100.0	3.0	5.0	3000
+31	27	Combat Hull Repair	Restore the selected pilot's hull.	hull_patch	5	250.0	3.0	0.0	3004
+32	46	Combat Shield Recharge	Restore the selected pilot's shields.	recharge_shields	5	250.0	3.0	0.0	3004
 33	14	Compulsory Contemplation	Confuses a single target, preventing movement, skill, item, and weapon use until the effect is broken.	contemplation	1	1000.0	1.0	10.0	3000
 37	15	Endriago Gate	Creates a temporary wormhole, teleporting all group members to Endriago.	wormhole	7	350.0	3.0	10.0	3000
 44	23	Environment Barrier	creates a shield around a friendly target that protects the ship from environmental effects (reducing their power by 50%) and reduces incoming damage by 5%.	environment	1	35.0	1.0	10.0	3000
@@ -18,6 +20,7 @@
 68	23	Lesser Environment Shield	Creates a shield that reduces environmental effects by 100% and reduces incoming damage by 10%.	environment	3	100.0	1.0	10.0	3000
 77	27	Patch Hull	Restore your own damaged hull after a short charge.	hull_patch	1	50.0	0.0	0.0	0
 89	46	Recharge Shields	Recharge the selected pilot's shields after a short charge.	recharge_shields	3	125.0	1.0	0.0	3004
+91	46	Regenerate Shields	Restore your own shields.	recharge_shields	1	50.0	0.0	0.0	0
 95	27	Repair Hull	Repair the selected pilot's hull after a short charge.	hull_patch	3	125.0	1.0	0.0	3004
 106	53	Shield Drain	Drains shields from an enemy target.	leech	1	35.0	1.0	10.0	3000
 108	53	Shield Leech	Drains shields from a single hostile and transfers a portion of that as energy to the player.	leech	3	75.0	1.0	10.0	3000

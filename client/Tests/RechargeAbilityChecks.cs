@@ -52,7 +52,25 @@ internal static class RechargeAbilityChecks
             Wait(caster, recipient, () => caster.World.Messages.Count(message =>
                 message.Contains("Hull repair completed.")) >= 2,
                 "Self Patch Hull did not complete with an ally selected.");
-            Console.WriteLine("PASS: native Recharge Shields and Hull Patch/Repair Hull ally/self casts");
+            if (!caster.World.AvailableAbilities.Contains(31u) ||
+                !caster.World.AvailableAbilities.Contains(32u) ||
+                !caster.World.AvailableAbilities.Contains(91u))
+                throw new Exception("Single-target rank 1/5 support abilities were not advertised for TT.");
+            caster.ActivateAbilityFor(31, recipient.Player);
+            Wait(caster, recipient, () => caster.World.Equipment.TargetId == recipient.Player &&
+                caster.World.Messages.Count(message => message.Contains("Hull repair completed.")) >= 3,
+                "Combat Hull Repair did not complete for the selected ally.");
+            float energyBeforeShields = caster.World.Equipment.Energy;
+            caster.ActivateAbilityFor(32, recipient.Player);
+            Wait(caster, recipient, () => caster.World.Equipment.Energy < energyBeforeShields &&
+                caster.Status == "Recharge Shields completed.",
+                "Combat Shield Recharge did not complete for the selected ally.");
+            float energyBeforeSelf = caster.World.Equipment.Energy;
+            caster.ActivateAbility(91);
+            Wait(caster, recipient, () => caster.World.Equipment.Energy < energyBeforeSelf &&
+                caster.Status == "Recharge Shields completed.",
+                "Self Regenerate Shields did not complete with an ally selected.");
+            Console.WriteLine("PASS: native selected-ally and self shield/hull support casts");
         }
     }
 }

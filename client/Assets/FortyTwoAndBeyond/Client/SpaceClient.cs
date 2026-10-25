@@ -875,10 +875,10 @@ namespace FortyTwoAndBeyond.Client
                 worker.Submit(new ClientCommand(CommandKind.ActivateAbility, id));
         }
 
-        /// <summary>Queue an ally shield or hull repair for a specific visible pilot or self.</summary>
+        /// <summary>Queue a directed support ability for a visible pilot or self.</summary>
         public void ActivateAbilityFor(uint id, uint recipient)
         {
-            if (!Ready || snapshot.Station != null || id != 89 && id != 95 ||
+            if (!Ready || snapshot.Station != null || !AbilityTargets.Directed(id) ||
                 !snapshot.AvailableAbilities.Contains(id) ||
                 recipient != snapshot.PlayerId && !snapshot.Players.Any(actor =>
                     actor.Id == recipient && actor.HasPosition)) return;

@@ -98,19 +98,22 @@ namespace FortyTwoAndBeyond.Client
             if (snapshot == null || index < 0 || index >= slots.Length) return;
             LoadSlots(snapshot.PlayerId);
             if (slots[index] < 0 || !snapshot.AvailableAbilities.Contains((uint)slots[index])) return;
-            if (slots[index] != 89 && slots[index] != 95 && SupportTargetPending(snapshot) ||
-                slots[index] == 125 && SelectedCrew(snapshot) == null) return;
+            if (!AbilityTargets.Directed((uint)slots[index]) && SupportTargetPending(snapshot) ||
+                slots[index] == 125 && !CrewRecipientSelected(snapshot)) return;
             ActivateForSelectedTarget((uint)slots[index], snapshot);
         }
 
-        /// <summary>Preserve the chosen shield or hull repair recipient across target selection.</summary>
+        /// <summary>Preserve the intended support recipient across target selection.</summary>
         private void ActivateForSelectedTarget(uint id, Snapshot snapshot)
         {
-            if (id != 89 && id != 95) { client.ActivateAbility(id); return; }
+            if (!AbilityTargets.Directed(id)) { client.ActivateAbility(id); return; }
             uint selected = snapshot.SelectedTargetId;
             ShipActor peer = snapshot.Players.FirstOrDefault(actor => actor.Id == selected && actor.HasPosition);
             uint recipient = pendingSupportTarget != 0 && Time.unscaledTime - pendingSupportAt <= 3 ?
                 pendingSupportTarget : peer?.Id ?? snapshot.PlayerId;
+            if (AbilityTargets.CrewOnly(id) && recipient != snapshot.PlayerId &&
+                !snapshot.Group.Members.Any(member => member.Id == recipient))
+                recipient = snapshot.PlayerId;
             pendingSupportTarget = 0;
             client.ActivateAbilityFor(id, recipient);
         }
@@ -129,12 +132,23 @@ namespace FortyTwoAndBeyond.Client
         { return snapshot.Players.FirstOrDefault(actor => actor.Id == snapshot.SelectedTargetId &&
             actor.HasPosition && snapshot.Group.Members.Any(member => member.Id == actor.Id)); }
 
+        /// <returns>bool: Whether the selected or newly requested recipient is visible crew.</returns>
+        private bool CrewRecipientSelected(Snapshot snapshot)
+        {
+            if (SelectedCrew(snapshot) != null) return true;
+            return pendingSupportTarget != 0 && Time.unscaledTime - pendingSupportAt <= 3 &&
+                snapshot.Players.Any(actor => actor.Id == pendingSupportTarget && actor.HasPosition) &&
+                snapshot.Group.Members.Any(member => member.Id == pendingSupportTarget);
+        }
+
         /// <summary>Choose a self or visible crew recipient using native target selection.</summary>
         private void SupportTargetBar(Snapshot snapshot, Rect panel)
         {
             ShipActor selectedCrew = SelectedCrew(snapshot);
             bool peerRepair = snapshot.AvailableAbilities.Contains(89u) ||
-                snapshot.AvailableAbilities.Contains(95u);
+                snapshot.AvailableAbilities.Contains(95u) ||
+                snapshot.AvailableAbilities.Contains(31u) ||
+                snapshot.AvailableAbilities.Contains(32u);
             ShipActor selectedPeer = peerRepair ?
                 snapshot.Players.FirstOrDefault(actor => actor.Id == snapshot.SelectedTargetId &&
                     actor.HasPosition) : selectedCrew;
@@ -270,8 +284,8 @@ namespace FortyTwoAndBeyond.Client
                     ability.id == 65 ? "Jumpstart  ·  ENERGY DEPENDS ON TARGET" :
                     $"{ability.name}  ·  RANK {ability.rank}  ·  {ability.energy:0} ENERGY";
                 GUI.enabled = assigningSlot >= 0 || recovery <= 0 && !charging &&
-                    (ability.id == 89 || ability.id == 95 || !SupportTargetPending(snapshot)) &&
-                    (ability.id != 125 || SelectedCrew(snapshot) != null);
+                    (AbilityTargets.Directed((uint)ability.id) || !SupportTargetPending(snapshot)) &&
+                    (ability.id != 125 || CrewRecipientSelected(snapshot));
                 if (GUILayout.Button(new GUIContent(label, description), flightHud.ButtonStyle, GUILayout.Height(34)))
                 {
                     if (assigningSlot >= 0)

@@ -16,11 +16,26 @@ internal static class Program
         CheckDamageResults(); CheckCombatEngagement(); CheckAttackerSelection(); CheckShotPresentation(); CheckContactSelection(); CheckTargetVerbs(); CheckDeviceEffects();
         CheckNativeDeviceBuff(); CheckPeerScanBuff(); CheckConcurrentRecipientBuffs(); CheckSupportObjectEffects(); CheckShipDefense();
         CheckAmmunitionTransfer(); CheckVaultStackPlacement(); CheckEquippedEffects(); CheckFlightThrottle(); CheckFormationAnchor();
+        CheckAbilityTargets();
         CheckStationLayout(); CheckStationWalk(); CheckDemoRoster(); CheckAddress(); PeerChecks.Decode();
         Console.WriteLine("PASS: framing, ordering, fragmentation, duplicates, bounds, world decoding, private addresses");
         if (args.Length == 2 && args[0] == "--server") { PeerChecks.Live(args[1]); CheckServer(args[1]); }
         else if (args.Length == 2 && args[0] == "--recharge-server") RechargeAbilityChecks.Live(args[1]);
-        else if (args.Length != 0) throw new ArgumentException("Usage: ProtocolChecks [--server PRIVATE_IP|--recharge-server PRIVATE_IP]");
+        else if (args.Length == 2 && args[0] == "--support-server") SupportAbilityChecks.Live(args[1]);
+        else if (args.Length != 0) throw new ArgumentException("Usage: ProtocolChecks [--server PRIVATE_IP|--recharge-server PRIVATE_IP|--support-server PRIVATE_IP]");
+    }
+
+    /// <summary>Keep server-selected support abilities distinct from self and combat casts.</summary>
+    private static void CheckAbilityTargets()
+    {
+        foreach (uint id in new uint[] { 31, 32, 44, 45, 48, 68, 89, 95, 125, 128 })
+            Assert(AbilityTargets.Directed(id), "Directed support ability lost target acknowledgment.");
+        Assert(AbilityTargets.CrewOnly(44) && AbilityTargets.CrewOnly(125) &&
+            !AbilityTargets.CrewOnly(89) && !AbilityTargets.CrewOnly(95) &&
+            AbilityTargets.RequiresPeer(125) && !AbilityTargets.RequiresPeer(44) &&
+            !AbilityTargets.Directed(77) && !AbilityTargets.Directed(91) &&
+            !AbilityTargets.Directed(124),
+            "Ability recipient policy mismatches the native server contract.");
     }
 
     /// <summary>Fail with a useful behavior description.</summary>

@@ -706,7 +706,7 @@ namespace FortyTwoAndBeyond.Protocol
         /// <summary>Activate an ability listed in this character's authoritative RPG state.</summary>
         public void ActivateAbility(uint id)
         {
-            if (id == 89 || id == 95)
+            if (AbilityTargets.Directed(id))
             {
                 uint selected = World.Equipment.TargetId;
                 ActivateAbilityFor(id, World.Players.TryGetValue(selected, out ShipActor peer) &&
@@ -719,19 +719,22 @@ namespace FortyTwoAndBeyond.Protocol
             Status = "Activating ability " + id;
         }
 
-        /// <summary>Cast an ally shield or hull repair after recipient acknowledgment.</summary>
+        /// <summary>Cast a directed support ability after recipient acknowledgment.</summary>
         public void ActivateAbilityFor(uint id, uint target)
         {
-            if (id != 89 && id != 95 || !Ready || gate != 0 || World.Station != null ||
+            if (!AbilityTargets.Directed(id) || !Ready || gate != 0 || World.Station != null ||
                 World.Equipment.Hull <= 0 || !World.AvailableAbilities.Contains(id)) return;
-            string label = id == 89 ? "Recharge Shields" : "Repair Hull";
+            string label = AbilityTargets.Name(id);
+            if (target == Player && AbilityTargets.RequiresPeer(id))
+            { Status = "Select a visible crew pilot for " + label; return; }
             if (target != Player && (!World.Players.TryGetValue(target, out ShipActor peer) ||
-                !peer.HasPosition))
+                !peer.HasPosition || AbilityTargets.CrewOnly(id) &&
+                !World.Group.Members.Any(member => member.Id == target)))
             { Status = label + " recipient is no longer visible"; return; }
             pendingAbilityTarget = pendingAbilityId = 0;
             if (World.Equipment.TargetId == target)
             { Send(0x58, Wire.Body(w => { w.Write(Player); w.Write(0u); w.Write(id); }));
-              Status = "Charging " + label; return; }
+              Status = "Activating " + label; return; }
             SelectTarget(target);
             pendingAbilityTarget = target; pendingAbilityId = id;
             pendingAbilityAt = clock.Elapsed.TotalSeconds;
@@ -818,10 +821,12 @@ namespace FortyTwoAndBeyond.Protocol
                         pendingAbilityTarget = pendingAbilityId = 0;
                         if (Ready && gate == 0 && World.Station == null && World.Equipment.Hull > 0 &&
                             World.AvailableAbilities.Contains(ability) &&
-                            (target == Player || World.Players.TryGetValue(target, out ShipActor recipient) &&
-                             recipient.HasPosition))
+                            (target == Player && !AbilityTargets.RequiresPeer(ability) ||
+                             World.Players.TryGetValue(target, out ShipActor recipient) &&
+                             recipient.HasPosition && (!AbilityTargets.CrewOnly(ability) ||
+                             World.Group.Members.Any(member => member.Id == target))))
                         { Send(0x58, Wire.Body(w => { w.Write(Player); w.Write(0u); w.Write(ability); }));
-                          Status = "Charging " + (ability == 89 ? "Recharge Shields" : "Repair Hull"); }
+                          Status = "Activating " + AbilityTargets.Name(ability); }
                     }
                     if (b.Length == 8 && pendingDeviceSlot >= 0 &&
                         Wire.U32(b, 0) == pendingDeviceTarget && Wire.U32(b, 4) == uint.MaxValue)
