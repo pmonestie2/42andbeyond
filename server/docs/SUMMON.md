@@ -12,6 +12,8 @@ The 150-unit arrival offset, three-second cast, five-second cooldown, and
 35/75/150/300/600 energy costs are local tuning, not claims about the original
 game. Enemy formation means mobs in the selected target's nonzero spawn group.
 
-At delivery time the server checks membership, sector and range again. A
-recipient's movement is checkpointed before broadcast. Return Friend uses the
-existing journaled station transfer. The source is not a live-server deployment.
+At delivery time the server checks membership, sector and range again. Enemy
+casts also recheck the MOB death generation and persist relocation before
+broadcast. A recipient's movement is checkpointed before broadcast. Return
+Friend uses the existing journaled station transfer. The source is not a
+live-server deployment.

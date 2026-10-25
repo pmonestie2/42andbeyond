@@ -14,6 +14,8 @@ mod menace_tests;
 #[path = "mob_radius_tests.rs"]
 mod radius_tests;
 use serde::{Deserialize, Serialize};
+#[path = "enrage_mob.rs"]
+mod enrage_mob;
 #[path = "mob_motion.rs"]
 mod movement;
 #[path = "mob_roaming.rs"]
@@ -164,6 +166,8 @@ pub struct Mob {
     #[serde(default)]
     pub gravity: Vec<crate::gravity_link::GravityDebuff>,
     #[serde(default)]
+    pub enrage: Vec<crate::enrage::EnrageEffect>,
+    #[serde(default)]
     pub menace: Vec<crate::menace::MenaceFear>,
     #[serde(default)]
     pub death_generation: u64,
@@ -249,6 +253,7 @@ impl Mob {
             max_shield: combat.shield,
             disabled_seconds: 0.,
             gravity: Vec::new(),
+            enrage: Vec::new(),
             menace: Vec::new(),
             death_generation: 0,
             killer: None,
@@ -277,12 +282,18 @@ impl Mob {
         if saved.gravity.len() > 16 || saved.gravity.iter().any(|effect| !effect.valid()) {
             return Err(crate::protocol::invalid("Invalid MOB Gravity Link state."));
         }
+        if saved.enrage.len() > 16 || saved.enrage.iter().any(|effect| !effect.valid()) {
+            return Err(crate::protocol::invalid("Invalid MOB Enrage state."));
+        }
         if saved.menace.len() > 16 || saved.menace.iter().any(|fear| !fear.valid()) {
             return Err(crate::protocol::invalid("Invalid MOB Menace state."));
         }
         saved
             .gravity
             .retain(|effect| effect.active(crate::resources::unix_ms()));
+        saved
+            .enrage
+            .retain(|effect| effect.active(crate::resources::unix_ms(), saved.death_generation));
         saved
             .menace
             .retain(|fear| fear.active(crate::resources::unix_ms(), saved.death_generation));
@@ -369,6 +380,7 @@ impl Mob {
             self.roaming.reset_interest();
             self.unowned_provoked = false;
             self.gravity.clear();
+            self.enrage.clear();
             self.menace.clear();
         }
     }
@@ -563,32 +575,35 @@ impl Mob {
                 .iter()
                 .any(|player| player.id == id && eligible(player))
         });
-        self.provoked = hated.is_some() || self.unowned_provoked;
-        let selected = hated
-            .and_then(|id| {
-                players
-                    .iter()
-                    .position(|player| player.id == id && eligible(player))
-            })
-            .or_else(|| {
-                players
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, player)| {
-                        eligible(player)
-                            && (self.unowned_provoked
-                                || self.definition.attacks_on_sight()
-                                    && player
-                                        .factions
-                                        .allows_spontaneous_attack(self.definition.faction))
-                    })
-                    .min_by(|(a_index, a), (b_index, b)| {
-                        distance(a.position, self.position)
-                            .total_cmp(&distance(b.position, self.position))
-                            .then_with(|| a_index.cmp(b_index))
-                    })
-                    .map(|(index, _)| index)
-            });
+        let enraged = self.enraged_target(players);
+        self.provoked = enraged.is_some() || hated.is_some() || self.unowned_provoked;
+        let selected = enraged.or_else(|| {
+            hated
+                .and_then(|id| {
+                    players
+                        .iter()
+                        .position(|player| player.id == id && eligible(player))
+                })
+                .or_else(|| {
+                    players
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, player)| {
+                            eligible(player)
+                                && (self.unowned_provoked
+                                    || self.definition.attacks_on_sight()
+                                        && player
+                                            .factions
+                                            .allows_spontaneous_attack(self.definition.faction))
+                        })
+                        .min_by(|(a_index, a), (b_index, b)| {
+                            distance(a.position, self.position)
+                                .total_cmp(&distance(b.position, self.position))
+                                .then_with(|| a_index.cmp(b_index))
+                        })
+                        .map(|(index, _)| index)
+                })
+        });
         self.aggro.target(selected.map(|index| players[index].id));
         selected
     }
@@ -599,6 +614,11 @@ impl Mob {
         self.sensors.remove(player);
         self.warnings.forget_player(player);
         self.roaming.forget_player(player);
+    }
+    /// Returns:
+    ///     f32: Remaining weapon reload, for durable miss admission.
+    pub(crate) fn shot_cooldown(&self) -> f32 {
+        self.cooldown
     }
     /// Native FireWeapon decreases this victim's hate by truncated damage/10.
     /// Called on the authoritative simulation only, before the tick is saved.
@@ -718,6 +738,7 @@ impl Mob {
                 self.roaming.reset_interest();
                 self.killer = None;
                 self.gravity.clear();
+                self.enrage.clear();
                 self.menace.clear();
                 self.state = MobState::Idle;
             }
@@ -803,6 +824,21 @@ impl Mob {
     fn fire_if_ready(&mut self) -> f32 {
         if self.cooldown == 0. {
             self.cooldown = self.combat.reload;
+            let accuracy = self.enrage_accuracy_multiplier();
+            if accuracy < 1.
+                && self
+                    .definition
+                    .weapon
+                    .as_ref()
+                    .is_none_or(|weapon| matches!(weapon.item_type, 14 | 16))
+            {
+                let mut rng = crate::world_random::WorldRandom(self.random_state);
+                let roll = rng.below(1000);
+                self.random_state = rng.0;
+                if roll as f32 >= accuracy * 1000. {
+                    return 0.;
+                }
+            }
             let fraction = if self.combat.variance {
                 let mut rng = crate::world_random::WorldRandom(self.random_state);
                 let sum = rng.below(13) + rng.below(13) + rng.below(13) + 3;

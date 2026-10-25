@@ -106,6 +106,12 @@ mean the corresponding gameplay system is complete.
   sector, range and living state again at delivery, checkpoints player movement
   before broadcast, and uses the journaled station transition for Return Friend.
   [Summon notes](SUMMON.md) identify the public rules and locally tuned values.
+- Terran Enforcer and Progen Warrior Enrage now forces an affected MOB to
+  prioritize its caster while the effect lasts. Higher tiers reduce beam and
+  projectile hit chance; TE group tiers affect the selected MOB's nearby
+  nonzero spawn group. Each cast is generation-bound and sector-persisted, and
+  verified effect 212 is published to observers with expiry/replay.
+  [Enrage notes](ENRAGE.md) mark local tuning.
 - Loaded ammunition inventory and native cargo-to-launcher loading, stack merges,
   weapon swaps and safe unloading on removal. Ammo metadata and AUX snapshots
   persist. Player launcher travel and durable shared impacts survive owner logout

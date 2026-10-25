@@ -110,6 +110,71 @@ fn defender_summon_enemy_friend_and_registered_port_survive_restart() {
     assert!(restored.sessions[&bob].sector.station.is_some());
 }
 
+/// Enrage overrides existing hate and keeps its temporary penalty on restart.
+#[test]
+fn enforcer_enrage_forces_aggro_and_persists_accuracy_penalty() {
+    let root = std::env::temp_dir().join(format!("enb-enrage-{}", rand::random::<u64>()));
+    let accounts = AccountDirectory::new(&root);
+    let caster = accounts
+        .create_class(
+            "alice".into(),
+            "example",
+            "Alice".into(),
+            crate::classes::CharacterClass::parse("te").unwrap(),
+        )
+        .unwrap();
+    let alice = caster.account.character.game_id;
+    let bob = accounts
+        .create("bob".into(), "example", "Bob".into())
+        .unwrap()
+        .account
+        .character
+        .game_id;
+    let items = crate::items::ItemCatalog::load().unwrap();
+    let mut inventory =
+        crate::inventory::Inventory::starter_for(&caster.account.character, &items).unwrap();
+    inventory.equipped[1] = Some(crate::inventory::ItemInstance::stock(3335, 1));
+    fs::write(
+        caster.directory.join("inventory.json"),
+        serde_json::to_vec(&inventory).unwrap(),
+    )
+    .unwrap();
+    let sector: Sector = serde_json::from_str(include_str!("../data/sector.json")).unwrap();
+    let bind = Ipv4Addr::new(127, 0, 0, 2);
+    let mut game = GameState::new(sector.clone(), bind, root.clone()).unwrap();
+    login(&mut game, alice, 23111, "alice");
+    login(&mut game, bob, 23112, "bob");
+    game.sessions.get_mut(&alice).unwrap().position = [0.; 3];
+    game.sessions.get_mut(&bob).unwrap().position = [100., 0., 0.];
+    {
+        let mut combat = lock_combat(&game.sessions[&alice].combat).unwrap();
+        combat.actors[0].position = [1_000., 0., 0.];
+        combat.actors[0].definition.spawn = [1_000., 0., 0.];
+        combat.actors[0].definition.aggressive = false;
+        combat.actors[0].damage_by(1., bob);
+    }
+    game.advance(0.1).unwrap();
+    activate(&mut game, alice, MOB_ID, 41);
+    advance(&mut game, 1.6);
+    {
+        let threats = [game.sessions[&alice].threat(), game.sessions[&bob].threat()];
+        let mut combat = lock_combat(&game.sessions[&alice].combat).unwrap();
+        let mob = &mut combat.actors[0];
+        assert_eq!(mob.active_enrage().unwrap().accuracy_multiplier, 0.65);
+        assert_eq!(mob.select_target(&threats), Some(0));
+    }
+    drop(game);
+    let restored = GameState::new(sector, bind, root).unwrap();
+    let combat = lock_combat(&restored.sessions[&alice].combat).unwrap();
+    assert_eq!(
+        combat.actors[0]
+            .active_enrage()
+            .unwrap()
+            .accuracy_multiplier,
+        0.65
+    );
+}
+
 pub(super) fn login(game: &mut GameState, id: u32, port: u16, username: &str) {
     let peer: SocketAddr = format!("127.0.0.1:{port}").parse().unwrap();
     game.handle_udp(

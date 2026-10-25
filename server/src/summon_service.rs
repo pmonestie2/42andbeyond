@@ -4,6 +4,27 @@ use super::*;
 
 impl PlayerSession {
     /// Returns:
+    ///     u64: Current death generation of a selected visible hostile MOB.
+    pub(super) fn summon_target_generation(&self, target: u32) -> io::Result<u64> {
+        let index = target
+            .checked_sub(MOB_ID)
+            .ok_or_else(|| invalid("Select a hostile MOB for Summon."))?
+            as usize;
+        let combat = lock_combat(&self.combat)?;
+        let mob = combat
+            .actors
+            .get(index)
+            .ok_or_else(|| invalid("Summon target is missing."))?;
+        if !self.mob_visible_in_scan(index, mob)
+            || mob.state == MobState::Dead
+            || self.mob_relationship(mob) != 0
+        {
+            return Err(invalid("Summon target is not a visible hostile MOB."));
+        }
+        Ok(mob.death_generation)
+    }
+
+    /// Returns:
     ///     bool: Whether this pilot can be summoned while alive in space.
     pub(crate) fn summon_available(&self) -> bool {
         self.logged_in

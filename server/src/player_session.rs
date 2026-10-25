@@ -44,6 +44,8 @@ mod combat_trance;
 mod dev_session;
 #[path = "energy_transfer.rs"]
 mod energy_transfer;
+#[path = "enrage_service.rs"]
+mod enrage_service;
 #[path = "equipment_repair_service.rs"]
 mod equipment_repair_service;
 #[path = "exploration.rs"]
@@ -222,6 +224,7 @@ pub struct PlayerSession {
     mob_visible: Vec<bool>,
     mob_relationships: Vec<Option<u32>>,
     mob_menace_visuals: HashMap<u32, u32>,
+    mob_enrage_visuals: HashMap<u32, u32>,
     player_firing: bool,
     weapon_cooldowns: [f32; 20],
     weapon_firing: [bool; 20],
@@ -426,6 +429,7 @@ impl PlayerSession {
             mob_visible,
             mob_relationships,
             mob_menace_visuals: HashMap::new(),
+            mob_enrage_visuals: HashMap::new(),
             player_firing: false,
             weapon_cooldowns: [0.; 20],
             weapon_firing: [false; 20],

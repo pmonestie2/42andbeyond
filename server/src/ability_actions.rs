@@ -32,6 +32,7 @@ impl PlayerSession {
         let durable_sap = ability.kind == AbilityKind::ShieldSap;
         let durable_gravity = ability.kind == AbilityKind::GravityLink;
         let durable_menace = ability.kind == AbilityKind::Menace;
+        let durable_enrage = ability.kind == AbilityKind::Enrage;
         if ability.kind == AbilityKind::Jumpstart {
             self.jumpstart_definition()?;
         }
@@ -118,6 +119,10 @@ impl PlayerSession {
         {
             return Err(invalid("Menace rank is not trained."));
         }
+        if durable_enrage && crate::enrage::tier(ability.id, self.skill_catalog.level(22)).is_none()
+        {
+            return Err(invalid("Enrage rank is not trained."));
+        }
         let sap_generation = if durable_sap {
             Some(self.shield_sap_target_generation(target)?)
         } else {
@@ -133,6 +138,17 @@ impl PlayerSession {
         } else {
             None
         };
+        let enrage_generation = if durable_enrage {
+            Some(self.enrage_target_generation(target)?)
+        } else {
+            None
+        };
+        let summon_generation =
+            if ability.kind == AbilityKind::Summon && matches!(ability.id, 117 | 118) {
+                Some(self.summon_target_generation(target)?)
+            } else {
+                None
+            };
         let jumpstart = if ability.kind == AbilityKind::Jumpstart {
             Some(self.prepare_jumpstart_plan(target)?)
         } else {
@@ -205,6 +221,7 @@ impl PlayerSession {
             AbilityKind::ShieldCharging => 0,
             AbilityKind::GravityLink => 0,
             AbilityKind::Menace => 0,
+            AbilityKind::Enrage => 0,
             AbilityKind::ShieldSap => 733,
             AbilityKind::Summon => 0,
             AbilityKind::EquipmentRepair => unreachable!("toggle handled before charged cast"),
@@ -249,12 +266,15 @@ impl PlayerSession {
             hull_repair_amount,
             gravity_generation,
             menace_generation,
+            enrage_generation,
+            summon_generation,
             sap_generation,
         });
         if durable_repair
             || durable_rally
             || durable_gravity
             || durable_menace
+            || durable_enrage
             || durable_optimization
             || durable_shield_charging
             || durable_sap
@@ -317,6 +337,7 @@ impl PlayerSession {
                         .ok_or_else(|| invalid("Select a hostile MOB for Summon."))?;
                     if mob.state == MobState::Dead
                         || !self.mob_visible_in_scan(index as usize, mob)
+                        || self.mob_relationship(mob) != 0
                         || mob.range_to(self.position) > tier.range
                     {
                         return Err(invalid("Summon enemy is unavailable or out of range."));
@@ -406,7 +427,10 @@ impl PlayerSession {
         ) || ability.id == 124
             || matches!(
                 ability.kind,
-                AbilityKind::GravityLink | AbilityKind::ShieldSap | AbilityKind::Menace
+                AbilityKind::GravityLink
+                    | AbilityKind::ShieldSap
+                    | AbilityKind::Menace
+                    | AbilityKind::Enrage
             );
         if enemy {
             let index = self
@@ -417,15 +441,22 @@ impl PlayerSession {
                 .actors
                 .get(index as usize)
                 .ok_or_else(|| invalid("Select a hostile MOB first."))?;
-            let range = if ability.kind == AbilityKind::Menace {
-                crate::menace::tier(ability.id, self.skill_catalog.level(33))
-                    .ok_or_else(|| invalid("Menace rank is not trained."))?
-                    .range
-            } else {
-                ability.range as f32
+            let range = match ability.kind {
+                AbilityKind::Menace => {
+                    crate::menace::tier(ability.id, self.skill_catalog.level(33))
+                        .ok_or_else(|| invalid("Menace rank is not trained."))?
+                        .range
+                }
+                AbilityKind::Enrage => {
+                    crate::enrage::tier(ability.id, self.skill_catalog.level(22))
+                        .ok_or_else(|| invalid("Enrage rank is not trained."))?
+                        .range
+                }
+                _ => ability.range as f32,
             };
             if !self.mob_visible_in_scan(index as usize, mob)
-                || ability.kind == AbilityKind::Menace && self.mob_relationship(mob) != 0
+                || matches!(ability.kind, AbilityKind::Menace | AbilityKind::Enrage)
+                    && self.mob_relationship(mob) != 0
                 || distance(self.position, mob.position) > range
             {
                 return Err(invalid("The target is dead or out of ability range."));
@@ -551,6 +582,11 @@ impl PlayerSession {
                     || self.gate_transit.is_some()
                     || self.sector.station.is_some()
                     || !self.logged_in);
+            let invalid_enrage = definition.kind == AbilityKind::Enrage
+                && (self.warp.active()
+                    || self.gate_transit.is_some()
+                    || self.sector.station.is_some()
+                    || !self.logged_in);
             let invalid_sap = definition.kind == AbilityKind::ShieldSap
                 && (self.warp.active()
                     || self.gate_transit.is_some()
@@ -567,6 +603,7 @@ impl PlayerSession {
                 || invalid_recharge
                 || invalid_gravity
                 || invalid_menace
+                || invalid_enrage
                 || invalid_sap
                 || invalid_summon
                 || definition.kind == AbilityKind::Cloak
@@ -575,7 +612,10 @@ impl PlayerSession {
             {
                 if matches!(
                     definition.kind,
-                    AbilityKind::GravityLink | AbilityKind::ShieldSap | AbilityKind::Menace
+                    AbilityKind::GravityLink
+                        | AbilityKind::ShieldSap
+                        | AbilityKind::Menace
+                        | AbilityKind::Enrage
                 ) {
                     if let Err(error) = self.checkpoint_session(true) {
                         self.skills.cast = Some(cast);
@@ -655,6 +695,37 @@ impl PlayerSession {
                         Some(result) if result.affected > 0 => "Menace frightened hostile ships.",
                         Some(result) if result.resisted > 0 => "Hostile ships resisted Menace.",
                         _ => "Menace target was lost before completion.",
+                    });
+                    return Ok(());
+                }
+                if ability.kind == AbilityKind::Enrage {
+                    let applied = match self.apply_enrage(&ability, &cast) {
+                        Ok(applied) => applied,
+                        Err(error) => {
+                            self.skills.cast = Some(cast);
+                            return Err(error);
+                        }
+                    };
+                    let previous_cooldown = self.skills.cooldowns.insert(ability.skill, cooldown);
+                    if let Err(error) = self.checkpoint_session(true) {
+                        if let Some(previous) = previous_cooldown {
+                            self.skills.cooldowns.insert(ability.skill, previous);
+                        } else {
+                            self.skills.cooldowns.remove(&ability.skill);
+                        }
+                        self.skills.cast = Some(cast);
+                        return Err(error);
+                    }
+                    self.pending.push(packets::ability_progress(None, 0, 0));
+                    self.pending.push(packets::skill_cooldown(
+                        ability.skill,
+                        self.tick_ms(),
+                        (cooldown * 1000.) as u32,
+                    ));
+                    self.message(if applied {
+                        "Enrage drew hostile attention."
+                    } else {
+                        "Enrage target was lost or resisted."
                     });
                     return Ok(());
                 }
@@ -804,6 +875,9 @@ impl PlayerSession {
                             .get(selected)
                             .ok_or_else(|| invalid("Summon enemy target disappeared."))?;
                         if anchor.state == MobState::Dead
+                            || cast.summon_generation != Some(anchor.death_generation)
+                            || !self.mob_visible_in_scan(selected, anchor)
+                            || self.mob_relationship(anchor) != 0
                             || anchor.range_to(self.position) > tier.range
                         {
                             return Err(invalid("Summon enemy left range."));
@@ -817,6 +891,8 @@ impl PlayerSession {
                             self.sector.bounds.min,
                             self.sector.bounds.max,
                         );
+                        let original = combat.actors.clone();
+                        let mut moved = Vec::new();
                         for (index, mob) in combat.actors.iter_mut().enumerate() {
                             let selected_target = index == selected;
                             let same_formation = tier.target
@@ -824,14 +900,24 @@ impl PlayerSession {
                                 && formation != 0
                                 && mob.definition.spawn_group == formation
                                 && distance(mob.position, center) <= 1500.;
-                            if mob.state == MobState::Dead || !(selected_target || same_formation) {
+                            if mob.state == MobState::Dead
+                                || self.mob_relationship(mob) != 0
+                                || !(selected_target || same_formation)
+                            {
                                 continue;
                             }
                             mob.position = destination;
                             mob.motion.stop();
                             mob.speed = 0.;
+                            moved.push(MOB_ID + index as u32);
+                        }
+                        if let Err(error) = combat.persist() {
+                            combat.actors = original;
+                            return Err(error);
+                        }
+                        for victim in moved {
                             self.pending.push(packets::movement(
-                                MOB_ID + index as u32,
+                                victim,
                                 destination,
                                 self.tick_ms(),
                             ));
@@ -977,6 +1063,9 @@ impl PlayerSession {
             }
             AbilityKind::Menace => {
                 return Err(invalid("Menace settles through its durable MOB cast."));
+            }
+            AbilityKind::Enrage => {
+                return Err(invalid("Enrage settles through its durable MOB cast."));
             }
             AbilityKind::EquipmentRepair => {
                 return Err(invalid("Repair Equipment has no charged cast."));

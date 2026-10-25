@@ -283,6 +283,7 @@ impl PlayerSession {
     pub(crate) fn publish_mobs(&mut self) -> io::Result<()> {
         if !self.logged_in || self.sector.station.is_some() {
             self.mob_menace_visuals.clear();
+            self.mob_enrage_visuals.clear();
             return Ok(());
         }
         let broadcast = self.last_broadcast.elapsed() >= Duration::from_millis(200);
@@ -341,6 +342,24 @@ impl PlayerSession {
                     self.mob_menace_visuals.insert(object_id, effect);
                     self.pending
                         .push(packets::object_effect(object_id, effect, asset, tick));
+                }
+            }
+            let enrage_visual = visible
+                .then(|| mob.active_enrage())
+                .flatten()
+                .map(|effect| effect.visual_id(object_id));
+            if self.mob_enrage_visuals.get(&object_id).copied() != enrage_visual {
+                if let Some(previous) = self.mob_enrage_visuals.remove(&object_id) {
+                    self.pending.push(packets::remove_effect(previous));
+                }
+                if let Some(effect) = enrage_visual {
+                    self.mob_enrage_visuals.insert(object_id, effect);
+                    self.pending.push(packets::object_effect(
+                        object_id,
+                        effect,
+                        crate::enrage::VERIFIED_EFFECT,
+                        tick,
+                    ));
                 }
             }
             self.mob_visible[index] = visible;

@@ -30,6 +30,7 @@ pub enum AbilityKind {
     RechargeShields,
     HullPatch,
     EquipmentRepair,
+    Enrage,
     GravityLink,
     Menace,
     Rally,
@@ -390,6 +391,10 @@ pub struct Cast {
     #[serde(default)]
     pub menace_generation: Option<u64>,
     #[serde(default)]
+    pub enrage_generation: Option<u64>,
+    #[serde(default)]
+    pub summon_generation: Option<u64>,
+    #[serde(default)]
     pub sap_generation: Option<u64>,
 }
 
@@ -478,6 +483,12 @@ impl Cast {
             })
             && self.menace_generation.is_none_or(|generation| {
                 matches!(self.ability, 11 | 18 | 64 | 99 | 127) && generation < 1_000_000_000
+            })
+            && self.enrage_generation.is_none_or(|generation| {
+                matches!(self.ability, 6 | 7 | 27 | 41 | 42) && generation < 1_000_000_000
+            })
+            && self.summon_generation.is_none_or(|generation| {
+                matches!(self.ability, 117 | 118) && generation < 1_000_000_000
             })
             && self.sap_generation.is_none_or(|generation| {
                 matches!(self.ability, 54 | 55 | 98 | 112 | 114) && generation < 1_000_000_000

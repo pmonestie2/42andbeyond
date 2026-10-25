@@ -141,6 +141,7 @@ impl SectorCombat {
         will_persist: bool,
     ) -> io::Result<Vec<MobLaunchVisual>> {
         let mut visuals = Vec::new();
+        let mut missed_launch = false;
         for (index, mob) in self.actors.iter_mut().enumerate() {
             // Backpressure must still return due shots for acknowledgment.
             // Failing the whole tick at capacity would leave the queue full
@@ -152,10 +153,13 @@ impl SectorCombat {
             let target = mob
                 .select_target_with_clock(dt, players)
                 .map(|index| &players[index]);
+            let ready_before = mob.shot_cooldown() == 0.;
             let damage = match target {
                 Some(player) => mob.tick_target(dt, player),
                 None => mob.tick_idle(dt, players),
             };
+            missed_launch |=
+                target.is_some() && ready_before && damage == 0. && mob.shot_cooldown() > 0.;
             if let Some(player) = target {
                 if damage > 0. {
                     self.npc_sequence = self.npc_sequence.checked_add(1).ok_or_else(|| {
@@ -204,7 +208,7 @@ impl SectorCombat {
             }
         }
         self.resolve_projectiles(now);
-        if will_persist || !visuals.is_empty() {
+        if will_persist || !visuals.is_empty() || missed_launch {
             self.persist()?;
         }
         Ok(visuals)
