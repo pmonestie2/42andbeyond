@@ -599,7 +599,7 @@ namespace FortyTwoAndBeyond.Protocol
             pendingDeviceTarget = pendingDeviceTemplate = 0; pendingDeviceSlot = -1;
             pendingAbilityTarget = pendingAbilityId = 0;
             bool selectableObject = World.Objects.TryGetValue(target, out MapObject item) &&
-                (item.Navigable || item.Kind == 25 || item.Kind == 38);
+                WarpTargets.WorldObject(item);
             if (!Ready || gate != 0 || (target != Player && !World.Mobs.ContainsKey(target) &&
                 !World.Players.ContainsKey(target) && !selectableObject)) return;
             if (followTarget != target) followTarget = 0;

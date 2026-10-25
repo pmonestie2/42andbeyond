@@ -8,7 +8,7 @@ namespace FortyTwoAndBeyond.Protocol
         ///     bool: Whether a visible world object has a server warp route.
         /// </summary>
         public static bool WorldObject(MapObject item)
-        { return item != null && (item.Navigable || item.Kind == 25 || item.Kind == 38); }
+        { return item != null && (item.Navigable || item.Kind == 25 || item.Kind == 37 || item.Kind == 38); }
 
         /// <summary>
         /// Returns:

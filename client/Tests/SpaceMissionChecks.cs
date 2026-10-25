@@ -103,4 +103,60 @@ internal static class SpaceMissionChecks
         }
         Console.WriteLine("PASS: Cleaner turn-in awarded credits, cargo and Projectile Weapon rank");
     }
+
+    /// <summary>Accept the TE message from the server's Luna station contact.</summary>
+    public static void TeMessageAccept(string address)
+    {
+        using (var session = new LocalSession(CancellationToken.None))
+        {
+            session.Connect(address, "rookiete", "rookiete");
+            Wait(session, () => session.Ready && session.World.Station?.Id == 10151,
+                "TE pilot did not start at the Luna station.");
+            StationContact contact = session.World.Station.Contacts.FirstOrDefault(item => item.Id == 46);
+            if (contact == null) throw new Exception("Lieutenant Kyle Raine is absent from Luna.");
+            if (session.World.Station.CurrentRoom != contact.Room)
+            {
+                session.EnterStationRoom(contact.Room);
+                Wait(session, () => session.World.Station?.CurrentRoom == contact.Room,
+                    "TE pilot could not reach Lieutenant Kyle Raine's room.");
+            }
+            session.OpenNpc(46);
+            Wait(session, () => session.World.Dialogue?.Choices.Any(choice => choice.Node == 2) == true,
+                "TE mission 105 acceptance branch is absent.");
+            session.ChooseNpc(2);
+            Wait(session, () => session.World.Missions.Any(mission =>
+                mission?.Name == "Message For The First Sergeant" && mission.Stage == 1) &&
+                new Snapshot(session.World, session.Status, true).Cargo.Any(item => item?.Template == 5226),
+                "TE message mission or owned message item was not published.");
+        }
+        Console.WriteLine("PASS: TE mission 105 accepted with durable message item");
+    }
+
+    /// <summary>Deliver the TE message through the selected native space contact.</summary>
+    public static void TeMessageComplete(string address)
+    {
+        using (var session = new LocalSession(CancellationToken.None))
+        {
+            session.Connect(address, "rookiete", "rookiete");
+            Wait(session, () => session.Ready && session.World.Station == null &&
+                session.World.Objects.ContainsKey(113451) &&
+                session.World.Missions.Any(mission => mission?.Name ==
+                    "Message For The First Sergeant" && mission.Stage == 1),
+                "TE message and First Sergeant space contact did not load.");
+            session.SelectTarget(113451);
+            Wait(session, () => session.World.Dialogue?.Choices.Any(choice => choice.Node == 2) == true,
+                "Non-navigable space contact did not open its native mission dialogue.");
+            session.ChooseNpc(2);
+            Wait(session, () => session.World.Dialogue?.Choices.Any(choice => choice.Node == 3) == true,
+                "First Sergeant did not offer the message delivery branch.");
+            session.ChooseNpc(3);
+            Wait(session, () => session.World.Missions.All(mission => mission?.Name !=
+                    "Message For The First Sergeant") &&
+                !new Snapshot(session.World, session.Status, true).Cargo.Any(item => item?.Template == 5226) &&
+                session.World.Experience?.TradeLevel > 0 &&
+                session.World.Experience.ExploreLevel > 0,
+                "TE delivery did not consume the message and award trade/explore progress.");
+        }
+        Console.WriteLine("PASS: TE mission 105 space dialogue consumed message and awarded XP");
+    }
 }

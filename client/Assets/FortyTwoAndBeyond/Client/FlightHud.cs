@@ -375,7 +375,9 @@ namespace FortyTwoAndBeyond.Client
             if (Time.unscaledTime >= refreshAt || sector != snapshot.Sector)
             {
                 if (sector != snapshot.Sector) { lastDamage = 0; damageLabels.Clear(); }
-                destinations = snapshot.Objects.Where(item => item.Navigable).OrderBy(item => item.Position.Distance(snapshot.Position)).ToArray();
+                destinations = snapshot.Objects.Where(item => item.Navigable ||
+                    item.Kind == 37 && item.Position.Distance(snapshot.Position) <= 20000)
+                    .OrderBy(item => item.Position.Distance(snapshot.Position)).ToArray();
                 nearbyWrecks = snapshot.Objects.Where(item => item.Kind == 25)
                     .OrderBy(item => item.Position.Distance(snapshot.Position)).Take(12).ToArray();
                 socialContacts = snapshot.Players.Concat(snapshot.Mobs).Where(actor => actor.HasPosition)

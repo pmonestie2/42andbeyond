@@ -595,10 +595,10 @@ namespace FortyTwoAndBeyond.Client
             return point;
         }
 
-        /// <summary>Select an existing navigable server object.</summary>
+        /// <summary>Select a server-listed destination or nearby space contact.</summary>
         public void Select(uint id)
         {
-            if (snapshot == null || !snapshot.Objects.Any(item => item.Id == id && item.Navigable)) return;
+            if (snapshot == null || !snapshot.Objects.Any(item => item.Id == id && WarpTargets.WorldObject(item))) return;
             hud?.ClearSelection();
             navigationSelection.ChooseTarget(id);
             pendingNavigationTarget = 0;

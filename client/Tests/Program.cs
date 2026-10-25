@@ -29,6 +29,8 @@ internal static class Program
         else if (args.Length == 2 && args[0] == "--space-mission-server") SpaceMissionChecks.Live(args[1]);
         else if (args.Length == 2 && args[0] == "--space-turnin-server") SpaceMissionChecks.TurnIn(args[1]);
         else if (args.Length == 2 && args[0] == "--cleaner-turnin-server") SpaceMissionChecks.CleanerTurnIn(args[1]);
+        else if (args.Length == 2 && args[0] == "--te-message-accept-server") SpaceMissionChecks.TeMessageAccept(args[1]);
+        else if (args.Length == 2 && args[0] == "--te-message-complete-server") SpaceMissionChecks.TeMessageComplete(args[1]);
         else if (args.Length != 0) throw new ArgumentException("Usage: ProtocolChecks [--server PRIVATE_IP|--recharge-server PRIVATE_IP|--support-server PRIVATE_IP|--enemy-ability-server PRIVATE_IP|--skill-server PRIVATE_IP|--skill-resume-server PRIVATE_IP]");
     }
 
@@ -537,12 +539,14 @@ internal static class Program
         world.Apply(new Frame(0x2018, objectBody(78, 25, 4500, false)), 1);
         world.Apply(new Frame(0x2018, objectBody(79, 11, 4500, true)), 1);
         world.Apply(new Frame(0x2018, objectBody(80, 38, 21000, false)), 1);
+        world.Apply(new Frame(0x2018, objectBody(83, 37, 4500, false)), 1);
         world.Mobs[81] = new ShipActor(81, 0, 1, "Mob", new Position(4500, 0, 0),
             new[] { 0f, 0f, 0f, 1f }, true, false, true);
         world.Players[82] = new ShipActor(82, 0, 1, "Pilot", new Position(4500, 0, 0),
             new[] { 0f, 0f, 0f, 1f }, true);
         Assert(WarpTargets.Available(world, 77) && WarpTargets.Available(world, 78) &&
-            WarpTargets.Available(world, 79) && WarpTargets.Available(world, 81),
+            WarpTargets.Available(world, 79) && WarpTargets.Available(world, 81) &&
+            WarpTargets.Available(world, 83),
             "A supported native object or MOB route was rejected.");
         Assert(!WarpTargets.Available(world, 80) && !WarpTargets.Available(world, 82),
             "Out-of-range resources or pilot ships were accepted as warp routes.");
