@@ -50,6 +50,8 @@ pub(crate) mod exploration;
 mod follow_service;
 #[path = "gating_service.rs"]
 mod gating_service;
+#[path = "gravity_link_service.rs"]
+mod gravity_link_service;
 #[path = "harvest_visuals.rs"]
 mod harvest_visuals;
 #[path = "hull_repair.rs"]

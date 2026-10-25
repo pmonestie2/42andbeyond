@@ -30,6 +30,7 @@ pub struct ShipStats {
     pub prospect_bonus: f32,
     pub recharge_shields_skill: f32,
     pub hull_patch_skill: f32,
+    pub gravity_link_skill: f32,
     pub tractor_speed: f32,
     pub tractor_range: f32,
     pub deflects: [f32; 9],
@@ -312,6 +313,13 @@ impl EquipmentStats {
             } else {
                 0.
             },
+            gravity_link_skill: if skills.level(25) > 0 {
+                modifiers
+                    .apply_signed("SKILL_GRAVITY_LINK", skills.level(25) as f32)
+                    .clamp(0., 10.)
+            } else {
+                0.
+            },
             tractor_speed: modifiers.apply("STAT_TRACTORBEAM", 200.).max(1.),
             // Long Tractor Beam has a catalog range modifier. The archived
             // fixed range ignored it; retain the current 2 km base.
@@ -443,6 +451,29 @@ impl EquipmentStats {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Public Gravity Link gear raises the effective formula rank without unlocking tiers.
+    #[test]
+    fn gravity_link_gear_increases_the_authoritative_slow_formula() {
+        let catalog = ItemCatalog::load().unwrap();
+        let mut profile = crate::account::Account::create("pilot".into(), "pass", "Pilot".into())
+            .unwrap()
+            .character;
+        let class = crate::classes::CharacterClass::parse("pw").unwrap();
+        profile.race = class.race();
+        profile.profession = class.profession();
+        let skills = SkillCatalog::for_profile(&profile).unwrap();
+        let mut inventory = Inventory::starter_for(&profile, &catalog).unwrap();
+        let base = EquipmentStats::derive(&inventory, &catalog, &skills).unwrap();
+        assert_eq!(base.ship.gravity_link_skill, 7.);
+        inventory.equipped[3] = Some(crate::inventory::ItemInstance::stock(795, 1));
+        let geared = EquipmentStats::derive(&inventory, &catalog, &skills).unwrap();
+        assert!((geared.ship.gravity_link_skill - 8.).abs() < 0.0001);
+        assert!(
+            crate::gravity_link::speed_fraction(7, geared.ship.gravity_link_skill, 50, 50)
+                < crate::gravity_link::speed_fraction(7, base.ship.gravity_link_skill, 50, 50)
+        );
+    }
 
     /// Public weapon gear raises the native shield and hull repair skills.
     #[test]

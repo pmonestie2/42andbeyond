@@ -158,6 +158,8 @@ pub struct Mob {
     #[serde(default)]
     pub disabled_seconds: f32,
     #[serde(default)]
+    pub gravity: Vec<crate::gravity_link::GravityDebuff>,
+    #[serde(default)]
     pub death_generation: u64,
     #[serde(default)]
     pub killer: Option<u32>,
@@ -237,6 +239,7 @@ impl Mob {
             shield: combat.shield,
             max_shield: combat.shield,
             disabled_seconds: 0.,
+            gravity: Vec::new(),
             death_generation: 0,
             killer: None,
             cooldown: 0.,
@@ -261,6 +264,12 @@ impl Mob {
         saved.sensors.validate()?;
         saved.roaming.validate()?;
         saved.warnings.validate()?;
+        if saved.gravity.len() > 16 || saved.gravity.iter().any(|effect| !effect.valid()) {
+            return Err(crate::protocol::invalid("Invalid MOB Gravity Link state."));
+        }
+        saved
+            .gravity
+            .retain(|effect| effect.active(crate::resources::unix_ms()));
         saved.validate_motion()?;
         // Older simulation ticks let an elapsed respawn countdown run just
         // below zero before setting Idle. Those are valid expired timers, not
@@ -343,6 +352,7 @@ impl Mob {
             self.warnings.clear_contacts();
             self.roaming.reset_interest();
             self.unowned_provoked = false;
+            self.gravity.clear();
         }
     }
     pub fn damage_by(&mut self, damage: f32, player: u32) {
@@ -354,6 +364,55 @@ impl Mob {
         if alive && self.state == MobState::Dead {
             self.killer = Some(player);
         }
+    }
+
+    /// Returns:
+    ///     f32: Authoritative hit after active Impact/Explosive vulnerability.
+    pub fn damage_by_typed(&mut self, damage: f32, player: u32, damage_type: usize) -> f32 {
+        let bonus = if matches!(damage_type, 0 | 1) {
+            self.gravity
+                .iter()
+                .filter(|effect| effect.active(crate::resources::unix_ms()))
+                .map(|effect| effect.impact_explosive_bonus)
+                .fold(0., f32::max)
+        } else {
+            0.
+        };
+        let adjusted = damage * (1. + bonus);
+        self.damage_by(adjusted, player);
+        adjusted
+    }
+
+    /// Returns:
+    ///     f32: Strongest active gravity cap on this MOB's movement speed.
+    pub fn gravity_speed_fraction(&self) -> f32 {
+        self.gravity
+            .iter()
+            .filter(|effect| effect.active(crate::resources::unix_ms()))
+            .map(|effect| effect.speed_fraction)
+            .fold(1., f32::min)
+    }
+
+    /// Returns:
+    ///     bool: Whether a durable cast added or refreshed this target's effect.
+    pub fn apply_gravity(&mut self, effect: crate::gravity_link::GravityDebuff) -> bool {
+        if self.state == MobState::Dead || !effect.valid() {
+            return false;
+        }
+        if self.gravity.iter().any(|existing| {
+            existing.source == effect.source
+                && existing.epoch == effect.epoch
+                && existing.effect == effect.effect
+        }) {
+            return false;
+        }
+        self.gravity
+            .retain(|existing| existing.active(crate::resources::unix_ms()));
+        if self.gravity.len() == 16 {
+            return false;
+        }
+        self.gravity.push(effect);
+        true
     }
     /// A durable corpse birth can be newer than the transport checkpoint.
     pub(crate) fn reconcile_death(&mut self, generation: u64, remaining: f32) {
@@ -592,6 +651,7 @@ impl Mob {
                 self.warnings.clear_contacts();
                 self.roaming.reset_interest();
                 self.killer = None;
+                self.gravity.clear();
                 self.state = MobState::Idle;
             }
             return 0.;
@@ -601,7 +661,12 @@ impl Mob {
             self.disabled_seconds = (self.disabled_seconds - dt).max(0.);
             self.state = MobState::Idle;
             if !disabled && mode == TargetingMode::Returning {
-                move_towards(&mut self.position, self.definition.spawn, 100. * dt);
+                let gravity = self.gravity_speed_fraction();
+                move_towards(
+                    &mut self.position,
+                    self.definition.spawn,
+                    100. * dt * gravity,
+                );
             }
             return 0.;
         }
@@ -621,7 +686,12 @@ impl Mob {
             self.sensors.clear();
             self.warnings.clear_contacts();
             self.roaming.reset_interest();
-            move_towards(&mut self.position, self.definition.spawn, 100. * dt);
+            let gravity = self.gravity_speed_fraction();
+            move_towards(
+                &mut self.position,
+                self.definition.spawn,
+                100. * dt * gravity,
+            );
             return 0.;
         }
         if self.native_roaming() {
@@ -635,7 +705,8 @@ impl Mob {
             self.stop_motion();
         } else if separation > self.combat.range {
             self.state = MobState::Chasing;
-            move_towards(&mut self.position, player, 150. * dt);
+            let gravity = self.gravity_speed_fraction();
+            move_towards(&mut self.position, player, 150. * dt * gravity);
             return 0.;
         }
         if self.range_to(player) > self.combat.range {
@@ -706,6 +777,34 @@ mod tests {
             stealth: None,
             factions: crate::factions::FactionReactions::neutral(),
         }
+    }
+
+    /// Gravity changes actual pursuit displacement, typed damage and expiry.
+    #[test]
+    fn gravity_link_caps_mob_motion_and_impact_until_deadline() {
+        let mut baseline = Mob::new(definition());
+        baseline.position = [2000., 0., 0.];
+        baseline.tick_visible(1., [0.; 3], true);
+        let ordinary_distance = 2000. - baseline.position[0];
+
+        let mut slowed = Mob::new(definition());
+        slowed.position = [2000., 0., 0.];
+        let now = crate::resources::unix_ms();
+        assert!(slowed.apply_gravity(crate::gravity_link::GravityDebuff {
+            source: 0x40000001,
+            epoch: 1,
+            effect: 23,
+            deadline_ms: now + 30_000,
+            speed_fraction: 0.2,
+            impact_explosive_bonus: 0.3,
+        }));
+        slowed.tick_visible(1., [0.; 3], true);
+        assert!(((2000. - slowed.position[0]) - ordinary_distance * 0.2).abs() < 0.01);
+        assert_eq!(slowed.damage_by_typed(10., 0x40000001, 0), 13.);
+        assert_eq!(slowed.damage_by_typed(10., 0x40000001, 3), 10.);
+        slowed.gravity[0].deadline_ms = now - 1;
+        assert_eq!(slowed.gravity_speed_fraction(), 1.);
+        assert_eq!(slowed.damage_by_typed(10., 0x40000001, 0), 10.);
     }
 
     #[test]

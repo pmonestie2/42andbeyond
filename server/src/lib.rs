@@ -13,6 +13,7 @@ pub mod factions;
 pub mod following;
 pub mod game;
 pub mod gating;
+pub mod gravity_link;
 pub mod groups;
 pub mod inventory;
 pub mod items;

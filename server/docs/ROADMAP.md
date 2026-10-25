@@ -141,6 +141,24 @@ mean the corresponding gameplay system is complete.
   1%/second base repair, 5-energy tick and hull-wear rate are local tuning.
   The archived visual 178 is not verified against the installed client, so no
   0x09 visual is published yet. Native client icon testing remains open.
+- Gravity Link skill 25 now admits PW/PS Mass Field (73), Gravity Field (47),
+  Immobilization Field (59), and PW-only area tiers 12/10. Native selected-MOB
+  targeting, charged reactor cost and cooldown are server-owned. A durable
+  MOB debuff caps actual pursuit/roaming speed using the documented level/skill
+  formula; Gravity/Immobilization tiers add the documented 30% Impact and
+  Explosive vulnerability. Area effects use 1500/3000-meter target-centered
+  radii. Public SKILL_GRAVITY_LINK gear improves the effective formula rank,
+  without unlocking an untrained tier. World-persist failures roll back, and
+  the same cast identity replays once after a session checkpoint failure.
+  Two-pilot area/single-target, typed-damage, torn-write and restart tests pass.
+  The [original manual](https://files.bachsau.com/Archives/Westwood/earthandbeyond/manual/EBMANUAL.PDF)
+  establishes slow and area behavior; [Net-7 Gravity Link](https://net7wiki.bmsite.net/index.php?title=Gravity_Link)
+  gives the speed/range/vulnerability details. The archived AGravityLink body
+  is absent; 30-second duration, one-second charge, ten-second cooldown and
+  20+5×tier reactor energy are documented local tuning. MOBs do not use warp,
+  so warp prevention has no current NPC effect. Archived EffectID 219 could
+  not be checked against the installed client effect.ini; no 0x09 visual is
+  emitted, and legacy visual verification remains open.
 - Persistent cargo/equipment/vault inventory and credits, split/merge/swap
   transfers, mount/class/skill/quantity validation, trade/no-store vault rules,
   atomic replacement before publication and restart reconciliation.

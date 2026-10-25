@@ -160,6 +160,7 @@ impl Mob {
     }
 
     fn integrate_native_motion(&mut self, dt: f32, speed: f32, turn: f32) {
+        let speed = speed * self.gravity_speed_fraction();
         self.motion.speed = speed;
         self.motion.set_speed = speed;
         self.motion.turn = turn;

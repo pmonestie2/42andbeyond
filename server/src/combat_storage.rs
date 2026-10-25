@@ -234,11 +234,11 @@ impl SectorCombat {
             }
             changed = true;
             if let Some((index, target)) = target {
-                target.damage_by(shot.damage, shot.owner);
+                let applied = target.damage_by_typed(shot.damage, shot.owner, shot.damage_type);
                 reports.push(crate::projectiles::DamageReport {
                     owner: shot.owner,
                     target: MOB_ID + index as u32,
-                    damage: shot.damage,
+                    damage: applied,
                     damage_type: shot.damage_type,
                     inflicted: shot.inflicted,
                 });

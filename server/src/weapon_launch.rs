@@ -145,7 +145,7 @@ impl PlayerSession {
                 };
                 journal.next_effect = journal.next_effect.wrapping_add(1);
                 if shot.due_ms <= now {
-                    simulated.damage_by(result.damage, self.player_id());
+                    simulated.damage_by_typed(result.damage, self.player_id(), stats.damage_type);
                 }
                 journal.projectiles.push(shot);
             }

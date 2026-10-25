@@ -30,6 +30,7 @@ pub enum AbilityKind {
     RechargeShields,
     HullPatch,
     EquipmentRepair,
+    GravityLink,
     Rally,
     Unsupported,
 }
@@ -378,6 +379,8 @@ pub struct Cast {
     pub recharge_amount: Option<f32>,
     #[serde(default)]
     pub hull_repair_amount: Option<f32>,
+    #[serde(default)]
+    pub gravity_generation: Option<u64>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -440,6 +443,9 @@ impl Cast {
                 matches!(self.ability, 31 | 77 | 95)
                     && amount.is_finite()
                     && (1. ..=12_960.).contains(&amount)
+            })
+            && self.gravity_generation.is_none_or(|generation| {
+                matches!(self.ability, 10 | 12 | 47 | 59 | 73) && generation < 1_000_000_000
             })
     }
 }

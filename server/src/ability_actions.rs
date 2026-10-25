@@ -27,6 +27,7 @@ impl PlayerSession {
             AbilityKind::RechargeShields | AbilityKind::HullPatch
         );
         let durable_rally = ability.kind == AbilityKind::Rally;
+        let durable_gravity = ability.kind == AbilityKind::GravityLink;
         if ability.kind == AbilityKind::Jumpstart {
             self.jumpstart_definition()?;
         }
@@ -79,6 +80,11 @@ impl PlayerSession {
             return Err(invalid("This skill is recovering."));
         }
         let target = self.ability_target(&ability, requested_target)?;
+        let gravity_generation = if durable_gravity {
+            Some(self.gravity_target_generation(target)?)
+        } else {
+            None
+        };
         let jumpstart = if ability.kind == AbilityKind::Jumpstart {
             Some(self.prepare_jumpstart_plan(target)?)
         } else {
@@ -126,7 +132,7 @@ impl PlayerSession {
         let next_effect_before = self.next_effect;
         self.energy -= energy;
         let effect = self.next_effect;
-        self.next_effect = self.next_effect.wrapping_add(1);
+        self.next_effect = self.next_effect.wrapping_add(1).max(1);
         let asset = match ability.kind {
             AbilityKind::Unsupported => return Err(invalid("Unsupported class ability.")),
             AbilityKind::Cloak => 180,
@@ -145,6 +151,7 @@ impl PlayerSession {
             AbilityKind::RechargeShields => 733,
             AbilityKind::HullPatch => 733,
             AbilityKind::Rally => 0,
+            AbilityKind::GravityLink => 0,
             AbilityKind::EquipmentRepair => unreachable!("toggle handled before charged cast"),
         };
         if ability.kind == AbilityKind::Jumpstart {
@@ -184,8 +191,9 @@ impl PlayerSession {
             jumpstart,
             recharge_amount,
             hull_repair_amount,
+            gravity_generation,
         });
-        if durable_repair || durable_rally {
+        if durable_repair || durable_rally || durable_gravity {
             if let Err(error) = self.checkpoint_session(true) {
                 self.energy += energy;
                 self.skills.cast = None;
@@ -253,7 +261,8 @@ impl PlayerSession {
         let enemy = matches!(
             ability.kind,
             AbilityKind::Contemplation | AbilityKind::Leech
-        ) || ability.id == 124;
+        ) || ability.id == 124
+            || ability.kind == AbilityKind::GravityLink;
         if enemy {
             let index = self
                 .target
@@ -376,13 +385,25 @@ impl PlayerSession {
                 || self.gate_transit.is_some()
                 || self.sector.station.is_some()
                 || self.mining.is_some());
+            let invalid_gravity = definition.kind == AbilityKind::GravityLink
+                && (self.warp.active()
+                    || self.gate_transit.is_some()
+                    || self.sector.station.is_some()
+                    || !self.logged_in);
             if (self.hull <= 0. && !self_jumpstart)
                 || invalid_jumpstart
                 || invalid_recharge
+                || invalid_gravity
                 || definition.kind == AbilityKind::Cloak
                     && definition.rank < 5
                     && self.motion.speed.abs() > 0.1
             {
+                if definition.kind == AbilityKind::GravityLink {
+                    if let Err(error) = self.checkpoint_session(true) {
+                        self.skills.cast = Some(cast);
+                        return Err(error);
+                    }
+                }
                 self.remove_effect(cast.effect);
                 self.pending.push(packets::ability_progress(None, 0, 0));
                 self.pending.push(packets::message("Ability interrupted."));
@@ -392,13 +413,44 @@ impl PlayerSession {
             if cast.remaining > 0. {
                 self.skills.cast = Some(cast);
             } else {
-                self.remove_effect(cast.effect);
-                self.pending.push(packets::ability_progress(None, 0, 0));
                 let ability = self.skill_catalog.ability(cast.ability)?;
                 let cooldown = cast
                     .jumpstart
                     .as_ref()
                     .map_or(ability.cooldown, |plan| plan.cooldown_seconds);
+                if ability.kind == AbilityKind::GravityLink {
+                    let applied = match self.apply_gravity_link(&ability, &cast) {
+                        Ok(applied) => applied,
+                        Err(error) => {
+                            self.skills.cast = Some(cast);
+                            return Err(error);
+                        }
+                    };
+                    let previous_cooldown = self.skills.cooldowns.insert(ability.skill, cooldown);
+                    if let Err(error) = self.checkpoint_session(true) {
+                        if let Some(previous) = previous_cooldown {
+                            self.skills.cooldowns.insert(ability.skill, previous);
+                        } else {
+                            self.skills.cooldowns.remove(&ability.skill);
+                        }
+                        self.skills.cast = Some(cast);
+                        return Err(error);
+                    }
+                    self.pending.push(packets::ability_progress(None, 0, 0));
+                    self.pending.push(packets::skill_cooldown(
+                        ability.skill,
+                        self.tick_ms(),
+                        (cooldown * 1000.) as u32,
+                    ));
+                    self.message(if applied {
+                        "Gravity Link applied for 30 seconds."
+                    } else {
+                        "Gravity Link target was lost before completion."
+                    });
+                    return Ok(());
+                }
+                self.remove_effect(cast.effect);
+                self.pending.push(packets::ability_progress(None, 0, 0));
                 if cooldown > 0. {
                     self.skills.cooldowns.insert(ability.skill, cooldown);
                 } else {
@@ -615,6 +667,11 @@ impl PlayerSession {
                     tactic,
                     skill_rank: self.skill_catalog.level(44),
                 });
+            }
+            AbilityKind::GravityLink => {
+                return Err(invalid(
+                    "Gravity Link settles through its durable MOB cast.",
+                ));
             }
             AbilityKind::EquipmentRepair => {
                 return Err(invalid("Repair Equipment has no charged cast."));

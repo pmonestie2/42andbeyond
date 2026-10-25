@@ -584,6 +584,125 @@ fn advance(game: &mut GameState, seconds: f32) {
     }
 }
 
+/// PW area Gravity Link and PS single-target casts survive restart without
+/// doubling reactor cost or widening either pilot's target selection.
+#[test]
+fn gravity_link_area_and_single_target_persist_with_typed_damage() {
+    let root = std::env::temp_dir().join(format!("enb-gravity-{}", rand::random::<u64>()));
+    let accounts = AccountDirectory::new(&root);
+    let warrior = accounts
+        .create_class(
+            "warrior".into(),
+            "example",
+            "Warrior".into(),
+            crate::classes::CharacterClass::parse("pw").unwrap(),
+        )
+        .unwrap()
+        .account
+        .character
+        .game_id;
+    let sentinel = accounts
+        .create_class(
+            "sentinel".into(),
+            "example",
+            "Sentinel".into(),
+            crate::classes::CharacterClass::parse("ps").unwrap(),
+        )
+        .unwrap()
+        .account
+        .character
+        .game_id;
+    let mut sector: Sector = serde_json::from_str(include_str!("../data/sector.json")).unwrap();
+    let mut first = sector.mobs[0].clone();
+    first.source_id = 910_001;
+    first.spawn = [1000., 0., 0.];
+    first.aggressive = false;
+    let mut second = first.clone();
+    second.source_id = 910_002;
+    second.spawn = [1800., 0., 0.];
+    let mut distant = first.clone();
+    distant.source_id = 910_003;
+    distant.spawn = [5500., 0., 0.];
+    sector.mobs = vec![first, second, distant];
+    let bind = Ipv4Addr::new(127, 0, 0, 2);
+    let mut game = GameState::new(sector.clone(), bind, root.clone()).unwrap();
+    login(&mut game, warrior, 23431, "warrior");
+    login(&mut game, sentinel, 23432, "sentinel");
+    game.update_views();
+    let warrior_energy = game.sessions[&warrior].energy_balance().0;
+    activate(&mut game, warrior, MOB_ID, 10);
+    assert_eq!(
+        game.sessions[&warrior].energy_balance().0,
+        warrior_energy - 55.
+    );
+    let torn_world = root.join("combat/1076.json.next");
+    fs::create_dir(&torn_world).unwrap();
+    game.advance(1.1).unwrap(); // the game loop defers a failed session independently
+    assert!(lock_combat(game.combats.get(&sector.id).unwrap())
+        .unwrap()
+        .actors[0]
+        .gravity
+        .is_empty());
+    assert_eq!(
+        game.sessions[&warrior].energy_balance().0,
+        warrior_energy - 55.
+    );
+    fs::remove_dir(torn_world).unwrap();
+    advance(&mut game, 1.1);
+    let world = lock_combat(game.combats.get(&sector.id).unwrap()).unwrap();
+    assert_eq!(world.actors[0].gravity.len(), 1);
+    assert_eq!(world.actors[1].gravity.len(), 1);
+    assert!(world.actors[2].gravity.is_empty());
+    assert!(world.actors[0].gravity_speed_fraction() < 1.);
+    let mut struck = world.actors[0].clone();
+    drop(world);
+    let ordinary = struck.damage_by_typed(10., warrior, 3);
+    let impact = struck.damage_by_typed(10., warrior, 0);
+    assert_eq!(ordinary, 10.);
+    assert_eq!(impact, 13.);
+    let sentinel_energy = game.sessions[&sentinel].energy_balance().0;
+    activate(&mut game, sentinel, MOB_ID, 10); // PS cannot use PW area tier.
+    assert_eq!(game.sessions[&sentinel].energy_balance().0, sentinel_energy);
+    activate(&mut game, sentinel, MOB_ID + 2, 59);
+    assert_eq!(
+        game.sessions[&sentinel].energy_balance().0,
+        sentinel_energy - 45.
+    );
+    advance(&mut game, 1.1);
+    let world = lock_combat(game.combats.get(&sector.id).unwrap()).unwrap();
+    assert_eq!(world.actors[2].gravity.len(), 1);
+    assert_eq!(world.actors[1].gravity.len(), 1);
+    drop(world);
+    game.sessions
+        .get_mut(&warrior)
+        .unwrap()
+        .checkpoint_session(true)
+        .unwrap();
+    game.sessions
+        .get_mut(&sentinel)
+        .unwrap()
+        .checkpoint_session(true)
+        .unwrap();
+    let warrior_saved_energy = game.sessions[&warrior].energy_balance().0;
+    let sentinel_saved_energy = game.sessions[&sentinel].energy_balance().0;
+    drop(game);
+    let restored = GameState::new(sector, bind, root.clone()).unwrap();
+    let world = lock_combat(restored.combats.get(&1076).unwrap()).unwrap();
+    assert_eq!(world.actors[0].gravity.len(), 1);
+    assert_eq!(world.actors[1].gravity.len(), 1);
+    assert_eq!(world.actors[2].gravity.len(), 1);
+    assert_eq!(
+        restored.sessions[&warrior].energy_balance().0,
+        warrior_saved_energy
+    );
+    assert_eq!(
+        restored.sessions[&sentinel].energy_balance().0,
+        sentinel_saved_energy
+    );
+    drop(world);
+    fs::remove_dir_all(root).unwrap();
+}
+
 /// A selected ally's mounted item and the caster's reactor settle once across two failures.
 #[test]
 fn equipment_repair_toggle_is_atomic_and_replays_without_free_ally_structure() {
