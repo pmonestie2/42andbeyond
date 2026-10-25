@@ -86,7 +86,7 @@ namespace FortyTwoAndBeyond.Client
             SelectWreck(selectedWreck); return true;
         }
         /// <summary>Show a chosen corpse without retaining the previous ship lock.</summary>
-        private void SelectWreck(uint id)
+        public void SelectWreck(uint id)
         { wreckId = id; contactSelection.ClearLocal(); lootScroll = Vector2.zero; client.SelectWorldObject(id); }
         /// <summary>Open or close the ship equipment overlay.</summary>
         public void ToggleEquipment() { equipmentOpen = !equipmentOpen; }
@@ -679,14 +679,26 @@ namespace FortyTwoAndBeyond.Client
                 if (GUILayout.Button(text, selectedTarget?.Id == item.Id ? selected : button,
                     GUILayout.Width(250), GUILayout.Height(54))) client.Select(item.Id);
             }
-            GUILayout.EndScrollView(); GUILayout.EndArea(); float top = height + 112; MapObject target = client.Target;
-            Panel(new Rect(x, top, 296, 145)); GUI.Label(new Rect(x + 12, top + 9, 270, 24), target?.Name ?? "Free flight", body);
-            GUI.Label(new Rect(x + 12, top + 34, 270, 22), target == null ? "Warp ahead or choose a destination" : $"RANGE   {target.Position.Distance(snapshot.Position) / 1000:0.00} km", small);
+            GUILayout.EndScrollView(); GUILayout.EndArea(); float top = height + 112;
+            MapObject target = client.Target;
+            ShipActor actorTarget = client.TargetActor;
+            float targetRange = target != null ? target.Position.Distance(snapshot.Position) :
+                actorTarget != null ? actorTarget.Position.Distance(snapshot.Position) : -1;
+            Panel(new Rect(x, top, 296, 145));
+            GUI.Label(new Rect(x + 12, top + 9, 270, 24), target?.Name ?? actorTarget?.Name ?? "Free flight", body);
+            GUI.Label(new Rect(x + 12, top + 34, 270, 22), targetRange < 0 ?
+                "Warp ahead or choose a destination" : $"RANGE   {targetRange / 1000:0.00} km", small);
             bool warpActive = snapshot.WarpPhase == WarpPhase.Charging ||
                 snapshot.WarpPhase == WarpPhase.Traveling;
+            bool pilotTarget = actorTarget?.IsPlayer == true;
+            bool resourceTooFar = target?.Kind == 38 && targetRange > 20000;
+            bool tooClose = targetRange >= 0 && targetRange < 4000;
             GUI.enabled = client.Ready && !client.Incapacitated &&
-                snapshot.WarpPhase != WarpPhase.Recovering;
-            string warpAction = warpActive ? "CANCEL WARP" : target == null ? "WARP AHEAD" : "WARP TO TARGET";
+                snapshot.WarpPhase != WarpPhase.Recovering &&
+                (warpActive || !pilotTarget && !resourceTooFar && !tooClose);
+            string warpAction = warpActive ? "CANCEL WARP" : pilotTarget ? "PILOT: USE FOLLOW" :
+                resourceTooFar ? "RESOURCE OUT OF RANGE" : tooClose ? "TOO CLOSE (<4 KM)" :
+                targetRange < 0 ? "WARP AHEAD" : "WARP TO TARGET";
             if (GUI.Button(new Rect(x + 12, top + 63, 272, 32),
                 client.Bindings.Display(ControlAction.Warp) + "    " + warpAction, button)) client.WarpSelected();
             bool station = target?.Kind == 12;

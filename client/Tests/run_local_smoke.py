@@ -27,7 +27,9 @@ def main() -> None:
     executable = server_root / 'target' / 'debug' / ('beyond-server.exe' if os.name == 'nt' else 'beyond-server')
     with tempfile.TemporaryDirectory(prefix='client-smoke-') as temporary:
         state = Path(temporary)
-        for account, character, password in [('local', 'SandboxPilot', 'local'), ('peer', 'Visitor', 'pass')]:
+        for account, character, password in [('local', 'SandboxPilot', 'local'),
+                                             ('peer', 'Visitor', 'pass'),
+                                             ('warper', 'WarpPilot', 'warp')]:
             subprocess.run([
                 str(executable), '--state-dir', str(state), '--create-account', account,
                 '--character', character,
@@ -37,7 +39,10 @@ def main() -> None:
         resource_sector = json.loads((server_root / 'data' / 'asteroid_belt_alpha.json').read_text())
         resource = next(node for node in resource_sector['resources'] if node['level'] == 1 and node['ore_items'])
         resource['position'] = [100.0, 0.0, 0.0]
-        sector['resources'] = [resource]
+        warp_resource = next(node for node in resource_sector['resources']
+                             if node['level'] == 1 and node['ore_items'] and node['id'] != resource['id']).copy()
+        warp_resource['position'] = [4500.0, 0.0, 0.0]
+        sector['resources'] = [resource, warp_resource]
         for point in sector['navpoints']:
             if point['id'] == 100001:
                 point['id'] = 100002

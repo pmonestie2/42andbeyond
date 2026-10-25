@@ -217,16 +217,17 @@ namespace FortyTwoAndBeyond.Protocol
             Send(0x13, Wire.Body(w => { w.Write(Player); w.Write(pitch); }));
         }
 
-        /// <summary>Warp toward a navigation object, fly ahead, or cancel an active warp.</summary>
+        /// <summary>Warp toward a server-visible object or MOB, fly ahead, or cancel warp.</summary>
         public void Warp(uint target)
         {
             if (!Ready || gate != 0 || World.Station != null || World.Warp.Phase == WarpPhase.Recovering) return;
             bool active = World.Warp.Phase == WarpPhase.Charging || World.Warp.Phase == WarpPhase.Traveling;
-            if (!active && target != 0 && (!World.Objects.TryGetValue(target, out MapObject item) || !item.Navigable)) return;
+            if (!active && !WarpTargets.Available(World, target)) return;
             followTarget = 0;
             Send(0x9b, WarpState.RouteRequest(Player, active ? 0 : target));
             Status = active ? "Cancelling warp" : target == 0 ? "Warping ahead" :
-                "Warp requested: " + World.Objects[target].Name;
+                "Warp requested: " + (World.Objects.TryGetValue(target, out MapObject item) ? item.Name :
+                    World.Mobs[target].Name);
         }
 
         /// <summary>Select a gate once, waiting for its matching acknowledgment before activation.</summary>

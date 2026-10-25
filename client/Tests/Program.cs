@@ -12,7 +12,7 @@ internal static class Program
     private static void Main(string[] args)
     {
         CheckReassembly(); CheckWorld(); CheckMissionJournal(); CheckMissionDialogue();
-        CheckExperience(); CheckMiningPhases(); CheckLootTractor(); CheckWarpPhases(); CheckNavigationSelection(); CheckWeaponReady();
+        CheckExperience(); CheckMiningPhases(); CheckLootTractor(); CheckWarpPhases(); CheckNavigationSelection(); CheckWarpTargets(); CheckWeaponReady();
         CheckDamageResults(); CheckCombatEngagement(); CheckContactSelection(); CheckTargetVerbs(); CheckDeviceEffects();
         CheckNativeDeviceBuff();
         CheckAmmunitionTransfer(); CheckFlightThrottle(); CheckFormationAnchor();
@@ -309,6 +309,42 @@ internal static class Program
         selection.Reset();
         Assert(selection.Resolve(visible, 12) == 12 && !selection.FreeFlight,
             "Free flight leaked into the next sector.");
+    }
+
+    /// <summary>Accept native resource, wreck, and MOB warp IDs while excluding pilots.</summary>
+    private static void CheckWarpTargets()
+    {
+        var world = new World();
+        byte[] objectBody(uint id, byte kind, float x, bool navigable)
+        {
+            var body = new byte[63];
+            Array.Copy(BitConverter.GetBytes(id), 0, body, 0, 4);
+            body[4] = kind;
+            Array.Copy(BitConverter.GetBytes(1f), 0, body, 7, 4);
+            Array.Copy(BitConverter.GetBytes(x), 0, body, 25, 4);
+            Array.Copy(BitConverter.GetBytes(1f), 0, body, 49, 4);
+            body[57] = navigable ? (byte)0x10 : (byte)0;
+            body[58] = 3;
+            Array.Copy(System.Text.Encoding.ASCII.GetBytes("Obj"), 0, body, 60, 3);
+            return body;
+        }
+        world.Apply(new Frame(0x2018, objectBody(77, 38, 4500, false)), 1);
+        world.Apply(new Frame(0x2018, objectBody(78, 25, 4500, false)), 1);
+        world.Apply(new Frame(0x2018, objectBody(79, 11, 4500, true)), 1);
+        world.Apply(new Frame(0x2018, objectBody(80, 38, 21000, false)), 1);
+        world.Mobs[81] = new ShipActor(81, 0, 1, "Mob", new Position(4500, 0, 0),
+            new[] { 0f, 0f, 0f, 1f }, true, false, true);
+        world.Players[82] = new ShipActor(82, 0, 1, "Pilot", new Position(4500, 0, 0),
+            new[] { 0f, 0f, 0f, 1f }, true);
+        Assert(WarpTargets.Available(world, 77) && WarpTargets.Available(world, 78) &&
+            WarpTargets.Available(world, 79) && WarpTargets.Available(world, 81),
+            "A supported native object or MOB route was rejected.");
+        Assert(!WarpTargets.Available(world, 80) && !WarpTargets.Available(world, 82),
+            "Out-of-range resources or pilot ships were accepted as warp routes.");
+        var selection = new NavigationSelection();
+        selection.ChooseTarget(77);
+        Assert(selection.Resolve(new uint[] { 77, 79, 81 }, 79) == 77,
+            "An explicitly selected non-nav world object was replaced by the default navpoint.");
     }
 
     /// <summary>Keep warp visuals tied to the server's own-ship AUX phase revisions.</summary>
@@ -800,7 +836,7 @@ internal static class Program
     {
         using (var session = new LocalSession(CancellationToken.None))
         {
-            session.Connect(host, "local", "local");
+            session.Connect(host, "warper", "warp");
             Wait(session, () => session.Ready && session.World.HasPosition && session.World.Objects.Values.Any(x => x.Kind == 11), 15, "No initial map.");
             Console.WriteLine("PASS: local bridge login, character selection, UDP entry, map, position");
             Position initial = session.World.Position;
@@ -811,6 +847,21 @@ internal static class Program
             session.Steer(.5f, 0);
             Wait(session, () => Math.Abs(session.World.Orientation[2] - previousHeading) > .02, 5, "Steering did not rotate ship.");
             session.Steer(0, 0);
+            MapObject ore = session.World.Objects.Values.First(x => x.Kind == 38 &&
+                x.Position.Distance(initial) >= 4000 && x.Position.Distance(initial) <= 5000);
+            session.SelectTarget(ore.Id);
+            Wait(session, () => session.World.Equipment.TargetId == ore.Id, 5,
+                "A 4–5 km resource target did not acknowledge native selection.");
+            session.Warp(ore.Id);
+            Wait(session, () => session.World.Warp.Phase == WarpPhase.Charging ||
+                session.World.Warp.Phase == WarpPhase.Traveling, 8,
+                "A 4–5 km non-nav object did not start native warp.");
+            Wait(session, () => session.World.Position.Distance(ore.Position) < 1300 &&
+                Math.Abs(session.World.Speed) < 1, 35,
+                "Warp did not approach the selected 4–5 km resource.");
+            Wait(session, () => session.World.Warp.Phase == WarpPhase.Idle, 12,
+                "Resource warp did not finish recovery before the next route.");
+            Console.WriteLine("PASS: non-nav object selection and 4–5 km native warp");
             MapObject gate = session.World.Objects.Values.First(x => x.Kind == 11);
             session.Warp(gate.Id);
             Wait(session, () => session.World.Position.Distance(gate.Position) < 1800 && Math.Abs(session.World.Speed) < 1, 40, "Warp did not approach gate.");
@@ -900,7 +951,7 @@ internal static class Program
         }
         using (var session = new LocalSession(CancellationToken.None))
         {
-            session.Connect(host, "local", "local");
+            session.Connect(host, "warper", "warp");
             Wait(session, () => session.Ready && session.World.Station?.Id == 10761,
                 15, "A character already docked at the station could not reconnect.");
             session.Launch();

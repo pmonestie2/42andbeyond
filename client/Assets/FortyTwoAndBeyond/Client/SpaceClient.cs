@@ -65,6 +65,9 @@ namespace FortyTwoAndBeyond.Client
         public bool Chart => chart;
         public float ChartRadiusKm => mapZoom / 10f;
         public MapObject Target => snapshot?.Objects.FirstOrDefault(item => item.Id == navigationSelection.TargetId);
+        public ShipActor TargetActor => snapshot?.Players.Concat(snapshot.Mobs)
+            .FirstOrDefault(actor => actor.Id == navigationSelection.TargetId);
+        public uint WarpTargetId => navigationSelection.TargetId;
         public bool FreeFlight => navigationSelection.FreeFlight;
         public int RenderedBodyCount => bodies.Count;
         public int Fps => displayFps;
@@ -211,6 +214,7 @@ namespace FortyTwoAndBeyond.Client
                 if (sector != next.Sector) { ClearWorld(); sector = next.Sector; positioned = false; }
                 hud?.ObserveAuthoritativeTarget(next);
                 ApplyWorld(next);
+                RefreshNavigationSelection(next);
                 if (Ready && pendingNavigationTarget != 0 &&
                     navigationSelection.TargetId == pendingNavigationTarget)
                 { SelectWorldObject(pendingNavigationTarget); pendingNavigationTarget = 0; }
@@ -343,11 +347,18 @@ namespace FortyTwoAndBeyond.Client
             }
             foreach (uint id in bodies.Keys.Where(id => !ids.Contains(id)).ToArray())
             { Destroy(bodies[id].gameObject); bodies.Remove(id); }
+        }
+
+        /// <summary>Keep explicit object and actor targets while retaining a default nav route.</summary>
+        private void RefreshNavigationSelection(Snapshot next)
+        {
             uint nearest = next.Objects.Where(item => item.Navigable)
                 .OrderBy(item => item.Position.Distance(next.Position)).FirstOrDefault()?.Id ?? 0;
             uint previous = navigationSelection.TargetId;
-            uint selected = navigationSelection.Resolve(new HashSet<uint>(next.Objects.Where(item => item.Navigable)
-                .Select(item => item.Id)), nearest);
+            var visible = new HashSet<uint>(next.Objects.Where(WarpTargets.WorldObject).Select(item => item.Id));
+            foreach (ShipActor actor in next.Players.Concat(next.Mobs).Where(actor => actor.HasPosition))
+                visible.Add(actor.Id);
+            uint selected = navigationSelection.Resolve(visible, nearest);
             if (selected != previous) pendingNavigationTarget = selected;
         }
 
@@ -497,19 +508,34 @@ namespace FortyTwoAndBeyond.Client
         private void SelectAtPointer()
         { SelectAtPointer(new Vector2(Input.mousePosition.x, Screen.height - Input.mousePosition.y)); }
 
-        /// <summary>Select the closest projected world target at a screen point.</summary>
+        /// <summary>Select the closest visible marker across ships and world objects.</summary>
         public void SelectAtPointer(Vector2 pointer)
         {
-            if (snapshot == null) return; float best = 35; uint selected = 0;
-            if (hud.SelectContactAtPointer(snapshot, pointer) || hud.SelectWreckAtPointer(snapshot, pointer) ||
-                miningHud.SelectAtPointer(snapshot, pointer)) return;
-            foreach (MapObject item in snapshot.Objects.Where(item => item.Navigable))
+            if (snapshot == null) return;
+            float best = 36, bestDepth = float.PositiveInfinity;
+            uint selected = 0; byte kind = 0;
+            foreach (ShipActor actor in snapshot.Players.Concat(snapshot.Mobs).Where(item => item.HasPosition))
+            {
+                Vector3 point = ProjectPlayer(actor.Id); if (point.z <= 0) continue;
+                float distance = Vector2.Distance(new Vector2(point.x, point.y), pointer);
+                if (distance <= 36 && (distance < best - 2 ||
+                    Mathf.Abs(distance - best) <= 2 && point.z < bestDepth))
+                { best = distance; bestDepth = point.z; selected = actor.Id; kind = 1; }
+            }
+            foreach (MapObject item in snapshot.Objects.Where(WarpTargets.WorldObject))
             {
                 Vector3 point = Project(item.Position); if (point.z <= 0) continue;
                 float distance = Vector2.Distance(new Vector2(point.x, point.y), pointer);
-                if (distance < best) { best = distance; selected = item.Id; }
+                if (distance <= 36 && (distance < best - 2 ||
+                    Mathf.Abs(distance - best) <= 2 && point.z < bestDepth))
+                { best = distance; bestDepth = point.z; selected = item.Id; kind = item.Kind == 25 ? (byte)2 :
+                    item.Kind == 38 ? (byte)3 : (byte)4; }
             }
-            if (selected != 0) Select(selected);
+            if (selected == 0) return;
+            if (kind == 1) hud.SelectContact(selected);
+            else if (kind == 2) hud.SelectWreck(selected);
+            else if (kind == 3) miningHud.SelectResource(selected);
+            else Select(selected);
         }
 
         /// <returns>A projected position in GUI coordinates with signed camera depth.</returns>
@@ -529,6 +555,7 @@ namespace FortyTwoAndBeyond.Client
         public void Select(uint id)
         {
             if (snapshot == null || !snapshot.Objects.Any(item => item.Id == id && item.Navigable)) return;
+            hud?.ClearSelection();
             navigationSelection.ChooseTarget(id);
             pendingNavigationTarget = 0;
             SelectWorldObject(id);
@@ -537,8 +564,10 @@ namespace FortyTwoAndBeyond.Client
         /// <summary>Select a visible navigation, resource, or wreck object for server verbs.</summary>
         public void SelectWorldObject(uint id)
         {
-            if (Ready && snapshot.Station == null && snapshot.Objects.Any(item => item.Id == id &&
-                (item.Navigable || item.Kind == 25 || item.Kind == 38)))
+            if (snapshot == null || !snapshot.Objects.Any(item => item.Id == id && WarpTargets.WorldObject(item))) return;
+            navigationSelection.ChooseTarget(id);
+            pendingNavigationTarget = 0;
+            if (Ready && snapshot.Station == null)
                 worker.Submit(new ClientCommand(CommandKind.SelectTarget, id));
         }
 
@@ -552,8 +581,11 @@ namespace FortyTwoAndBeyond.Client
         {
             if (FollowingFormation)
             { status = "Leader controls formation warp. Leave formation to warp alone."; return; }
+            uint target = navigationSelection.TargetId;
+            if (snapshot != null && target != 0 && snapshot.Players.Any(actor => actor.Id == target))
+            { status = "Direct warp to pilots is unavailable. Use Follow instead."; return; }
             if (Ready && snapshot.Station == null && snapshot.WarpPhase != WarpPhase.Recovering)
-                worker.Submit(new ClientCommand(CommandKind.Warp, target: Target?.Id ?? 0));
+                worker.Submit(new ClientCommand(CommandKind.Warp, target: target));
         }
 
         /// <summary>
@@ -793,7 +825,11 @@ namespace FortyTwoAndBeyond.Client
         public void SelectContact(uint id)
         {
             if (Ready && snapshot.Players.Concat(snapshot.Mobs).Any(actor => actor.Id == id))
+            {
+                navigationSelection.ChooseTarget(id);
+                pendingNavigationTarget = 0;
                 worker.Submit(new ClientCommand(CommandKind.SelectTarget, id));
+            }
         }
 
         /// <summary>Follow the currently selected visible ship through native flight control.</summary>

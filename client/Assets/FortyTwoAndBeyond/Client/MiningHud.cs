@@ -48,10 +48,16 @@ namespace FortyTwoAndBeyond.Client
                 if (distance < closest) { closest = distance; found = resource.Id; }
             }
             if (found == 0) return false;
-            selectedId = found; oreScroll = Vector2.zero;
-            flightHud.ClearSelection();
-            client.SelectWorldObject(found);
+            SelectResource(found);
             return true;
+        }
+
+        /// <summary>Select a visible resource for prospecting and native warp targeting.</summary>
+        public void SelectResource(uint id)
+        {
+            selectedId = id; oreScroll = Vector2.zero;
+            flightHud.ClearSelection();
+            client.SelectWorldObject(id);
         }
 
         /// <returns>The centered bounds of the selected resource panel.</returns>
