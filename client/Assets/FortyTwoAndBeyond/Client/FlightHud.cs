@@ -767,7 +767,15 @@ namespace FortyTwoAndBeyond.Client
         {
             float x = CanvasWidth - 214, y = CanvasHeight - 198;
             FlightPanel(new Rect(x, y, 190, 174));
-            GUI.Label(new Rect(x + 10, y + 7, 170, 18), "RADAR   /   20 KM", small);
+            int visibleAttackers = snapshot.Mobs.Count(mob => mob.HasPosition &&
+                snapshot.Attackers.Contains(mob.Id));
+            if (visibleAttackers > 0)
+            {
+                if (GUI.Button(new Rect(x + 9, y + 5, 172, 25),
+                    $"{visibleAttackers} ATTACKER{(visibleAttackers == 1 ? "" : "S")}  ·  Y", hostileButton))
+                    client.TargetNextAttacker();
+            }
+            else GUI.Label(new Rect(x + 10, y + 7, 170, 18), "RADAR   /   20 KM", small);
             var center = new Vector2(x + 95, y + 97);
             GUI.DrawTexture(new Rect(center.x - 70, center.y - 70, 140, 140), radarTexture);
             float sweep = Time.unscaledTime * .65f;

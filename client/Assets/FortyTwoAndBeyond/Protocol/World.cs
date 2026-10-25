@@ -480,6 +480,8 @@ namespace FortyTwoAndBeyond.Protocol
         public uint PlayerId { get; private set; }
         private long nextShot, nextDamage;
         public readonly Queue<DamageEvent> Damages = new Queue<DamageEvent>();
+        private readonly HashSet<uint> attackerIds = new HashSet<uint>();
+        public uint[] AttackerIds => attackerIds.OrderBy(id => id).ToArray();
         public Dictionary<uint, ItemState[]> Loot { get; } = new Dictionary<uint, ItemState[]>();
         public uint OpenLootId { get; private set; }
         /// <summary>Record the server acknowledgement of a wreck window.</summary>
@@ -620,13 +622,13 @@ namespace FortyTwoAndBeyond.Protocol
                     if (firstEnd < 0 || firstEnd + 1 >= b.Length) throw new InvalidDataException("Missing sector name.");
                     string name = Wire.Text(b, firstEnd + 1, b.Length - firstEnd - 1);
                     if (name.Length == 0) throw new InvalidDataException("Empty sector name.");
-                    if (Sector != name) { Objects.Clear(); Players.Clear(); Mobs.Clear(); StationAvatars.Clear(); Loot.Clear(); Resources.Clear(); ResourceTargetId = 0; ResourceWindowOpen = false; MiningProspect = null; MiningTractor = null; LootActivity = null; Formation = null; Warp = WarpState.Decode(0, 0); lastServerTickAt = 0; OpenLootId = 0; Verbs = TargetVerbs.Empty; Shots.Clear(); Damages.Clear(); ObjectEffects.Clear(); ClearConfirmation(); nextShot = nextDamage = 0; }
+                    if (Sector != name) { Objects.Clear(); Players.Clear(); Mobs.Clear(); attackerIds.Clear(); StationAvatars.Clear(); Loot.Clear(); Resources.Clear(); ResourceTargetId = 0; ResourceWindowOpen = false; MiningProspect = null; MiningTractor = null; LootActivity = null; Formation = null; Warp = WarpState.Decode(0, 0); lastServerTickAt = 0; OpenLootId = 0; Verbs = TargetVerbs.Empty; Shots.Clear(); Damages.Clear(); ObjectEffects.Clear(); ClearConfirmation(); nextShot = nextDamage = 0; }
                     Sector = name;
                     break;
                 case 0x4f:
                     if (b.Length != 6) throw new InvalidDataException("Invalid station identity.");
                     Station = b[4] == 0 ? new StationState(Wire.U32(b, 0)) : null;
-                    if (Station != null) { ActiveDeviceLabel = ""; ActiveDeviceEndsAt = 0; for (int slot = 0; slot < buffs.Length; slot++) buffs[slot] = TimedDeviceBuff.Empty; pendingBuffVisuals.Clear(); Formation = null; ObjectEffects.Clear(); }
+                    if (Station != null) { ActiveDeviceLabel = ""; ActiveDeviceEndsAt = 0; for (int slot = 0; slot < buffs.Length; slot++) buffs[slot] = TimedDeviceBuff.Empty; pendingBuffVisuals.Clear(); Formation = null; ObjectEffects.Clear(); attackerIds.Clear(); }
                     Production = new ProductionState();
                     StationAvatars.Clear();
                     Dialogue = null; Vendor = Array.Empty<ItemState>();
@@ -678,6 +680,18 @@ namespace FortyTwoAndBeyond.Protocol
                     Damages.Enqueue(new DamageEvent(++nextDamage, Wire.U32(b, 16), Wire.U32(b, 20),
                         amount, modifier, (DamageKind)kind, outcome));
                     while (Damages.Count > 32) Damages.Dequeue();
+                    break;
+                case 0x8b:
+                    if (b.Length != 9 || b[4] != 1 || Wire.U32(b, 0) > 1 || Wire.U32(b, 5) == 0)
+                        throw new InvalidDataException("Invalid native attacker update.");
+                    uint attackerId = Wire.U32(b, 5);
+                    if (Wire.U32(b, 0) == 1)
+                    {
+                        if (!attackerIds.Contains(attackerId) && attackerIds.Count >= 256)
+                            throw new InvalidDataException("Attacker list limit exceeded.");
+                        attackerIds.Add(attackerId);
+                    }
+                    else attackerIds.Remove(attackerId);
                     break;
                 case 0x2018:
                     var item = new MapObject(b);
@@ -926,6 +940,7 @@ namespace FortyTwoAndBeyond.Protocol
                     if (OpenLootId == Wire.U32(b, 0)) { OpenLootId = 0; LootActivity = null; }
                     if (ResourceTargetId == Wire.U32(b, 0)) SetResourceTarget(0);
                     Players.Remove(Wire.U32(b, 0)); Mobs.Remove(Wire.U32(b, 0));
+                    attackerIds.Remove(Wire.U32(b, 0));
                     foreach (ulong key in ObjectEffects.Keys.Where(key => key >> 32 == Wire.U32(b, 0)).ToArray())
                         ObjectEffects.Remove(key);
                     StationAvatars.Remove(Wire.U32(b, 0));
@@ -1017,6 +1032,7 @@ namespace FortyTwoAndBeyond.Protocol
         public readonly ShipActor[] Players, Mobs;
         public readonly ShotEvent[] Shots;
         public readonly DamageEvent[] Damages;
+        public readonly IReadOnlyList<uint> Attackers;
         public readonly CombatEngagement Engagement;
         public readonly uint PlayerId;
         public readonly GroupState Group;
@@ -1079,6 +1095,7 @@ namespace FortyTwoAndBeyond.Protocol
             AngularY = world.AngularY; AngularZ = world.AngularZ;
             Players = world.Players.Values.ToArray(); Mobs = world.Mobs.Values.ToArray();
             PlayerId = world.PlayerId; Shots = world.Shots.ToArray(); Damages = world.Damages.ToArray();
+            Attackers = Array.AsReadOnly(world.AttackerIds);
             Group = world.Group; Formation = world.Formation; Verbs = world.Verbs;
             Station = world.Station; StationAvatars = world.StationAvatars.Values.ToArray();
             Production = new ProductionView(world.Production, world.ItemCatalog);

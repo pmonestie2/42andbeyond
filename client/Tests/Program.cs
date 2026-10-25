@@ -13,7 +13,7 @@ internal static class Program
     {
         CheckReassembly(); CheckWorld(); CheckMissionJournal(); CheckMissionDialogue();
         CheckExperience(); CheckHullProgression(); CheckReputation(); CheckMiningPhases(); CheckLootTractor(); CheckLootSweep(); CheckWarpPhases(); CheckNavigationSelection(); CheckWarpTargets(); CheckWeaponReady();
-        CheckDamageResults(); CheckCombatEngagement(); CheckShotPresentation(); CheckContactSelection(); CheckTargetVerbs(); CheckDeviceEffects();
+        CheckDamageResults(); CheckCombatEngagement(); CheckAttackerSelection(); CheckShotPresentation(); CheckContactSelection(); CheckTargetVerbs(); CheckDeviceEffects();
         CheckNativeDeviceBuff(); CheckPeerScanBuff(); CheckConcurrentRecipientBuffs(); CheckSupportObjectEffects();
         CheckAmmunitionTransfer(); CheckFlightThrottle(); CheckFormationAnchor();
         CheckStationLayout(); CheckStationWalk(); CheckDemoRoster(); CheckAddress(); PeerChecks.Decode();
@@ -595,6 +595,39 @@ internal static class Program
         byte[] invalid = (byte[])missed.Clone();
         Array.Copy(BitConverter.GetBytes(9u), 0, invalid, 8, 4);
         Reject(() => world.Apply(new Frame(0x64, invalid), 1));
+    }
+
+    /// <summary>Cycle only visible MOBs in the native attacking-pilot list.</summary>
+    private static void CheckAttackerSelection()
+    {
+        const uint nearer = 0x10000001, farther = 0x10000002;
+        var world = new World();
+        byte[] movement = new byte[38];
+        Array.Copy(BitConverter.GetBytes(1u), 0, movement, 2, 4);
+        world.Apply(new Frame(0x3e, movement), 1);
+        world.Mobs[farther] = new ShipActor(farther, 0, 1, "Far attacker",
+            new Position(1300, 0, 0), new[] { 0f, 0f, 0f, 1f }, true, false, true);
+        world.Mobs[nearer] = new ShipActor(nearer, 0, 1, "Near attacker",
+            new Position(450, 0, 0), new[] { 0f, 0f, 0f, 1f }, true, false, true);
+        Func<uint, uint, byte[]> update = (id, action) => Wire.Body(writer =>
+        { writer.Write(action); writer.Write((byte)1); writer.Write(id); });
+        world.Apply(new Frame(0x8b, update(farther, 1)), 1);
+        world.Apply(new Frame(0x8b, update(nearer, 1)), 1);
+        Snapshot active = new Snapshot(world, "ready", true);
+        Assert(active.Attackers.Count == 2 && ThreatSelection.Next(active, 0) == nearer &&
+            ThreatSelection.Next(active, nearer) == farther &&
+            ThreatSelection.Next(active, farther) == nearer,
+            "Confirmed attackers were not cycled by visible range.");
+        world.Apply(new Frame(0x8b, update(nearer, 0)), 1);
+        Snapshot removed = new Snapshot(world, "ready", true);
+        Assert(removed.Attackers.Count == 1 && ThreatSelection.Next(removed, 0) == farther &&
+            active.Attackers.Count == 2,
+            "Native attacker removal changed an earlier snapshot or target cycle.");
+        world.Apply(new Frame(7, BitConverter.GetBytes(farther)), 1);
+        Snapshot departed = new Snapshot(world, "ready", true);
+        Assert(departed.Attackers.Count == 0 && ThreatSelection.Next(departed, 0) == 0,
+            "A departed attacker remained in the threat list or target cycle.");
+        Reject(() => world.Apply(new Frame(0x8b, new byte[] { 1, 0, 0, 0, 2, 1, 0, 0, 16 }), 1));
     }
 
     /// <summary>Separate armed intent and approximate guidance from actual server shots.</summary>

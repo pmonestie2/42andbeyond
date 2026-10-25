@@ -297,6 +297,7 @@ namespace FortyTwoAndBeyond.Client
             }
             if (bindings.Pressed(ControlAction.TurboWeapons)) ActivateTurboWeapons();
             if (bindings.Pressed(ControlAction.NextHostile)) TargetNextHostile();
+            if (bindings.Pressed(ControlAction.NextAttacker)) TargetNextAttacker();
             for (int abilitySlot = 0; abilitySlot < 6; abilitySlot++)
                 if (bindings.Pressed((ControlAction)((int)ControlAction.AbilityOne + abilitySlot)))
                     abilityHud.ActivateSlot(abilitySlot, snapshot);
@@ -932,6 +933,15 @@ namespace FortyTwoAndBeyond.Client
             if (hostiles.Length == 0) { status = "No hostile ships in sensor range"; return; }
             int current = System.Array.FindIndex(hostiles, actor => actor.Id == hud.SelectedContactId);
             hud.SelectContact(hostiles[(current + 1) % hostiles.Length].Id);
+        }
+
+        /// <summary>Select the next visible MOB confirmed by the server as attacking this pilot.</summary>
+        public void TargetNextAttacker()
+        {
+            if (!Ready || snapshot.Station != null) return;
+            uint next = ThreatSelection.Next(snapshot, hud.SelectedContactId);
+            if (next == 0) { status = "No confirmed attackers in sensor range"; return; }
+            hud.SelectContact(next);
         }
 
         /// <summary>Stop weapons without requiring a surviving target.</summary>
