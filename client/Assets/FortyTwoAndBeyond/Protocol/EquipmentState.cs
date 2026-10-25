@@ -100,9 +100,21 @@ namespace FortyTwoAndBeyond.Protocol
     public sealed class EquipmentState
     {
         public ItemState[] Cargo = new ItemState[40], Mounted = new ItemState[20], Ammo = new ItemState[20], Vault = new ItemState[96];
+        public uint CargoCapacity;
         public float Energy = -1, Shield = -1, Hull = -1, MaxEnergy = -1, MaxShield = -1, MaxHull = -1;
         public uint WeaponMounts, DeviceMounts, TargetId;
         public bool Firing;
+
+        /// <summary>
+        /// Returns:
+        ///     int: An empty unlocked cargo slot, or -1 when capacity is unknown or full.
+        /// </summary>
+        public int FirstFreeCargoSlot()
+        {
+            for (int slot = 0; slot < Math.Min(CargoCapacity, (uint)Cargo.Length); slot++)
+                if (Cargo[slot]?.Present != true) return slot;
+            return -1;
+        }
     }
 
     /// <summary>Stable inventory row copied for the Unity thread.</summary>

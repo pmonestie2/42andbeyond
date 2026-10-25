@@ -1036,7 +1036,7 @@ namespace FortyTwoAndBeyond.Protocol
         public readonly ProductionView Production;
         public readonly CorpseLoot[] Loot;
         public readonly uint OpenLootId;
-        public readonly uint WeaponMounts, DeviceMounts, SelectedTargetId;
+        public readonly uint WeaponMounts, DeviceMounts, SelectedTargetId, CargoCapacity;
         public readonly bool WeaponsFiring;
 
         /// <summary>Copy worker-owned state for main-thread rendering.</summary>
@@ -1103,6 +1103,7 @@ namespace FortyTwoAndBeyond.Protocol
             Energy = equipment.Energy; Shield = equipment.Shield; Hull = equipment.Hull;
             MaxEnergy = equipment.MaxEnergy; MaxShield = equipment.MaxShield; MaxHull = equipment.MaxHull;
             WeaponMounts = equipment.WeaponMounts; DeviceMounts = equipment.DeviceMounts;
+            CargoCapacity = equipment.CargoCapacity;
             SelectedTargetId = equipment.TargetId;
             WeaponsFiring = equipment.Mounted.Any(item => item != null && (item.WeaponState & 1) != 0);
             Cargo = new ItemView[equipment.Cargo.Length]; Mounted = new ItemView[equipment.Mounted.Length];

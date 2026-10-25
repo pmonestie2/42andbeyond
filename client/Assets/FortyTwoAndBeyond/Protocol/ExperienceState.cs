@@ -9,16 +9,18 @@ namespace FortyTwoAndBeyond.Protocol
         public readonly uint CombatLevel, TradeLevel, ExploreLevel;
         public readonly float CombatFraction, TradeFraction, ExploreFraction;
         public readonly uint AvailableSkillPoints, EarnedSkillPoints;
+        public readonly uint HullStage;
 
         /// <summary>Keep one RPG progress revision immutable across worker snapshots.</summary>
         public ExperienceState(uint combatLevel, float combatFraction, uint tradeLevel,
             float tradeFraction, uint exploreLevel, float exploreFraction,
-            uint availableSkillPoints, uint earnedSkillPoints)
+            uint availableSkillPoints, uint earnedSkillPoints, uint hullStage = 0)
         {
             CombatLevel = combatLevel; CombatFraction = combatFraction;
             TradeLevel = tradeLevel; TradeFraction = tradeFraction;
             ExploreLevel = exploreLevel; ExploreFraction = exploreFraction;
             AvailableSkillPoints = availableSkillPoints; EarnedSkillPoints = earnedSkillPoints;
+            HullStage = hullStage;
         }
     }
 
@@ -50,11 +52,12 @@ namespace FortyTwoAndBeyond.Protocol
             uint combatLevel = previous?.CombatLevel ?? 0;
             uint tradeLevel = previous?.TradeLevel ?? 0;
             uint exploreLevel = previous?.ExploreLevel ?? 0;
+            uint hullStage = previous?.HullStage ?? 0;
             float combatFraction = previous?.CombatFraction ?? 0;
             float tradeFraction = previous?.TradeFraction ?? 0;
             float exploreFraction = previous?.ExploreFraction ?? 0;
             bool progressUpdated = false;
-            for (int field = 0; field <= 11; field++)
+            for (int field = 0; field <= 12; field++)
             {
                 if (rpg.Present[field])
                 {
@@ -71,6 +74,7 @@ namespace FortyTwoAndBeyond.Protocol
                         case 9: tradeLevel = reader.UInt(); progressUpdated = true; break;
                         case 10: exploreFraction = reader.Float(); progressUpdated = true; break;
                         case 11: exploreLevel = reader.UInt(); progressUpdated = true; break;
+                        case 12: hullStage = reader.UInt(); progressUpdated = true; break;
                     }
                 }
                 else if (rpg.Default[field] && (field == 2 || field == 3) && reader.Byte() != 5)
@@ -80,8 +84,9 @@ namespace FortyTwoAndBeyond.Protocol
             if (combatFraction < 0 || combatFraction > 1 || tradeFraction < 0 ||
                 tradeFraction > 1 || exploreFraction < 0 || exploreFraction > 1)
                 throw new InvalidDataException("Invalid experience progress fraction.");
+            if (hullStage > 6) throw new InvalidDataException("Invalid hull upgrade stage.");
             return new ExperienceState(combatLevel, combatFraction, tradeLevel, tradeFraction,
-                exploreLevel, exploreFraction, points, earned);
+                exploreLevel, exploreFraction, points, earned, hullStage);
         }
     }
 }

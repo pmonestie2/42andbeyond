@@ -210,7 +210,12 @@ namespace FortyTwoAndBeyond.Protocol
                 if (!fields.Present[i]) continue;
                 switch (i)
                 {
-                    case 0: UInt(); break;
+                    case 0:
+                        uint capacity = UInt();
+                        if (capacity == 0 || capacity > equipment.Cargo.Length)
+                            throw new InvalidDataException("Invalid cargo capacity.");
+                        equipment.CargoCapacity = capacity;
+                        break;
                     case 1: Text(); break;
                     case 2: MountLayout(); break;
                     case 4: equipment.WeaponMounts = UInt(); break;

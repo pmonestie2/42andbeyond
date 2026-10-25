@@ -184,9 +184,9 @@ The target panel distinguishes armed weapons
 from a shot confirmed by the server, and briefly shows server hit, miss, or
 critical results. Its range, arc, ammo, and cooldown cues are guidance from
 the latest server state; the server decides whether a shot can fire. The ship
-loadout panel lists cargo, equipment,
+loadout panel shows the server's hull stage and usable cargo capacity, then lists cargo, equipment,
 weapon and device mounts; select cargo and a mount to equip, or select installed
-gear to remove. The panel checks mount compatibility and cargo space before sending
+gear to remove. The panel checks mount compatibility and an unlocked empty cargo slot before sending
 native inventory transfers, and shows item condition, range and any server quote.
 Ammo can be loaded through the same server move command; the whole selected cargo
 stack is sent for loading, and the server checks its launcher family. Defeated
@@ -339,6 +339,9 @@ python3 client/Tests/run_mining_overlap_visual.py --unity /Applications/Unity/Hu
 
 # Capture a native missile launch in flight before its server damage result.
 python3 client/Tests/run_projectile_visual.py --unity /Applications/Unity/Hub/Editor/6000.3.13f1/Unity.app/Contents/MacOS/Unity
+
+# Capture a low-stage scout's server-owned hull stage and 25-slot cargo limit.
+python3 client/Tests/run_hull_capacity_visual.py --unity /Applications/Unity/Hub/Editor/6000.3.13f1/Unity.app/Contents/MacOS/Unity
 ```
 
 Verified on macOS: C# protocol checks; actual local bridge login, character

@@ -354,7 +354,7 @@ namespace FortyTwoAndBeyond.Protocol
         {
             if (!Ready || gate != 0 || mountSlot < 0 || mountSlot >= World.Equipment.Mounted.Length ||
                 World.Equipment.Mounted[mountSlot]?.Present != true) return;
-            int cargoSlot = Array.FindIndex(World.Equipment.Cargo, item => item?.Present != true);
+            int cargoSlot = World.Equipment.FirstFreeCargoSlot();
             if (cargoSlot < 0) { Status = "Cargo hold is full"; return; }
             SendInventoryTransfer(2, (uint)mountSlot, 1, (uint)cargoSlot, 1);
             Status = "Moving equipment to cargo";

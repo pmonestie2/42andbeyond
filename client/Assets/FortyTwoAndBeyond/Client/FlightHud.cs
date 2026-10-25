@@ -1357,16 +1357,21 @@ namespace FortyTwoAndBeyond.Client
             float left = rect.x + 20, top = rect.y + 15;
             GUI.Label(new Rect(left, top, 570, 32), "SHIP LOADOUT", heading);
             if (GUI.Button(new Rect(rect.xMax - 48, top, 28, 28), "×", button)) equipmentOpen = false;
-            GUI.Label(new Rect(left, top + 37, 800, 20),
+            GUI.Label(new Rect(left, top + 35, 800, 19),
+                "HULL STAGE " + (snapshot.Experience == null ? "SYNCING" :
+                    snapshot.Experience.HullStage + " / 6") + "   ·   CARGO CAPACITY " +
+                    (snapshot.CargoCapacity == 0 ? "SYNCING" : snapshot.CargoCapacity + " SLOTS"), small);
+            GUI.Label(new Rect(left, top + 54, 800, 19),
                 $"{snapshot.WeaponMounts} WEAPON HARDPOINTS   ·   {snapshot.DeviceMounts} DEVICE SLOTS   ·   SERVER EQUIPMENT", small);
-            float listTop = top + 70, listHeight = rect.height - 210;
+            float listTop = top + 82, listHeight = rect.height - 222;
             float mountX = left, cargoX = left + 405, detailX = left + 655;
             DrawMountedList(snapshot, new Rect(mountX, listTop, 390, listHeight));
             DrawCargoList(snapshot, new Rect(cargoX, listTop, 235, listHeight));
             DrawItemDetail(snapshot, new Rect(detailX, listTop, 265, listHeight));
             ItemView cargo = selectedCargo >= 0 && selectedCargo < snapshot.Cargo.Length ? snapshot.Cargo[selectedCargo] : null;
             ItemView mounted = selectedMount >= 0 && selectedMount < snapshot.Mounted.Length ? snapshot.Mounted[selectedMount] : null;
-            int usedCargo = snapshot.Cargo.Count(item => item != null);
+            bool cargoSpace = snapshot.Cargo.Take((int)snapshot.CargoCapacity)
+                .Any(item => item == null);
             bool fits = FitsHardpoint(cargo, selectedMount, snapshot);
             float actionY = rect.yMax - 104;
             Fill(new Rect(left, actionY - 13, rect.width - 40, 1), new Color(.3f, .65f, .75f, .65f));
@@ -1376,9 +1381,9 @@ namespace FortyTwoAndBeyond.Client
             if (GUI.Button(new Rect(left, actionY + 23, 390, 43),
                 cargo?.Type == 10 ? "LOAD AMMO  →" : "INSTALL  →", primaryButton))
                 client.EquipCargo(selectedCargo, selectedMount);
-            GUI.enabled = client.Ready && mounted != null && usedCargo < snapshot.Cargo.Length;
+            GUI.enabled = client.Ready && mounted != null && cargoSpace;
             if (GUI.Button(new Rect(cargoX, actionY + 23, 235, 43),
-                usedCargo < snapshot.Cargo.Length ? "←  REMOVE TO CARGO" : "CARGO HOLD FULL", button))
+                cargoSpace ? "←  REMOVE TO CARGO" : "CARGO HOLD FULL", button))
                 client.UnequipMount(selectedMount);
             bool weapon = mounted != null && mounted.Type >= 14 && mounted.Type <= 16 &&
                 selectedMount >= 3 && selectedMount < 3 + snapshot.WeaponMounts;
@@ -1451,7 +1456,8 @@ namespace FortyTwoAndBeyond.Client
         {
             GUILayout.BeginArea(rect);
             int used = snapshot.Cargo.Count(item => item != null);
-            GUILayout.Label($"CARGO HOLD  /  {used} OF {snapshot.Cargo.Length}", section);
+            GUILayout.Label("CARGO HOLD  /  " + used + " OF " +
+                (snapshot.CargoCapacity == 0 ? "?" : snapshot.CargoCapacity.ToString()), section);
             cargoScroll = GUILayout.BeginScrollView(cargoScroll);
             foreach (ItemView item in snapshot.Cargo)
             {

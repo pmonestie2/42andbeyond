@@ -12,7 +12,7 @@ internal static class Program
     private static void Main(string[] args)
     {
         CheckReassembly(); CheckWorld(); CheckMissionJournal(); CheckMissionDialogue();
-        CheckExperience(); CheckMiningPhases(); CheckLootTractor(); CheckWarpPhases(); CheckNavigationSelection(); CheckWarpTargets(); CheckWeaponReady();
+        CheckExperience(); CheckHullProgression(); CheckMiningPhases(); CheckLootTractor(); CheckWarpPhases(); CheckNavigationSelection(); CheckWarpTargets(); CheckWeaponReady();
         CheckDamageResults(); CheckCombatEngagement(); CheckShotPresentation(); CheckContactSelection(); CheckTargetVerbs(); CheckDeviceEffects();
         CheckNativeDeviceBuff(); CheckPeerScanBuff(); CheckSupportObjectEffects();
         CheckAmmunitionTransfer(); CheckFlightThrottle(); CheckFormationAnchor();
@@ -196,6 +196,46 @@ internal static class Program
         byte[] invalid = (byte[])body.Clone();
         Array.Copy(BitConverter.GetBytes(1.5f), 0, invalid, 25, 4);
         Reject(() => world.Apply(new Frame(0x1b, invalid), 1));
+    }
+
+    /// <summary>Decode exact stage-zero and upgraded native ship/RPG AUX frames.</summary>
+    private static void CheckHullProgression()
+    {
+        const uint player = 0x40000001;
+        var world = new World();
+        foreach (string name in new[] { "42b-hull-stage0-ship.bin", "42b-hull-stage0-rpg.bin" })
+        {
+            byte[] frame = File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Fixtures", name));
+            Assert(Wire.U16(frame, 0) == frame.Length && Wire.U16(frame, 2) == 0x1b,
+                "Hull progression fixture is not a native AUX frame.");
+            world.Apply(new Frame(0x1b, frame.Skip(4).ToArray()), player);
+        }
+        Snapshot before = new Snapshot(world, "ready", true);
+        Assert(before.CargoCapacity == 25 && before.Experience?.HullStage == 0,
+            "Native stage-zero scout capacity or hull stage was lost.");
+        world.Equipment.Cargo[0] = new ItemState { Template = 1, Quantity = 1 };
+        world.Equipment.Cargo[24] = new ItemState { Template = 2, Quantity = 1 };
+        Assert(world.Equipment.FirstFreeCargoSlot() == 1,
+            "Cargo placement ignored an empty authoritative slot before the capacity limit.");
+        for (int slot = 1; slot < 24; slot++)
+            world.Equipment.Cargo[slot] = new ItemState { Template = 1, Quantity = 1 };
+        Assert(world.Equipment.FirstFreeCargoSlot() == -1,
+            "Cargo placement offered a serialized but locked slot beyond capacity.");
+        foreach (string name in new[] { "42b-hull-stage1-ship.bin", "42b-hull-stage1-rpg.bin" })
+        {
+            byte[] frame = File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Fixtures", name));
+            Assert(Wire.U16(frame, 0) == frame.Length && Wire.U16(frame, 2) == 0x1b,
+                "Upgraded hull fixture is not a native AUX frame.");
+            world.Apply(new Frame(0x1b, frame.Skip(4).ToArray()), player);
+        }
+        Snapshot upgraded = new Snapshot(world, "ready", true);
+        Assert(upgraded.CargoCapacity == 27 && upgraded.Experience?.HullStage == 1 &&
+            before.CargoCapacity == 25 && before.Experience.HullStage == 0,
+            "Native hull upgrade changed an earlier immutable snapshot or missed cargo growth.");
+        for (int slot = 0; slot < 25; slot++)
+            world.Equipment.Cargo[slot] = new ItemState { Template = 1, Quantity = 1 };
+        Assert(world.Equipment.FirstFreeCargoSlot() == 25,
+            "New hull stage did not unlock the next cargo slot.");
     }
 
     /// <summary>Follow authoritative prospect, tractor, and cancellation packets.</summary>
