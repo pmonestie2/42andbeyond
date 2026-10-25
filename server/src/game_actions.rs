@@ -489,7 +489,12 @@ impl GameState {
                     .into_iter()
                     .map(|id| {
                         let (shield, capacity) = self.sessions[&id].shield_balance();
-                        (id, (shield + cast.amount).min(capacity))
+                        let amount = if id == cast.target {
+                            cast.amount
+                        } else {
+                            cast.splash_amount
+                        };
+                        (id, (shield + amount).min(capacity))
                     })
                     .collect();
                 let source_energy = caster.energy_balance().0;
@@ -576,7 +581,12 @@ impl GameState {
                     .into_iter()
                     .map(|id| {
                         let (hull, capacity) = self.sessions[&id].hull_balance();
-                        (id, (hull + cast.amount).min(capacity))
+                        let amount = if id == cast.target {
+                            cast.amount
+                        } else {
+                            cast.splash_amount
+                        };
+                        (id, (hull + amount).min(capacity))
                     })
                     .collect();
                 let source_energy = caster.energy_balance().0;

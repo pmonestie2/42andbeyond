@@ -549,8 +549,8 @@ fn area_shield_and_hull_repair_only_nearby_group_members_once() {
     }
     game.update_views();
     let energy = game.sessions[&alice].energy_balance().0;
-    activate(&mut game, alice, outsider, 14);
-    assert_eq!(game.sessions[&alice].energy_balance().0, energy - 300.);
+    activate(&mut game, alice, bob, 14);
+    assert_eq!(game.sessions[&alice].energy_balance().0, energy - 500.);
     advance(&mut game, 4.2);
     assert!(game.sessions[&alice].shield_balance().0 > 0.);
     assert!(game.sessions[&bob].shield_balance().0 > 0.);
@@ -564,7 +564,7 @@ fn area_shield_and_hull_repair_only_nearby_group_members_once() {
     assert_eq!(restored.energy_ledger.revision(), 1);
     restored.update_views();
     let outside_hull = restored.sessions[&outsider].hull_balance().0;
-    activate(&mut restored, alice, outsider, 9);
+    activate(&mut restored, alice, bob, 9);
     advance(&mut restored, 4.2);
     assert!(restored.sessions[&bob].hull_balance().0 > outside_hull);
     assert_eq!(restored.sessions[&outsider].hull_balance().0, outside_hull);
@@ -582,7 +582,7 @@ fn area_shield_and_hull_repair_only_nearby_group_members_once() {
         .checkpoint_session(true)
         .unwrap();
     restored.update_views();
-    activate(&mut restored, alice, outsider, 61);
+    activate(&mut restored, alice, bob, 61);
     let temporary = root.join("energy_transfers.local.json.tmp");
     fs::create_dir(&temporary).unwrap();
     assert!(restored.advance(5.2).is_err());
@@ -590,6 +590,8 @@ fn area_shield_and_hull_repair_only_nearby_group_members_once() {
     assert!(restored.sessions[&alice]
         .pending_shield_recharge()
         .is_some());
+    let pending = restored.sessions[&alice].pending_shield_recharge().unwrap();
+    assert_eq!((pending.amount, pending.splash_amount), (40_320., 12_600.));
     fs::remove_dir(&temporary).unwrap();
     drop(restored);
     let mut replayed = GameState::new(

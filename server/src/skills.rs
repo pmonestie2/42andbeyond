@@ -389,6 +389,8 @@ pub struct PendingShieldRecharge {
     pub target: u32,
     pub effect: u32,
     pub amount: f32,
+    #[serde(default)]
+    pub splash_amount: f32,
     pub range: f32,
     #[serde(default)]
     pub radius: f32,
@@ -399,6 +401,8 @@ pub struct PendingHullRepair {
     pub target: u32,
     pub effect: u32,
     pub amount: f32,
+    #[serde(default)]
+    pub splash_amount: f32,
     pub range: f32,
     #[serde(default)]
     pub radius: f32,
@@ -413,6 +417,9 @@ impl PendingHullRepair {
             && self.amount.is_finite()
             && self.amount > 0.
             && self.amount <= 51_840.
+            && self.splash_amount.is_finite()
+            && (0. ..=16_200.).contains(&self.splash_amount)
+            && (self.radius == 0. || self.splash_amount > 0.)
             && self.range.is_finite()
             && (0. ..=10_000.).contains(&self.range)
             && self.radius.is_finite()
@@ -428,6 +435,10 @@ impl PendingShieldRecharge {
             && self.effect != 0
             && self.amount.is_finite()
             && self.amount > 0.
+            && self.amount <= 51_840.
+            && self.splash_amount.is_finite()
+            && (0. ..=16_200.).contains(&self.splash_amount)
+            && (self.radius == 0. || self.splash_amount > 0.)
             && self.range.is_finite()
             && (0. ..=10_000.).contains(&self.range)
             && self.radius.is_finite()
@@ -446,12 +457,12 @@ impl Cast {
             && self.recharge_amount.is_none_or(|amount| {
                 matches!(self.ability, 14 | 32 | 61 | 89 | 91)
                     && amount.is_finite()
-                    && (1. ..=12_960.).contains(&amount)
+                    && (1. ..=51_840.).contains(&amount)
             })
             && self.hull_repair_amount.is_none_or(|amount| {
                 matches!(self.ability, 9 | 31 | 60 | 77 | 95)
                     && amount.is_finite()
-                    && (1. ..=12_960.).contains(&amount)
+                    && (1. ..=51_840.).contains(&amount)
             })
             && self.gravity_generation.is_none_or(|generation| {
                 matches!(self.ability, 10 | 12 | 47 | 59 | 73) && generation < 1_000_000_000

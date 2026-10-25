@@ -64,12 +64,14 @@ mean the corresponding gameplay system is complete.
   completion effects distinguish the self flash from the peer beam. A saved
   completed-cast outbox and one world-ledger revision couple caster reactor
   energy with recipient shields; failed writes and short replacement retry
-  without a duplicate heal. Ranks six and seven now recharge the caster and
-  nearby accepted group members within 1,500/3,000 units through one atomic
-  world receipt. Native rank-six/seven range bands are 3,750/4,000; the area
-  radii, 300/350 energy, four/five-second charge and rank-five amount per
-  effective skill level are documented local tuning because the archived
-  area handler is absent. Other class abilities remain pending.
+  without a duplicate heal. Ranks six and seven recharge a selected pilot by
+  2,880/5,760 points per effective skill level and nearby accepted group
+  members by 540/1,800 per level within 1,500/3,000 units of that pilot.
+  They cost 500/1,000 reactor points and use the native 3,750/4,000 range
+  bands. The archived Recharge Shields handler specifies these amounts and
+  costs but does not execute its area branch; group-scoped distribution is an
+  explicit server completion of that branch. One atomic world receipt covers
+  every recipient. Other class abilities remain pending.
 - Terran Traders and Terran Scouts now have native rank-one Patch Hull,
   rank-three Repair Hull and rank-five Combat Hull Repair. Rank one always
   repairs self; higher ranks repair a selected visible pilot within the
@@ -81,9 +83,10 @@ mean the corresponding gameplay system is complete.
   self/peer, range, failed-write and replacement tests cover exactly-once
   repair. Ranks six and seven use the same group-scoped area and atomic
   multi-recipient settlement as Recharge Shields. Disposable outsider,
-  failed-ledger-write and restart tests cover area delivery. The area radius,
-  energy and charge time are local tuning; legacy-client graphical behavior
-  remains unverified.
+  failed-ledger-write and restart tests cover area delivery. The archived Hull
+  Patch handler specifies the same primary/area amounts, costs and radii as
+  Recharge Shields, but leaves area delivery unfinished. Legacy-client
+  graphical behavior remains unverified.
 - Nine race/profession identities, public SQL class skill ceilings, racial starter
   gear, class ship models and weapon/device mount limits. Shared implemented
   abilities respect class ownership; other class ability handlers remain pending.
