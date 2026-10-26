@@ -21,6 +21,7 @@ from server.tools.build import ROOT
 from .client_config import local_configuration
 from .windows_sync import named_mutex
 from .shared_install import prepare_shared_install
+from .hosts_config import proxy_bootstrap_hosts
 
 if TYPE_CHECKING:
     from .local_windows import ProxyJob
@@ -193,7 +194,7 @@ class ProfileDns:
             (self.profile.directory / f'hosts-before-{uuid.uuid4().hex}.bin').write_bytes(original)
             self.before = b''.join(lines)
             separator = b'\r\n' if self.before and not self.before.endswith(b'\n') else b''
-            self.applied = self.before + separator + self.line
+            self.applied = proxy_bootstrap_hosts(self.before + separator + self.line)
             try:
                 self.path.write_bytes(self.applied)
                 self.flush()
@@ -231,6 +232,7 @@ class ProfileDns:
         current = self.path.read_bytes()
         restored = self.before if current == self.applied else b''.join(
             line for line in current.splitlines(keepends=True) if not self.owns_line(line))
+        restored = proxy_bootstrap_hosts(restored)
         if restored != current:
             self.path.write_bytes(restored)
 
