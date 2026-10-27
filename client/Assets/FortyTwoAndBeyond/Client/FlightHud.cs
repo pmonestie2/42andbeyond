@@ -913,7 +913,7 @@ namespace FortyTwoAndBeyond.Client
             GUILayout.BeginArea(new Rect(rect.x, rect.y + 55, column, listHeight));
             vendorScroll = GUILayout.BeginScrollView(vendorScroll);
             foreach (ItemView item in offers.Skip(vendorPage * 16).Take(16))
-                if (GUILayout.Button($"BUY  {item.Name}\n{item.Price:N0} credits", button, GUILayout.Height(42)))
+                if (VendorItemRow(item, $"BUY 1  ·  {item.Price:N0} credits", column, item.Price > 0))
                     client.BuyVendor(item.Slot);
             GUILayout.EndScrollView(); GUILayout.EndArea();
             GUILayout.BeginArea(new Rect(rect.x + column + 12, rect.y + 55, column, listHeight));
@@ -921,12 +921,38 @@ namespace FortyTwoAndBeyond.Client
             foreach (ItemView item in snapshot.Cargo.Where(item => item != null))
             {
                 string quote = item.Price > 0 ? $"{item.Price:N0} credits" : "No buyer quote";
-                GUI.enabled = item.Price > 0;
-                if (GUILayout.Button($"SELL  {item.Name}  ×{item.Quantity}\n{quote}", button, GUILayout.Height(42)))
+                if (VendorItemRow(item, $"SELL 1  ·  {quote}  ·  Cargo ×{item.Quantity}", column, item.Price > 0))
                     client.SellVendor(item.Slot);
             }
-            GUI.enabled = true;
             GUILayout.EndScrollView(); GUILayout.EndArea();
+        }
+
+        /// <summary>
+        /// Returns:
+        ///     bool: Whether an available vendor item row was clicked.
+        /// </summary>
+        private bool VendorItemRow(ItemView item, string quote, float columnWidth, bool available)
+        {
+            float textWidth = Mathf.Max(60, columnWidth - 86);
+            float nameHeight = Mathf.Max(22, equipmentText.CalcHeight(new GUIContent(item.Name), textWidth));
+            float quoteHeight = Mathf.Max(20, equipmentText.CalcHeight(new GUIContent(quote), textWidth));
+            float height = Mathf.Max(68, nameHeight + quoteHeight + 18);
+            Rect row = GUILayoutUtility.GetRect(0, height, GUILayout.ExpandWidth(true));
+            bool previous = GUI.enabled;
+            GUI.enabled = previous && available;
+            bool clicked = GUI.Button(row, GUIContent.none, equipmentRow);
+            GUI.DrawTexture(new Rect(row.x + 9, row.y + (height - 44) / 2, 44, 44),
+                icons.ForItem(item), ScaleMode.ScaleToFit);
+            GUI.Label(new Rect(row.x + 64, row.y + 8, Mathf.Max(40, row.width - 72), nameHeight),
+                item.Name, equipmentText);
+            Color previousColor = GUI.color;
+            GUI.color = available ? gold : muted;
+            GUI.Label(new Rect(row.x + 64, row.y + 10 + nameHeight, Mathf.Max(40, row.width - 72), quoteHeight),
+                quote, equipmentText);
+            GUI.color = previousColor;
+            GUI.enabled = previous;
+            GUILayout.Space(4);
+            return clicked;
         }
 
         /// <summary>Let the player choose one of the account's server characters.</summary>

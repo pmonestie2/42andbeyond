@@ -27,6 +27,7 @@ def run(unity: Path, compact: bool = False, motion: bool = False, batchmode: boo
         names.append("station-market.png")
     if motion:
         names.append("station-dialogue.png")
+        if market: names.append("station-vendor.png")
     for name in names:
         (OUTPUT / name.replace(".png", f"{suffix}.png")).unlink(missing_ok=True)
     with tempfile.TemporaryDirectory(prefix="station-art-") as temporary:

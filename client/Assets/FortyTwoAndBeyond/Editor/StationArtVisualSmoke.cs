@@ -203,8 +203,26 @@ namespace FortyTwoAndBeyond.Editor
             if (stage == 8)
             {
                 if (!File.Exists(CaptureName("dialogue"))) return;
+                var trade = snapshot.Dialogue?.Choices.FirstOrDefault(choice =>
+                    choice.Text.IndexOf("trade", StringComparison.OrdinalIgnoreCase) >= 0);
+                if (trade != null) { client.ChooseNpc(trade.Node); stage = 25; return; }
                 client.ChooseNpc(230); stage = 9; return;
             }
+            if (stage == 25)
+            {
+                if (snapshot.Dialogue?.VendorOpen != true || !snapshot.Vendor.Any(item => item != null)) return;
+                if (!snapshot.Vendor.Any(item => item != null && item.IconId != 0))
+                { Fail("Vendor offers lost native icon metadata."); return; }
+                captureAt = EditorApplication.timeSinceStartup + 1; stage = 26; return;
+            }
+            if (stage == 26)
+            {
+                ScreenCapture.CaptureScreenshot(CaptureName("vendor"));
+                Debug.Log("PASS: native vendor item icons advertised for the buy/sell trade panel.");
+                captureAt = EditorApplication.timeSinceStartup + .5; stage = 27; return;
+            }
+            if (stage == 27)
+            { client.ChooseNpc(230); stage = 9; return; }
             if (stage == 9)
             {
                 if (snapshot.Dialogue != null) return;
