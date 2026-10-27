@@ -711,6 +711,14 @@ namespace FortyTwoAndBeyond.Client
                 worker.Submit(new ClientCommand(CommandKind.UnequipMount, (uint)mountSlot));
         }
 
+        /// <summary>Send an owned inventory drag to the worker for server validation.</summary>
+        public void MoveInventory(InventoryMove move)
+        {
+            if (Ready && move.SourceSlot >= 0 && move.DestinationSlot >= 0)
+                worker.Submit(new ClientCommand(CommandKind.MoveInventory,
+                    inventoryMove: move));
+        }
+
         /// <summary>Store one cargo stack in the server-owned station vault.</summary>
         public void StoreCargo(int slot)
         {

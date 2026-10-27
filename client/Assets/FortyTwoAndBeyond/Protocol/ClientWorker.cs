@@ -5,7 +5,7 @@ using System.Threading;
 
 namespace FortyTwoAndBeyond.Protocol
 {
-    public enum CommandKind { Thrust, Steer, Warp, Gate, Dock, Launch, EnterStationRoom, StationPose, OpenNpc, ChooseNpc, BuyVendor, SellVendor, EquipCargo, UnequipMount, StoreCargo, RetrieveVault, OpenProduction, CloseProduction, SelectProductionRecipe, SelectProductionCategory, SetProductionLevels, StartProduction, InsertAnalysisSample, ReturnAnalysisSample, ActivateWeapon, ActivateDevice, ActivateDeviceFor, ActivateTurboWeapons, Chat, ToggleWeapons, Formation, SelectTarget, FollowTarget, InvitePlayer, AnswerConfirmation, StopWeapons, OpenLoot, CloseLoot, TakeLoot, OpenResource, CloseResource, ProspectResource, ActivateAbility, ActivateAbilityFor, TrainSkill, RequestRescue, ChooseRescue, SelfJumpstart }
+    public enum CommandKind { Thrust, Steer, Warp, Gate, Dock, Launch, EnterStationRoom, StationPose, OpenNpc, ChooseNpc, BuyVendor, SellVendor, EquipCargo, UnequipMount, MoveInventory, StoreCargo, RetrieveVault, OpenProduction, CloseProduction, SelectProductionRecipe, SelectProductionCategory, SetProductionLevels, StartProduction, InsertAnalysisSample, ReturnAnalysisSample, ActivateWeapon, ActivateDevice, ActivateDeviceFor, ActivateTurboWeapons, Chat, ToggleWeapons, Formation, SelectTarget, FollowTarget, InvitePlayer, AnswerConfirmation, StopWeapons, OpenLoot, CloseLoot, TakeLoot, OpenResource, CloseResource, ProspectResource, ActivateAbility, ActivateAbilityFor, TrainSkill, RequestRescue, ChooseRescue, SelfJumpstart }
 
     public readonly struct ClientCommand
     {
@@ -16,15 +16,18 @@ namespace FortyTwoAndBeyond.Protocol
         public readonly string Text;
         public readonly uint StationRoom, StationAction;
         public readonly float StationOrientation, StationX, StationZ;
+        public readonly InventoryMove InventoryMove;
 
         /// <summary>Store one immutable main-thread input for the network worker.</summary>
         public ClientCommand(CommandKind kind, uint target = 0, float yaw = 0, float pitch = 0,
             string text = "", int slot = 0, uint stationRoom = uint.MaxValue, uint stationAction = 0,
-            float stationOrientation = 0, float stationX = 0, float stationZ = 0)
+            float stationOrientation = 0, float stationX = 0, float stationZ = 0,
+            InventoryMove inventoryMove = default)
         {
             Kind = kind; Target = target; Yaw = yaw; Pitch = pitch; Text = text; Slot = slot;
             StationRoom = stationRoom; StationAction = stationAction;
             StationOrientation = stationOrientation; StationX = stationX; StationZ = stationZ;
+            InventoryMove = inventoryMove;
         }
     }
 
@@ -94,6 +97,7 @@ namespace FortyTwoAndBeyond.Protocol
                                 case CommandKind.SellVendor: session.SellVendor(command.Slot); break;
                                 case CommandKind.EquipCargo: session.EquipCargo((int)command.Target, command.Slot); break;
                                 case CommandKind.UnequipMount: session.UnequipMount((int)command.Target); break;
+                                case CommandKind.MoveInventory: session.MoveInventory(command.InventoryMove); break;
                                 case CommandKind.StoreCargo: session.StoreCargo((int)command.Target); break;
                                 case CommandKind.RetrieveVault: session.RetrieveVault((int)command.Target); break;
                                 case CommandKind.OpenProduction: session.OpenProduction(command.Target); break;

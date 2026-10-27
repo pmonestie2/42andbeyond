@@ -375,6 +375,33 @@ namespace FortyTwoAndBeyond.Protocol
             Status = "Moving equipment to cargo";
         }
 
+        /// <summary>Request a cargo, hardpoint, or magazine move without changing local inventory.</summary>
+        public void MoveInventory(InventoryMove move)
+        {
+            if (!Ready || gate != 0 || move.Quantity == 0 ||
+                move.SourceSlot < 0 || move.DestinationSlot < 0 ||
+                !InventoryContainer(move.Source) || !InventoryContainer(move.Destination)) return;
+            ItemState[] source = InventorySlots(move.Source);
+            ItemState[] destination = InventorySlots(move.Destination);
+            if (move.SourceSlot >= source.Length || move.DestinationSlot >= destination.Length ||
+                source[move.SourceSlot]?.Present != true ||
+                move.Quantity > source[move.SourceSlot].Quantity) return;
+            if (move.Source == 1 && move.Destination == 2)
+            { EquipCargo(move.SourceSlot, move.DestinationSlot); return; }
+            SendInventoryTransfer(move.Source, (uint)move.SourceSlot, move.Destination,
+                (uint)move.DestinationSlot, move.Quantity);
+            Status = "Moving inventory · awaiting server";
+        }
+
+        /// <returns>bool: Whether a container belongs to cargo, installed gear, or magazines.</returns>
+        private static bool InventoryContainer(uint container)
+        { return container >= 1 && container <= 3; }
+
+        /// <returns>ItemState[]: The live worker-owned slots for a native inventory container.</returns>
+        private ItemState[] InventorySlots(uint container)
+        { return container == 1 ? World.Equipment.Cargo :
+            container == 2 ? World.Equipment.Mounted : World.Equipment.Ammo; }
+
         /// <summary>Toggle one mounted weapon with the native item activation packet.</summary>
         public void ActivateWeapon(int slot)
         {
