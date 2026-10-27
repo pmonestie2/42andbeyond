@@ -58,6 +58,7 @@ namespace FortyTwoAndBeyond.Client
         private float authoritativePoseAt;
         private float nextStationPoseAt;
         public Snapshot CurrentSnapshot => snapshot;
+        public Transform ShipForPreview => ship;
         public string ConnectionError => worker?.Error;
         public string Status => status;
         public bool Connected => worker != null || picker != null;

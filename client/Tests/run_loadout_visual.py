@@ -72,7 +72,8 @@ def main() -> None:
                     raise RuntimeError('Disposable server ownership mismatch.')
                 unity_log = state / 'unity.log'
                 subprocess.run([str(options.unity), '-projectPath', str(project),
-                                '-logFile', str(unity_log), '--42andbeyond-loadout-smoke'],
+                                '-logFile', str(unity_log),
+                                '--42andbeyond-loadout-smoke'],
                                check=True, timeout=140)
                 if 'PASS: cargo reordered, magazine loaded' not in unity_log.read_text(
                         errors='replace'):
@@ -93,6 +94,9 @@ def main() -> None:
     screenshot = project / 'Builds/verification/loadout-ammo.png'
     if not screenshot.is_file():
         raise FileNotFoundError(screenshot)
+    flight = project / 'Builds/verification/loadout-flight.png'
+    if not flight.is_file():
+        raise FileNotFoundError(flight)
     print(f'PASS: {screenshot}')
 
 

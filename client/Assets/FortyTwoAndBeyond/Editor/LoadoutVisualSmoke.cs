@@ -15,7 +15,7 @@ namespace FortyTwoAndBeyond.Editor
     public static class LoadoutVisualSmoke
     {
         private static int stage;
-        private static bool connected, captured;
+        private static bool connected, captured, flightCaptured;
         private static uint mobId;
         private static double deadline, captureAt;
 
@@ -78,13 +78,29 @@ namespace FortyTwoAndBeyond.Editor
             if (stage == 3)
             {
                 if (snapshot.Ammo[3] == null || snapshot.Ammo[3].Quantity >= 20) return;
+                string flightPath = "Builds/verification/loadout-flight.png";
+                if (!flightCaptured)
+                {
+                    Directory.CreateDirectory("Builds/verification");
+                    if (File.Exists(flightPath)) File.Delete(flightPath);
+                    ScreenCapture.CaptureScreenshot(flightPath);
+                    flightCaptured = true;
+                    captureAt = EditorApplication.timeSinceStartup + .6;
+                    return;
+                }
+                if (!File.Exists(flightPath) ||
+                    EditorApplication.timeSinceStartup < captureAt) return;
+                stage = 4; return;
+            }
+            if (stage == 4)
+            {
                 FlightHud hud = typeof(SpaceClient).GetField("hud",
                     BindingFlags.Instance | BindingFlags.NonPublic)?.GetValue(client) as FlightHud;
                 if (hud == null) { Fail("Loadout HUD was not initialized."); return; }
                 typeof(FlightHud).GetField("equipmentOpen",
                     BindingFlags.Instance | BindingFlags.NonPublic)?.SetValue(hud, true);
                 client.StopWeapons();
-                stage = 4; return;
+                stage = 5; return;
             }
             string path = "Builds/verification/loadout-ammo.png";
             if (!captured)

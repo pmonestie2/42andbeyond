@@ -12,6 +12,11 @@ namespace FortyTwoAndBeyond.Client
     {
         private readonly SpaceClient client;
         private readonly EquipmentIcons icons;
+        private LoadoutShipPreview shipPreview;
+        private Texture2D fittingRing;
+        private Texture2D fittingSocket;
+        private Vector2 weaponWidgetOffset, weaponWidgetDragStart, weaponWidgetOffsetStart;
+        private bool draggingWeaponWidget;
         private static readonly Vector2[] LabelOffsets = { new Vector2(12, -48), new Vector2(12, 12),
             new Vector2(-184, -48), new Vector2(-184, 12) };
         private static readonly Vector2[] ContactLabelOffsets = { new Vector2(-290, -68),
@@ -20,7 +25,7 @@ namespace FortyTwoAndBeyond.Client
         private float CanvasWidth => Screen.width / Scale;
         private float CanvasHeight => Screen.height / Scale;
         private readonly Color cyan = new Color(.3f, .85f, 1), white = new Color(.91f, .95f, 1), muted = new Color(.68f, .79f, .86f), gold = new Color(1, .72f, .3f), crewColor = new Color(.39f, 1f, .68f);
-        private GUIStyle heading, body, wrappedBody, small, commsPreview, section, button, selected, playerButton, hostileButton, damageStyle, input, primaryButton, equipmentRow, equipmentText, equipmentMeta, vitalText, buffText, contactName, hostileName, playerName, contactMeta, dialogueText, dialogueChoice, dialogueMeta;
+        private GUIStyle heading, body, wrappedBody, small, commsPreview, section, button, selected, playerButton, hostileButton, damageStyle, input, primaryButton, equipmentRow, equipmentText, equipmentMeta, weaponWidgetText, vitalText, buffText, contactName, hostileName, playerName, contactMeta, dialogueText, dialogueChoice, dialogueMeta;
         private Texture2D buttonTexture, selectedTexture, panelTexture, radarTexture, weaveTexture, frameTexture;
         internal GUIStyle BodyStyle => body;
         internal GUIStyle SmallStyle => small;
@@ -39,6 +44,8 @@ namespace FortyTwoAndBeyond.Client
         private bool inventoryDragging, dragCanMove;
         private Vector2 mountedOffset, cargoOffset, ammoOffset, panelDragStart, panelOffsetStart;
         private int draggedLoadoutPanel;
+        private Vector2 inventoryOffset, inventoryDragStart, inventoryOffsetStart;
+        private bool draggingInventoryWindow;
         private Vector2 cargoScroll, mountScroll, ammoWidgetScroll;
         private Vector2 effectScroll;
         public bool EquipmentOpen => equipmentOpen;
@@ -166,6 +173,9 @@ namespace FortyTwoAndBeyond.Client
             Vector2 p = new Vector2(Input.mousePosition.x / Scale, (Screen.height - Input.mousePosition.y) / Scale);
             return !client.Connected || (settingsOpen && SettingsRect().Contains(p)) ||
                 (equipmentOpen && EquipmentRect().Contains(p)) ||
+                (client.CurrentSnapshot?.Station == null && InventoryButtonRect().Contains(p)) ||
+                (client.CurrentSnapshot?.Station == null && !equipmentOpen &&
+                    WeaponWidgetRect(client.CurrentSnapshot).Contains(p)) ||
                 ((contactId != 0 || wreckId != 0) &&
                     new Rect(CanvasWidth < 1500 ? (CanvasWidth - 390) * .5f : CanvasWidth - 720,
                         CanvasWidth < 1500 ? 170 : CanvasHeight - 440, 390, 320).Contains(p)) ||
@@ -257,7 +267,10 @@ namespace FortyTwoAndBeyond.Client
             equipmentText.normal.textColor = white;
             equipmentMeta = new GUIStyle(GUI.skin.label) { font = regularFont, fontSize = 13,
                 alignment = TextAnchor.MiddleLeft };
+            equipmentMeta.wordWrap = false;
             equipmentMeta.normal.textColor = muted;
+            weaponWidgetText = new GUIStyle(equipmentMeta) { font = mediumFont };
+            weaponWidgetText.normal.textColor = white;
         }
 
         /// <returns>A shared transparent scanner dial with concentric range rings.</returns>
@@ -328,10 +341,116 @@ namespace FortyTwoAndBeyond.Client
         /// <returns>The centered equipment overlay bounds.</returns>
         private Rect EquipmentRect()
         {
-            float width = Mathf.Min(1030, CanvasWidth - 72);
-            return new Rect((CanvasWidth - width) * .5f,
-                Mathf.Max(80, (CanvasHeight - 620) * .5f), width,
-                Mathf.Min(620, CanvasHeight - 125));
+            float width = Mathf.Min(1160, CanvasWidth - 32);
+            float height = Mathf.Min(700, CanvasHeight - 60);
+            return new Rect(Mathf.Clamp((CanvasWidth - width) * .5f + inventoryOffset.x,
+                    8, CanvasWidth - width - 8),
+                Mathf.Clamp((CanvasHeight - height) * .5f + inventoryOffset.y,
+                    8, CanvasHeight - height - 8), width, height);
+        }
+
+        /// <returns>Rect: Persistent flight control for the inventory overlay.</returns>
+        private Rect InventoryButtonRect()
+        { return new Rect(CanvasWidth - 910, 25, 154, 28); }
+
+        /// <returns>Rect: The movable mounted-weapon strip kept above the quickbar.</returns>
+        private Rect WeaponWidgetRect(Snapshot snapshot)
+        {
+            float height = 54 + Mathf.Min(6, (int)snapshot.WeaponMounts) * 31;
+            float x = Mathf.Max(310, CanvasWidth - 980) + weaponWidgetOffset.x;
+            float y = 125 + weaponWidgetOffset.y;
+            return new Rect(Mathf.Clamp(x, 8, CanvasWidth - 234),
+                Mathf.Clamp(y, 92, CanvasHeight - height - 15), 226, height);
+        }
+
+        /// <returns>Rect: The movable mounted-weapon strip kept above the quickbar.</returns>
+        private Rect WeaponWidgetRect(Snapshot snapshot)
+        {
+            float height = 54 + Mathf.Min(6, (int)snapshot.WeaponMounts) * 31;
+            float x = Mathf.Max(310, CanvasWidth - 980) + weaponWidgetOffset.x;
+            float y = 125 + weaponWidgetOffset.y;
+            return new Rect(Mathf.Clamp(x, 8, CanvasWidth - 234),
+                Mathf.Clamp(y, 92, CanvasHeight - height - 15), 226, height);
+        }
+
+        /// <summary>Show server-published launcher quantities and reload time in flight.</summary>
+        private void WeaponWidget(Snapshot snapshot)
+        {
+            if (snapshot.WeaponMounts == 0) return;
+            Rect rect = WeaponWidgetRect(snapshot);
+            Event current = Event.current;
+            Rect handle = new Rect(rect.x, rect.y, rect.width - 59, 28);
+            if (current.type == EventType.MouseDown && current.button == 0 &&
+                handle.Contains(current.mousePosition))
+            {
+                draggingWeaponWidget = true;
+                weaponWidgetDragStart = current.mousePosition;
+                weaponWidgetOffsetStart = weaponWidgetOffset;
+                current.Use();
+            }
+            else if (current.type == EventType.MouseDrag && draggingWeaponWidget)
+            {
+                weaponWidgetOffset = weaponWidgetOffsetStart +
+                    current.mousePosition - weaponWidgetDragStart;
+                current.Use();
+            }
+            else if (current.type == EventType.MouseUp && current.button == 0)
+                draggingWeaponWidget = false;
+            FlightPanel(rect);
+            if (fittingSocket == null) fittingSocket = CreateFittingSocket();
+            GUI.Label(new Rect(rect.x + 9, rect.y + 5, rect.width - 95, 20),
+                "WEAPONS   ⋮⋮", section);
+            if (GUI.Button(new Rect(rect.xMax - 68, rect.y + 3, 61, 24),
+                "OPEN", button)) equipmentOpen = true;
+            int count = Mathf.Min(6, (int)snapshot.WeaponMounts);
+            for (int index = 0; index < count; index++)
+            {
+                int slot = 3 + index;
+                ItemView weapon = slot < snapshot.Mounted.Length ?
+                    snapshot.Mounted[slot] : null;
+                ItemView ammo = slot < snapshot.Ammo.Length ? snapshot.Ammo[slot] : null;
+                float top = rect.y + 31 + index * 31;
+                Fill(new Rect(rect.x + 8, top, rect.width - 16, 1),
+                    new Color(.28f, .56f, .65f, .23f));
+                Color previous = GUI.color;
+                GUI.color = weapon == null ? new Color(.4f, .55f, .61f) :
+                    new Color(1f, .73f, .42f);
+                GUI.DrawTexture(new Rect(rect.x + 8, top + 2, 26, 26),
+                    fittingSocket);
+                GUI.color = previous;
+                GUI.DrawTexture(new Rect(rect.x + 13, top + 7, 16, 16),
+                    icons.ForType(weapon?.Type ?? 14u));
+                string name = weapon?.Name ?? "EMPTY";
+                while (name.Length > 5 && weaponWidgetText.CalcSize(
+                    new GUIContent(name)).x > 104)
+                    name = name.Substring(0, name.Length - 2).TrimEnd() + "…";
+                GUI.Label(new Rect(rect.x + 35, top + 2, 126, 20),
+                    "W" + (index + 1) + " " + name, weaponWidgetText);
+                string state = weapon == null ? "—" : weapon.Cooling ?
+                    weapon.CooldownSeconds > 0 ?
+                        weapon.CooldownSeconds.ToString("0.0") + "s" : "COOL" :
+                    weapon.Type == 15 || weapon.Type == 16 ?
+                        (ammo?.Quantity ?? 0) + "/" + (ammo?.MaxStack ?? 0) :
+                    (weapon.WeaponState & 1) != 0 ? "ARMED" : "SAFE";
+                GUI.Label(new Rect(rect.xMax - 61, top + 2, 54, 20),
+                    state, weaponWidgetText);
+                if (weapon != null && (weapon.Type == 15 || weapon.Type == 16))
+                {
+                    Fill(new Rect(rect.x + 36, top + 25, rect.width - 48, 3),
+                        new Color(.16f, .26f, .3f));
+                    Fill(new Rect(rect.x + 36, top + 25,
+                        (rect.width - 48) * Mathf.Clamp01(
+                            (ammo?.Quantity ?? 0) / (float)Mathf.Max(1, ammo?.MaxStack ?? 0)), 3),
+                        weapon.OutOfAmmo ? new Color(1f, .48f, .34f) :
+                            new Color(.92f, .68f, .33f));
+                }
+                if (weapon != null && weapon.Cooling && (weapon.Type == 15 || weapon.Type == 16))
+                    GUI.Label(new Rect(rect.x + 35, top + 17, 180, 14),
+                        "MAG  " + (ammo?.Quantity ?? 0) + "/" + (ammo?.MaxStack ?? 0),
+                        equipmentMeta);
+            }
+            GUI.Label(new Rect(rect.x + 9, rect.yMax - 17, rect.width - 18, 15),
+                "DRAG TO MOVE  ·  OPEN INVENTORY", equipmentMeta);
         }
 
         /// <returns>The centered keyboard settings overlay bounds.</returns>
@@ -387,6 +506,9 @@ namespace FortyTwoAndBeyond.Client
                 $"{keys.Display(ControlAction.NextHostile)} hostile   ·   {keys.Display(ControlAction.Follow)} follow   ·   {keys.Display(ControlAction.Fire)} fire   ·   RMB orbit", small);
             if (GUI.Button(new Rect(CanvasWidth - 160, 25, 136, 28),
                 keys.Display(ControlAction.Chart) + (client.Chart ? "  Flight" : "  Chart"), button)) client.SetChart(!client.Chart);
+            if (GUI.Button(InventoryButtonRect(), equipmentOpen ? "CLOSE INVENTORY" :
+                "INVENTORY  ·  " + keys.Display(ControlAction.Equipment),
+                equipmentOpen ? selected : primaryButton)) ToggleEquipment();
             if (GUI.Button(new Rect(CanvasWidth - 300, 25, 130, 28), "Disconnect", button)) { client.Disconnect(); return; }
             if (snapshot == null) return;
             if (Time.unscaledTime >= refreshAt || sector != snapshot.Sector)
@@ -414,6 +536,7 @@ namespace FortyTwoAndBeyond.Client
             Communications(snapshot);
             if (!client.AbilitiesOpen && !client.Incapacitated)
             { if (!client.Chart) TargetLock(snapshot); WreckPanel(snapshot); }
+            if (!equipmentOpen && !client.Chart) WeaponWidget(snapshot);
             if (equipmentOpen) Equipment(snapshot);
             InputFocused = crewTab && GUI.GetNameOfFocusedControl() == "Group invite";
             ChatEntry();
@@ -436,6 +559,7 @@ namespace FortyTwoAndBeyond.Client
         /// <summary>Capture and persist keyboard controls without passing keys to flight input.</summary>
         private void Settings()
         {
+            if (equipmentOpen && !settingsOpen) return;
             if (GUI.Button(new Rect(CanvasWidth - 430, 25, 110, 28), "Controls", button))
             { settingsOpen = !settingsOpen; bindingAction = null; }
             if (!settingsOpen) return;
@@ -497,7 +621,7 @@ namespace FortyTwoAndBeyond.Client
                 $"{snapshot.Station.Rooms} rooms   ·   {snapshot.Station.Terminals} terminals\n{snapshot.Station.Contacts.Count} station contacts", small);
             GUI.Label(new Rect(40, 216, 270, 43), "Cargo and installed equipment are available while docked.", small);
             string equipmentKey = client.Bindings.Display(ControlAction.Equipment);
-            if (GUI.Button(new Rect(40, 280, 268, 34), equipmentOpen ? "CLOSE LOADOUT  ·  " + equipmentKey : "SHIP LOADOUT  ·  " + equipmentKey, button))
+            if (GUI.Button(new Rect(40, 280, 268, 34), equipmentOpen ? "CLOSE INVENTORY  ·  " + equipmentKey : "INVENTORY  ·  " + equipmentKey, button))
                 ToggleEquipment();
             if (GUI.Button(new Rect(40, 325, 268, 36), "LAUNCH INTO SPACE  ·  " + client.Bindings.Display(ControlAction.Launch), selected)) client.Launch();
             Panel(new Rect(24, 385, 300, 185));
@@ -1706,25 +1830,28 @@ namespace FortyTwoAndBeyond.Client
         private void Equipment(Snapshot snapshot)
         {
             Rect rect = EquipmentRect();
+            HandleInventoryWindowDrag(rect);
             Fill(rect, new Color(.002f, .008f, .016f, .98f));
             Panel(rect);
             float left = rect.x + 20, top = rect.y + 15;
-            GUI.Label(new Rect(left, top, 570, 32), "SHIP LOADOUT", heading);
+            GUI.Label(new Rect(left, top, 570, 32), "INVENTORY  /  SHIP LOADOUT", heading);
+            GUI.Label(new Rect(rect.xMax - 284, top + 4, 126, 19), "↔  DRAG WINDOW", small);
             if (GUI.Button(new Rect(rect.xMax - 48, top, 28, 28), "×", button)) equipmentOpen = false;
             if (GUI.Button(new Rect(rect.xMax - 143, top, 80, 28), "RESET", button))
-                mountedOffset = cargoOffset = ammoOffset = Vector2.zero;
+                inventoryOffset = mountedOffset = cargoOffset = ammoOffset = Vector2.zero;
             GUI.Label(new Rect(left, top + 35, 800, 19),
                 "HULL STAGE " + (snapshot.Experience == null ? "SYNCING" :
                     snapshot.Experience.HullStage + " / 6") + "   ·   CARGO CAPACITY " +
                     (snapshot.CargoCapacity == 0 ? "SYNCING" : snapshot.CargoCapacity + " SLOTS"), small);
             GUI.Label(new Rect(left, top + 54, 800, 19),
                 $"{snapshot.WeaponMounts} WEAPON HARDPOINTS   ·   {snapshot.DeviceMounts} DEVICE SLOTS   ·   SERVER EQUIPMENT", small);
-            float listTop = top + 82, listHeight = rect.height - 222;
-            float mountedWidth = 345, cargoWidth = Mathf.Clamp((rect.width - 40) * .25f, 215, 260);
+            float listTop = top + 82, listHeight = rect.height - 200;
+            float mountedWidth = Mathf.Min(445, (rect.width - 70) * .43f);
+            float cargoWidth = Mathf.Min(250, (rect.width - 70) * .25f);
             float detailWidth = rect.width - 40 - mountedWidth - cargoWidth - 30;
-            float mountX = left, cargoX = mountX + mountedWidth + 15;
-            float detailX = cargoX + cargoWidth + 15;
-            float ammoHeight = Mathf.Min(136, listHeight * .34f);
+            float cargoX = left, mountX = cargoX + cargoWidth + 15;
+            float detailX = mountX + mountedWidth + 15;
+            float ammoHeight = 148;
             Rect mounts = OffsetPanel(new Rect(mountX, listTop, mountedWidth,
                 listHeight), mountedOffset, rect);
             Rect cargoPanel = OffsetPanel(new Rect(cargoX, listTop, cargoWidth,
@@ -1735,10 +1862,12 @@ namespace FortyTwoAndBeyond.Client
             if (Event.current.type == EventType.MouseDrag && draggedContainer != 0 && dragCanMove &&
                 Vector3.Distance(Input.mousePosition, dragStartPosition) > 8)
                 inventoryDragging = true;
-            DrawMountedList(snapshot, mounts);
+            DrawFittingRing(snapshot, mounts);
             DrawCargoList(snapshot, cargoPanel);
             DrawAmmoList(snapshot, magazines);
-            DrawItemDetail(snapshot, new Rect(detailX, listTop, detailWidth, listHeight));
+            DrawLoadoutStats(snapshot, new Rect(detailX, listTop, detailWidth, 192));
+            DrawItemDetail(snapshot, new Rect(detailX, listTop + 200,
+                detailWidth, listHeight - 200));
             ItemView cargo = selectedCargo >= 0 && selectedCargo < snapshot.Cargo.Length ? snapshot.Cargo[selectedCargo] : null;
             ItemView mounted = selectedMount >= 0 && selectedMount < snapshot.Mounted.Length ? snapshot.Mounted[selectedMount] : null;
             ItemView selectedMagazine = selectedAmmo >= 0 && selectedAmmo < snapshot.Ammo.Length ?
@@ -1746,13 +1875,14 @@ namespace FortyTwoAndBeyond.Client
             bool cargoSpace = snapshot.Cargo.Take((int)snapshot.CargoCapacity)
                 .Any(item => item == null);
             bool fits = FitsHardpoint(cargo, selectedMount, snapshot);
-            float actionY = rect.yMax - 104;
+            float actionY = rect.yMax - 91;
             Fill(new Rect(left, actionY - 13, rect.width - 40, 1), new Color(.3f, .65f, .75f, .65f));
             GUI.Label(new Rect(left, actionY - 1, rect.width - 40, 19),
+                !string.IsNullOrEmpty(GUI.tooltip) ? GUI.tooltip :
                 inventoryDragging ? "DROP ON A COMPATIBLE HARDPOINT, MAGAZINE, OR CARGO SLOT" :
                 "DRAG ITEMS BETWEEN PANELS  ·  CLICK TO INSPECT  ·  SERVER CONFIRMS MOVES", small);
             GUI.enabled = client.Ready && fits;
-            if (GUI.Button(new Rect(left, actionY + 23, mountedWidth, 43),
+            if (GUI.Button(new Rect(mountX, actionY + 23, mountedWidth, 43),
                 cargo?.Type == 10 ? "LOAD AMMO  →" : "INSTALL  →", primaryButton))
                 client.EquipCargo(selectedCargo, selectedMount);
             GUI.enabled = client.Ready && cargoSpace &&
@@ -1840,6 +1970,229 @@ namespace FortyTwoAndBeyond.Client
         private void ClearInventoryDrag()
         { draggedContainer = 0; draggedSlot = -1; inventoryDragging = dragCanMove = false; }
 
+        /// <summary>Move the entire inventory window by its title without resetting widget offsets.</summary>
+        private void HandleInventoryWindowDrag(Rect rect)
+        {
+            Event current = Event.current;
+            Rect handle = new Rect(rect.x + 10, rect.y + 5, rect.width - 180, 45);
+            if (current.type == EventType.MouseDown && current.button == 0 &&
+                handle.Contains(current.mousePosition))
+            {
+                draggingInventoryWindow = true;
+                inventoryDragStart = current.mousePosition;
+                inventoryOffsetStart = inventoryOffset;
+                current.Use();
+            }
+            else if (current.type == EventType.MouseDrag && draggingInventoryWindow)
+            {
+                inventoryOffset = inventoryOffsetStart + current.mousePosition - inventoryDragStart;
+                current.Use();
+            }
+            else if (current.type == EventType.MouseUp && current.button == 0)
+                draggingInventoryWindow = false;
+        }
+
+        /// <summary>Draw the live ship with native hardpoints arranged around its hull.</summary>
+        private void DrawFittingRing(Snapshot snapshot, Rect rect)
+        {
+            Panel(rect);
+            GUI.Label(new Rect(rect.x + 11, rect.y + 5, rect.width - 22, 21),
+                "FITTING BAY   /   " + (snapshot.Mounted.Count(item => item != null)) +
+                " SYSTEMS MOUNTED       ⋮⋮", section);
+            Rect well = new Rect(rect.x + 9, rect.y + 29, rect.width - 18, rect.height - 37);
+            Fill(well, new Color(.008f, .019f, .034f, .9f));
+            if (fittingRing == null) fittingRing = CreateFittingRing();
+            if (fittingSocket == null) fittingSocket = CreateFittingSocket();
+            float diameter = Mathf.Min(well.width - 96, well.height - 74);
+            diameter = Mathf.Min(diameter, 306);
+            Vector2 center = new Vector2(well.center.x, well.y + well.height * .51f);
+            Rect circle = new Rect(center.x - diameter * .5f,
+                center.y - diameter * .5f, diameter, diameter);
+            if (shipPreview == null) shipPreview = new LoadoutShipPreview();
+            if (Event.current.type == EventType.Repaint)
+                shipPreview.Render(client.ShipForPreview);
+            GUI.DrawTexture(new Rect(center.x - diameter * .49f,
+                center.y - diameter * .49f, diameter * .98f, diameter * .98f),
+                shipPreview.Texture,
+                ScaleMode.ScaleToFit, true);
+            GUI.DrawTexture(circle, fittingRing);
+            int weapons = Mathf.Min((int)snapshot.WeaponMounts, 6);
+            int devices = Mathf.Min((int)snapshot.DeviceMounts,
+                Mathf.Max(0, snapshot.Mounted.Length - 9));
+            const float socketSize = 61;
+            for (int i = 0; i < weapons; i++)
+            {
+                int column = i % 2, row = i / 2;
+                float x = column == 0 ? well.x + 14 + row * 8 :
+                    well.xMax - socketSize - 14 - row * 8;
+                float y = well.y + 98 + row * 83;
+                DrawFittingSocket(snapshot, new Rect(x, y, socketSize, socketSize),
+                    3 + i, "WEAPON " + (i + 1));
+            }
+            for (int i = 0; i < devices; i++)
+            {
+                float fraction = devices == 1 ? .5f : i / (float)(devices - 1);
+                float x = well.x + 45 + fraction * (well.width - 90 - socketSize);
+                float y = well.y + well.height * (.75f + .045f *
+                    Mathf.Sin(fraction * Mathf.PI));
+                DrawFittingSocket(snapshot, new Rect(x, y, socketSize, socketSize),
+                    9 + i, "DEVICE " + (i + 1));
+            }
+            for (int slot = 0; slot < 3; slot++)
+            {
+                string[] labels = { "SHIELD", "REACTOR", "ENGINE" };
+                float x = well.x + 54 + slot * (well.width - 108 - socketSize) / 2f;
+                float y = well.y + 3;
+                DrawFittingSocket(snapshot, new Rect(x, y, socketSize, socketSize),
+                    slot, labels[slot]);
+            }
+        }
+
+        /// <summary>Draw one native mounted slot and accept compatible cargo drops.</summary>
+        private void DrawFittingSocket(Snapshot snapshot, Rect rect, int slot, string label)
+        {
+            if (slot >= snapshot.Mounted.Length) return;
+            ItemView item = snapshot.Mounted[slot];
+            bool clicked = HandleInventoryTile(rect, 2, slot, item != null, snapshot);
+            bool drop = inventoryDragging && CanInventoryDrop(snapshot, 2, slot);
+            Color tint = GUI.color;
+            GUI.color = selectedMount == slot || drop ?
+                new Color(.88f, 1f, 1f, 1f) : item == null ?
+                new Color(.32f, .46f, .53f, .9f) : slot < 3 ?
+                new Color(.61f, .75f, .97f, 1f) : slot < 9 ?
+                new Color(1f, .73f, .4f, 1f) :
+                new Color(.48f, .93f, .83f, 1f);
+            GUI.DrawTexture(rect, fittingSocket);
+            GUI.color = tint;
+            uint type = item?.Type ?? (slot == 0 ? 2u : slot == 1 ? 7u :
+                slot == 2 ? 6u : slot < 9 ? 14u : 11u);
+            GUI.DrawTexture(new Rect(rect.x + 17, rect.y + 15, 28, 28),
+                icons.ForType(type));
+            string status = item == null ? "" : item.OutOfAmmo ?
+                "EMPTY" : item.Cooling ? "COOL" : "";
+            if (item != null && (item.Type == 15 || item.Type == 16))
+            {
+                ItemView ammo = slot < snapshot.Ammo.Length ? snapshot.Ammo[slot] : null;
+                status = (ammo?.Quantity ?? 0) + "/" + (ammo?.MaxStack ?? 0);
+            }
+            GUI.Label(new Rect(rect.x - 7, slot < 3 ? rect.yMax + 1 : rect.y - 17,
+                rect.width + 14, 16), slot < 3 ? label :
+                slot < 9 ? "WEAPON " + (slot - 2) : "DEVICE " + (slot - 8),
+                equipmentMeta);
+            if (status.Length > 0)
+                GUI.Label(new Rect(rect.x + 7, rect.yMax - 18, rect.width - 14, 15),
+                    status, equipmentMeta);
+            GUI.Label(rect, new GUIContent("", label + "  ·  " +
+                (item?.Name ?? "EMPTY SOCKET") + (status.Length > 0 ? "  ·  " + status : "")));
+            if (clicked)
+            {
+                selectedMount = selectedMount == slot ? -1 : slot;
+                inspectMount = true; inspectAmmo = false;
+                inspectEffects = item?.EquippedEffects.Count > 0;
+                effectScroll = Vector2.zero;
+            }
+        }
+
+        /// <returns>bool: Whether a graphical inventory source was clicked.</returns>
+        private bool HandleInventoryTile(Rect rect, uint container, int slot,
+            bool canDrag, Snapshot snapshot)
+        {
+            Event current = Event.current;
+            if (current.type == EventType.MouseDown && current.button == 0 &&
+                rect.Contains(current.mousePosition))
+            {
+                draggedContainer = container; draggedSlot = slot; dragCanMove = canDrag;
+                dragStartPosition = Input.mousePosition; inventoryDragging = false;
+                current.Use(); return false;
+            }
+            if (current.type != EventType.MouseUp || current.button != 0 ||
+                !rect.Contains(current.mousePosition) || draggedContainer == 0) return false;
+            bool clicked = !inventoryDragging && draggedContainer == container &&
+                draggedSlot == slot;
+            if (inventoryDragging && dragCanMove &&
+                (draggedContainer != container || draggedSlot != slot))
+                SubmitInventoryDrop(snapshot, container, slot);
+            ClearInventoryDrag(); current.Use();
+            return clicked;
+        }
+
+        /// <returns>Texture2D: A transparent fitting reticle behind the live ship.</returns>
+        private static Texture2D CreateFittingRing()
+        {
+            const int size = 256;
+            var texture = new Texture2D(size, size, TextureFormat.RGBA32, false);
+            var pixels = new Color[size * size];
+            for (int y = 0; y < size; y++)
+                for (int x = 0; x < size; x++)
+                {
+                    float dx = x - 127.5f, dy = y - 127.5f;
+                    float radius = Mathf.Sqrt(dx * dx + dy * dy);
+                    float angle = Mathf.Atan2(dy, dx);
+                    float shade = Mathf.Clamp01((122 - radius) / 95f);
+                    bool ring = Mathf.Abs(radius - 111) < .8f ||
+                        Mathf.Abs(radius - 91) < .6f;
+                    bool tick = radius > 101 && radius < 110 &&
+                        Mathf.Abs(Mathf.Sin(angle * 18)) < .045f;
+                    pixels[y * size + x] = ring || tick ?
+                        new Color(.29f, .73f, .84f, ring ? .42f : .3f) :
+                        radius < 110 ? new Color(.02f, .09f, .12f, shade * .42f) :
+                        Color.clear;
+                }
+            texture.SetPixels(pixels); texture.Apply();
+            return texture;
+        }
+
+        /// <returns>Texture2D: A restrained circular fitting socket with a lit edge.</returns>
+        private static Texture2D CreateFittingSocket()
+        {
+            const int size = 64;
+            var texture = new Texture2D(size, size, TextureFormat.RGBA32, false);
+            var pixels = new Color[size * size];
+            for (int y = 0; y < size; y++)
+                for (int x = 0; x < size; x++)
+                {
+                    float radius = Vector2.Distance(new Vector2(x, y),
+                        new Vector2(31.5f, 31.5f));
+                    pixels[y * size + x] = radius > 30 ? Color.clear :
+                        radius > 27.5f ? new Color(.42f, .83f, .92f, .78f) :
+                        new Color(.028f, .07f, .105f, .92f);
+                }
+            texture.SetPixels(pixels); texture.Apply();
+            return texture;
+        }
+
+        /// <summary>Show only server-supplied defense, reactor and movement values.</summary>
+        private void DrawLoadoutStats(Snapshot snapshot, Rect rect)
+        {
+            Panel(rect);
+            float x = rect.x + 10, width = rect.width - 20;
+            GUI.Label(new Rect(x, rect.y + 5, width, 18), "LIVE SHIP SYSTEMS", section);
+            GUI.Label(new Rect(x, rect.y + 27, width, 17), "DEFENSE", equipmentMeta);
+            GUI.Label(new Rect(x, rect.y + 43, width, 17),
+                $"SH {snapshot.Shield * snapshot.MaxShield:0}/{snapshot.MaxShield:0}  ·  HULL {snapshot.Hull:0}/{snapshot.MaxHull:0}",
+                equipmentText);
+            Fill(new Rect(x, rect.y + 62, width, 4), new Color(.15f, .24f, .29f));
+            Fill(new Rect(x, rect.y + 62, width * Mathf.Clamp01(snapshot.Shield), 4),
+                new Color(.33f, .79f, .92f));
+            if (snapshot.Defense.Known)
+                GUI.Label(new Rect(x, rect.y + 71, width, 18),
+                    "DEFLECT  " + string.Join(" / ", snapshot.Defense.Deflects.Select(
+                        value => value.ToString())) + "%", equipmentMeta);
+            GUI.Label(new Rect(x, rect.y + 94, width, 17), "REACTOR", equipmentMeta);
+            GUI.Label(new Rect(x, rect.y + 110, width, 17),
+                $"ENERGY {snapshot.Energy * snapshot.MaxEnergy:0}/{snapshot.MaxEnergy:0}",
+                equipmentText);
+            Fill(new Rect(x, rect.y + 129, width, 4), new Color(.15f, .24f, .29f));
+            Fill(new Rect(x, rect.y + 129, width * Mathf.Clamp01(snapshot.Energy), 4),
+                new Color(.77f, .63f, .32f));
+            GUI.Label(new Rect(x, rect.y + 142, width, 17), "SPEED", equipmentMeta);
+            GUI.Label(new Rect(x, rect.y + 158, width, 17),
+                $"{snapshot.Speed:0} m/s  ·  TARGET {snapshot.TargetSpeed:0} m/s",
+                equipmentText);
+            GUI.Label(new Rect(x, rect.y + 175, width, 17),
+                $"ACCEL {snapshot.Acceleration:0} m/s²", equipmentMeta);
+        }
+
         /// <summary>Show each native launcher magazine as a separate drop target.</summary>
         private void DrawAmmoList(Snapshot snapshot, Rect rect)
         {
@@ -1849,19 +2202,24 @@ namespace FortyTwoAndBeyond.Client
             GUILayout.BeginArea(new Rect(rect.x + 7, rect.y + 29,
                 rect.width - 14, rect.height - 35));
             ammoWidgetScroll = GUILayout.BeginScrollView(ammoWidgetScroll);
+            float tileWidth = Mathf.Max(92, (rect.width - 32) * .5f);
+            int column = 0;
             for (int slot = 3; slot < 3 + snapshot.WeaponMounts && slot < snapshot.Mounted.Length; slot++)
             {
                 ItemView weapon = snapshot.Mounted[slot];
                 if (weapon?.Type != 15 && weapon?.Type != 16) continue;
+                if (column == 0) GUILayout.BeginHorizontal();
                 ItemView ammo = slot < snapshot.Ammo.Length ? snapshot.Ammo[slot] : null;
-                string count = ammo == null ? "EMPTY · DROP ROUNDS" :
-                    ammo.Quantity + " / " + (ammo.MaxStack == 0 ? "?" : ammo.MaxStack.ToString()) + " ROUNDS";
-                if (DrawEquipmentRow("WEAPON " + (slot - 2), ammo?.Name ?? "No ammunition",
-                    count, 10, false, rect.width - 14, ammo != null && ammo.Quantity == 0,
+                string count = ammo == null ? "0 ROUNDS" :
+                    ammo.Quantity + " / " + (ammo.MaxStack == 0 ? "?" : ammo.MaxStack.ToString());
+                if (DrawEquipmentTile("W" + (slot - 2), ammo?.Name ?? "DROP AMMO",
+                    count, 10, false, tileWidth, 103, ammo == null,
                     3, slot, ammo != null, snapshot))
                 { selectedAmmo = slot; inspectAmmo = true; inspectMount = false;
                   inspectEffects = false; effectScroll = Vector2.zero; }
+                if (++column == 2) { GUILayout.EndHorizontal(); column = 0; }
             }
+            if (column != 0) GUILayout.EndHorizontal();
             GUILayout.EndScrollView(); GUILayout.EndArea();
         }
 
@@ -1874,37 +2232,12 @@ namespace FortyTwoAndBeyond.Client
             GUILayout.BeginArea(new Rect(rect.x + 7, rect.y + 29,
                 rect.width - 14, rect.height - 35));
             mountScroll = GUILayout.BeginScrollView(mountScroll);
-            for (int slot = 0; slot < snapshot.Mounted.Length; slot++)
-            {
-                bool available = slot < 3 || slot >= 3 && slot < 3 + snapshot.WeaponMounts ||
-                    slot >= 9 && slot < 9 + snapshot.DeviceMounts;
-                if (!available) continue;
-                if (slot == 0) GUILayout.Label("CORE SYSTEMS", small);
-                if (slot == 3) GUILayout.Label("WEAPONS", small);
-                if (slot == 9) GUILayout.Label("DEVICES", small);
-                ItemView item = snapshot.Mounted[slot];
-                string slotName = slot < 3 ? new[] { "SHIELD", "REACTOR", "ENGINE" }[slot] : slot < 9 ?
-                    "WEAPON " + (slot - 2) : "DEVICE " + (slot - 8);
-                string status = item == null ? "OPEN HARDPOINT" : "CONDITION " +
-                    (Mathf.Clamp01(item.Structure) * 100).ToString("0") + "%";
-                bool weapon = item != null && item.Type >= 14 && item.Type <= 16;
-                if (weapon)
-                {
-                    ItemView ammo = slot < snapshot.Ammo.Length ? snapshot.Ammo[slot] : null;
-                    status = item.OutOfAmmo ? "◌ NO AMMO" : item.Cooling ?
-                        $"◔ RELOADING  {item.CooldownSeconds:0.0}s" :
-                        (item.WeaponState & 1) != 0 ? "● FIRING" : "○ SAFE";
-                    status += item.Type == 14 ? "   ·   BEAM" :
-                            "   ·   " + (ammo?.Quantity ?? 0) + " ROUNDS";
-                }
-                uint iconType = item?.Type ?? (slot == 0 ? 2u : slot == 1 ? 7u : slot == 2 ? 6u : slot < 9 ? 14u : 11u);
-                if (DrawEquipmentRow(slotName, item?.Name ?? "EMPTY", status, iconType,
-                    selectedMount == slot, rect.width - 14, item != null && item.OutOfAmmo,
-                    2, slot, item != null, snapshot))
-                    { selectedMount = selectedMount == slot ? -1 : slot; inspectMount = true;
-                        inspectAmmo = false;
-                        inspectEffects = item?.EquippedEffects.Count > 0; effectScroll = Vector2.zero; }
-            }
+            float tileWidth = Mathf.Max(90, (rect.width - 34) / 3f);
+            DrawMountedGroup(snapshot, "CORE SYSTEMS", 0, 3, tileWidth);
+            DrawMountedGroup(snapshot, "WEAPON HARDPOINTS", 3,
+                (int)snapshot.WeaponMounts, tileWidth);
+            DrawMountedGroup(snapshot, "DEVICE SLOTS", 9,
+                (int)snapshot.DeviceMounts, tileWidth);
             GUILayout.EndScrollView(); GUILayout.EndArea();
         }
 
@@ -1919,6 +2252,7 @@ namespace FortyTwoAndBeyond.Client
             GUILayout.BeginArea(new Rect(rect.x + 7, rect.y + 29,
                 rect.width - 14, rect.height - 35));
             cargoScroll = GUILayout.BeginScrollView(cargoScroll);
+            float tileWidth = rect.width - 50;
             foreach (IGrouping<string, ItemView> group in snapshot.Cargo.Where(item => item != null)
                 .GroupBy(item => ItemCategory(item.Type)).OrderBy(group => CargoGroupOrder(group.Key)))
             {
@@ -1926,17 +2260,24 @@ namespace FortyTwoAndBeyond.Client
                 foreach (ItemView item in group.OrderBy(entry => entry.Name))
                 {
                     string status = "×" + item.Quantity + "  ·  " +
-                        (Mathf.Clamp01(item.Structure) * 100).ToString("0") + "% CONDITION";
-                    if (DrawEquipmentRow(group.Key, item.Name, status, item.Type,
-                        selectedCargo == item.Slot, rect.width - 14, false,
+                        (Mathf.Clamp01(item.Structure) * 100).ToString("0") + "%";
+                    if (DrawEquipmentTile(group.Key, item.Name, status, item.Type,
+                        selectedCargo == item.Slot, tileWidth, 88, false,
                         1, item.Slot, true, snapshot))
                     { selectedCargo = selectedCargo == item.Slot ? -1 : item.Slot; inspectMount = false;
                         inspectAmmo = false;
                             inspectEffects = item.EquippedEffects.Count > 0; effectScroll = Vector2.zero; }
                 }
             }
-            if (used == 0) GUILayout.Label("Cargo hold empty", small);
-            GUILayout.Label("DROP HERE TO MOVE INTO HOLD", small);
+            GUILayout.Label(used == 0 ? "EMPTY CARGO SLOTS" : "OPEN CARGO SLOTS", small);
+            int shown = 0;
+            for (int slot = 0; slot < snapshot.CargoCapacity && slot < snapshot.Cargo.Length && shown < 6; slot++)
+            {
+                if (snapshot.Cargo[slot] != null) continue;
+                DrawEquipmentTile("CARGO " + (slot + 1), "EMPTY SLOT", "DROP ITEM",
+                    0, false, tileWidth, 76, false, 1, slot, false, snapshot);
+                shown++;
+            }
             GUILayout.EndScrollView(); GUILayout.EndArea();
             Event current = Event.current;
             if (inventoryDragging && current.type == EventType.MouseUp && current.button == 0 &&
@@ -1972,15 +2313,48 @@ namespace FortyTwoAndBeyond.Client
             return -1;
         }
 
-        /// <returns>bool: Whether the user selected a structured equipment row.</returns>
-        private bool DrawEquipmentRow(string slot, string name, string status, uint type,
-            bool active, float areaWidth, bool warning, uint container, int itemSlot,
+        /// <summary>Draw a labeled row of installed equipment slots as visual drop targets.</summary>
+        private void DrawMountedGroup(Snapshot snapshot, string label, int first,
+            int count, float tileWidth)
+        {
+            if (count <= 0) return;
+            GUILayout.Label(label, small);
+            int column = 0;
+            for (int slot = first; slot < first + count && slot < snapshot.Mounted.Length; slot++)
+            {
+                if (column == 0) GUILayout.BeginHorizontal();
+                ItemView item = snapshot.Mounted[slot];
+                string slotName = slot < 3 ? new[] { "SHIELD", "REACTOR", "ENGINE" }[slot] : slot < 9 ?
+                    "WEAPON " + (slot - 2) : "DEVICE " + (slot - 8);
+                string status = item == null ? "DROP ITEM" :
+                    (Mathf.Clamp01(item.Structure) * 100).ToString("0") + "% CONDITION";
+                bool weapon = item != null && item.Type >= 14 && item.Type <= 16;
+                if (weapon)
+                {
+                    ItemView ammo = slot < snapshot.Ammo.Length ? snapshot.Ammo[slot] : null;
+                    status = item.Type == 14 ? "BEAM · " +
+                        ((item.WeaponState & 1) != 0 ? "ARMED" : "SAFE") :
+                        (ammo?.Quantity ?? 0) + "/" + (ammo?.MaxStack ?? 0) + " ROUNDS";
+                }
+                uint iconType = item?.Type ?? (slot == 0 ? 2u : slot == 1 ? 7u : slot == 2 ? 6u : slot < 9 ? 14u : 11u);
+                if (DrawEquipmentTile(slotName, item?.Name ?? "EMPTY SLOT", status, iconType,
+                    selectedMount == slot, tileWidth, 112, item != null && item.OutOfAmmo,
+                    2, slot, item != null, snapshot))
+                    { selectedMount = selectedMount == slot ? -1 : slot; inspectMount = true;
+                        inspectAmmo = false;
+                        inspectEffects = item?.EquippedEffects.Count > 0; effectScroll = Vector2.zero; }
+                if (++column == 3) { GUILayout.EndHorizontal(); column = 0; }
+            }
+            if (column != 0) GUILayout.EndHorizontal();
+        }
+
+        /// <returns>bool: Whether the user selected a graphical inventory slot.</returns>
+        private bool DrawEquipmentTile(string slot, string name, string status, uint type,
+            bool active, float tileWidth, float tileHeight, bool warning, uint container, int itemSlot,
             bool canDrag, Snapshot snapshot)
         {
-            float nameWidth = Mathf.Max(75, areaWidth - 55);
-            float nameHeight = equipmentText.CalcHeight(new GUIContent(name), nameWidth);
-            float height = Mathf.Max(69, nameHeight + 45);
-            Rect row = GUILayoutUtility.GetRect(0, height, GUILayout.ExpandWidth(true));
+            Rect row = GUILayoutUtility.GetRect(tileWidth, tileHeight,
+                GUILayout.Width(tileWidth), GUILayout.Height(tileHeight));
             Event current = Event.current;
             bool clicked = false;
             if (current.type == EventType.MouseDown && current.button == 0 &&
@@ -2000,13 +2374,40 @@ namespace FortyTwoAndBeyond.Client
                     draggedSlot == itemSlot) clicked = true;
                 ClearInventoryDrag(); current.Use();
             }
-            GUI.Box(row, "", active ? selected : equipmentRow);
-            GUI.DrawTexture(new Rect(row.x + 7, row.y + 9, 30, 30), icons.ForType(type));
-            GUI.Label(new Rect(row.x + 43, row.y + 4, row.width - 50, 18), slot, equipmentMeta);
-            GUI.Label(new Rect(row.x + 43, row.y + 21, row.width - 50, nameHeight), name, equipmentText);
+            bool drop = inventoryDragging &&
+                CanInventoryDrop(snapshot, container, itemSlot);
+            GUI.Box(row, new GUIContent("", name + "\n" + status),
+                active || drop ? selected : equipmentRow);
+            if (drop) Fill(new Rect(row.x + 2, row.y + 2, row.width - 4, 2), cyan);
+            if (tileHeight <= 90)
+            {
+                GUI.DrawTexture(new Rect(row.x + 7, row.y + 22, 28, 28),
+                    icons.ForType(type));
+                GUI.Label(new Rect(row.x + 40, row.y + 3, row.width - 46, 17),
+                    slot, equipmentMeta);
+                string line = name;
+                while (line.Length > 4 && equipmentText.CalcHeight(
+                    new GUIContent(line), row.width - 48) > 34)
+                    line = line.Substring(0, line.Length - 2).TrimEnd() + "…";
+                GUI.Label(new Rect(row.x + 40, row.y + 22, row.width - 46, 35),
+                    line, equipmentText);
+                GUI.Label(new Rect(row.x + 40, row.yMax - 21, row.width - 46, 17),
+                    status, equipmentMeta);
+                return clicked;
+            }
+            GUI.DrawTexture(new Rect(row.x + (row.width - 36) * .5f, row.y + 20, 36, 36),
+                icons.ForType(type));
+            GUI.Label(new Rect(row.x + 7, row.y + 3, row.width - 14, 17), slot, equipmentMeta);
+            string shortName = name;
+            while (shortName.Length > 4 && equipmentText.CalcHeight(
+                new GUIContent(shortName), row.width - 12) > 31)
+                shortName = shortName.Substring(0, shortName.Length - 2).TrimEnd() + "…";
+            GUI.Label(new Rect(row.x + 6, row.y + 58, row.width - 12, 31),
+                shortName, equipmentText);
             Color old = GUI.color;
             if (warning) GUI.color = new Color(1f, .55f, .43f);
-            GUI.Label(new Rect(row.x + 43, row.yMax - 23, row.width - 49, 20), status, equipmentMeta);
+            GUI.Label(new Rect(row.x + 6, row.yMax - 20, row.width - 12, 17),
+                status, equipmentMeta);
             GUI.color = old;
             return clicked;
         }
@@ -2210,6 +2611,9 @@ namespace FortyTwoAndBeyond.Client
             if (selectedTexture != null) UnityEngine.Object.Destroy(selectedTexture);
             if (panelTexture != null) UnityEngine.Object.Destroy(panelTexture);
             if (radarTexture != null) UnityEngine.Object.Destroy(radarTexture);
+            if (fittingRing != null) UnityEngine.Object.Destroy(fittingRing);
+            if (fittingSocket != null) UnityEngine.Object.Destroy(fittingSocket);
+            shipPreview?.Dispose();
             icons.Dispose();
         }
     }

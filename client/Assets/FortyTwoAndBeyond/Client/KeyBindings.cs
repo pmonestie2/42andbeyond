@@ -21,7 +21,7 @@ namespace FortyTwoAndBeyond.Client
             KeyCode.Return, KeyCode.W, KeyCode.S, KeyCode.A, KeyCode.D,
             KeyCode.UpArrow, KeyCode.DownArrow, KeyCode.Space, KeyCode.Q, KeyCode.F,
             KeyCode.T, KeyCode.R, KeyCode.G, KeyCode.O, KeyCode.L,
-            KeyCode.Tab, KeyCode.E, KeyCode.C,
+            KeyCode.Tab, KeyCode.I, KeyCode.C,
             KeyCode.Alpha1, KeyCode.Alpha2, KeyCode.Alpha3,
             KeyCode.Alpha4, KeyCode.Alpha5, KeyCode.Alpha6, KeyCode.B, KeyCode.Y
         };
@@ -35,6 +35,12 @@ namespace FortyTwoAndBeyond.Client
             {
                 int index = (int)action;
                 int stored = PlayerPrefs.GetInt(PreferencePrefix + action, (int)Defaults[index]);
+                if (action == ControlAction.Equipment && stored == (int)KeyCode.E)
+                {
+                    stored = (int)KeyCode.I;
+                    PlayerPrefs.SetInt(PreferencePrefix + action, stored);
+                    PlayerPrefs.Save();
+                }
                 KeyCode key = (KeyCode)stored;
                 if (!Enum.IsDefined(typeof(KeyCode), key) || key == KeyCode.None || key == KeyCode.Escape)
                     continue;
@@ -89,7 +95,7 @@ namespace FortyTwoAndBeyond.Client
                 case ControlAction.Dock: return "Dock at station";
                 case ControlAction.Launch: return "Launch from station";
                 case ControlAction.Chart: return "Sector chart";
-                case ControlAction.Equipment: return "Equipment panel";
+                case ControlAction.Equipment: return "Inventory";
                 case ControlAction.ResetCamera: return "Reset camera";
                 case ControlAction.AbilityOne: return "Ability slot 1";
                 case ControlAction.AbilityTwo: return "Ability slot 2";
