@@ -182,6 +182,46 @@ impl SectorCombat {
         Ok(ids)
     }
 
+    /// Returns:
+    ///     Vec<usize>: Living actors whose centers are within the supplied radius and were rescaled.
+    /// Raises:
+    ///     io::Error: Input is invalid or the world could not be persisted; actors are rolled back.
+    pub(crate) fn set_nearby_combat_level(
+        &mut self,
+        center: [f32; 3],
+        radius: f32,
+        level: u32,
+    ) -> io::Result<Vec<usize>> {
+        if !radius.is_finite()
+            || radius <= 0.
+            || radius > 200_000.
+            || center.iter().any(|value| !value.is_finite())
+            || !(1..=66).contains(&level)
+        {
+            return Err(invalid("Invalid developer MOB level neighborhood."));
+        }
+        let indices: Vec<usize> = self
+            .actors
+            .iter()
+            .enumerate()
+            .filter(|(_, actor)| {
+                actor.state != crate::mob::MobState::Dead
+                    && crate::mob::distance(actor.position, center) <= radius
+            })
+            .map(|(index, _)| index)
+            .collect();
+        let previous = self.actors.clone();
+        let result = indices
+            .iter()
+            .try_for_each(|index| self.actors[*index].set_developer_level(level))
+            .and_then(|_| self.persist());
+        if let Err(error) = result {
+            self.actors = previous;
+            return Err(error);
+        }
+        Ok(indices)
+    }
+
     pub fn accepted_sequence(&self, owner: u32) -> u64 {
         self.accepted.get(&owner).copied().unwrap_or(0)
     }
@@ -545,6 +585,47 @@ mod tests {
         let fresh = SectorCombat::from_actors(world.actors.clone());
         let wrong = SectorCombat::persistent(path, 9999, &fresh);
         assert!(wrong.is_err());
+    }
+
+    /// Level tuning keeps live damage fractions, excludes distant/dead actors, and survives restart.
+    #[test]
+    fn developer_nearby_levels_preserve_damage_and_persist_explicit_overrides() {
+        let (mut world, path) = world();
+        let initial = SectorCombat::from_actors(world.actors.clone());
+        world.actors[0].position = [1000., 0., 0.];
+        world.actors[0].shield *= 0.5;
+        let mut definition = world.actors[0].definition.clone();
+        definition.spawn = [20_001., 0., 0.];
+        world
+            .spawn_developer(vec![definition.clone(), definition])
+            .unwrap();
+        world.actors[2].position = [500., 0., 0.];
+        world.actors[2].state = crate::mob::MobState::Dead;
+        world.actors[2].shield = 0.;
+        world.actors[2].health = 0.;
+        let old_distant_level = world.actors[1].definition.level;
+        assert_eq!(
+            world.set_nearby_combat_level([0.; 3], 20_000., 10).unwrap(),
+            vec![0]
+        );
+        let actor = &world.actors[0];
+        assert_eq!(actor.definition.level, 10);
+        assert_eq!(actor.developer_level, Some(10));
+        assert!(actor.definition.combat_override.is_none());
+        assert_eq!(
+            actor.combat,
+            crate::mob_stats::MobStats::derive(&actor.definition)
+        );
+        assert!((actor.shield / actor.max_shield - 0.5).abs() < 0.0001);
+        assert_eq!(world.actors[1].definition.level, old_distant_level);
+        assert_eq!(world.actors[2].state, crate::mob::MobState::Dead);
+        assert!(world.set_nearby_combat_level([0.; 3], 20_000., 67).is_err());
+        let restored = SectorCombat::persistent(path.clone(), 1076, &initial).unwrap();
+        assert_eq!(restored.actors[0].definition.level, 10);
+        assert!((restored.actors[0].shield / restored.actors[0].max_shield - 0.5).abs() < 0.0001);
+        std::fs::create_dir_all(path.with_extension("json.next")).unwrap();
+        assert!(world.set_nearby_combat_level([0.; 3], 20_000., 20).is_err());
+        assert_eq!(world.actors[0].definition.level, 10);
     }
 
     #[test]

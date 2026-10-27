@@ -1,0 +1,42 @@
+# Blender 5.2.3 LTS MTL File: 'None'
+# www.blender.org
+
+newmtl AMBODY000.EDGE-1.TGA
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+illum 2
+map_Kd edge-1.png
+map_d edge-1.png
+
+newmtl AMBODY000.edge-alpha.tga
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+illum 2
+map_Kd edge-alpha.png
+map_d edge-alpha.png
+
+newmtl C_NAME000.EDGE-1.TGA
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+illum 2
+map_Kd edge-1.png
+map_d edge-1.png
+
+newmtl C_NAME000.edge-alpha.tga
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+illum 2
+map_Kd edge-alpha.png
+map_d edge-alpha.png

@@ -75,6 +75,7 @@ def main() -> None:
                                 '-logFile', str(unity_log),
                                 '--42andbeyond-loadout-smoke'],
                                check=True, timeout=140)
+                (project / 'Builds/verification/loadout-ui.log').write_text(unity_log.read_text(errors='replace'))
                 if 'PASS: cargo reordered, magazine loaded' not in unity_log.read_text(
                         errors='replace'):
                     raise RuntimeError('Unity did not confirm authoritative ammo consumption.')

@@ -10,27 +10,31 @@ namespace FortyTwoAndBeyond.Protocol
         public readonly string Name;
         public readonly uint RemovalTick, VisualEffectId;
         public readonly ushort VisualDescriptor;
-        public bool Active => Name.Length > 0 && RemovalTick != 0;
+        public readonly bool Permanent;
+        public bool Active => Name.Length > 0 && (Permanent || RemovalTick != 0);
 
         /// <summary>Keep native buff and visual fields in one immutable revision.</summary>
-        public TimedDeviceBuff(string name, uint removalTick, uint visualEffectId, ushort visualDescriptor)
+        public TimedDeviceBuff(string name, uint removalTick, uint visualEffectId, ushort visualDescriptor,
+            bool permanent = false)
         {
             Name = name ?? "";
             RemovalTick = removalTick;
             VisualEffectId = visualEffectId;
             VisualDescriptor = visualDescriptor;
+            Permanent = permanent;
         }
 
         /// Returns:
         ///     TimedDeviceBuff: A new buff revision with its server-published visual.
         public TimedDeviceBuff WithVisual(uint effectId, ushort descriptor)
-        { return new TimedDeviceBuff(Name, RemovalTick, effectId, descriptor); }
+        { return new TimedDeviceBuff(Name, RemovalTick, effectId, descriptor, Permanent); }
 
         /// Returns:
         ///     float: Seconds remaining on the wrapping server clock, or minus one before clock sync.
         public float RemainingSeconds(uint? serverTick)
         {
             if (!Active) return 0;
+            if (Permanent) return float.PositiveInfinity;
             if (!serverTick.HasValue) return -1;
             int remaining = unchecked((int)(RemovalTick - serverTick.Value));
             return Math.Max(0, remaining / 1000f);
@@ -40,19 +44,23 @@ namespace FortyTwoAndBeyond.Protocol
     /// <summary>Stable native buff presentation for the Unity main thread.</summary>
     public sealed class DeviceBuffView
     {
+        public readonly int Slot;
         public readonly string Name;
         public readonly float RemainingSeconds;
         public readonly uint VisualEffectId;
         public readonly ushort VisualDescriptor;
+        public readonly bool Permanent;
         public bool VisualActive => VisualDescriptor != 0;
 
         /// <summary>Freeze one worker buff revision and its display countdown.</summary>
-        public DeviceBuffView(TimedDeviceBuff buff, uint? serverTick)
+        public DeviceBuffView(TimedDeviceBuff buff, uint? serverTick, int slot = 0)
         {
+            Slot = slot;
             Name = buff.Name;
             RemainingSeconds = buff.RemainingSeconds(serverTick);
             VisualEffectId = buff.VisualEffectId;
             VisualDescriptor = buff.VisualDescriptor;
+            Permanent = buff.Permanent;
         }
     }
 

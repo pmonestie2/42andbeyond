@@ -394,6 +394,39 @@ fn warrior_shield_inversion_pulses_and_survives_world_restart() {
     );
 }
 
+/// Shield Nova can begin against a large hull whose center exceeds skill range.
+#[test]
+fn shield_nova_reaches_large_target_surface() {
+    let root = std::env::temp_dir().join(format!("enb-nova-range-{}", rand::random::<u64>()));
+    let warrior = AccountDirectory::new(&root)
+        .create_class(
+            "warrior".into(),
+            "example",
+            "Warrior".into(),
+            crate::classes::CharacterClass::parse("pw").unwrap(),
+        )
+        .unwrap()
+        .account
+        .character
+        .game_id;
+    let mut sector: Sector = serde_json::from_str(include_str!("../data/sector.json")).unwrap();
+    sector.mobs[0].spawn = [3_000., 0., 0.];
+    sector.mobs[0].radius = 835.;
+    sector.mobs[0].aggressive = false;
+    sector.mobs[0].faction = 0;
+    let mut game = GameState::new(sector, Ipv4Addr::new(127, 0, 0, 2), root.clone()).unwrap();
+    login(&mut game, warrior, 23941, "warrior");
+    game.sessions.get_mut(&warrior).unwrap().position = [0., 0., 0.];
+    game.update_views();
+    activate(&mut game, warrior, MOB_ID, 110);
+    advance(&mut game, 2.1);
+    let active = game.sessions[&warrior].active_inversion().unwrap();
+    assert_eq!(active.ability, 110);
+    assert_eq!(active.target, MOB_ID);
+    drop(game);
+    fs::remove_dir_all(root).unwrap();
+}
+
 /// Area Fold freezes equipped distance through partial group retry and restart.
 #[test]
 fn defender_area_fold_retries_partial_group_delivery_without_double_move() {
@@ -849,6 +882,11 @@ pub(super) fn login(game: &mut GameState, id: u32, port: u16, username: &str) {
         },
     )
     .unwrap();
+    game.sessions
+        .get_mut(&id)
+        .unwrap()
+        .handle_input(6, &[])
+        .unwrap();
 }
 
 fn activate(game: &mut GameState, owner: u32, target: u32, ability: u32) {
@@ -1656,6 +1694,12 @@ fn shield_charging_selected_peer_is_durable_and_idempotent() {
             .shield_capacity,
         before.shield_capacity
     );
+    assert!(
+        !game.sessions[&recipient]
+            .peer_snapshot()
+            .unwrap()
+            .shield_charging
+    );
     fs::remove_dir(&torn).unwrap();
     let charged = game.energy_ledger.balance(caster).unwrap().energy;
     drop(game);
@@ -1663,6 +1707,12 @@ fn shield_charging_selected_peer_is_durable_and_idempotent() {
     let after = restored.sessions[&recipient].peer_snapshot().unwrap().stats;
     assert!((after.shield_capacity - before.shield_capacity * 1.25).abs() < 0.01);
     assert!((after.shield_recharge - before.shield_recharge * 1.2).abs() < 0.01);
+    assert!(
+        restored.sessions[&recipient]
+            .peer_snapshot()
+            .unwrap()
+            .shield_charging
+    );
     assert_eq!(restored.sessions[&caster].energy_balance().0, charged);
     restored.deliver_shield_chargings().unwrap();
     assert_eq!(restored.energy_ledger.revision(), 1);
@@ -1811,6 +1861,7 @@ fn shield_sap_area_and_group_awards_survive_torn_recipient_restart() {
     let mut sector: Sector = serde_json::from_str(include_str!("../data/sector.json")).unwrap();
     sector.mobs[0].spawn = [900., 0., 0.];
     sector.mobs[0].aggressive = false;
+    sector.mobs[0].radius = 835.;
     let mut second = sector.mobs[0].clone();
     second.source_id += 1;
     second.name = "Second Drone".into();
@@ -1836,7 +1887,7 @@ fn shield_sap_area_and_group_awards_survive_torn_recipient_restart() {
     game.groups.invite(warrior, crew).unwrap();
     game.groups.accept(crew).unwrap();
     game.sessions.get_mut(&warrior).unwrap().position = [0., 0., 0.];
-    game.sessions.get_mut(&crew).unwrap().position = [500., 0., 0.];
+    game.sessions.get_mut(&crew).unwrap().position = [3_300., 0., 0.];
     game.sessions.get_mut(&outsider).unwrap().position = [600., 0., 0.];
     let wrong_class_energy = game.sessions[&outsider].energy_balance().0;
     activate(&mut game, outsider, MOB_ID, 112);
@@ -1864,7 +1915,8 @@ fn shield_sap_area_and_group_awards_survive_torn_recipient_restart() {
     game.update_views();
     activate(&mut game, warrior, MOB_ID, 55);
     assert_eq!(game.sessions[&warrior].energy_balance().0, 1000.);
-    game.sessions.get_mut(&warrior).unwrap().position = [0., 0., 0.];
+    // The large target's center is beyond 2.5 km, but its hull is in range.
+    game.sessions.get_mut(&warrior).unwrap().position = [3_500., 0., 0.];
     game.update_views();
     activate(&mut game, warrior, MOB_ID, 55);
     assert_eq!(game.sessions[&warrior].energy_balance().0, 400.);

@@ -13,6 +13,8 @@ def main() -> None:
     """Run only an owned local server and Editor against a disposable Terran pilot."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--unity', required=True, type=Path)
+    parser.add_argument('--kinetic', action='store_true',
+                        help='Capture a projectile weapon instead of a missile launcher.')
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[2]
     project = root / 'client'
@@ -20,8 +22,9 @@ def main() -> None:
     executable = server_root / 'target' / 'debug' / 'beyond-server'
     if not executable.is_file() or not args.unity.is_file():
         raise FileNotFoundError('Build the debug server and provide the Unity Editor executable.')
-    screenshots = [project / 'Builds' / 'verification' / name for name in
-                   ('projectile-travel.png', 'projectile-result.png')]
+    prefix = 'kinetic' if args.kinetic else 'projectile'
+    screenshots = [project / 'Builds' / 'verification' / f'{prefix}-{stage}.png'
+                   for stage in ('travel', 'result')]
     for screenshot in screenshots:
         screenshot.unlink(missing_ok=True)
     with tempfile.TemporaryDirectory(prefix='client-projectile-visual-') as temporary:
@@ -48,10 +51,11 @@ def main() -> None:
                     'quality': 1.0, 'structure': 1.0}
 
         mounted = [None] * 20
-        for slot, template in ((0, 3628), (1, 3184), (2, 2507), (3, 2656)):
+        for slot, template in ((0, 3628), (1, 3184), (2, 2507),
+                               (3, 3024 if args.kinetic else 2656)):
             mounted[slot] = stock(template)
         ammunition = [None] * 20
-        ammunition[3] = stock(507, 20)
+        ammunition[3] = stock(522 if args.kinetic else 507, 20)
         (state / 'inventory.json').write_text(json.dumps({
             'cargo': [None] * 22, 'equipped': mounted, 'ammunition': ammunition}))
         (state / 'player.json').write_text(json.dumps({'version': 1, 'sector': sector['id'],
@@ -72,7 +76,11 @@ def main() -> None:
                     raise RuntimeError('Disposable server ownership mismatch.')
                 subprocess.run([str(args.unity), '-projectPath', str(project),
                                 '-logFile', str(state / 'unity.log'),
+                                '--42andbeyond-kinetic-smoke' if args.kinetic else
                                 '--42andbeyond-projectile-smoke'], check=True, timeout=130)
+                for line in (state / 'unity.log').read_text(errors='replace').splitlines():
+                    if 'screenshot position:' in line or 'PASS: server' in line:
+                        print(line)
             except BaseException:
                 if (state / 'unity.log').exists():
                     print((state / 'unity.log').read_text(errors='replace')[-7000:])

@@ -18,7 +18,12 @@ namespace FortyTwoAndBeyond.Editor
         private static bool connected;
         private static bool compact;
         private static bool motion;
+        private static bool recipes, market;
+        private static ulong marketCredits;
+        private static uint marketCount, marketNpc;
+        private static uint firstRecipe;
         private static uint contactId;
+        private static int directoryRepaints;
 
         /// <returns>string: The screenshot path for the active Game View size.</returns>
         private static string CaptureName(string scene)
@@ -31,26 +36,27 @@ namespace FortyTwoAndBeyond.Editor
                 return;
             compact = Array.IndexOf(Environment.GetCommandLineArgs(), "--42andbeyond-station-compact") >= 0;
             motion = Array.IndexOf(Environment.GetCommandLineArgs(), "--42andbeyond-station-motion") >= 0;
+            market = Array.IndexOf(Environment.GetCommandLineArgs(), "--42andbeyond-station-market") >= 0;
+            recipes = Array.IndexOf(Environment.GetCommandLineArgs(), "--42andbeyond-station-recipes") >= 0;
             deadline = EditorApplication.timeSinceStartup + 90;
             EditorApplication.update += Tick;
         }
 
-        /// <summary>Capture the docking bay, then walk into the next station room.</summary>
+        /// <summary>Verify native rooms remain intact while one client directory exposes their contacts.</summary>
         private static void Tick()
         {
             if (EditorApplication.isCompiling || EditorApplication.isUpdating) return;
-            if (EditorApplication.timeSinceStartup > deadline) { Fail("Station art smoke timed out."); return; }
+            if (EditorApplication.timeSinceStartup > deadline)
+            { Fail("Station smoke timed out at stage " + stage); return; }
             if (!EditorApplication.isPlayingOrWillChangePlaymode)
             {
                 EditorSceneManager.OpenScene("Assets/FortyTwoAndBeyond/Space.unity");
                 Type gameView = typeof(EditorWindow).Assembly.GetType("UnityEditor.GameView");
                 if (gameView != null)
                 {
-                    EditorWindow window = compact ?
-                        ScriptableObject.CreateInstance(gameView) as EditorWindow :
+                    EditorWindow window = compact ? ScriptableObject.CreateInstance(gameView) as EditorWindow :
                         EditorWindow.GetWindow(gameView);
-                    if (compact)
-                    { window.Show(); window.position = new Rect(80, 75, 1180, 700); }
+                    if (compact) { window.Show(); window.position = new Rect(80, 75, 1180, 700); }
                     else window.maximized = true;
                     window.Focus();
                 }
@@ -62,103 +68,178 @@ namespace FortyTwoAndBeyond.Editor
             if (!connected) { connected = true; client.StartLocalSession("127.0.0.1", "local", "local"); }
             if (client.ChoosingCharacter) client.ChooseCharacter(client.Characters[0].Slot);
             if (client.ConnectionError != null) { Fail(client.ConnectionError); return; }
-            if (client.CurrentSnapshot?.Station == null || !client.CurrentSnapshot.Ready) return;
+            var snapshot = client.CurrentSnapshot;
+            if (snapshot?.Station == null || !snapshot.Ready || snapshot.Station.RoomList.Count == 0) return;
+            if (snapshot.Station.RoomList.Count <= 1 || !snapshot.Station.RoomList.Any(room => room.Index == 0) ||
+                !snapshot.Station.Contacts.Any(contact => contact.Room != 0))
+            { Fail("Original multi-room station layout was flattened before reaching the client."); return; }
+            FlightHud hud = Hud(client);
+            SingleRoomStationHud directory = DirectoryHud(hud);
+            if (directory == null || directory.DirectoryRenderCount == 0 || snapshot.Station.CurrentRoom != 0) return;
+            if (directory.RenderedServices != 4 || directory.RenderedContacts != snapshot.Station.Contacts.Count ||
+                directory.RenderedContacts == 0)
+            {
+                if (stage == 0) return;
+                Fail("Station directory did not populate its industry services and contacts."); return;
+            }
             Directory.CreateDirectory("Builds/verification");
             if (stage == 0)
-            {
-                captureAt = EditorApplication.timeSinceStartup + 2;
-                stage = 1; return;
-            }
+            { captureAt = EditorApplication.timeSinceStartup + 1; stage = 1; return; }
             if (EditorApplication.timeSinceStartup < captureAt) return;
             if (stage == 1)
             {
+                if (snapshot.Station.Contacts.Any(contact => GameObject.Find("Station contact " + contact.Id) == null))
+                { Fail("Client concourse did not aggregate contact visuals from every native room."); return; }
                 ScreenCapture.CaptureScreenshot(CaptureName("hangar"));
-                stage = 2; captureAt = EditorApplication.timeSinceStartup + 1; return;
+                captureAt = EditorApplication.timeSinceStartup + .5; stage = 2; return;
             }
             if (stage == 2)
             {
-                if (!File.Exists(CaptureName("hangar")))
-                { Fail("Missing hangar capture."); return; }
-                if (!client.CurrentSnapshot.Station.RoomList.Any(room => room.Index == 1))
-                { Fail("Disposable station has no concourse room."); return; }
-                client.EnterStationRoom(1);
-                stage = 3; return;
+                if (!File.Exists(CaptureName("hangar"))) return;
+                client.ShowStationService(1); stage = 3; return;
             }
             if (stage == 3)
             {
-                if (client.CurrentSnapshot.Station.CurrentRoom != 1) return;
-                captureAt = EditorApplication.timeSinceStartup + 2;
-                stage = 4; return;
-            }
-            if (stage == 4)
-            {
-                ScreenCapture.CaptureScreenshot(CaptureName("concourse"));
-                stage = 5; captureAt = EditorApplication.timeSinceStartup + 1; return;
-            }
-            if (stage == 5)
-            {
-                if (!File.Exists(CaptureName("concourse")))
-                { Fail("Missing concourse capture."); return; }
-                if (motion)
+                if (!snapshot.Production.Open || snapshot.Production.Mode != 1) return;
+                if (recipes)
                 {
-                    var contact = client.CurrentSnapshot.Station.Contacts.FirstOrDefault(entry =>
-                        entry.Room == client.CurrentSnapshot.Station.CurrentRoom);
-                    if (contact == null) { Fail("No contact in the captured room."); return; }
-                    contactId = contact.Id;
-                    client.OpenNpc(contactId);
-                    stage = 9; return;
+                    if (snapshot.Production.TotalFormulas <= 500 || snapshot.Production.Formulas.Length != 500) return;
+                    firstRecipe = snapshot.Production.Formulas[0].Template;
+                    client.SelectProductionPage(1); stage = 12; return;
                 }
-                client.EnterStationRoom(0);
-                stage = 6; return;
-            }
-            if (stage == 9)
-            {
-                if (client.CurrentSnapshot.Dialogue?.NpcId != contactId) return;
-                captureAt = EditorApplication.timeSinceStartup + 1;
-                stage = 10; return;
-            }
-            if (stage == 10)
-            {
-                ScreenCapture.CaptureScreenshot(CaptureName("dialogue"));
-                captureAt = EditorApplication.timeSinceStartup + 1;
-                stage = 11; return;
-            }
-            if (stage == 11)
-            {
-                if (!File.Exists(CaptureName("dialogue")))
-                { Fail("Missing contact dialogue capture."); return; }
-                client.ChooseNpc(230);
-                stage = 12; return;
+                if (market) { client.QueryComponentStock(); stage = 20; return; }
+                client.ShowStationService(2); stage = 4; return;
             }
             if (stage == 12)
             {
-                if (client.CurrentSnapshot.Dialogue != null) return;
-                client.EnterStationRoom(0);
-                stage = 6; return;
+                if (snapshot.Production.PageIndex != 1 || snapshot.Production.Formulas.Length == 0) return;
+                if (snapshot.Production.Formulas[0].Template == firstRecipe)
+                { Fail("Second recipe page repeated the first page."); return; }
+                ScreenCapture.CaptureScreenshot(CaptureName("recipes"));
+                Debug.Log("PASS: eligible recipe book exceeds 500; server page two decoded and selected in Unity.");
+                captureAt = EditorApplication.timeSinceStartup + .5; stage = 13; return;
+            }
+            if (stage == 13)
+            {
+                if (market) { client.QueryComponentStock(); stage = 20; return; }
+                client.ShowStationService(2); stage = 4; return;
+            }
+            if (stage == 20)
+            {
+                var item = snapshot.MarketItems.FirstOrDefault(value => value.Template == 1520);
+                if (item == null) return;
+                if (item.IconId == 0) { Fail("Market stock lost native icon metadata."); return; }
+                client.OpenComponentMarket(item); stage = 21; return;
+            }
+            if (stage == 21)
+            {
+                if (!snapshot.ComponentMarkets.TryGetValue(1520, out var quotes)) return;
+                var source = quotes.Sources.FirstOrDefault(value => value.Station == snapshot.Station.Id &&
+                    value.BuyPrice > 0 && value.SellPrice > 0);
+                if (source == null || !quotes.DevEnabled ||
+                    !quotes.Sources.Any(value => value.StationName.Length > 0 && value.SectorName.Length > 0))
+                { Fail("Component market lacks supplier, buyer, developer travel or location labels."); return; }
+                marketNpc = source.Npc;
+                marketCredits = snapshot.Credits;
+                marketCount = snapshot.Cargo.Where(value => value?.Template == 1520).Aggregate(0u, (sum, value) => sum + value.Quantity);
+                captureAt = EditorApplication.timeSinceStartup + 1; stage = 22; return;
+            }
+            if (stage == 22)
+            {
+                ScreenCapture.CaptureScreenshot(CaptureName("market"));
+                client.BuyMarketComponent(marketNpc, 1520, 1); stage = 23; return;
+            }
+            if (stage == 23)
+            {
+                uint count = snapshot.Cargo.Where(value => value?.Template == 1520).Aggregate(0u, (sum, value) => sum + value.Quantity);
+                if (count != marketCount + 1 || snapshot.Credits >= marketCredits) return;
+                var owned = snapshot.Cargo.First(value => value?.Template == 1520);
+                marketCredits = snapshot.Credits;
+                client.SellMarketComponent(marketNpc, owned.Slot, 1); stage = 24; return;
+            }
+            if (stage == 24)
+            {
+                uint count = snapshot.Cargo.Where(value => value?.Template == 1520).Aggregate(0u, (sum, value) => sum + value.Quantity);
+                if (count != marketCount || snapshot.Credits <= marketCredits) return;
+                if (snapshot.Dialogue != null || !snapshot.Production.Open)
+                { Fail("Component trade displaced the active workbench or opened a conversation."); return; }
+                var field = typeof(SpaceClient).GetField("componentMarketHud", BindingFlags.Instance | BindingFlags.NonPublic);
+                ((ComponentMarketHud)field.GetValue(client)).Close();
+                Debug.Log("PASS: component stock, native icons, station supplier quotes, buy/sell cargo and credits, workbench preserved.");
+                client.ShowStationService(2); stage = 4; return;
+            }
+            if (stage == 4)
+            {
+                if (!snapshot.Production.Open || snapshot.Production.Mode != 2) return;
+                client.ShowStationService(4); stage = 5;
+                captureAt = EditorApplication.timeSinceStartup + 1; return;
+            }
+            if (stage == 5)
+            {
+                if (!snapshot.Production.Open || snapshot.Production.Mode != 4) return;
+                ScreenCapture.CaptureScreenshot(CaptureName("concourse"));
+                captureAt = EditorApplication.timeSinceStartup + .5; stage = 6; return;
             }
             if (stage == 6)
             {
-                if (client.CurrentSnapshot.Station.CurrentRoom != 0) return;
-                FieldInfo field = typeof(SpaceClient).GetField("hud",
-                    BindingFlags.Instance | BindingFlags.NonPublic);
-                FlightHud hud = field?.GetValue(client) as FlightHud;
-                if (hud == null) { Fail("Missing loadout HUD."); return; }
-                hud.ToggleEquipment();
-                captureAt = EditorApplication.timeSinceStartup + 2;
-                stage = 7; return;
+                if (!File.Exists(CaptureName("concourse"))) return;
+                if (motion)
+                {
+                    var otherRoomContact = snapshot.Station.Contacts.FirstOrDefault(contact =>
+                        contact.Room != snapshot.Station.CurrentRoom);
+                    if (otherRoomContact == null) { Fail("No cross-room contact available for the concourse test."); return; }
+                    contactId = otherRoomContact.Id;
+                    client.HideStationService(); client.OpenNpc(contactId);
+                    stage = 7; return;
+                }
+                BeginInventory(hud, directory); return;
             }
             if (stage == 7)
             {
-                ScreenCapture.CaptureScreenshot(CaptureName("loadout"));
-                captureAt = EditorApplication.timeSinceStartup + 1;
-                stage = 8; return;
+                if (snapshot.Dialogue?.NpcId != contactId) return;
+                ScreenCapture.CaptureScreenshot(CaptureName("dialogue"));
+                captureAt = EditorApplication.timeSinceStartup + .5; stage = 8; return;
             }
-            if (!File.Exists(CaptureName("loadout")))
-            { Fail("Missing loadout capture."); return; }
-            Debug.Log("PASS: disposable station hangar, concourse, and loadout art captured");
+            if (stage == 8)
+            {
+                if (!File.Exists(CaptureName("dialogue"))) return;
+                client.ChooseNpc(230); stage = 9; return;
+            }
+            if (stage == 9)
+            {
+                if (snapshot.Dialogue != null) return;
+                BeginInventory(hud, directory); return;
+            }
+            if (stage == 10)
+            {
+                if (!hud.EquipmentOpen || directory.DirectoryRenderCount <= directoryRepaints)
+                { Fail("Opening inventory removed the station directory."); return; }
+                ScreenCapture.CaptureScreenshot(CaptureName("loadout"));
+                captureAt = EditorApplication.timeSinceStartup + .5; stage = 11; return;
+            }
+            if (!File.Exists(CaptureName("loadout"))) return;
+            Debug.Log("PASS: aggregated station concourse preserves native rooms, lists all contacts, exposes manufacturing/analyze/refine services, and keeps directory with inventory open." +
+                (motion ? " Cross-room contact dialogue verified." : ""));
             EditorApplication.update -= Tick;
             EditorApplication.Exit(0);
         }
+
+        /// <summary>Open inventory and record that the same station directory continues repainting.</summary>
+        private static void BeginInventory(FlightHud hud, SingleRoomStationHud directory)
+        {
+            if (!hud.EquipmentOpen) hud.ToggleEquipment();
+            directoryRepaints = directory.DirectoryRenderCount;
+            captureAt = EditorApplication.timeSinceStartup + 1;
+            stage = 10;
+        }
+
+        /// <returns>FlightHud: The actual foreground UI owned by this disposable client.</returns>
+        private static FlightHud Hud(SpaceClient client)
+        { return typeof(SpaceClient).GetField("hud", BindingFlags.Instance | BindingFlags.NonPublic)?.GetValue(client) as FlightHud; }
+
+        /// <returns>SingleRoomStationHud: The directory rendered by the actual station UI.</returns>
+        private static SingleRoomStationHud DirectoryHud(FlightHud hud)
+        { return hud == null ? null : typeof(FlightHud).GetField("stationConcourse", BindingFlags.Instance | BindingFlags.NonPublic)?.GetValue(hud) as SingleRoomStationHud; }
 
         /// <summary>Exit the opt-in Editor run with a meaningful failure.</summary>
         private static void Fail(string reason)

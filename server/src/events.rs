@@ -1,6 +1,12 @@
 //! Authenticated client requests that affect more than one player. A session
 //! validates its wire owner/endpoint before the shared coordinator handles them.
 pub enum ClientEvent {
+    ComponentMarketQuery {
+        template: u32,
+    },
+    ComponentMarketTravel {
+        station: u32,
+    },
     LootOpen {
         target: u32,
         toggle: bool,

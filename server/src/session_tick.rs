@@ -202,7 +202,7 @@ impl PlayerSession {
                 });
             self.energy = (self.energy + recharge * dt).min(stats.energy_capacity);
         }
-        if self.hull > 0. {
+        if self.hull > 0. && crate::resources::unix_ms() >= self.shield_recharge_after_ms {
             let recharge = self
                 .skills
                 .power_down_ability
@@ -309,6 +309,9 @@ impl PlayerSession {
         self.mob_states.resize(combat.actors.len(), MobState::Idle);
         self.mob_visible.resize(combat.actors.len(), false);
         self.mob_relationships.resize(combat.actors.len(), None);
+        let refresh_login_mobs = self
+            .mob_login_refresh_at
+            .is_some_and(|when| Instant::now() >= when);
         for (index, mob) in combat.actors.iter().enumerate() {
             if mob.state != self.mob_states[index] {
                 if mob.state == MobState::Dead && self.mob_visible[index] {
@@ -326,6 +329,15 @@ impl PlayerSession {
                     mob,
                     tick,
                     self.mob_relationship(mob),
+                ));
+            } else if visible && refresh_login_mobs {
+                // The native client can acknowledge START before its sector
+                // object manager is ready for the first MOB CREATE burst.
+                self.pending.extend(packets::mob_spawn(
+                    MOB_ID + index as u32,
+                    mob,
+                    tick,
+                    reaction,
                 ));
             } else if !visible && self.mob_visible[index] {
                 self.mob_relationships[index] = None;
@@ -427,6 +439,9 @@ impl PlayerSession {
                     .push(packets::mob_status(MOB_ID + index as u32, mob));
             }
         }
+        if refresh_login_mobs {
+            self.mob_login_refresh_at = None;
+        }
         let proxy_predicts = !self.warp.active()
             && self
                 .last_motion_report
@@ -470,6 +485,7 @@ impl PlayerSession {
             self.save()?;
         }
         self.flush()?;
+        self.retry_handoff_output()?;
         self.checkpoint_session(false)
     }
 }

@@ -58,13 +58,15 @@ impl PlayerSession {
             return Err(error);
         }
         self.refresh_equipment()?;
-        if prior.is_some() {
+        if let Some(prior) = prior {
             self.pending.push(packets::ship_active_buff_slot(
                 self.player_id(),
                 BUFF_SLOT,
                 "",
                 0,
             ));
+            self.pending
+                .push(packets::remove_effect(prior.visual_id(self.player_id())));
         }
         self.publish_shield_charging_resume();
         Ok(())
@@ -81,11 +83,14 @@ impl PlayerSession {
         self.pending.push(packets::ship_active_buff_slot(
             self.player_id(),
             BUFF_SLOT,
-            "Shield_Charging",
+            buff.status_name(),
             self.tick_ms().wrapping_add(remaining as u32),
         ));
+        self.pending
+            .push(packets::remove_effect(buff.visual_id(self.player_id())));
         self.message(&format!(
-            "Shield Charging active for {} seconds.",
+            "{} active for {} seconds.",
+            buff.status_name().replace('_', " "),
             remaining.div_ceil(1000)
         ));
     }
@@ -110,6 +115,10 @@ impl PlayerSession {
                 "",
                 0,
             ));
+            if let Some(previous) = previous {
+                self.pending
+                    .push(packets::remove_effect(previous.visual_id(self.player_id())));
+            }
             self.message("Shield Charging ended.");
         }
         Ok(())

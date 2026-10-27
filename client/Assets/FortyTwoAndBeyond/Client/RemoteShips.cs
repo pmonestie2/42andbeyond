@@ -87,7 +87,8 @@ namespace FortyTwoAndBeyond.Client
                 visible.Add(player.Id);
                 if (!ships.TryGetValue(player.Id, out View view))
                 {
-                    Transform model = player.IsPlayer ? art.Ship(parent) :
+                    Transform model = player.IsPlayer ? art.Ship(parent,
+                        SpaceArt.ClassIndex(player.Asset), SpaceArt.HullStage(player.Asset)) :
                         art.Mob(parent, player.Asset, player.Hostile);
                     model.localScale = Vector3.one * .25f * Mathf.Clamp(player.Scale, .05f, 100);
                     view = new View(model, player);

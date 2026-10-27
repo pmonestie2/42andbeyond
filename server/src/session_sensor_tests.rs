@@ -55,6 +55,25 @@ fn scan_visibility_hysteresis_controls_create_remove_and_live_target_consumers()
 }
 
 #[test]
+fn native_start_refresh_reannounces_visible_mobs_once() {
+    let mut ship = ship();
+    move_mob(&ship, 500.);
+    ship.publish_mobs().unwrap();
+    assert!(ship.mob_visible[0]);
+    ship.pending.clear();
+    ship.mob_login_refresh_at = Some(Instant::now() - Duration::from_millis(1));
+    ship.publish_mobs().unwrap();
+    assert!(ship
+        .pending
+        .iter()
+        .any(|frame| { frame.opcode == 4 && frame.body[..4] == MOB_ID.to_le_bytes() }));
+    assert!(ship.mob_login_refresh_at.is_none());
+    ship.pending.clear();
+    ship.publish_mobs().unwrap();
+    assert!(!ship.pending.iter().any(|frame| frame.opcode == 4));
+}
+
+#[test]
 fn cloak_stealth_uses_trained_skill_and_group_recipients_keep_caster_detection_strength() {
     let mut owner = ship();
     owner.skills.cloak_rank = 1; // selected variant is not the trained rank7

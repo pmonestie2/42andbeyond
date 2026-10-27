@@ -109,6 +109,7 @@ pub fn sector_description(sector: &Sector, player: u32) -> Frame {
 }
 
 pub fn map_object(nav: &NavPoint) -> Frame {
+    let navigation_type = nav.advertised_navigation_type();
     let mut data = vec![0; 60];
     put32(&mut data, 0, nav.id);
     // This byte becomes Create.Type in the native client, not a database type.
@@ -132,11 +133,11 @@ pub fn map_object(nav: &NavPoint) -> Frame {
         float(&mut data, 37 + i * 4, *value);
     }
     float(&mut data, 53, nav.signature);
-    data[57] = nav.navigation_type
-        | if nav.navigation_present { 0x90 } else { 0 }
+    data[57] = navigation_type
+        | if nav.advertised_navigation_present() { 0x90 } else { 0 }
         // Proxy flag5 becomes AuxNameSignature.IsNav. Navigation presence
         // (flag4) alone emits0x99 but leaves generic Type37 actors non-navs.
-        | if nav.navigation_type > 0 { 0x20 } else { 0 }
+        | if navigation_type > 0 { 0x20 } else { 0 }
         | if nav.huge { 0x40 } else { 0 };
     data[58..60].copy_from_slice(&(nav.name.len() as u16).to_le_bytes());
     data.extend_from_slice(nav.name.as_bytes());
@@ -155,11 +156,11 @@ pub fn static_navigation_refresh(nav: &NavPoint) -> Vec<Frame> {
         record.extend_from_slice(&nav.signature.to_le_bytes());
         frames.push(aux_frame(nav.id, record));
     }
-    if nav.navigation_present && nav.navigation_type > 0 {
+    if nav.advertised_navigation_present() && nav.advertised_navigation_type() > 0 {
         let mut body = Vec::from(nav.id.to_le_bytes());
         body.extend_from_slice(&nav.signature.to_le_bytes());
         body.push(1); // Current sandbox publishes static navs as visited.
-        body.extend_from_slice(&u32::from(nav.navigation_type).to_le_bytes());
+        body.extend_from_slice(&u32::from(nav.advertised_navigation_type()).to_le_bytes());
         body.push(u8::from(nav.huge));
         frames.push(Frame::new(0x99, body));
     }
@@ -591,6 +592,14 @@ pub fn object_effect(id: u32, effect_id: u32, asset: u16, tick: u32) -> Frame {
 }
 
 /// Returns:
+///     Frame: Public Shield Charging ownership for a visible peer ship.
+pub fn peer_shield_charging(id: u32, active: bool) -> Frame {
+    let mut body = Vec::from(id.to_le_bytes());
+    body.push(u8::from(active));
+    Frame::new(0x2031, body)
+}
+
+/// Returns:
 ///     Frame: Native ship buff slot update used by the legacy status icons.
 pub fn ship_active_buff(id: u32, name: &str, removal_tick: u32) -> Frame {
     ship_active_buff_slot(id, 0, name, removal_tick)
@@ -600,6 +609,31 @@ pub fn ship_active_buff(id: u32, name: &str, removal_tick: u32) -> Frame {
 ///     Frame: Native ship buff update for one of sixteen display slots.
 pub fn ship_active_buff_slot(id: u32, slot: usize, name: &str, removal_tick: u32) -> Frame {
     ship_status_buff_slot(id, slot, name, false, removal_tick)
+}
+
+/// One equipped self-buff in the new client's complete status snapshot.
+pub struct ActiveDeviceStatus<'a> {
+    pub mount_slot: u8,
+    pub template_id: u32,
+    pub removal_tick: u32,
+    pub label: &'a str,
+}
+
+/// Returns:
+///     Frame: Full replacement list of current equipped self-buffs.
+pub fn active_device_snapshot(devices: &[ActiveDeviceStatus<'_>]) -> Frame {
+    assert!(devices.len() <= 21);
+    let mut body = vec![1, devices.len() as u8];
+    for device in devices {
+        let label = device.label.as_bytes();
+        assert!(label.len() <= u8::MAX as usize);
+        body.push(device.mount_slot);
+        body.extend_from_slice(&device.template_id.to_le_bytes());
+        body.extend_from_slice(&device.removal_tick.to_le_bytes());
+        body.push(label.len() as u8);
+        body.extend_from_slice(label);
+    }
+    Frame::new(0x2030, body)
 }
 
 /// Returns:
@@ -1400,6 +1434,21 @@ fn manufacturing_categories(available: &[(i32, i32)]) -> Vec<u8> {
     aux_record(2, &[0, 1], primary)
 }
 
+/// Returns:
+///     Frame: Formula paging metadata while the native AUX list remains bounded to 500 entries.
+pub fn workbench_page(id: u32, view: &crate::production::WorkbenchView) -> Frame {
+    let mut body = Vec::new();
+    for value in [
+        id,
+        view.page,
+        view.total_products,
+        crate::production::FORMULA_PAGE_SIZE as u32,
+    ] {
+        body.extend_from_slice(&value.to_le_bytes());
+    }
+    Frame::new(0x2032, body)
+}
+
 pub fn workbench_formulas(
     id: u32,
     products: &[u32],
@@ -1831,7 +1880,7 @@ pub fn login_world(
             starbase_set(station.id, 0),
             station_layout(station),
             message(&format!(
-                "Welcome aboard {}. Explore the concourse for contacts and station services.",
+                "Welcome aboard {}. Station contacts and production services are available aboard.",
                 station.name
             )),
             Frame::new(5, (profile.game_id & 0xffffff).to_le_bytes().to_vec()),
@@ -1866,7 +1915,12 @@ pub fn login_world(
         server_parameters(sector),
     ]);
     for nav in &sector.navpoints {
-        frames.push(map_object(nav));
+        let announced = if inventory.explored_navs.contains(&nav.id) {
+            nav.discovered_navigation()
+        } else {
+            nav.clone()
+        };
+        frames.push(map_object(&announced));
         if matches!(nav.object_type, 11 | 12) {
             let mut relation = Vec::from(nav.id.to_be_bytes());
             relation.extend_from_slice(&2u32.to_le_bytes());
@@ -1975,6 +2029,7 @@ pub fn peer_spawn(peer: &crate::peers::PeerSnapshot, tick: u32) -> Vec<Frame> {
         ship_subparts(id, peer.profile.class(), peer.stats.appearance_tier),
         ship_colors(id),
         Frame::new(0x61, avatar_data),
+        relationship(id, 2),
         player_movement(id, peer.position, tick, &peer.motion),
         ship_snapshot(
             id,
@@ -2167,6 +2222,34 @@ mod tests {
         assert_eq!(map_object(&hidden).body[57] & 0x30, 0);
     }
 
+    /// Every station is listed on initial login and refreshed on resume despite hidden source flags.
+    #[test]
+    fn all_station_exteriors_are_advertised_including_hidden_public_stations() {
+        let sectors: Vec<Sector> =
+            serde_json::from_str(include_str!("../data/universe.json")).unwrap();
+        let stations: Vec<_> = sectors
+            .iter()
+            .flat_map(|sector| &sector.navpoints)
+            .filter(|nav| nav.object_type == 12)
+            .collect();
+        assert_eq!(stations.len(), 63);
+        assert!(stations
+            .iter()
+            .any(|nav| !nav.navigation_present && nav.navigation_type == 0));
+        for nav in stations {
+            let compact = map_object(nav);
+            assert_eq!(compact.body[57] & 0xb0, 0xb0);
+            assert_eq!(compact.body[57] & 0xf, 2);
+            let refresh = static_navigation_refresh(nav);
+            let marker = refresh.iter().find(|frame| frame.opcode == 0x99).unwrap();
+            assert_eq!(marker.body[..4], nav.id.to_le_bytes());
+            assert_eq!(
+                u32::from_le_bytes(marker.body[9..13].try_into().unwrap()),
+                2
+            );
+        }
+    }
+
     #[test]
     fn database_only_actor_types_do_not_reach_native_create() {
         let sector: super::Sector =
@@ -2233,10 +2316,14 @@ mod tests {
                 shield: 1.,
                 hull: stats.hull_capacity,
                 cloaked: false,
+                shield_charging: false,
             };
             let frames = peer_spawn(&peer, 100);
             assert_eq!(frames[0].opcode, 4);
             assert_eq!(frames[1].opcode, 0xb4);
+            assert!(frames
+                .iter()
+                .any(|frame| frame == &relationship(peer.profile.game_id, 2)));
             assert_eq!(
                 frames[0].body[8..10],
                 (profile.class().hull_asset() + stats.appearance_tier).to_le_bytes()
@@ -2325,6 +2412,42 @@ mod tests {
                 .collect::<String>(),
             "020000401500010200000000400000220000d20000000000000000"
         );
+    }
+
+    /// Client snapshot replaces all previously displayed self-device leases.
+    #[test]
+    fn active_device_snapshot_encodes_mounts_labels_and_empty_replacement() {
+        let frame = active_device_snapshot(&[
+            ActiveDeviceStatus {
+                mount_slot: 9,
+                template_id: 2265,
+                removal_tick: 1234,
+                label: "Turbo Weapons",
+            },
+            ActiveDeviceStatus {
+                mount_slot: 10,
+                template_id: 2389,
+                removal_tick: 5678,
+                label: "Improved Projectile Handling",
+            },
+        ]);
+        assert_eq!(frame.opcode, 0x2030);
+        assert_eq!(frame.body[0..2], [1, 2]);
+        assert_eq!(frame.body[2], 9);
+        assert_eq!(
+            u32::from_le_bytes(frame.body[3..7].try_into().unwrap()),
+            2265
+        );
+        assert_eq!(
+            u32::from_le_bytes(frame.body[7..11].try_into().unwrap()),
+            1234
+        );
+        assert_eq!(frame.body[11] as usize, "Turbo Weapons".len());
+        assert!(frame
+            .body
+            .windows("Improved Projectile Handling".len())
+            .any(|part| { part == b"Improved Projectile Handling" }));
+        assert_eq!(active_device_snapshot(&[]).body, [1, 0]);
     }
 
     /// Every concurrent status touches one distinct member of ShipIndex.Buffs.

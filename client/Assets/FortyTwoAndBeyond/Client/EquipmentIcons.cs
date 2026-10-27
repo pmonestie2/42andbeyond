@@ -1,13 +1,43 @@
 using System;
 using System.Collections.Generic;
+using FortyTwoAndBeyond.Protocol;
 using UnityEngine;
 
 namespace FortyTwoAndBeyond.Client
 {
-    /// <summary>Small original ship-system glyphs generated once for the HUD.</summary>
+    /// <summary>Original item art with generated category icons for empty slots.</summary>
     public sealed class EquipmentIcons : IDisposable
     {
         private readonly Dictionary<uint, Texture2D> textures = new Dictionary<uint, Texture2D>();
+        private readonly Dictionary<uint, Texture2D> originalTextures = new Dictionary<uint, Texture2D>();
+
+        /// <summary>
+        /// Returns:
+        ///     Texture2D: The original icon advertised by the item template, or its category icon.
+        /// </summary>
+        public Texture2D ForItem(ItemView item)
+        {
+            if (item == null) return ForType(0);
+            return ForIcon(item.IconId, item.Type);
+        }
+
+        /// <summary>
+        /// Returns:
+        ///     Texture2D: Extracted native item art, falling back to the supplied category.
+        /// </summary>
+        public Texture2D ForIcon(uint iconId, uint type)
+        {
+            if (iconId != 0)
+            {
+                if (!originalTextures.TryGetValue(iconId, out Texture2D original))
+                {
+                    original = Resources.Load<Texture2D>("LegacyItemIcons/" + iconId);
+                    originalTextures.Add(iconId, original);
+                }
+                if (original != null) return original;
+            }
+            return ForType(type);
+        }
 
         /// <returns>Texture2D: The icon for a server item category.</returns>
         public Texture2D ForType(uint type)

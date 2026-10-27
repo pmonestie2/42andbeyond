@@ -148,8 +148,8 @@ impl PlayerSession {
         self.last_saved = Instant::now();
         self.last_checkpoint = Instant::now();
         self.dirty = false;
-        if let Some(join) = &self.handoff {
-            self.pending.push(Frame::new(0x3a, join.clone()));
+        if let Some(join) = self.handoff.clone() {
+            self.queue_sector_handoff(join);
         }
         crate::server_log!(
             "Sector handoff published: {}; sector={}",

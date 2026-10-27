@@ -2,6 +2,7 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Threading;
 using FortyTwoAndBeyond.Client;
 using FortyTwoAndBeyond.Protocol;
@@ -14,7 +15,8 @@ internal static class Program
         CheckReassembly(); CheckWorld(); CheckMissionJournal(); CheckMissionDialogue();
         CheckExperience(); CheckHullProgression(); CheckReputation(); CheckMiningPhases(); CheckLootTractor(); CheckLootSweep(); CheckWarpPhases(); CheckNavigationSelection(); CheckWarpTargets(); CheckWeaponReady();
         CheckDamageResults(); CheckCombatEngagement(); CheckAttackerSelection(); CheckShotPresentation(); CheckContactSelection(); CheckTargetVerbs(); CheckDeviceEffects();
-        CheckNativeDeviceBuff(); CheckPeerScanBuff(); CheckConcurrentRecipientBuffs(); CheckSupportObjectEffects(); CheckShipDefense();
+        CheckNativeDeviceBuff(); CheckPeerScanBuff(); CheckConcurrentRecipientBuffs();
+        CheckAllNativeBuffSlots(); CheckFullActiveDeviceSnapshot(); CheckSupportObjectEffects(); CheckShipDefense();
         CheckAmmunitionTransfer(); CheckVaultStackPlacement(); CheckEquippedEffects(); CheckFlightThrottle(); CheckFormationAnchor();
         CheckAbilityTargets(); CheckSkillTraining(); CheckCharacterRoster();
         CheckStationLayout(); CheckStationWalk(); CheckDemoRoster(); CheckAddress(); PeerChecks.Decode();
@@ -37,15 +39,18 @@ internal static class Program
     /// <summary>Keep server-selected support abilities distinct from self and combat casts.</summary>
     private static void CheckAbilityTargets()
     {
-        foreach (uint id in new uint[] { 31, 32, 44, 45, 48, 68, 89, 95, 125, 128 })
+        foreach (uint id in new uint[] { 31, 32, 44, 45, 48, 68, 89, 95, 125, 128,
+            122, 130, 74 })
             Assert(AbilityTargets.Directed(id), "Directed support ability lost target acknowledgment.");
         Assert(AbilityTargets.CrewOnly(44) && AbilityTargets.CrewOnly(125) &&
             !AbilityTargets.CrewOnly(89) && !AbilityTargets.CrewOnly(95) &&
+            !AbilityTargets.CrewOnly(122) &&
             AbilityTargets.RequiresPeer(125) && !AbilityTargets.RequiresPeer(44) &&
             !AbilityTargets.Directed(77) && !AbilityTargets.Directed(91) &&
             !AbilityTargets.Directed(124),
             "Ability recipient policy mismatches the native server contract.");
-        foreach (uint id in new uint[] { 33, 52, 53, 106, 108, 109, 124 })
+        foreach (uint id in new uint[] { 33, 52, 53, 106, 108, 109, 124,
+            112, 114, 54, 98, 55, 111, 113, 105, 107, 110 })
             Assert(AbilityTargets.Enemy(id) && !AbilityTargets.Directed(id),
                 "Enemy ability lost its selected-MOB requirement.");
         Assert(!AbilityTargets.Enemy(32) && !AbilityTargets.Enemy(125),
@@ -766,9 +771,9 @@ internal static class Program
     {
         ItemTemplateInfo nativeBeam = ItemTemplateInfo.Decode(FixtureBytes("weapon769.hex"));
         ItemTemplateInfo nativeRounds = ItemTemplateInfo.Decode(FixtureBytes("ammo507.hex"));
-        Assert(nativeBeam.Id == 769 && nativeBeam.Type == 14 &&
+        Assert(nativeBeam.Id == 769 && nativeBeam.Type == 14 && nativeBeam.IconId == 787 &&
             nativeBeam.Name == "Pulse Laser" && nativeBeam.UseEffect == 35 &&
-            nativeRounds.Id == 507 && nativeRounds.Type == 10 &&
+            nativeRounds.Id == 507 && nativeRounds.Type == 10 && nativeRounds.IconId == 653 &&
             nativeRounds.Name == "Dragonclaw Missile" && nativeRounds.UseEffect == 886,
             "Native 0x25 weapon or ammunition effect asset was decoded at the wrong offset.");
         var catalog = new System.Collections.Generic.Dictionary<uint, ItemTemplateInfo>
@@ -996,6 +1001,117 @@ internal static class Program
             "Signature expiry altered another recipient slot or an immutable older snapshot.");
     }
 
+    /// <summary>Keep every native skill status, permanent toggle, and timed removal independent.</summary>
+    private static void CheckAllNativeBuffSlots()
+    {
+        const uint player = 0x40000003;
+        var world = new World();
+        world.Apply(NativeStatusFrame(player, 6, "Cloak", true, 0), player);
+        world.Apply(NativeStatusFrame(player, 13, "Shield_Charging", false, 5000), player);
+        world.Apply(NativeStatusFrame(player, 15, "Shield_Inversion", false, 8000), player);
+        Snapshot active = new Snapshot(world, "ready", true);
+        Assert(active.ActiveBuffs.Count == 3 &&
+            active.ActiveBuffs.Any(buff => buff.Slot == 6 && buff.Permanent &&
+                float.IsPositiveInfinity(buff.RemainingSeconds)) &&
+            active.ActiveBuffs.Any(buff => buff.Slot == 13 && buff.Name == "Shield_Charging") &&
+            active.ActiveBuffs.Any(buff => buff.Slot == 15 && buff.Name == "Shield_Inversion"),
+            "Native slots six through fifteen or indefinite status were discarded.");
+        world.Apply(NativeStatusFrame(player, 13, "", false, 0), player);
+        Snapshot removed = new Snapshot(world, "ready", true);
+        Assert(removed.ActiveBuffs.Count == 2 && active.ActiveBuffs.Count == 3 &&
+            !removed.ActiveBuffs.Any(buff => buff.Slot == 13),
+            "Clearing one native status changed another slot or an older snapshot.");
+        world.Apply(OwnPose(player, 9000), player);
+        Snapshot expired = new Snapshot(world, "ready", true);
+        Assert(expired.ActiveBuffs.Count == 1 && expired.ActiveBuffs[0].Name == "Cloak",
+            "Timed status remained in the display after its authoritative removal tick.");
+    }
+
+    /// <summary>Replace, renew, and expire a full server-owned active-device set.</summary>
+    private static void CheckFullActiveDeviceSnapshot()
+    {
+        const uint player = 0x40000004;
+        var world = new World();
+        world.Apply(OwnPose(player, 1000), player);
+        world.Apply(DeviceSnapshot((9, 2265u, 5000u, "Turbo Weapons"),
+            (10, 1805u, 6000u, "Recharge Shields")), player);
+        Snapshot active = new Snapshot(world, "ready", true);
+        Assert(active.HasActiveDeviceSnapshot && active.ActiveDeviceEffects.Count == 2 &&
+            active.ActiveDeviceEffects[0].MountSlot == 9 &&
+            active.ActiveDeviceEffects[1].TemplateId == 1805 && active.TurboWeaponsActive,
+            "Full active-device snapshot lost concurrent equipped effects.");
+        world.Apply(DeviceSnapshot((9, 2265u, 9000u, "Turbo Weapons"),
+            (10, 1805u, 6000u, "Recharge Shields")), player);
+        Snapshot renewed = new Snapshot(world, "ready", true);
+        Assert(renewed.ActiveDeviceEffects[0].RemainingSeconds >
+            active.ActiveDeviceEffects[0].RemainingSeconds + 3,
+            "Reapplying an item did not renew its displayed server lease.");
+        world.Apply(OwnPose(player, 6500), player);
+        Snapshot expired = new Snapshot(world, "ready", true);
+        Assert(expired.ActiveDeviceEffects.Count == 1 &&
+            expired.ActiveDeviceEffects[0].Name == "Turbo Weapons",
+            "An expired device stayed visible or removed another device.");
+        world.Apply(DeviceSnapshot(), player);
+        Assert(new Snapshot(world, "ready", true).HasActiveDeviceSnapshot &&
+            new Snapshot(world, "ready", true).ActiveDeviceEffects.Count == 0,
+            "An empty authoritative snapshot did not clear all device rows.");
+        Reject(() => ActiveDeviceStatus.DecodeSnapshot(new byte[] { 1, 0, 7 }));
+        Reject(() => ActiveDeviceStatus.DecodeSnapshot(new byte[] { 2, 0 }));
+    }
+
+    /// Returns:
+    ///     Frame: A native ship status diff matching packets::ship_status_buff_slot.
+    private static Frame NativeStatusFrame(uint player, int slot, string name,
+        bool permanent, uint removalTick)
+    {
+        byte[] Aux(int count, params (int Index, byte[] Value)[] fields)
+        {
+            var record = new byte[(4 + count + 7) / 8];
+            record[0] = 2;
+            foreach (var field in fields)
+                record[(field.Index + 4) / 8] |= (byte)(1 << ((field.Index + 4) % 8));
+            return record.Concat(fields.OrderBy(field => field.Index)
+                .SelectMany(field => field.Value)).ToArray();
+        }
+        byte[] nameBytes = Encoding.UTF8.GetBytes(name);
+        byte[] text = BitConverter.GetBytes((ushort)nameBytes.Length).Concat(nameBytes).ToArray();
+        byte[] buff = Aux(5, (0, text), (2, new[] { permanent ? (byte)1 : (byte)0 }),
+            (3, BitConverter.GetBytes(removalTick)));
+        byte[] ship = Aux(58, (42, Aux(16, (slot, buff))));
+        byte[] body = BitConverter.GetBytes(player)
+            .Concat(BitConverter.GetBytes((ushort)(ship.Length + 1)))
+            .Concat(new byte[] { 1 }).Concat(ship).ToArray();
+        return new Frame(0x1b, body);
+    }
+
+    /// Returns:
+    ///     Frame: An own-ship pose carrying an authoritative server clock sample.
+    private static Frame OwnPose(uint player, uint tick)
+    {
+        var body = new byte[38];
+        Array.Copy(BitConverter.GetBytes(player), 0, body, 2, 4);
+        Array.Copy(BitConverter.GetBytes(tick), 0, body, 6, 4);
+        Array.Copy(BitConverter.GetBytes(1f), 0, body, 34, 4);
+        return new Frame(0x3e, body);
+    }
+
+    /// Returns:
+    ///     Frame: A version-one full equipped-device status replacement.
+    private static Frame DeviceSnapshot(params (byte Slot, uint Template, uint Tick, string Name)[] devices)
+    {
+        return new Frame(0x2030, Wire.Body(writer =>
+        {
+            writer.Write((byte)1);
+            writer.Write((byte)devices.Length);
+            foreach (var device in devices)
+            {
+                byte[] label = Encoding.UTF8.GetBytes(device.Name);
+                writer.Write(device.Slot); writer.Write(device.Template); writer.Write(device.Tick);
+                writer.Write((byte)label.Length); writer.Write(label);
+            }
+        }));
+    }
+
     /// <summary>Retain server-created support visuals until their native removal packet.</summary>
     private static void CheckSupportObjectEffects()
     {
@@ -1028,6 +1144,7 @@ internal static class Program
             Assert(DeviceEffects.LabelFor(description + " (Activated)") == description,
                 "A server-supported active device is missing from the catalog allowlist.");
         Assert(DeviceEffects.LabelFor("Turbo (Activated)") == "Impulse Turbo" &&
+            DeviceEffects.LabelFor("Recharge Shields - BOOST (Activated)") == "Recharge Shields" &&
             DeviceEffects.LabelFor("Reroute Shield Energy (Instant)") == "Reroute Shield Energy" &&
             DeviceEffects.LabelFor("Transfer Reactor Energy (Instant)") == "Transfer Reactor Energy",
             "Native instant and impulse catalog descriptions lost their UI labels.");
@@ -1038,11 +1155,21 @@ internal static class Program
         Assert(DeviceEffects.MountedSlot("Transfer Reactor Energy", 11, 14, 6) &&
             DeviceEffects.MountedSlot("Reroute Shield Energy", 7, 1, 6) &&
             DeviceEffects.MountedSlot("Increase Maneuverability", 2, 0, 6) &&
+            DeviceEffects.MountedSlot("Recharge Shields", 2, 0, 6) &&
             DeviceEffects.MountedSlot("Increase Maneuverability", 6, 2, 6) &&
             DeviceEffects.MountedSlot("Impulse Turbo", 7, 1, 6) &&
             !DeviceEffects.MountedSlot("Turbo Weapons", 7, 1, 6) &&
             !DeviceEffects.MountedSlot("Transfer Reactor Energy", 11, 15, 6),
             "Activation mount rules diverged from server-supported core and device slots.");
+        foreach (string shieldEffect in new[] { "Recharge Shields", "Turbo Weapons",
+                     "Deflect Impact", "Deflect Explosive", "Shunt to Reactor" })
+            Assert(DeviceEffects.MountedSlot(shieldEffect, 2, 0, 6) &&
+                !DeviceEffects.MountedSlot(shieldEffect, 2, 1, 6),
+                "Shield-mounted activation was hidden or offered in the wrong slot: " + shieldEffect);
+        foreach (string reactorEffect in new[] { "Recharge Reactor", "Recharge Shields" })
+            Assert(DeviceEffects.MountedSlot(reactorEffect, 7, 1, 6) &&
+                !DeviceEffects.MountedSlot(reactorEffect, 7, 0, 6),
+                "Reactor-mounted recharge was hidden or offered in the wrong slot: " + reactorEffect);
         Assert(DeviceEffects.IsInstant("Reroute Shield Energy") &&
             DeviceEffects.IsInstant("Transfer Reactor Energy") &&
             DeviceEffects.RequiresPeer("Transfer Reactor Energy") &&

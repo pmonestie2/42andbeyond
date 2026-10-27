@@ -21,13 +21,14 @@ pub struct Config {
     pub bind: Ipv4Addr,
     pub sector: Sector,
     pub state_dir: PathBuf,
+    pub developer_commands: bool,
 }
 
 /// Returns:
 ///     File: Exclusive state-directory lock held until the server exits.
 /// Raises:
 ///     io::Error: Another server owns the state directory or the lock cannot be opened.
-fn lock_state_directory(state_dir: &Path) -> io::Result<File> {
+pub(crate) fn lock_state_directory(state_dir: &Path) -> io::Result<File> {
     std::fs::create_dir_all(state_dir)?;
     let lock = OpenOptions::new()
         .read(true)
@@ -398,11 +399,9 @@ pub fn run(config: Config, stop: Arc<AtomicBool>) -> io::Result<()> {
         socket.set_nonblocking(true)?;
         udp.insert(port, socket);
     }
-    let game = Arc::new(Mutex::new(GameState::new(
-        config.sector,
-        config.bind,
-        config.state_dir,
-    )?));
+    let mut game_state = GameState::new(config.sector, config.bind, config.state_dir)?;
+    game_state.set_developer_mode(config.developer_commands);
+    let game = Arc::new(Mutex::new(game_state));
     std::fs::write(
         status_path,
         serde_json::to_vec_pretty(&serde_json::json!({

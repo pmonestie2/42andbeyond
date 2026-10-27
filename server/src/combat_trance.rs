@@ -103,10 +103,14 @@ impl PlayerSession {
         let stopped = self
             .combat_trance
             .stopped(&self.motion, available && !self.warp.active());
+        if self.combat_trance_suppressed && !stopped {
+            self.combat_trance_suppressed = false;
+        }
         let trained_rank = self.skill_catalog.level(13);
         let effective_rank = self.equipment.combat_trance_rank;
         let previous = self.combat_trance.clone();
-        if !available || trained_rank == 0 || effective_rank <= 0. {
+        if !available || self.combat_trance_suppressed || trained_rank == 0 || effective_rank <= 0.
+        {
             self.combat_trance.active = false;
             self.combat_trance.stationary = false;
             self.combat_trance.linger_until_ms = 0;

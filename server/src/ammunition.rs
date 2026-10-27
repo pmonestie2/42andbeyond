@@ -1,5 +1,6 @@
 //! Native ammo is a second inventory indexed by the launcher's mount. Loading
 //! uses cargo -> equipment (1 -> 2), rather than replacing the launcher itself.
+//! Unity magazine transfers use container 8; container 3 remains station vault storage.
 use crate::inventory::{Inventory, ItemInstance, ItemTransfer};
 use crate::items::ItemCatalog;
 use crate::protocol::invalid;
@@ -151,6 +152,51 @@ mod tests {
         inventory.cargo[0] = Some(ItemInstance::stock(512, 20));
         inventory
     }
+    #[test]
+    fn magazine_unload_preserves_launcher_and_conserves_rounds() {
+        let items = ItemCatalog::load().unwrap();
+        let original = armed(&items);
+        let loaded = original
+            .moved(
+                ItemTransfer {
+                    source: 1,
+                    source_slot: 0,
+                    destination: 2,
+                    destination_slot: 3,
+                    quantity: 20,
+                },
+                &items,
+            )
+            .unwrap();
+        let unloaded = loaded
+            .moved(
+                ItemTransfer {
+                    source: 8,
+                    source_slot: 3,
+                    destination: 1,
+                    destination_slot: 0,
+                    quantity: 20,
+                },
+                &items,
+            )
+            .unwrap();
+        assert_eq!(unloaded.equipped, original.equipped);
+        assert_eq!(unloaded.ammunition[3], None);
+        assert_eq!(unloaded.cargo[0], original.cargo[0]);
+        assert!(loaded
+            .moved(
+                ItemTransfer {
+                    source: 8,
+                    source_slot: 3,
+                    destination: 1,
+                    destination_slot: 0,
+                    quantity: 21,
+                },
+                &items
+            )
+            .is_err());
+    }
+
     #[test]
     fn native_load_split_merge_and_weapon_removal_conserve_owned_ammo() {
         let items = ItemCatalog::load().unwrap();

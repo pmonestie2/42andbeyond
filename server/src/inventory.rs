@@ -10,6 +10,7 @@ use std::io;
 pub const CARGO_SLOTS: usize = 40;
 pub const EQUIPMENT_SLOTS: usize = 20;
 pub const VAULT_SLOTS: usize = 96;
+pub const MAX_KNOWN_FORMULAS: usize = 16_384;
 
 fn empty_ammunition() -> Vec<Option<ItemInstance>> {
     vec![None; EQUIPMENT_SLOTS]
@@ -459,7 +460,7 @@ impl Inventory {
         {
             return Err(invalid("Invalid weapon launch journal."));
         }
-        if self.known_formulas.len() > 500
+        if self.known_formulas.len() > MAX_KNOWN_FORMULAS
             || self.production_target.len() != 1
             || self
                 .production_target
@@ -598,6 +599,7 @@ impl Inventory {
             1 => Ok(&self.cargo[..self.cargo_capacity]),
             2 => Ok(&self.equipped),
             3 => Ok(&self.vault),
+            8 => Ok(&self.ammunition),
             12 => Ok(&self.production_target),
             _ => Err(invalid("this inventory container is not implemented yet")),
         }
@@ -608,6 +610,7 @@ impl Inventory {
             1 => self.cargo[slot] = value,
             2 => self.equipped[slot] = value,
             3 => self.vault[slot] = value,
+            8 => self.ammunition[slot] = value,
             12 => self.production_target[slot] = value,
             _ => unreachable!("container checked before mutation"),
         }
@@ -624,7 +627,17 @@ impl Inventory {
         self.validate(templates)?;
         if !matches!(
             (source, destination),
-            (1, 1) | (1, 2) | (1, 3) | (2, 1) | (2, 2) | (3, 1) | (3, 3) | (1, 12) | (12, 1)
+            (1, 1)
+                | (1, 2)
+                | (1, 3)
+                | (2, 1)
+                | (2, 2)
+                | (3, 1)
+                | (3, 3)
+                | (1, 12)
+                | (12, 1)
+                | (8, 1)
+                | (8, 8)
         ) {
             return Err(invalid("unsupported inventory transfer path"));
         }

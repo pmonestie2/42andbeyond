@@ -122,7 +122,7 @@ impl PlayerSession {
             .iter()
             .filter(|nav| {
                 nav.id != 0
-                    && nav.navigation_type > 0
+                    && nav.advertised_navigation_type() > 0
                     && nav.object_type != 3 // archived OT_PLANET has no nav award
                     && !self.inventory.explored_navs.contains(&nav.id)
                     && nav.range_to(self.position) < nav.signature.min(3000.)
@@ -147,6 +147,11 @@ impl PlayerSession {
             awards.push((nav.name.as_str(), credited));
         }
         self.commit_inventory(candidate)?;
+        for nav in &discovered {
+            self.pending.extend(packets::static_navigation_refresh(
+                &nav.discovered_navigation(),
+            ));
+        }
         for (name, amount) in awards {
             self.pending.push(packets::message(&format!(
                 "Discovered {name} (+{amount} exploration XP)."
@@ -158,6 +163,7 @@ impl PlayerSession {
 
 #[cfg(test)]
 mod tests {
+    use crate::packets;
     #[test]
     fn group_explore_split_uses_archived_integer_base_and_size_bonus() {
         assert_eq!(super::group_explore_amount(1000, 1), 1000);
@@ -188,6 +194,7 @@ mod tests {
             nav.object_type = object_type;
             nav.signature = signature;
             nav.navigation_type = navigation_type;
+            nav.navigation_present = false;
             nav.position = [0.; 3];
             nav.radius = 0.;
             nav
@@ -204,6 +211,12 @@ mod tests {
         ship.advance_player(0.).unwrap();
         assert_eq!(ship.inventory.explored_navs.len(), 4);
         assert_eq!(ship.inventory.explore_xp, 2750);
+        for id in &ship.inventory.explored_navs {
+            assert!(ship
+                .pending
+                .iter()
+                .any(|frame| frame.opcode == 0x99 && frame.body[..4] == id.to_le_bytes()));
+        }
         assert!(!ship.inventory.explored_navs.contains(&1005));
         assert!(!ship.inventory.explored_navs.contains(&1006));
         let saved: crate::inventory::Inventory =
@@ -214,5 +227,31 @@ mod tests {
         ship.advance_player(0.).unwrap();
         assert_eq!(ship.pending.len(), prior);
         assert_eq!(ship.inventory.explore_xp, 2750);
+        ship.position = [50_000., 0., 0.];
+        let frames = packets::login_world(
+            &ship.sector,
+            ship.position,
+            0,
+            &ship.account.character,
+            &ship.motion,
+            &packets::ShipInitialization {
+                catalog: &ship.items,
+                item_templates: Vec::new(),
+                inventory: &ship.inventory,
+                stats: &ship.equipment.ship,
+                resources: packets::ShipResources {
+                    energy: ship.energy,
+                    shield: ship.shield,
+                    hull: ship.hull,
+                },
+            },
+        );
+        for id in &ship.inventory.explored_navs {
+            let announced = frames
+                .iter()
+                .find(|frame| frame.opcode == 0x2018 && frame.body[..4] == id.to_le_bytes())
+                .unwrap();
+            assert_eq!(announced.body[57] & 0xb0, 0xb0);
+        }
     }
 }

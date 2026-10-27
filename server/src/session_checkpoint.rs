@@ -37,11 +37,17 @@ pub(super) struct Checkpoint {
     sequence: u32,
     replay: VecDeque<Datagram>,
     inputs: VecDeque<u32>,
+    #[serde(default)]
+    awaiting_start_ack: bool,
+    #[serde(default)]
+    deferred_start_frames: Vec<Frame>,
     warp: Warp,
     warp_effects: Vec<u32>,
     next_effect: u32,
     target: u32,
     shield: f32,
+    #[serde(default)]
+    shield_recharge_after_ms: u64,
     hull: f32,
     #[serde(default = "legacy_hull_capacity")]
     hull_capacity: f32,
@@ -90,6 +96,8 @@ pub(super) struct Checkpoint {
     #[serde(default)]
     combat_trance: combat_trance::CombatTrance,
     #[serde(default)]
+    combat_trance_suppressed: bool,
+    #[serde(default)]
     player_firing: bool,
     #[serde(default)]
     following: bool,
@@ -115,6 +123,8 @@ pub(super) struct Checkpoint {
     peer_ids: HashSet<u32>,
     #[serde(default)]
     station_pose: Option<StationPose>,
+    #[serde(default)]
+    aggregate_station: bool,
     #[serde(default)]
     station_peers: HashMap<u32, StationPose>,
     #[serde(default)]
@@ -156,11 +166,15 @@ impl PlayerSession {
         &self,
         plan: &mob_damage::DamagePlan,
         receipt: &mob_damage::MobDamageReceipt,
+        recharge_after_ms: Option<u64>,
     ) -> io::Result<()> {
         let mut saved = self.capture_checkpoint()?.ok_or_else(|| {
             invalid("Incoming damage requires an authenticated transport checkpoint.")
         })?;
         saved.shield = plan.result.shield;
+        if let Some(deadline) = recharge_after_ms {
+            saved.shield_recharge_after_ms = deadline;
+        }
         saved.hull = plan.result.hull;
         saved.energy = plan.energy;
         saved.motion = plan.motion.clone();
@@ -406,11 +420,14 @@ impl PlayerSession {
         self.sequence = saved.sequence;
         self.replay = saved.replay;
         self.inputs = saved.inputs;
+        self.awaiting_start_ack = saved.awaiting_start_ack;
+        self.deferred_start_frames = saved.deferred_start_frames;
         self.warp = saved.warp;
         self.warp_effects = saved.warp_effects;
         self.next_effect = saved.next_effect;
         self.target = saved.target;
         self.shield = saved.shield;
+        self.shield_recharge_after_ms = saved.shield_recharge_after_ms;
         let capacity = self.equipment.ship.hull_capacity;
         self.hull = if capacity == saved.hull_capacity {
             saved.hull
@@ -464,6 +481,7 @@ impl PlayerSession {
             .filter(|buff| buff.valid(unix_ms(), self.session_epoch));
         self.repulsor_field_revision = saved.repulsor_field_revision;
         self.combat_trance = saved.combat_trance;
+        self.combat_trance_suppressed = saved.combat_trance_suppressed;
         let trance_was_active = self.combat_trance.active;
         self.combat_trance.reconcile_replacement(
             unix_ms(),
@@ -512,6 +530,7 @@ impl PlayerSession {
         // persisted health/position belonging to another authenticated session.
         self.peer_contacts.clear();
         self.station_pose = saved.station_pose;
+        self.aggregate_station = saved.aggregate_station;
         self.station_peers = saved.station_peers;
         self.mining = saved.mining;
         self.tractor_mining = saved.tractor_mining;
@@ -547,8 +566,8 @@ impl PlayerSession {
             self.active_device = None;
             self.additional_active_devices.clear();
         }
-        if let Some(join) = &self.handoff {
-            self.pending.push(Frame::new(0x3a, join.clone()));
+        if let Some(join) = self.handoff.clone() {
+            self.queue_sector_handoff(join);
             crate::server_log!("Resumed sector handoff: {}", self.account.character.name);
             return Ok(true);
         }
@@ -556,7 +575,13 @@ impl PlayerSession {
         // process ended between durable replacement and sending the AUX reply.
         // Reconcile the client from authoritative state on every resume.
         for nav in &self.sector.navpoints {
-            self.pending.extend(packets::static_navigation_refresh(nav));
+            let announced = if self.inventory.explored_navs.contains(&nav.id) {
+                nav.discovered_navigation()
+            } else {
+                nav.clone()
+            };
+            self.pending
+                .extend(packets::static_navigation_refresh(&announced));
         }
         self.pending.extend(
             self.inventory
@@ -581,6 +606,9 @@ impl PlayerSession {
             &self.items,
         ));
         self.publish_reputation();
+        if let Some(station) = &self.sector.station {
+            self.pending.push(packets::station_layout(station));
+        }
         self.restore_npc_service()?;
         self.initialise_workbench_lab(!self.workbench_lab_ready)?;
         self.pending
@@ -701,11 +729,14 @@ impl PlayerSession {
             sequence: self.sequence,
             replay: self.replay.clone(),
             inputs: self.inputs.clone(),
+            awaiting_start_ack: self.awaiting_start_ack,
+            deferred_start_frames: self.deferred_start_frames.clone(),
             warp: self.warp.clone(),
             warp_effects: self.warp_effects.clone(),
             next_effect: self.next_effect,
             target: self.target,
             shield: self.shield,
+            shield_recharge_after_ms: self.shield_recharge_after_ms,
             hull: self.hull,
             hull_capacity: self.equipment.ship.hull_capacity,
             energy: self.energy,
@@ -730,6 +761,7 @@ impl PlayerSession {
             repulsor_field_buff: self.repulsor_field_buff.clone(),
             repulsor_field_revision: self.repulsor_field_revision,
             combat_trance: self.combat_trance.clone(),
+            combat_trance_suppressed: self.combat_trance_suppressed,
             player_firing: self.player_firing,
             following: self.following,
             last_launch: self.last_launch,
@@ -743,6 +775,7 @@ impl PlayerSession {
             resource_ids: self.visible_resources.clone(),
             peer_ids: self.visible_peers.clone(),
             station_pose: self.station_pose.clone(),
+            aggregate_station: self.aggregate_station,
             station_peers: self.station_peers.clone(),
             mining: self.mining.clone(),
             tractor_mining: self.tractor_mining.clone(),

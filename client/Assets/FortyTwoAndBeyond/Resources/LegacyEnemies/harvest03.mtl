@@ -1,0 +1,52 @@
+# Blender 5.2.3 LTS MTL File: 'None'
+# www.blender.org
+
+newmtl OBJECT010.007.Harvest.tga
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+illum 1
+map_Kd harvest.png
+map_d harvest.png
+
+newmtl OBJECT010.007.HarvestLight.tga
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+illum 1
+map_Kd harvestlight.png
+map_d harvestlight.png
+
+newmtl OBJECT020.002.GRAD.TGA
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+illum 2
+map_Kd grad.png
+map_d grad.png
+
+newmtl OBJECT020.002.molecules.tga
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+illum 2
+map_Kd molecules.png
+map_d molecules.png
+
+newmtl OBJECT030.004.LF.TGA
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Kd 0.000000 0.058824 0.843137
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 1

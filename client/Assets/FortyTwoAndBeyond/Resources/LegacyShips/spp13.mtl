@@ -1,0 +1,202 @@
+# Blender 5.2.3 LTS MTL File: 'None'
+# www.blender.org
+
+newmtl BACK0.001.Ship_all.tga
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+illum 1
+map_Kd ship_all.png
+map_d ship_all.png
+
+newmtl BACK0.001.grid_env01.tga
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+illum 1
+map_Kd grid_env01.png
+map_d grid_env01.png
+
+newmtl CYLINDER010.Ship_all.tga
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+illum 1
+map_Kd ship_all.png
+map_d ship_all.png
+
+newmtl CYLINDER010.grid_env01.tga
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+illum 1
+map_Kd grid_env01.png
+map_d grid_env01.png
+
+newmtl CYLINDER020.Ship_all.tga
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+illum 1
+map_Kd ship_all.png
+map_d ship_all.png
+
+newmtl CYLINDER020.grid_env01.tga
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+illum 1
+map_Kd grid_env01.png
+map_d grid_env01.png
+
+newmtl CYLINDER030.Ship_all.tga
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+illum 1
+map_Kd ship_all.png
+map_d ship_all.png
+
+newmtl CYLINDER030.grid_env01.tga
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+illum 1
+map_Kd grid_env01.png
+map_d grid_env01.png
+
+newmtl CYLINDER040.Ship_all.tga
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+illum 1
+map_Kd ship_all.png
+map_d ship_all.png
+
+newmtl CYLINDER040.grid_env01.tga
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+illum 1
+map_Kd grid_env01.png
+map_d grid_env01.png
+
+newmtl CYLINDER050.Ship_all.tga
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+illum 1
+map_Kd ship_all.png
+map_d ship_all.png
+
+newmtl CYLINDER050.grid_env01.tga
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+illum 1
+map_Kd grid_env01.png
+map_d grid_env01.png
+
+newmtl CYLINDER060.Ship_all.tga
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+illum 1
+map_Kd ship_all.png
+map_d ship_all.png
+
+newmtl CYLINDER060.grid_env01.tga
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+illum 1
+map_Kd grid_env01.png
+map_d grid_env01.png
+
+newmtl MIDDLE0.Ship_all.tga
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+illum 1
+map_Kd ship_all.png
+map_d ship_all.png
+
+newmtl MIDDLE0.grid_env01.tga
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+illum 1
+map_Kd grid_env01.png
+map_d grid_env01.png
+
+newmtl MIDDLE010.Ship_all.tga
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+illum 1
+map_Kd ship_all.png
+map_d ship_all.png
+
+newmtl MIDDLE010.grid_env01.tga
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+illum 1
+map_Kd grid_env01.png
+map_d grid_env01.png
+
+newmtl SPP130.Ship_all.tga
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+illum 1
+map_Kd ship_all.png
+map_d ship_all.png
+
+newmtl SPP130.grid_env01.tga
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+illum 1
+map_Kd grid_env01.png
+map_d grid_env01.png

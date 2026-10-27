@@ -147,6 +147,10 @@ impl PlayerSession {
             shield: self.shield,
             hull: self.hull,
             cloaked: self.skills.cloak_rank > 0,
+            shield_charging: self.hull > 0.
+                && self.shield_charging_buff.as_ref().is_some_and(|buff| {
+                    buff.valid(crate::resources::unix_ms(), self.session_epoch)
+                }),
         })
     }
     pub(crate) fn update_peer_view(&mut self, peers: &[PeerSnapshot], group: &[u32]) {
@@ -205,15 +209,25 @@ impl PlayerSession {
             .collect();
         for id in removed {
             self.peer_stats.remove(&id);
+            self.peer_shield_charging.remove(&id);
             self.pending.push(Frame::new(7, id.to_le_bytes().to_vec()));
         }
         let broadcast = self.last_peer_broadcast.elapsed() >= Duration::from_millis(200);
+        let refresh_login_peers = self
+            .peer_login_refresh_at
+            .is_some_and(|when| Instant::now() >= when);
         for peer in peers
             .iter()
             .filter(|peer| self.peer_ids.contains(&peer.profile.game_id))
         {
             let id = peer.profile.game_id;
             if !self.visible_peers.contains(&id) {
+                self.pending
+                    .extend(packets::peer_spawn(peer, self.tick_ms()));
+                self.peer_stats.insert(id, peer.stats);
+            } else if refresh_login_peers {
+                // START acknowledgment can precede the native sector object's
+                // readiness; repeat nearby actor creation once after login.
                 self.pending
                     .extend(packets::peer_spawn(peer, self.tick_ms()));
                 self.peer_stats.insert(id, peer.stats);
@@ -240,8 +254,16 @@ impl PlayerSession {
                     .push(packets::public_ship_parameters(id, &peer.stats));
                 self.peer_stats.insert(id, peer.stats);
             }
+            if self.peer_shield_charging.get(&id) != Some(&peer.shield_charging) {
+                self.pending
+                    .push(packets::peer_shield_charging(id, peer.shield_charging));
+                self.peer_shield_charging.insert(id, peer.shield_charging);
+            }
         }
         self.visible_peers = self.peer_ids.clone();
+        if refresh_login_peers {
+            self.peer_login_refresh_at = None;
+        }
         if broadcast {
             self.last_peer_broadcast = Instant::now();
         }

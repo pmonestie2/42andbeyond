@@ -17,15 +17,15 @@ namespace FortyTwoAndBeyond.Client
         /// <summary>Create an isolated camera that sees only the player's model.</summary>
         public LoadoutShipPreview()
         {
-            texture = new RenderTexture(384, 384, 16, RenderTextureFormat.RGB565)
-            { name = "Loadout ship preview", antiAliasing = 2 };
+            texture = new RenderTexture(768, 768, 24, RenderTextureFormat.ARGB32)
+            { name = "Loadout ship preview", antiAliasing = 4 };
             texture.Create();
             cameraObject = new GameObject("Loadout preview camera", typeof(Camera));
             camera = cameraObject.GetComponent<Camera>();
             camera.enabled = false;
             camera.targetTexture = texture;
             camera.clearFlags = CameraClearFlags.SolidColor;
-            camera.backgroundColor = new Color(.012f, .027f, .045f, 1f);
+            camera.backgroundColor = new Color(14f / 255f, 19f / 255f, 25f / 255f, 1f);
             camera.cullingMask = 1 << 30;
             camera.orthographic = true;
             camera.nearClipPlane = .01f;
@@ -69,7 +69,7 @@ namespace FortyTwoAndBeyond.Client
             camera.transform.LookAt(bounds.center);
             keyLight.transform.rotation = camera.transform.rotation * Quaternion.Euler(14, -32, 0);
             rimLight.transform.rotation = camera.transform.rotation * Quaternion.Euler(-24, 145, 0);
-            camera.orthographicSize = radius * .78f;
+            camera.orthographicSize = radius * .80f;
             try
             {
                 camera.Render();
@@ -86,10 +86,9 @@ namespace FortyTwoAndBeyond.Client
         /// <summary>Release the fitting camera and its render target.</summary>
         public void Dispose()
         {
-            camera.targetTexture = null;
-            Object.Destroy(cameraObject);
-            texture.Release();
-            Object.Destroy(texture);
+            if (camera != null) camera.targetTexture = null;
+            if (cameraObject != null) Object.Destroy(cameraObject);
+            if (texture != null) { texture.Release(); Object.Destroy(texture); }
         }
     }
 }

@@ -13,6 +13,7 @@ namespace FortyTwoAndBeyond.Protocol
         public readonly int Slot;
         public readonly string Name;
         public readonly string ClassName;
+        public readonly int ClassIndex;
         public readonly string SectorName;
         public readonly uint SectorId;
         public readonly uint CombatLevel, TradeLevel, ExploreLevel;
@@ -30,7 +31,8 @@ namespace FortyTwoAndBeyond.Protocol
         {
             if (race > 2 || profession > 2)
                 throw new InvalidDataException("Invalid native character class.");
-            Slot = slot; Name = name; ClassName = Classes[race * 3 + profession];
+            Slot = slot; Name = name; ClassIndex = (int)(race * 3 + profession);
+            ClassName = Classes[ClassIndex];
             CombatLevel = combatLevel; TradeLevel = tradeLevel; ExploreLevel = exploreLevel;
             SectorId = sectorId; SectorName = sectorName;
         }

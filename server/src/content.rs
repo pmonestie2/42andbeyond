@@ -51,6 +51,31 @@ pub struct NavPoint {
 }
 
 impl NavPoint {
+    /// Returns:
+    ///     NavPoint: A discovered marker that remains advertised independently of ship distance.
+    pub fn discovered_navigation(&self) -> Self {
+        let mut known = self.clone();
+        known.navigation_present = true;
+        known.navigation_type = self.advertised_navigation_type().max(1);
+        known
+    }
+
+    /// Returns:
+    ///     u8: A station navigation marker even when the imported exterior was originally hidden.
+    pub fn advertised_navigation_type(&self) -> u8 {
+        if self.object_type == 12 {
+            2
+        } else {
+            self.navigation_type
+        }
+    }
+
+    /// Returns:
+    ///     bool: Whether navigation clients should list this object, including every station exterior.
+    pub fn advertised_navigation_present(&self) -> bool {
+        self.object_type == 12 || self.navigation_present
+    }
+
     /// Native RangeFrom's unscaled receiver radius. Facing and explicitly
     /// absolute travel/animation distances still use the object center.
     pub fn range_to(&self, position: [f32; 3]) -> f32 {
@@ -129,6 +154,7 @@ pub struct StationTerminal {
     pub location: u32,
     pub kind: u32,
 }
+
 impl Sector {
     pub fn validate(&self) -> io::Result<()> {
         if self.id == 0

@@ -16,8 +16,8 @@ namespace FortyTwoAndBeyond.Editor
         private static int stage;
         private static uint mobId;
         private static long lastDamage;
-        private static double deadline, captureAt;
-        private static bool connected, hullReady;
+        private static double deadline, captureAt, ownShieldBendAt;
+        private static bool connected, hullReady, ownShieldCaptured;
 
         /// <summary>Register only for an explicitly disposable combat visual run.</summary>
         static CombatMomentVisualSmoke()
@@ -54,6 +54,18 @@ namespace FortyTwoAndBeyond.Editor
             Snapshot snapshot = client.CurrentSnapshot;
             if (snapshot?.Ready != true || !snapshot.HasPosition) return;
             Directory.CreateDirectory("Builds/verification");
+            if (!ownShieldCaptured && snapshot.Shield > 0 && snapshot.Damages.Any(item =>
+                item.Target == snapshot.PlayerId && item.Amount > 0))
+            {
+                ScreenCapture.CaptureScreenshot("Builds/verification/combat-own-shield.png");
+                ownShieldCaptured = true;
+                ownShieldBendAt = EditorApplication.timeSinceStartup + .45;
+            }
+            if (ownShieldBendAt > 0 && EditorApplication.timeSinceStartup >= ownShieldBendAt)
+            {
+                ScreenCapture.CaptureScreenshot("Builds/verification/combat-own-shield-bend.png");
+                ownShieldBendAt = 0;
+            }
             if (stage == 0)
             {
                 ShipActor mob = snapshot.Mobs.FirstOrDefault(actor => actor.Hostile && actor.HasPosition);
@@ -97,18 +109,44 @@ namespace FortyTwoAndBeyond.Editor
                 ScreenCapture.CaptureScreenshot("Builds/verification/combat-hull.png");
                 stage = 5; return;
             }
+            if (stage == 4 && target == null && snapshot.Objects.Any(item => item.Kind == 25))
+            {
+                // A lethal hit can cross the entire hull between two snapshots.
+                ScreenCapture.CaptureScreenshot("Builds/verification/combat-hull.png");
+                stage = 5; return;
+            }
             if (stage == 5 && target == null && snapshot.Objects.Any(item => item.Kind == 25))
             {
                 client.StopWeapons();
-                ScreenCapture.CaptureScreenshot("Builds/verification/combat-breakup.png");
-                captureAt = EditorApplication.timeSinceStartup + 1;
+                captureAt = EditorApplication.timeSinceStartup + .2;
                 stage = 6; return;
             }
-            if (stage != 6 || EditorApplication.timeSinceStartup < captureAt) return;
-            foreach (string name in new[] { "combat-missile", "combat-shield", "combat-hull", "combat-breakup" })
+            if (stage == 6)
+            {
+                if (EditorApplication.timeSinceStartup < captureAt) return;
+                if (GameObject.Find("Ship explosion fireball") == null)
+                { Fail("Confirmed ship death did not create a fireball."); return; }
+                ScreenCapture.CaptureScreenshot("Builds/verification/combat-breakup.png");
+                captureAt = EditorApplication.timeSinceStartup + 1.1;
+                stage = 7; return;
+            }
+            if (stage == 7)
+            {
+                if (EditorApplication.timeSinceStartup < captureAt) return;
+                if (GameObject.Find("Ship explosion smoke") == null)
+                { Fail("Confirmed ship death did not leave smoke."); return; }
+                ScreenCapture.CaptureScreenshot("Builds/verification/combat-aftermath.png");
+                captureAt = EditorApplication.timeSinceStartup + 1;
+                stage = 8; return;
+            }
+            if (stage != 8 || EditorApplication.timeSinceStartup < captureAt) return;
+            foreach (string name in new[] { "combat-missile", "combat-shield", "combat-own-shield",
+                "combat-own-shield-bend",
+                "combat-hull",
+                "combat-breakup", "combat-aftermath" })
                 if (!File.Exists("Builds/verification/" + name + ".png"))
                 { Fail("Missing " + name + " screenshot."); return; }
-            Debug.Log("PASS: native missile, shield, hull, and wreck-confirmed breakup captured.");
+            Debug.Log("PASS: native missile, shield, hull, and confirmed ship explosion captured.");
             EditorApplication.update -= Tick;
             EditorApplication.Exit(0);
         }

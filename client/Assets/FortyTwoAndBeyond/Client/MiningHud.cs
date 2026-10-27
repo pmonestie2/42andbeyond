@@ -8,6 +8,10 @@ namespace FortyTwoAndBeyond.Client
     /// <summary>Show mineable resources and native prospecting controls over the flight view.</summary>
     public sealed class MiningHud
     {
+        private static readonly Vector2[] ResourceLabelOffsets = {
+            new Vector2(9, -12), new Vector2(9, 22),
+            new Vector2(-181, -12), new Vector2(-181, 22)
+        };
         private readonly SpaceClient client;
         private readonly FlightHud flightHud;
         private uint selectedId;
@@ -165,13 +169,8 @@ namespace FortyTwoAndBeyond.Client
         /// <summary>Mark a bounded set of nearby mineable objects without covering ship contacts.</summary>
         private void DrawLabels(Snapshot snapshot)
         {
-            Vector2[] contactPoints = snapshot.Players.Concat(snapshot.Mobs)
-                .Where(actor => actor.HasPosition)
-                .Select(actor => client.Project(actor.Position))
-                .Where(point => point.z > 0)
-                .Select(point => new Vector2(point.x / flightHud.Scale, point.y / flightHud.Scale))
-                .ToArray();
-            foreach (MapObject resource in nearby)
+            int shown = 0;
+            foreach (MapObject resource in nearby.OrderByDescending(item => item.Id == selectedId))
             {
                 Vector3 point = client.Project(resource.Position);
                 point.x /= flightHud.Scale; point.y /= flightHud.Scale;
@@ -181,13 +180,23 @@ namespace FortyTwoAndBeyond.Client
                     new Color(.38f, .87f, .82f);
                 Fill(new Rect(point.x - 5, point.y - 5, 10, 2), signal);
                 Fill(new Rect(point.x - 5, point.y - 5, 2, 10), signal);
-                if (contactPoints.Any(contact => Mathf.Abs(contact.x - point.x) < 190 &&
-                    Mathf.Abs(contact.y - point.y) < 60)) continue;
                 if (client.Chart && selectedId != resource.Id) continue;
-                Fill(new Rect(point.x + 9, point.y - 12, 172, 42), new Color(.005f, .018f, .032f, .86f));
-                Fill(new Rect(point.x + 9, point.y - 12, 3, 42), signal);
-                GUI.Label(new Rect(point.x + 18, point.y - 10, 160, 20), resource.Name, flightHud.BodyStyle);
-                GUI.Label(new Rect(point.x + 18, point.y + 9, 160, 18),
+                if (shown >= 4 && selectedId != resource.Id) continue;
+                Rect label = Rect.zero;
+                foreach (Vector2 offset in ResourceLabelOffsets)
+                {
+                    Rect candidate = new Rect(point.x + offset.x, point.y + offset.y, 172, 42);
+                    if (candidate.x < 285 || candidate.xMax > CanvasWidth - 315 ||
+                        candidate.y < 100 || candidate.yMax > CanvasHeight - 118 ||
+                        !flightHud.ReserveFlightLabel(candidate)) continue;
+                    label = candidate; break;
+                }
+                if (label.width == 0) continue;
+                shown++;
+                Fill(label, new Color(.005f, .018f, .032f, .9f));
+                Fill(new Rect(label.x, label.y, 3, label.height), signal);
+                GUI.Label(new Rect(label.x + 9, label.y + 2, 160, 20), resource.Name, flightHud.BodyStyle);
+                GUI.Label(new Rect(label.x + 9, label.y + 21, 160, 18),
                     "ORE   ·   " + (resource.Position.Distance(snapshot.Position) / 1000).ToString("0.0") + " km",
                     flightHud.SmallStyle);
             }

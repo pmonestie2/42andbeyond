@@ -4,7 +4,7 @@ Shader "42 and Beyond/BlackHoleCore"
         Tags { "RenderType"="Opaque" }
         Pass {
             ZWrite On
-            Cull Back
+            Cull Off
             CGPROGRAM
             #pragma vertex vert
             #pragma fragment frag

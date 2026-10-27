@@ -1,0 +1,332 @@
+# Blender 5.2.3 LTS MTL File: 'None'
+# www.blender.org
+
+newmtl ARM_A_TOP_L0.Ship_all.tga
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+illum 1
+map_Kd ship_all.png
+map_d ship_all.png
+
+newmtl ARM_A_TOP_R0.Ship_all.tga
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+illum 1
+map_Kd ship_all.png
+map_d ship_all.png
+
+newmtl BL010.Ship_all.tga
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+illum 1
+map_Kd ship_all.png
+map_d ship_all.png
+
+newmtl BL020.Ship_all.tga
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+illum 1
+map_Kd ship_all.png
+map_d ship_all.png
+
+newmtl BODY000.Ship_all.tga.002
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+illum 1
+map_Kd ship_all.png
+map_d ship_all.png
+
+newmtl BODY010.Ship_all.tga.002
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+illum 1
+map_Kd ship_all.png
+map_d ship_all.png
+
+newmtl BOT_MID_PLATE0.Ship_all.tga
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+illum 1
+map_Kd ship_all.png
+map_d ship_all.png
+
+newmtl COCKPIT0.002.Ship_all.tga
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+illum 1
+map_Kd ship_all.png
+map_d ship_all.png
+
+newmtl CONNECT_L0.Ship_all.tga
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+illum 1
+map_Kd ship_all.png
+map_d ship_all.png
+
+newmtl CONNECT_R0.Ship_all.tga
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+illum 1
+map_Kd ship_all.png
+map_d ship_all.png
+
+newmtl DECAL010.008.noseart
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+illum 1
+map_Kd noseart.png
+map_d noseart.png
+
+newmtl DECAL020.005.noseart
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+illum 1
+map_Kd noseart.png
+map_d noseart.png
+
+newmtl DECAL030.005.noseart
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+illum 1
+map_Kd noseart.png
+map_d noseart.png
+
+newmtl NAMEDECAL0.005.name_decal
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+illum 1
+map_Kd namedecal.png
+map_d namedecal.png
+
+newmtl NAMEDECAL0.006.name_decal
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+illum 1
+map_Kd namedecal.png
+map_d namedecal.png
+
+newmtl NAMEDECAL0.009.name_decal
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+illum 1
+map_Kd namedecal.png
+map_d namedecal.png
+
+newmtl NAMEDECAL010.003.name_decal
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+illum 1
+map_Kd namedecal.png
+map_d namedecal.png
+
+newmtl OBJECT010.002.Ship_all.tga
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+illum 1
+map_Kd ship_all.png
+map_d ship_all.png
+
+newmtl OBJECT020.001.Ship_all.tga
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+illum 1
+map_Kd ship_all.png
+map_d ship_all.png
+
+newmtl SPH330.Ship_all.tga
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+illum 1
+map_Kd ship_all.png
+map_d ship_all.png
+
+newmtl SPP320.Ship_all.tga
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+illum 1
+map_Kd ship_all.png
+map_d ship_all.png
+
+newmtl SPW330.Ship_all.tga
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+illum 1
+map_Kd ship_all.png
+map_d ship_all.png
+
+newmtl TOP_ARM010.001.Ship_all.tga
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+illum 1
+map_Kd ship_all.png
+map_d ship_all.png
+
+newmtl TOP_MID010.Ship_all.tga
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+illum 1
+map_Kd ship_all.png
+map_d ship_all.png
+
+newmtl TOP_MID020.Ship_all.tga
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+illum 1
+map_Kd ship_all.png
+map_d ship_all.png
+
+newmtl WING_A_BOT_L0.Ship_all.tga
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+illum 1
+map_Kd ship_all.png
+map_d ship_all.png
+
+newmtl WING_A_BOT_R0.Ship_all.tga
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+illum 1
+map_Kd ship_all.png
+map_d ship_all.png
+
+newmtl WING_A_TOP_L0.Ship_all.tga
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+illum 1
+map_Kd ship_all.png
+map_d ship_all.png
+
+newmtl WING_A_TOP_R0.Ship_all.tga
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+illum 1
+map_Kd ship_all.png
+map_d ship_all.png
+
+newmtl WING_BOT_LEFT0.Ship_all.tga
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+illum 1
+map_Kd ship_all.png
+map_d ship_all.png
+
+newmtl WING_BOT_RIGHT0.Ship_all.tga
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+illum 1
+map_Kd ship_all.png
+map_d ship_all.png
+
+newmtl WING_TOP_LEFT0.Ship_all.tga
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+illum 1
+map_Kd ship_all.png
+map_d ship_all.png
+
+newmtl WING_TOP_RIGHT0.Ship_all.tga
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+illum 1
+map_Kd ship_all.png
+map_d ship_all.png

@@ -25,6 +25,13 @@ to connect to the Windows VM server. The launcher installs the current build in
 project's Documents folder. Quit the game before installing a newly built version.
 The window can be resized; the HUD scales at small sizes.
 
+Use **Controls → OPEN NEW CLIENT** to open another window of the same installed
+game. Each window starts at the login screen and writes a separate player log
+under `~/Library/Logs/42 and Beyond/`. Choose a different account in each
+window; the server permits one active session per character. The button can be
+used again from any window to add more clients. Close all windows before
+installing a new build.
+
 Double-click **Play Local.command** in this directory to start the game and its own server together. It automatically
 connects the demo character, keeps its state in ignored `.local-state/`, and stops
 the owned server when the game closes. It never stops an unrelated server.
@@ -75,6 +82,28 @@ address and enter that address in the connection panel. The existing TCP/UDP
 ports must be reachable from the Mac. No server changes are required. This client
 uses the local plaintext account bridge, so it accepts only explicit private or
 loopback IPv4 addresses; it does not connect to the public game service.
+
+## Flight HUD and fitting
+
+The flight deck and fitting window use Unity UI Toolkit. Their shared styling is in
+`Assets/FortyTwoAndBeyond/Resources/UI/FlightDeck.uss`; the runtime controls live in
+`Client/FlightDeckHud.cs`. The scene and protocol remain server authoritative.
+
+Open **Fitting / I** for the ship preview, cargo list, weapon and device sockets,
+and ship statistics. Drag cargo onto a compatible socket to equip it; ammunition
+loads the selected weapon's magazine. Drag fitted equipment into the cargo area
+to remove it. Select a weapon to inspect its magazine or use **Unload magazine**.
+The flight hardpoint strip displays server ammunition counts and reload time.
+
+Drag panel headers to move the overview, target, propulsion, integrity, hardpoint,
+and fitting widgets. The small grip at the action bar's right edge moves the bar;
+its keyboard bindings, action assignment, and right-click rank picker remain active.
+**Reset layout** in the fitting window restores default positions. **New client**
+in the flight toolbar opens another independent client window.
+
+The disposable `Tests/run_loadout_visual.py` check exercises pointer-driven ammo
+loading, window dragging, and server-confirmed ammunition consumption. It does not
+connect to the live server.
 
 ## Controls
 
@@ -136,19 +165,25 @@ network worker before its session is released.
 Gate and Dock buttons use the server's native target verbs after selection, so
 their availability follows the server's surface range and ship state.
 
-Select a station, warp nearby, then choose **Dock at station**. The server grants
-clearance and moves the character to its interior. Characters already docked can
-log in directly. The docking bay shows the parked ship, loadout and **Launch**.
-The server announces the station layout. The client lists public NPC names and
-follows the server-offered dialogue choices. A vendor branch opens its native
-stock and buy/sell panels with server quotes and credit balance. Room movement
-uses the station's advertised room buttons. The avatar enters each selected room
-through native room and pose packets, and the contact list shows NPCs placed in
-that room. W/S walk and A/D turn the local avatar inside the room; the client
-publishes bounded native poses for other pilots in the same room. The local
-station camera follows the avatar, while room selection and NPC access remain
-server-owned. The **Station Vault** panel stores full cargo stacks and retrieves
+Select a station, warp nearby, then choose **Dock**. Characters already docked
+can log in directly. Unity presents one shared concourse, with vendors and
+contacts from every native station room listed in the scrollable **Station Directory**.
+The server preserves its original rooms and placements for the legacy client;
+Unity's directory reaches those contacts without requiring room navigation. Manufacturing, Analyze,
+Dismantle, and Refine use the adjacent workbench; a vendor opens authoritative
+stock and buy/sell quotes in that same workspace. Recipe books larger than 500
+entries have **Prev / Next** controls, and the level buttons filter the server's
+eligible recipes. The directory stays available while inventory is open.
+The directory, workbench, and vendor dialogue can be collapsed. **Launch**
+returns to space. The **Station Vault** panel stores full cargo stacks and retrieves
 them while docked; the server publishes both container revisions after a move.
+
+**Tab** opens the tactical sector map. Drag empty space to pan, scroll to zoom
+around the pointer, use **My ship** to recenter, or **Fit sector** to include all
+known navpoints. Click markers or their labels to select a target; the detail
+strip shows its name and range and offers **Center target / Warp here**.
+Known navigation points remain on the map and in Destinations regardless of
+distance. Stations are grouped first in the destination list.
 
 ## Players, groups and mobs
 
@@ -172,8 +207,13 @@ that target for a member who can see it, the member's target panel follows the s
 selection, even when an older contact was selected locally. A recent local click
 stays visible while its target request is pending.
 
-Press Enter for chat. The checkbox chooses group chat or sector chat. A short
-message history remains visible. Slash commands still work, including `/invite
+Press Enter or click **Talk / Enter** in **Comms** to open the visible chat
+composer. Its **Sector / Group** button selects the channel; Enter or **Send**
+sends the message, and Escape cancels. Comms has a movable header and expandable,
+scrollable message history, available in flight and while docked. Up/Down recalls
+sent messages and commands in the current client session and restores an unsent
+draft when stepping past the newest message. Slash commands
+still work, including `/invite
 NAME`, `/accept`, `/decline`, `/leave`, `/disband`, `/kick NAME`, `/d_spawn
 Achilles Drone 1` and `/d_jump`. Typing in chat suspends flight-key input;
 Send and Escape return control to flight. A held thrust key resumes after
@@ -262,6 +302,13 @@ the quoted action when the server marks it ready. Level buttons filter formulas;
 Refine Stack uses the server's available run count. Closing the workbench cancels
 an unfinished job without spending its materials or credits. The server sends
 the completed item, cargo and credit updates.
+Use **Component Market** in the workbench, or **Find / Trade** beside a required
+component, to open its searchable exchange overlay. It lists real station/vendor
+suppliers and buyers with negotiated unit prices and native item icons. Buy or
+sell at the station where you are docked; remote cards show the destination.
+The private sandbox's **DEV travel** action uses the server's durable station
+transition and is hidden when the server disables developer tools. Drag the
+exchange header to move it, or press Escape to close it.
 The Missions button shows accepted missions, the current stage objective, and
 earlier stage descriptions from the native journal. Kill counts and return
 instructions update when the server publishes mission progress. NPC conversations

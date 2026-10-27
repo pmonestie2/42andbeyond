@@ -1,0 +1,75 @@
+.deck { color: rgb(224,230,233); font-size: 15px; }
+.deck Label { -unity-text-align: middle-left; }
+.deck Button { background-color: rgba(32,40,46,0.94); border-width: 1px; border-color: rgba(150,170,183,0.18); border-radius: 3px; color: rgb(220,228,232); padding: 7px 12px; margin: 0; min-height: 30px; -unity-text-align: middle-center; }
+.deck Button:hover { background-color: rgb(52,61,67); border-color: rgb(173,157,113); color: white; }
+.deck Button:active { background-color: rgb(92,77,47); }
+.deck Button:disabled { opacity: 0.35; }
+.deck .primary { background-color: rgb(171,137,71); border-color: rgb(210,178,108); color: rgb(15,19,23); -unity-font-style: bold; }
+.deck .panel { background-color: rgba(13,18,24,0.93); border-width: 1px; border-color: rgba(135,157,173,0.24); border-radius: 5px; padding: 15px; }
+.deck .eyebrow { color: rgb(160,173,182); font-size: 11px; letter-spacing: 2px; margin-bottom: 8px; }
+.deck .title { font-size: 25px; color: rgb(236,239,238); -unity-font-style: bold; }
+.deck .subtle { color: rgb(139,156,169); font-size: 14px; white-space: normal; }
+.deck .row { flex-direction: row; align-items: center; }
+.deck .spread { justify-content: space-between; }
+.deck .grow { flex-grow: 1; }
+.deck .rule { height: 1px; background-color: rgba(139,157,169,0.17); margin-top: 12px; margin-bottom: 12px; }
+.deck .section { font-size: 11px; letter-spacing: 1px; color: rgb(180,192,201); margin-top: 5px; margin-bottom: 10px; }
+.deck .readout { font-size: 22px; color: rgb(232,236,235); }
+.deck .metric { margin-bottom: 12px; }
+.deck .track { height: 4px; background-color: rgb(39,48,57); border-radius: 2px; margin-top: 6px; overflow: hidden; }
+.deck .fill { height: 100%; background-color: rgb(120,188,213); border-radius: 2px; }
+.deck .cargo-row { flex-direction: row; align-items: center; padding: 10px 6px; border-bottom-width: 1px; border-bottom-color: rgba(130,151,168,0.12); min-height: 62px; }
+.deck .cargo-row:hover { background-color: rgba(130,155,170,0.10); }
+.deck .cargo-row.chosen { background-color: rgba(191,157,88,0.15); border-left-width: 2px; border-left-color: rgb(206,176,108); }
+.deck .item-name { white-space: normal; font-size: 14px; color: rgb(218,225,230); margin-bottom: 4px; }
+.deck .socket { position: absolute; width: 62px; height: 66px; border-radius: 8px; background-color: rgb(24,32,41); border-width: 1px; border-color: rgb(68,81,91); align-items: center; justify-content: center; padding: 2px; }
+.deck .socket:hover { background-color: rgb(45,52,58); border-color: rgb(210,179,110); }
+.deck .socket.chosen { border-color: rgb(222,185,111); background-color: rgb(62,52,35); }
+.deck .socket.drop-valid { border-color: rgb(124,217,185); background-color: rgb(30,66,58); }
+.deck .socket.empty { background-color: rgba(20,27,34,0.82); border-color: rgb(47,58,68); }
+.deck .socket-id { color: rgb(147,164,177); font-size: 10px; letter-spacing: 1px; }
+.deck .socket-state { font-size: 11px; color: rgb(220,190,125); }
+.deck .contact { flex-direction: row; align-items: center; min-height: 45px; padding: 7px 2px; border-bottom-width: 1px; border-bottom-color: rgba(130,151,168,0.12); }
+.deck .contact:hover { background-color: rgba(140,164,179,0.1); }
+.deck .contact.chosen { background-color: rgba(193,160,93,0.12); }
+.deck .contact-name { font-size: 14px; white-space: normal; flex-grow: 1; }
+.deck .range { width: 60px; -unity-text-align: middle-right; color: rgb(159,174,187); font-size: 11px; }
+.deck .symbol { width: 24px; font-size: 18px; color: rgb(204,171,106); }
+.deck .weapon { width: 64px; height: 69px; margin-right: 5px; border-width: 1px; border-color: rgb(58,69,80); border-radius: 4px; align-items: center; padding: 4px 2px; background-color: rgba(24,32,41,0.92); }
+.deck .weapon:hover { border-color: rgb(211,177,108); }
+.deck .weapon.armed { border-bottom-width: 3px; border-bottom-color: rgb(220,154,87); }
+.deck .window { position: absolute; background-color: rgb(14,19,25); border-width: 1px; border-color: rgb(83,95,104); border-radius: 7px; }
+.deck .window-header { height: 70px; padding: 15px 24px; flex-direction: row; align-items: center; border-bottom-width: 1px; border-bottom-color: rgb(46,55,64); }
+.deck .window-content { flex-grow: 1; flex-direction: row; padding: 16px 20px; }
+.deck .window-footer { height: 42px; flex-direction: row; align-items: center; justify-content: space-between; padding: 0 24px; border-top-width: 1px; border-top-color: rgb(46,55,64); }
+.deck .cargo-column { width: 218px; padding-right: 17px; border-right-width: 1px; border-right-color: rgb(43,52,61); }
+.deck .fitting-column { flex-grow: 1; align-items: center; justify-content: center; }
+.deck .stats-column { width: 270px; padding-left: 19px; border-left-width: 1px; border-left-color: rgb(43,52,61); }
+.deck .inspector { white-space: normal; font-size: 14px; margin-top: 8px; color: rgb(193,205,214); }
+.deck .buff { flex-direction: row; align-items: center; min-height: 31px; border-bottom-width: 1px; border-bottom-color: rgba(130,151,168,0.12); }
+.deck .drag-label { font-size: 11px; letter-spacing: 1px; color: rgb(120,138,153); }
+.deck .unity-scroller--vertical { width: 7px; }
+.deck .unity-scroller__low-button, .deck .unity-scroller__high-button { display: none; }
+.deck .unity-base-slider__dragger { background-color: rgb(85,100,111); border-radius: 3px; }
+.deck .unity-scroll-view__content-container { padding-right: 5px; }
+
+.deck .quick-slot { position: relative; width: 110px; height: 52px; margin-right: 8px; border-radius: 3px; background-color: rgb(24,32,41); border-width: 1px; border-color: rgb(49,62,73); }
+.deck .quick-slot:hover { border-color: rgb(208,174,107); background-color: rgb(42,47,50); }
+.deck .quick-key { position: absolute; left: 8px; top: 3px; font-size: 11px; color: rgb(208,174,107); }
+.deck .quick-name { position: absolute; left: 40px; top: 18px; right: 5px; bottom: 2px; white-space: normal; font-size: 12px; }
+.deck .quick-icon { position: absolute; left: 6px; top: 19px; width: 28px; height: 28px; }
+
+.deck Label { margin: 0; padding: 0; min-height: 0; flex-shrink: 0; }
+.deck .eyebrow { margin-bottom: 8px; }
+.deck .item-name { margin-bottom: 4px; }
+.deck .contact-name { min-width: 0; flex-shrink: 1; }
+.deck .range { flex-shrink: 0; }
+.deck .symbol { flex-shrink: 0; }
+.deck Image { flex-shrink: 0; }
+.deck .unity-scroller { background-color: rgba(0,0,0,0); border-width: 0; padding: 0; margin: 0; }
+.deck .unity-scroller--vertical { width: 7px; min-width: 7px; }
+.deck .unity-base-slider { background-color: rgba(0,0,0,0); margin: 0; padding: 0; border-width: 0; }
+.deck .unity-base-slider__tracker { background-color: rgb(28,37,45); border-width: 0; }
+.deck .unity-base-slider__dragger-border { border-width: 0; background-color: rgba(0,0,0,0); }
+.deck .unity-base-slider__dragger { background-color: rgb(77,92,105); border-width: 0; min-width: 5px; }
+.deck .quick-drag { position: absolute; top: 0; right: 1px; width: 6px; bottom: 0; background-color: rgba(140,159,171,0.12); }

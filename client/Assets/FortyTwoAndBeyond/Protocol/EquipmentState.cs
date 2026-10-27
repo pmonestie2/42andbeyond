@@ -45,16 +45,16 @@ namespace FortyTwoAndBeyond.Protocol
     /// <summary>Server-owned item template information used by the inventory display.</summary>
     public sealed class ItemTemplateInfo
     {
-        public readonly uint Id, Type, UseEffect, MaxStack;
+        public readonly uint Id, Type, IconId, UseEffect, MaxStack;
         public readonly string Name, ActivationLabel;
         public readonly bool TargetsPeer;
         public readonly IReadOnlyList<ItemEffectInfo> EquippedEffects;
         /// <summary>Store a bounded item name and its server item type.</summary>
         public ItemTemplateInfo(uint id, uint type, string name, string activationLabel,
             bool targetsPeer = false, uint useEffect = 0, uint maxStack = 1,
-            ItemEffectInfo[] equippedEffects = null)
+            ItemEffectInfo[] equippedEffects = null, uint iconId = 0)
         { Id = id; Type = type; Name = name; ActivationLabel = activationLabel;
-            TargetsPeer = targetsPeer; UseEffect = useEffect; MaxStack = maxStack;
+            TargetsPeer = targetsPeer; IconId = iconId; UseEffect = useEffect; MaxStack = maxStack;
             EquippedEffects = Array.AsReadOnly((ItemEffectInfo[])(equippedEffects ?? Array.Empty<ItemEffectInfo>()).Clone()); }
 
         /// <returns>The native item template's ID, type and display name.</returns>
@@ -120,15 +120,16 @@ namespace FortyTwoAndBeyond.Protocol
                 }
                 if (effects > 0) { Wire.Require(body, offset, 16); offset += 16; }
             }
-            // Asset, icon and level are u16; price, stack and shot effect are BE u32.
+            // Asset, icon and level are BE u16; price, stack and shot effect are BE u32.
             Wire.Require(body, offset, 22);
+            uint iconId = (uint)(body[offset + 2] << 8 | body[offset + 3]);
             uint maxStack = Wire.U32(body, offset + 10, true);
             uint useEffect = Wire.U32(body, offset + 14, true);
             offset += 22;
             int nameLength = Wire.U16(body, offset); offset += 2;
             string fullName = Wire.Text(body, offset, nameLength);
             return new ItemTemplateInfo(id, type, fullName.Length > 0 ? fullName : name,
-                activationLabel, targetsPeer, useEffect, maxStack, equippedEffects.ToArray());
+                activationLabel, targetsPeer, useEffect, maxStack, equippedEffects.ToArray(), iconId);
         }
     }
 
@@ -176,7 +177,7 @@ namespace FortyTwoAndBeyond.Protocol
     public sealed class ItemView
     {
         public readonly int Slot;
-        public readonly uint Template, Quantity, Type, WeaponState, ReadyTick, UseEffect, MaxStack;
+        public readonly uint Template, Quantity, Type, IconId, WeaponState, ReadyTick, UseEffect, MaxStack;
         public readonly ulong Price;
         public readonly float Quality, Structure, Range;
         public readonly float CooldownSeconds;
@@ -194,10 +195,11 @@ namespace FortyTwoAndBeyond.Protocol
             WeaponState = item.WeaponState; ReadyTick = item.ReadyTick;
             Price = item.Price; Info = item.Info; BuilderName = item.BuilderName;
             if (catalog.TryGetValue(item.Template, out ItemTemplateInfo template))
-            { Name = template.Name; Type = template.Type; ActivationLabel = template.ActivationLabel;
+            { Name = template.Name; Type = template.Type; IconId = template.IconId;
+                ActivationLabel = template.ActivationLabel;
                 TargetsPeer = template.TargetsPeer; UseEffect = template.UseEffect; MaxStack = template.MaxStack;
                 EquippedEffects = template.EquippedEffects; }
-            else { Name = "Item #" + item.Template; Type = 0; ActivationLabel = "";
+            else { Name = "Item #" + item.Template; Type = IconId = 0; ActivationLabel = "";
                 TargetsPeer = false; UseEffect = MaxStack = 0;
                 EquippedEffects = Array.AsReadOnly(Array.Empty<ItemEffectInfo>()); }
             if (Cooling && ReadyTick != 0 && estimatedServerTick.HasValue)

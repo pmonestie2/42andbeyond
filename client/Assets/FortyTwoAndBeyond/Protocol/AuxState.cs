@@ -126,7 +126,7 @@ namespace FortyTwoAndBeyond.Protocol
         {
             var reader = new AuxState(body); Flags fields = reader.Mask(58);
             uint? privateWarp = null, globalWarp = null;
-            buffRevisions = new TimedDeviceBuff[6];
+            buffRevisions = new TimedDeviceBuff[16];
             for (int i = 0; i <= 45; i++)
             {
                 if (!fields.Present[i] && fields.Default[i] && (i == 4 || i == 6 || i >= 35 && i <= 41))
@@ -197,7 +197,7 @@ namespace FortyTwoAndBeyond.Protocol
             return new ShipDefenseState(known, deflects);
         }
 
-        /// <summary>Read equipment, recipient, and Rally revisions from native slots zero through five.</summary>
+        /// <summary>Read all sixteen server-owned native buff slots.</summary>
         private void ReadBuff(TimedDeviceBuff[] revisions)
         {
             Flags slots = Mask(16);
@@ -213,21 +213,23 @@ namespace FortyTwoAndBeyond.Protocol
                 Flags fields = Mask(5);
                 string name = "";
                 uint removalTick = 0;
+                bool permanent = false;
                 for (int field = 0; field < 5; field++)
                 {
                     if (!fields.Present[field]) continue;
                     switch (field)
                     {
                         case 0: name = Text(); break;
-                        case 2: Byte(); break;
+                        case 2: permanent = Byte() != 0; break;
                         case 3: removalTick = UInt(); break;
                         default: throw new InvalidDataException("Unsupported native buff field.");
                     }
                 }
                 if (slot < revisions.Length)
                 {
-                    TimedDeviceBuff revision = name.Length == 0 || removalTick == 0 ?
-                        TimedDeviceBuff.Empty : new TimedDeviceBuff(name, removalTick, 0, 0);
+                    TimedDeviceBuff revision = name.Length == 0 ||
+                        (!permanent && removalTick == 0) ? TimedDeviceBuff.Empty :
+                        new TimedDeviceBuff(name, removalTick, 0, 0, permanent);
                     revisions[slot] = revision;
                 }
             }

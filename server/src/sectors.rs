@@ -30,8 +30,17 @@ impl SectorCatalog {
         let stations: Vec<Station> = serde_json::from_str(include_str!("../data/stations.json"))?;
         for station in stations {
             let parent = catalog
-                .get(&station.parent)
+                .get_mut(&station.parent)
                 .ok_or_else(|| invalid("Station parent sector is missing."))?;
+            if let Some(exterior) = parent
+                .navpoints
+                .iter_mut()
+                .find(|nav| nav.id == station.exterior)
+            {
+                exterior.name = station.name.clone();
+                exterior.navigation_present = true;
+                exterior.navigation_type = 2;
+            }
             let sector = Sector {
                 id: station.id,
                 name: station.name.clone(),
@@ -56,6 +65,12 @@ impl SectorCatalog {
             .get(&id)
             .cloned()
             .ok_or_else(|| invalid("Destination is not a hosted sector."))
+    }
+
+    /// Returns:
+    ///     Iterator<&Sector>: Hosted station sectors and their preserved contact placements.
+    pub(crate) fn hosted_stations(&self) -> impl Iterator<Item = &Sector> {
+        self.0.values().filter(|sector| sector.station.is_some())
     }
 
     /// Developer navigation accepts native IDs or punctuation-insensitive
@@ -186,6 +201,32 @@ fn resolve_name<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    /// Hosted station interiors preserve every native room, terminal and NPC placement.
+    #[test]
+    fn hosted_stations_preserve_native_room_layout_and_every_contact() {
+        let catalog = SectorCatalog::load().unwrap();
+        let original: Vec<Station> =
+            serde_json::from_str(include_str!("../data/stations.json")).unwrap();
+        for source in original {
+            let parent = catalog.sector(source.parent).unwrap();
+            let exterior = parent
+                .navpoints
+                .iter()
+                .find(|nav| nav.id == source.exterior)
+                .unwrap();
+            assert_eq!(exterior.name, source.name);
+            assert!(exterior.navigation_present);
+            assert_eq!(exterior.navigation_type, 2);
+            let hosted = catalog.sector(source.id).unwrap();
+            hosted.validate().unwrap();
+            let station = hosted.station.unwrap();
+            assert_eq!(
+                serde_json::to_value(&station).unwrap(),
+                serde_json::to_value(&source).unwrap()
+            );
+        }
+    }
+
     #[test]
     fn all_wormhole_destinations_and_adjacent_gates_have_valid_maps() {
         let catalog = SectorCatalog::load().unwrap();

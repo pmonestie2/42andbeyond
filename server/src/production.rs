@@ -1,6 +1,8 @@
 //! Shared production window and transport replay identity.
 use serde::{Deserialize, Serialize};
 
+pub const FORMULA_PAGE_SIZE: usize = 500;
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct WorkbenchView {
     pub mode: u32,
@@ -12,6 +14,8 @@ pub struct WorkbenchView {
     pub additional: u32,
     pub filter: u32,
     pub products: Vec<u32>,
+    pub page: u32,
+    pub total_products: u32,
     pub cost: u64,
     pub base_cost: u64,
     pub chance: f32,

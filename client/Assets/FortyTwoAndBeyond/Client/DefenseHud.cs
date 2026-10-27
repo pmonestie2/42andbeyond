@@ -14,7 +14,10 @@ namespace FortyTwoAndBeyond.Client
         /// <summary>Share the flight HUD's canvas scale and panel styles.</summary>
         public DefenseHud(FlightHud flightHud) { this.flightHud = flightHud; }
 
-        /// <summary>Dismiss the optional panel on disconnect or station handoff.</summary>
+        /// <summary>Toggle this detail panel from the retained flight controls.</summary>
+        internal void Toggle() { open = !open; }
+
+        /// <summary>Dismiss this panel when its owning flight context closes.</summary>
         public void Close() { open = false; }
 
         /// <summary>
@@ -36,7 +39,7 @@ namespace FortyTwoAndBeyond.Client
             if (!Available(snapshot))
             { open = false; return; }
             Rect button = ButtonRect(snapshot);
-            if (GUI.Button(button, "DEFENSE", flightHud.ButtonStyle)) open = !open;
+            if (!flightHud.RetainedVisible && GUI.Button(button, "DEFENSE", flightHud.ButtonStyle)) open = !open;
             if (!open) return;
             Rect panel = PanelRect(button);
             flightHud.Panel(panel);
@@ -75,12 +78,8 @@ namespace FortyTwoAndBeyond.Client
         private Rect ButtonRect(Snapshot snapshot)
         {
             float canvasHeight = Screen.height / flightHud.Scale;
-            int buffCount = (snapshot.DeviceBuff != null || !string.IsNullOrEmpty(snapshot.ActiveDeviceLabel) ? 1 : 0) +
-                (snapshot.PeerBuff != null ? 1 : 0) + (snapshot.ShieldBuff != null ? 1 : 0) +
-                (snapshot.ReactorBuff != null ? 1 : 0) + (snapshot.SignatureBuff != null ? 1 : 0) +
-                (snapshot.RallyBuff != null ? 1 : 0);
-            float systemHeight = 87 + buffCount * 30;
-            return new Rect(365 + 307, canvasHeight - 125 - systemHeight + 5, 104, 25);
+            float systemHeight = 87 + Mathf.Min(FlightHud.ActiveEffectCount(snapshot), 5) * 30;
+            return new Rect(Screen.width / flightHud.Scale - 430, 62, 110, 25);
         }
 
         /// <summary>
@@ -88,6 +87,6 @@ namespace FortyTwoAndBeyond.Client
         ///     Rect: The open detail panel directly above ship systems.
         /// </summary>
         private static Rect PanelRect(Rect button)
-        { return new Rect(365, button.y - 176, 420, 169); }
+        { return new Rect(button.x - 310, button.y + 32, 420, 169); }
     }
 }

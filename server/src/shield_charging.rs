@@ -5,7 +5,7 @@
 //! resistance percentages. The pinned PlayerClass.cpp names AShieldCharge
 //! inside its not-yet-implemented comment block, so reactor cost, cast time
 //! and cooldown below are explicit local tuning, matching the parallel
-//! Reactor Optimization support family. No unverified visual ID is emitted.
+//! Reactor Optimization support family.
 use serde::{Deserialize, Serialize};
 
 pub const DURATION_MS: u64 = 600_000;
@@ -74,6 +74,25 @@ impl PendingShieldCharging {
 
 impl ShieldChargingBuff {
     /// Returns:
+    ///     &'static str: Native status name for the applied Shield Charging tier.
+    pub fn status_name(&self) -> &'static str {
+        match self.ability {
+            121 => "Supercharge_Shields",
+            129 => "Ultracharge_Shields",
+            122 => "Supercharge_Target",
+            130 => "Ultracharge_Target",
+            74 => "Megacharge_Shields",
+            _ => unreachable!("validated Shield Charging tier"),
+        }
+    }
+
+    /// Returns:
+    ///     u32: Former native visual identity, retained to remove its old effect.
+    pub fn visual_id(&self, target: u32) -> u32 {
+        target.rotate_left(7) ^ (self.revision as u32) ^ 0x5c00_0000
+    }
+
+    /// Returns:
     ///     bool: Whether the recipient receipt remains in its ten-minute window.
     pub fn valid(&self, now_ms: u64, epoch: u64) -> bool {
         self.revision > 0
@@ -118,6 +137,23 @@ mod tests {
         assert_eq!(tier(74, 7).unwrap().resistance_percent, 10.);
         assert_eq!(tier(74, 6), None);
         assert_eq!(tier(121, 0), None);
+        for (ability, rank, name) in [
+            (121, 1, "Supercharge_Shields"),
+            (129, 3, "Ultracharge_Shields"),
+            (122, 5, "Supercharge_Target"),
+            (130, 6, "Ultracharge_Target"),
+            (74, 7, "Megacharge_Shields"),
+        ] {
+            let buff = ShieldChargingBuff {
+                revision: 1,
+                source: 1,
+                target_epoch: 1,
+                ability,
+                trained_rank: rank,
+                expires_at_ms: DURATION_MS,
+            };
+            assert_eq!(buff.status_name(), name);
+        }
     }
 
     /// Recipient state must be bounded, epoch-pinned, and apply all three bonuses.

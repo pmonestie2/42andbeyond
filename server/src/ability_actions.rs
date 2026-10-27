@@ -773,6 +773,10 @@ impl PlayerSession {
                 }
                 _ => ability.range as f32,
             };
+            let surface_ranged = matches!(
+                ability.kind,
+                AbilityKind::ShieldSap | AbilityKind::ShieldInversion
+            );
             if !self.mob_visible_in_scan(index as usize, mob)
                 || matches!(
                     ability.kind,
@@ -782,8 +786,21 @@ impl PlayerSession {
                         | AbilityKind::Enrage
                         | AbilityKind::ShieldInversion
                 ) && self.mob_relationship(mob) != 0
-                || distance(self.position, mob.position) > range
             {
+                return Err(invalid("The target is dead or out of ability range."));
+            }
+            let actual_range = if surface_ranged {
+                mob.range_to(self.position)
+            } else {
+                distance(self.position, mob.position)
+            };
+            if actual_range > range {
+                if surface_ranged {
+                    return Err(invalid(&format!(
+                        "{} target is {:.0} m away; maximum range is {:.0} m.",
+                        ability.name, actual_range, range
+                    )));
+                }
                 return Err(invalid("The target is dead or out of ability range."));
             }
             return Ok(self.target);

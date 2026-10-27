@@ -56,6 +56,123 @@ impl<'a> SpawnRequest<'a> {
 }
 
 impl GameState {
+    /// Instantly move to the selected same-sector target or an explicitly supplied object ID.
+    /// Raises:
+    ///     io::Error: The target is invalid/off-sector or the durable move cannot complete.
+    pub(super) fn developer_warp(&mut self, source: u32, argument: &str) -> io::Result<()> {
+        let session = self
+            .sessions
+            .get(&source)
+            .ok_or_else(|| invalid("Unknown developer character."))?;
+        let target = if argument.is_empty() {
+            session.current_target()
+        } else {
+            argument
+                .parse::<u32>()
+                .map_err(|_| invalid("Use /d_warp [OBJECT_ID], or select a target first."))?
+        };
+        let sector = session.sector.id;
+        let (position, radius, name) = if let Some(peer) = self
+            .sessions
+            .get(&target)
+            .and_then(PlayerSession::peer_snapshot)
+            .filter(|peer| peer.sector == sector)
+        {
+            (
+                peer.position,
+                crate::following::PLAYER_RADIUS,
+                peer.profile.name,
+            )
+        } else {
+            session.developer_warp_target(target)?
+        };
+        self.sessions
+            .get_mut(&source)
+            .unwrap()
+            .developer_warp_to(target, position, radius)?;
+        self.update_views();
+        if let Some(peer) = self.sessions[&source].peer_snapshot() {
+            for observer in self.sessions.values_mut() {
+                observer.developer_warp_peer_update(&peer);
+            }
+        }
+        self.sessions
+            .get_mut(&source)
+            .unwrap()
+            .message(&format!("Dev warp: arrived near {name} ({target})."));
+        crate::server_log!(
+            "Dev warp: {}; target={target}; sector={sector}; target_name={name}",
+            self.sessions[&source].account.character.name
+        );
+        Ok(())
+    }
+
+    /// Rescale living MOBs within 20 km and publish their updated native status to observers.
+    /// Raises:
+    ///     io::Error: The level is invalid, the owner cannot tune this sector, or persistence fails.
+    pub(super) fn developer_mob_level(&mut self, source: u32, argument: &str) -> io::Result<()> {
+        let level = argument
+            .parse::<u32>()
+            .ok()
+            .filter(|level| (1..=66).contains(level))
+            .ok_or_else(|| {
+                invalid("Use /d_mob_cl LEVEL, with a combat level from 1 through 66.")
+            })?;
+        let session = self
+            .sessions
+            .get(&source)
+            .ok_or_else(|| invalid("Unknown developer character."))?;
+        let center = session.developer_mob_level_origin()?;
+        let sector = session.sector.id;
+        self.attach_session(source)?;
+        let indices = lock_combat(&self.sessions[&source].combat)?
+            .set_nearby_combat_level(center, 20_000., level)?;
+        for session in self
+            .sessions
+            .values_mut()
+            .filter(|session| session.sector.id == sector)
+        {
+            session.developer_refresh_mobs(&indices)?;
+        }
+        self.sessions.get_mut(&source).unwrap().message(&format!(
+            "Dev MOB level: {} living MOBs within 20 km set to combat level {level}; health fractions preserved.", indices.len()
+        ));
+        crate::server_log!(
+            "Dev MOB level: {}; sector={sector}; count={}; level={level}; radius=20000",
+            self.sessions[&source].account.character.name,
+            indices.len()
+        );
+        Ok(())
+    }
+
+    /// Clear active buffs and device leases for every local account.
+    pub(super) fn developer_clear(&mut self, source: u32, argument: &str) -> io::Result<()> {
+        if !argument.is_empty() {
+            return Err(invalid("Use /d_clear without arguments."));
+        }
+        if !self
+            .sessions
+            .get(&source)
+            .is_some_and(|session| session.logged_in)
+        {
+            return Err(invalid("Enter the game before using /d_clear."));
+        }
+        let mut effects = 0;
+        let mut players = 0;
+        for session in self.sessions.values_mut() {
+            effects += session.developer_clear_buffs()?;
+            players += 1;
+        }
+        self.sessions.get_mut(&source).unwrap().message(&format!(
+            "Dev clear: {effects} active effects removed from {players} players."
+        ));
+        crate::server_log!(
+            "Dev clear: {}; effects={effects}; players={players}",
+            self.sessions[&source].account.character.name
+        );
+        Ok(())
+    }
+
     pub(super) fn developer_spawn(&mut self, source: u32, argument: &str) -> io::Result<()> {
         let request = SpawnRequest::parse(argument)?;
         let catalog = SectorCatalog::load()?;
@@ -186,6 +303,58 @@ mod tests {
     }
 
     #[test]
+    fn developer_clear_removes_each_players_buff_and_persists_the_clear() {
+        let mut game = super::super::tests::game();
+        let a = FIRST_PLAYER_ID;
+        let b = a + 1;
+        super::super::tests::login(&mut game, a, 22611, "alice");
+        super::super::tests::login(&mut game, b, 22612, "bob");
+        for id in [a, b] {
+            let session = game.sessions.get_mut(&id).unwrap();
+            let epoch = session.energy_transfer_epoch();
+            session
+                .apply_shield_charging_buff(crate::shield_charging::ShieldChargingBuff {
+                    revision: 1,
+                    source: a,
+                    target_epoch: epoch,
+                    ability: 74,
+                    trained_rank: 7,
+                    expires_at_ms: crate::resources::unix_ms() + 60_000,
+                })
+                .unwrap();
+            let saved: serde_json::Value = serde_json::from_slice(
+                &std::fs::read(session.state_dir.join("session.local.json")).unwrap(),
+            )
+            .unwrap();
+            assert!(saved["shield_charging_buff"].is_object());
+        }
+        assert!(chat(&mut game, "/d_clear extra").is_err());
+        chat(&mut game, "/d_clear").unwrap();
+        for id in [a, b] {
+            let session = &game.sessions[&id];
+            let saved: serde_json::Value = serde_json::from_slice(
+                &std::fs::read(session.state_dir.join("session.local.json")).unwrap(),
+            )
+            .unwrap();
+            assert!(saved["shield_charging_buff"].is_null());
+            assert!(saved["active_device"].is_null());
+            assert_eq!(
+                saved["additional_active_devices"].as_array().unwrap().len(),
+                0
+            );
+            let leases: serde_json::Value = serde_json::from_slice(
+                &std::fs::read(session.state_dir.join("active_devices.local.json")).unwrap(),
+            )
+            .unwrap();
+            assert!(leases["active_device"].is_null());
+            assert!(leases["additional_active_devices"]
+                .as_array()
+                .unwrap()
+                .is_empty());
+        }
+    }
+
+    #[test]
     fn authenticated_dev_spawn_is_shared_rendered_and_survives_a_world_restart() {
         let mut game = super::super::tests::game();
         let a = FIRST_PLAYER_ID;
@@ -253,6 +422,170 @@ mod tests {
             .map(|mob| mob.definition.source_id)
             .collect();
         assert_eq!(identities.len(), world.actors.len());
+    }
+
+    /// Both observers receive the new level/resources without a MOB recreate or sector transition.
+    #[test]
+    fn developer_mob_level_updates_nearby_shared_actors_and_observers() {
+        let mut game = super::super::tests::game();
+        let a = FIRST_PLAYER_ID;
+        let b = a + 1;
+        super::super::tests::login(&mut game, a, 22601, "alice");
+        super::super::tests::login(&mut game, b, 22602, "bob");
+        for session in game.sessions.values_mut() {
+            session.position = [0.; 3];
+        }
+        {
+            let mut world = lock_combat(&game.sessions[&a].combat).unwrap();
+            world.actors[0].position = [1000., 0., 0.];
+        }
+        game.advance(0.).unwrap();
+        game.take_outgoing();
+        assert!(chat(&mut game, "/d_mob_cl 0").is_err());
+        assert!(chat(&mut game, "/d_mob_cl 67").is_err());
+        assert!(chat(&mut game, "/d_mob_cl 10 extra").is_err());
+        chat(&mut game, "/d_mob_cl 10").unwrap();
+        let expected = {
+            let world = lock_combat(&game.sessions[&a].combat).unwrap();
+            assert_eq!(world.actors[0].definition.level, 10);
+            packets::mob_status(crate::sector_combat::MOB_ID, &world.actors[0])
+        };
+        game.advance(0.).unwrap();
+        let mut viewers = HashSet::new();
+        for output in game.take_outgoing() {
+            let packet = Datagram::decode(&output.data).unwrap();
+            if packet.opcode != 0x2016 {
+                continue;
+            }
+            let mut body = packet.body.as_slice();
+            while body.len() >= 4 {
+                let size = u16::from_le_bytes(body[..2].try_into().unwrap()) as usize;
+                if size > body.len() {
+                    break;
+                }
+                if Frame::decode(&body[..size]).unwrap() == expected {
+                    viewers.insert(packet.player);
+                }
+                body = &body[size..];
+            }
+        }
+        assert_eq!(viewers, HashSet::from([a, b]));
+    }
+
+    /// Selected players, MOB IDs, and station IDs all use authoritative centers and notify observers.
+    #[test]
+    fn developer_warp_selected_peer_and_explicit_mob_or_station_targets() {
+        let mut game = super::super::tests::game();
+        let a = FIRST_PLAYER_ID;
+        let b = a + 1;
+        super::super::tests::login(&mut game, a, 22601, "alice");
+        super::super::tests::login(&mut game, b, 22602, "bob");
+        game.sessions.get_mut(&a).unwrap().position = [0.; 3];
+        game.sessions.get_mut(&b).unwrap().position = [5000., 0., 0.];
+        game.advance(0.).unwrap();
+        game.take_outgoing();
+        game.sessions.get_mut(&a).unwrap().group_target(b).unwrap();
+        chat(&mut game, "/d_warp").unwrap();
+        let arrival = game.sessions[&a].position;
+        assert!((crate::mob::distance(arrival, game.sessions[&b].position) - 790.).abs() < 0.1);
+        game.advance(0.).unwrap();
+        let mut viewers = HashSet::new();
+        for output in game.take_outgoing() {
+            let packet = Datagram::decode(&output.data).unwrap();
+            if packet.opcode != 0x2016 {
+                continue;
+            }
+            let mut body = packet.body.as_slice();
+            while body.len() >= 4 {
+                let size = u16::from_le_bytes(body[..2].try_into().unwrap()) as usize;
+                if size > body.len() {
+                    break;
+                }
+                let frame = Frame::decode(&body[..size]).unwrap();
+                if frame.opcode == 0x3e
+                    && frame.body.len() >= 22
+                    && frame.body[2..6] == a.to_le_bytes()
+                    && (0..3).all(|axis| {
+                        f32::from_le_bytes(
+                            frame.body[10 + axis * 4..14 + axis * 4].try_into().unwrap(),
+                        ) == arrival[axis]
+                    })
+                {
+                    viewers.insert(packet.player);
+                }
+                body = &body[size..];
+            }
+        }
+        assert_eq!(viewers, HashSet::from([a, b]));
+        chat(
+            &mut game,
+            &format!("/d_warp {}", crate::sector_combat::MOB_ID),
+        )
+        .unwrap();
+        let mob = lock_combat(&game.sessions[&a].combat).unwrap().actors[0].clone();
+        assert!(
+            (crate::mob::distance(game.sessions[&a].position, mob.position)
+                - mob.definition.radius
+                - 545.)
+                .abs()
+                < 0.1
+        );
+        let station = game.sessions[&a]
+            .sector
+            .navpoints
+            .iter()
+            .find(|nav| nav.object_type == 12)
+            .unwrap()
+            .clone();
+        chat(&mut game, &format!("/d_warp {}", station.id)).unwrap();
+        assert!(
+            (crate::mob::distance(game.sessions[&a].position, station.position)
+                - station.radius
+                - 545.)
+                .abs()
+                < 0.1
+        );
+        assert_eq!(game.sessions[&a].current_target(), station.id);
+        assert!(chat(&mut game, "/d_warp not-an-id").is_err());
+        assert!(chat(&mut game, &format!("/d_warp {a}")).is_err());
+    }
+
+    /// Market travel obeys the server policy and persists only hosted-station handoffs.
+    #[test]
+    fn component_market_travel_requires_developer_mode_and_a_hosted_station() {
+        let mut game = super::super::tests::game();
+        let player = FIRST_PLAYER_ID;
+        super::super::tests::login(&mut game, player, 22611, "alice");
+        game.set_developer_mode(false);
+        assert!(game
+            .handle_event(
+                player,
+                ClientEvent::ComponentMarketTravel { station: 17051 }
+            )
+            .is_err());
+        assert!(chat(&mut game, "/d_jump 17051").is_err());
+        assert_eq!(game.sessions[&player].sector.id, 1076);
+        game.set_developer_mode(true);
+        assert!(game
+            .handle_event(player, ClientEvent::ComponentMarketTravel { station: 1076 })
+            .is_err());
+        game.handle_event(
+            player,
+            ClientEvent::ComponentMarketTravel { station: 17051 },
+        )
+        .unwrap();
+        let session = &game.sessions[&player];
+        assert_eq!(session.sector.id, 17051);
+        assert!(!session.logged_in);
+        let saved: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(session.state_dir.join("player.json")).unwrap())
+                .unwrap();
+        assert_eq!(saved["sector"], 17051);
+        let checkpoint: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(session.state_dir.join("session.local.json")).unwrap(),
+        )
+        .unwrap();
+        assert!(checkpoint["handoff"].is_array());
     }
 
     #[test]

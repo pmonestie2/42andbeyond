@@ -49,4 +49,5 @@ pub struct PeerSnapshot {
     pub shield: f32,
     pub hull: f32,
     pub cloaked: bool,
+    pub shield_charging: bool,
 }

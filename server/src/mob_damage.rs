@@ -208,9 +208,14 @@ impl PlayerSession {
         } else {
             None
         };
-        self.checkpoint_mob_damage(&plan, &receipt)?;
+        let recharge_after_ms = (plan.result.shield < self.shield)
+            .then(|| crate::resources::unix_ms().saturating_add(10_000));
+        self.checkpoint_mob_damage(&plan, &receipt, recharge_after_ms)?;
         let prior_psionic = self.psionic_shield_buff.clone();
         self.mob_damage_receipts.push(receipt.clone());
+        if let Some(deadline) = recharge_after_ms {
+            self.shield_recharge_after_ms = deadline;
+        }
         self.shield = plan.result.shield;
         self.hull = plan.result.hull;
         self.energy = plan.energy;
@@ -669,6 +674,29 @@ mod tests {
         ship.receive_mob_hit(&hit(&ship, 42)).unwrap();
         assert_eq!(ship.inventory.equipped, initial);
         assert!(ship.inventory.applied_equipment_wear.is_empty());
+    }
+
+    /// Incoming shield damage pauses passive recharge across session recovery.
+    #[test]
+    fn mob_shield_hit_delays_passive_recharge_for_ten_seconds() {
+        let mut ship = ship();
+        let before = ship.shield;
+        ship.receive_mob_hit(&hit(&ship, 43)).unwrap();
+        assert!(ship.shield < before);
+        let damaged = ship.shield;
+        let deadline = ship.shield_recharge_after_ms;
+        assert!(deadline >= crate::resources::unix_ms().saturating_add(9_000));
+        ship.advance_ship_resources(1.);
+        assert_eq!(ship.shield, damaged);
+
+        let mut restored =
+            PlayerSession::new(ship.sector.clone(), ship.bind, ship.state_dir.clone()).unwrap();
+        assert_eq!(restored.shield_recharge_after_ms, deadline);
+        restored.advance_ship_resources(1.);
+        assert_eq!(restored.shield, damaged);
+        restored.shield_recharge_after_ms = crate::resources::unix_ms().saturating_sub(1);
+        restored.advance_ship_resources(1.);
+        assert!(restored.shield > damaged);
     }
 
     /// Post-deflect Repulsor feedback is frozen in the NPC receipt across retry.

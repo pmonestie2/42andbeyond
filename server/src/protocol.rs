@@ -11,7 +11,7 @@ pub fn invalid(message: &str) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, message)
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Frame {
     pub opcode: u16,
     pub body: Vec<u8>,
@@ -169,6 +169,17 @@ pub fn split_frames(
     let mut pending = Vec::new();
     for frame in frames {
         let encoded = frame.encode()?;
+        // Native START must finish its own datagram. The Win32 client can
+        // request this sequence again before accepting later world updates.
+        if frame.opcode == 5 && !pending.is_empty() {
+            packets.push(Datagram {
+                opcode: 0x2016,
+                player,
+                sequence: *sequence,
+                body: std::mem::take(&mut pending),
+            });
+            *sequence += 1;
+        }
         if !pending.is_empty() && pending.len() + encoded.len() > MTU_PAYLOAD {
             packets.push(Datagram {
                 opcode: 0x2016,
@@ -190,6 +201,15 @@ pub fn split_frames(
             }
         } else {
             pending.extend_from_slice(&encoded);
+        }
+        if frame.opcode == 5 && !pending.is_empty() {
+            packets.push(Datagram {
+                opcode: 0x2016,
+                player,
+                sequence: *sequence,
+                body: std::mem::take(&mut pending),
+            });
+            *sequence += 1;
         }
     }
     if !pending.is_empty() {
@@ -242,6 +262,22 @@ mod tests {
                 .flat_map(|f| f.encode().unwrap())
                 .collect::<Vec<_>>()
         );
+    }
+    /// START has a dedicated UDP sequence even when adjacent frames are small.
+    #[test]
+    fn start_isolated_from_following_status_frame() {
+        let start = Frame::new(5, vec![3, 0, 0, 0]);
+        let frames = [
+            Frame::new(0x1b, vec![1]),
+            start.clone(),
+            Frame::new(0x2030, vec![1, 0]),
+        ];
+        let mut sequence = 40;
+        let packets = split_frames(7, &mut sequence, &frames).unwrap();
+        assert_eq!(packets.len(), 3);
+        assert_eq!(packets[1].sequence, 41);
+        assert_eq!(packets[1].body, start.encode().unwrap());
+        assert_eq!(packets[2].body, frames[2].encode().unwrap());
     }
     #[test]
     fn hostile_lengths_are_rejected() {

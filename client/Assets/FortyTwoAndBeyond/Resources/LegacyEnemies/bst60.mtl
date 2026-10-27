@@ -1,0 +1,82 @@
+# Blender 5.2.3 LTS MTL File: 'None'
+# www.blender.org
+
+newmtl CYLINDER010.006.Material_#26
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+illum 1
+map_Kd bst0104-new-1.png
+map_d bst0104-new-1.png
+
+newmtl CYLINDER010.007.Material_#17
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+illum 1
+map_Kd bst0104-new-1.png
+map_d bst0104-new-1.png
+
+newmtl CYLINDER010.008.Material_#32
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+illum 1
+map_Kd bst0104-new-1.png
+map_d bst0104-new-1.png
+
+newmtl CYLINDER010.009.Material_#25
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+illum 1
+map_Kd bst0104-new-1.png
+map_d bst0104-new-1.png
+
+newmtl CYLINDER030.Material_#26
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+illum 1
+map_Kd bst0104-new-1.png
+map_d bst0104-new-1.png
+
+newmtl CYLINDER070.Material_#26
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+illum 1
+map_Kd bst0104-new-1.png
+map_d bst0104-new-1.png
+
+newmtl CYLINDER090.001.Material_#26
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.000000 0.000000 0.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+illum 1
+map_Kd bst0104-new-1.png
+map_d bst0104-new-1.png
+
+newmtl KRAKEN0.004.Material_#24
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+illum 2
+map_Kd bst0104-new-1.png
+map_d bst0104-new-1.png

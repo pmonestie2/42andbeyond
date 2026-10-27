@@ -17,11 +17,14 @@ namespace FortyTwoAndBeyond.Editor
         private static uint mobId;
         private static double deadline, captureAt;
         private static bool connected;
+        private static bool kinetic;
 
         /// <summary>Register only when a disposable visual run opts in.</summary>
         static ProjectileVisualSmoke()
         {
-            if (Array.IndexOf(Environment.GetCommandLineArgs(),
+            kinetic = Array.IndexOf(Environment.GetCommandLineArgs(),
+                "--42andbeyond-kinetic-smoke") >= 0;
+            if (!kinetic && Array.IndexOf(Environment.GetCommandLineArgs(),
                     "--42andbeyond-projectile-smoke") < 0) return;
             deadline = EditorApplication.timeSinceStartup + 100;
             EditorApplication.update += Tick;
@@ -67,32 +70,57 @@ namespace FortyTwoAndBeyond.Editor
                 if (shot == null) return;
                 ShotTravelKind kind = ShotPresentation.Classify(shot, snapshot.PlayerId,
                     snapshot.Mounted, snapshot.Ammo);
-                if (kind != ShotTravelKind.Missile || shot.Duration < 900)
-                { Fail($"Expected native traveling missile, got {kind} / {shot.Duration} ms."); return; }
-                client.StopWeapons();
+                ShotTravelKind expected = kinetic ? ShotTravelKind.Projectile : ShotTravelKind.Missile;
+                if (kind != expected || shot.Duration < (kinetic ? 120 : 900))
+                { Fail($"Expected native traveling {expected}, got {kind} / {shot.Duration} ms."); return; }
                 captureAt = EditorApplication.timeSinceStartup + shot.Duration / 2500.0;
                 stage = 2; return;
             }
             if (stage == 2)
             {
                 if (EditorApplication.timeSinceStartup < captureAt) return;
+                GameObject round = GameObject.Find(kinetic ? "Kinetic projectile" : "Guided missile");
+                if (round == null || round.GetComponentsInChildren<MeshRenderer>().Length <
+                    (kinetic ? 2 : 4) || !kinetic &&
+                    round.GetComponentInChildren<ParticleSystem>() == null)
+                { Fail("Projectile body, fins, or missile smoke missing during server-published flight."); return; }
+                if (!kinetic && round.GetComponentInChildren<ParticleSystem>().particleCount == 0)
+                { Fail("Missile exhaust emitted no smoke during flight."); return; }
+                Camera camera = UnityEngine.Object.FindObjectsByType<Camera>(
+                    FindObjectsSortMode.None).FirstOrDefault(item => item.enabled);
+                if (camera != null)
+                {
+                    Vector3 screen = camera.WorldToScreenPoint(round.transform.position);
+                    Debug.Log($"{(kinetic ? "Projectile" : "Missile")} screenshot position: {screen}; world {round.transform.position}");
+                }
                 Directory.CreateDirectory("Builds/verification");
-                ScreenCapture.CaptureScreenshot("Builds/verification/projectile-travel.png");
+                ScreenCapture.CaptureScreenshot("Builds/verification/" +
+                    (kinetic ? "kinetic" : "projectile") + "-travel.png");
                 stage = 3; return;
             }
             if (stage == 3)
             {
                 DamageEvent result = snapshot.Damages.FirstOrDefault(item =>
-                    item.Source == snapshot.PlayerId && item.Target == mobId);
+                    item.Source == snapshot.PlayerId && item.Target == mobId && item.Amount > 0);
                 if (result == null) return;
-                ScreenCapture.CaptureScreenshot("Builds/verification/projectile-result.png");
-                Debug.Log($"PASS: server missile launch traveled before {result.Outcome} impact.");
-                captureAt = EditorApplication.timeSinceStartup + .6;
+                client.StopWeapons();
+                captureAt = EditorApplication.timeSinceStartup + .12;
                 stage = 4; return;
             }
-            if (stage != 4 || EditorApplication.timeSinceStartup < captureAt) return;
-            if (!File.Exists("Builds/verification/projectile-travel.png") ||
-                !File.Exists("Builds/verification/projectile-result.png"))
+            if (stage == 4)
+            {
+                if (EditorApplication.timeSinceStartup < captureAt) return;
+                if (!kinetic && GameObject.Find("Missile detonation") == null)
+                { Fail("Server-confirmed missile detonation sprite was not rendered."); return; }
+                ScreenCapture.CaptureScreenshot("Builds/verification/" +
+                    (kinetic ? "kinetic" : "projectile") + "-result.png");
+                Debug.Log($"PASS: server {(kinetic ? "projectile" : "missile")} launch traveled before confirmed impact.");
+                captureAt = EditorApplication.timeSinceStartup + .6;
+                stage = 5; return;
+            }
+            if (stage != 5 || EditorApplication.timeSinceStartup < captureAt) return;
+            string prefix = "Builds/verification/" + (kinetic ? "kinetic" : "projectile");
+            if (!File.Exists(prefix + "-travel.png") || !File.Exists(prefix + "-result.png"))
             { Fail("Travel or result capture missing."); return; }
             EditorApplication.update -= Tick;
             EditorApplication.Exit(0);

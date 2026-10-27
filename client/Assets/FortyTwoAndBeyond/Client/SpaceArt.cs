@@ -15,6 +15,16 @@ namespace FortyTwoAndBeyond.Client
         private readonly Mesh ring, shipHull, suitArmor, gateArc, gateLightRing;
         private readonly GameObject corvetteAsset, frigateAsset, destroyerAsset, cruiserAsset, carrierAsset;
         private readonly GameObject eveCaldariAsset, eveGallenteAsset;
+        private readonly GameObject[] legacyClassAssets = new GameObject[9];
+        private readonly GameObject[] legacyVeteranAssets = new GameObject[9];
+        private readonly Dictionary<ushort, GameObject> legacyMobAssets =
+            new Dictionary<ushort, GameObject>();
+        private readonly Dictionary<ushort, string> enemyModelPaths = new Dictionary<ushort, string>();
+        private readonly Dictionary<string, GameObject> enemyModels = new Dictionary<string, GameObject>();
+        private readonly Dictionary<(Material, int), Material> legacySurfaces =
+            new Dictionary<(Material, int), Material>();
+        private readonly Dictionary<(Material, int), Material> legacyHostileSurfaces =
+            new Dictionary<(Material, int), Material>();
         private readonly GameObject[] proteronAssets = new GameObject[5];
         private readonly Material[] proteronSurfaces = new Material[5];
         private readonly Material[] hostileProteronSurfaces = new Material[5];
@@ -24,6 +34,7 @@ namespace FortyTwoAndBeyond.Client
         private readonly GameObject blackHoleRing, blackHoleCore;
         private readonly Material blackHoleDiskSurface, blackHoleCloudSurface,
             blackHoleCoreSurface, blackHolePhotonSurface, blackHoleLensSurface;
+        private readonly Material sunCoronaSurface, sunHazeSurface;
         private readonly Material[] moonStone = new Material[2], moonOre = new Material[2],
             moonMetal = new Material[2], moonHydrocarbon = new Material[2];
         private readonly Material corvetteSurface, frigateSurface, destroyerSurface, cruiserSurface, carrierSurface;
@@ -98,10 +109,30 @@ namespace FortyTwoAndBeyond.Client
             oreRock.SetFloat("_TextureStrength", 1f);
             oreRock.SetFloat("_DetailGain", 1.35f);
             field = ShaderMaterial("42 and Beyond/GateField");
+            sunCoronaSurface = ShaderMaterial("42 and Beyond/SunCorona");
+            sunCoronaSurface.SetFloat("_Strength", 2.2f);
+            sunHazeSurface = ShaderMaterial("42 and Beyond/SunCorona");
+            sunHazeSurface.SetFloat("_Strength", .55f);
             Sky = ShaderMaterial("42 and Beyond/SpaceSky");
+            Texture2D vividSky = Resources.Load<Texture2D>("NebulaPanorama");
             Texture2D proceduralSky = Resources.Load<Texture2D>("ProceduralSpace");
-            Sky.SetTexture("_NebulaTex", proceduralSky != null ? proceduralSky : LoadDetail("SpaceNebula"));
-            Sky.SetFloat("_Exposure", proceduralSky != null ? 1.65f : .16f);
+            Sky.SetTexture("_NebulaTex", vividSky != null ? vividSky :
+                proceduralSky != null ? proceduralSky : LoadDetail("SpaceNebula"));
+            Sky.SetFloat("_Exposure", vividSky != null ? .45f :
+                proceduralSky != null ? 1.65f : .16f);
+            Texture2D eveSky = Resources.Load<Texture2D>("EveShips/a13_cube");
+            if (eveSky != null)
+            {
+                Sky.SetTexture("_AccentTex", eveSky);
+                Sky.SetFloat("_AccentExposure", vividSky != null ? .55f : .34f);
+                Sky.SetFloat("_AccentBlend", vividSky != null ? .1f : .42f);
+            }
+            Texture2D veil = Resources.Load<Texture2D>("NebulaVeil");
+            if (veil != null)
+            {
+                Sky.SetTexture("_VeilTex", veil);
+                Sky.SetFloat("_VeilStrength", .12f);
+            }
             Shader effectShader = Resources.Load<Shader>("BeamAdditive");
             if (effectShader != null) { EffectLine = new Material(effectShader); materials.Add(EffectLine); }
             corvetteAsset = Resources.Load<GameObject>("ViktorShips/corvette03");
@@ -120,6 +151,40 @@ namespace FortyTwoAndBeyond.Client
             hostileCarrierSurface = HostileSurface(carrierSurface);
             eveCaldariAsset = Resources.Load<GameObject>("EveShips/cc3");
             eveGallenteAsset = Resources.Load<GameObject>("EveShips/gc3");
+            string[] legacyClasses = { "TVF01A", "TVT01A", "TVE01A", "JVF01A", "JVT01A",
+                "JVE01A", "PVF01A", "PVT01A", "PVE01A" };
+            for (int index = 0; index < legacyClasses.Length; index++)
+                legacyClassAssets[index] = Resources.Load<GameObject>("LegacyShips/" +
+                    legacyClasses[index]);
+            string[] veteranClasses = { "TE", "TT", "TS", "JD", "JS", "JE",
+                "PW", "PP", "PS" };
+            for (int index = 0; index < veteranClasses.Length; index++)
+                legacyVeteranAssets[index] = Resources.Load<GameObject>("LegacyShips/Original" +
+                    veteranClasses[index]);
+            legacyVeteranAssets[5] = Resources.Load<GameObject>("LegacyShips/OriginalJEBase") ??
+                legacyVeteranAssets[5];
+            foreach (var ship in new[] { (id: (ushort)1022, name: "npc01"),
+                (id: (ushort)1023, name: "npc02"), (id: (ushort)433, name: "PVS01"),
+                (id: (ushort)434, name: "PVS02"), (id: (ushort)317, name: "PPVF01A"),
+                (id: (ushort)2, name: "PVS07"), (id: (ushort)18, name: "PVF01A"),
+                (id: (ushort)21, name: "PVE01A"), (id: (ushort)10, name: "PVS12"),
+                (id: (ushort)5, name: "PVS09"), (id: (ushort)11, name: "PVS13"),
+                (id: (ushort)314, name: "PTVF01A"), (id: (ushort)1539, name: "MOB_03"),
+                (id: (ushort)1538, name: "MOB_02"), (id: (ushort)15, name: "JVT01A"),
+                (id: (ushort)24, name: "PVT01A"), (id: (ushort)9, name: "JVF01A"),
+                (id: (ushort)1, name: "PVS06") })
+            {
+                GameObject asset = Resources.Load<GameObject>("LegacyShips/" + ship.name);
+                if (asset != null) legacyMobAssets.Add(ship.id, asset);
+            }
+            TextAsset enemyCatalog = Resources.Load<TextAsset>("LegacyEnemies/Catalog");
+            if (enemyCatalog != null)
+                foreach (string row in enemyCatalog.text.Split('\n'))
+                {
+                    string[] fields = row.Trim().Split('\t');
+                    if (fields.Length == 2 && ushort.TryParse(fields[0], out ushort id))
+                        enemyModelPaths[id] = "LegacyEnemies/" + fields[1];
+                }
             eveCaldariSurface = EveSurface("cc3", Color.white, new Color(.3f, .8f, 1f));
             eveGallenteSurface = EveSurface("gc3", Color.white, new Color(.3f, 1f, .55f));
             eveGallenteHostileSurface = EveSurface("gc3", new Color(1f, .72f, .7f),
@@ -317,6 +382,14 @@ namespace FortyTwoAndBeyond.Client
             var surface = new Material(shader); materials.Add(surface);
             surface.SetTexture("_MainTex", albedo);
             surface.SetTexture("_GlowTex", Resources.Load<Texture2D>("EveShips/" + name + "_glow"));
+            Texture2D normal = Resources.Load<Texture2D>("EveShips/" + name + "_normal");
+            Texture2D roughness = Resources.Load<Texture2D>("EveShips/" + name + "_roughness");
+            if (normal != null && roughness != null)
+            {
+                surface.SetTexture("_NormalTex", normal);
+                surface.SetTexture("_RoughnessTex", roughness);
+                surface.SetFloat("_HasDetail", 1);
+            }
             surface.SetColor("_Tint", tint);
             surface.SetColor("_GlowColor", glowColor);
             surface.SetFloat("_Lift", name == "gc3" ? 1.85f : 1.35f);
@@ -380,10 +453,175 @@ namespace FortyTwoAndBeyond.Client
             return instance.transform;
         }
 
+        /// <returns>Transform: A centered original hull with its imported texture assignments.</returns>
+        private Transform ImportedLegacy(Transform root, GameObject asset, bool hostile = false)
+        {
+            if (asset == null) return null;
+            GameObject instance = Object.Instantiate(asset, root);
+            instance.name = "Original Earth and Beyond hull " + asset.name;
+            if (asset.name == "OriginalPW") PwWarpArms.Attach(instance);
+            if (asset.name == "OriginalJEBase") JeWarpRig.Attach(instance);
+            if (!TryLegacyBounds(instance, out Bounds bounds))
+            { Object.Destroy(instance); return null; }
+            bool modular = asset.name.StartsWith("Original", StringComparison.Ordinal);
+            int modularRace = modular ? asset.name[8] == 'T' ? 0 :
+                asset.name[8] == 'J' ? 1 : 2 : -1;
+            float span = modular ? Mathf.Max(bounds.size.x, bounds.size.z) :
+                Mathf.Max(bounds.size.z, bounds.size.x * .55f);
+            float scale = 4.8f / Mathf.Max(1f, span);
+            instance.transform.localScale = Vector3.one * scale;
+            if (asset.name == "OriginalPW")
+                instance.GetComponent<PwWarpArms>()?.ConfigureWeaponScale();
+            bool playerHull = modular || Array.IndexOf(legacyClassAssets, asset) >= 0;
+            instance.transform.localRotation = Quaternion.Euler(0, playerHull ? -90 : 90, 0);
+            instance.transform.localPosition = -(instance.transform.localRotation *
+                (bounds.center * scale));
+            foreach (Collider collider in instance.GetComponentsInChildren<Collider>())
+                Object.Destroy(collider);
+            foreach (Renderer renderer in instance.GetComponentsInChildren<Renderer>())
+            {
+                Material[] assigned = renderer.sharedMaterials;
+                for (int index = 0; index < assigned.Length; index++)
+                    assigned[index] = LegacySurface(assigned[index], hostile, modularRace);
+                renderer.sharedMaterials = assigned;
+            }
+            return instance.transform;
+        }
+
+        /// <returns>bool: Whether any mesh supplied complete model bounds in root coordinates.</returns>
+        private static bool TryLegacyBounds(GameObject instance, out Bounds bounds)
+        {
+            bounds = new Bounds(Vector3.zero, Vector3.zero);
+            bool found = false;
+            foreach (MeshFilter filter in instance.GetComponentsInChildren<MeshFilter>())
+            {
+                if (filter.sharedMesh == null) continue;
+                Bounds part = filter.sharedMesh.bounds;
+                Matrix4x4 toRoot = instance.transform.worldToLocalMatrix *
+                    filter.transform.localToWorldMatrix;
+                for (int corner = 0; corner < 8; corner++)
+                {
+                    Vector3 point = new Vector3((corner & 1) == 0 ? part.min.x : part.max.x,
+                        (corner & 2) == 0 ? part.min.y : part.max.y,
+                        (corner & 4) == 0 ? part.min.z : part.max.z);
+                    point = toRoot.MultiplyPoint3x4(point);
+                    if (!found) { bounds = new Bounds(point, Vector3.zero); found = true; }
+                    else bounds.Encapsulate(point);
+                }
+            }
+            return found;
+        }
+
+        /// <returns>Material: A cached lit interpretation of an original W3D material.</returns>
+        private Material LegacySurface(Material original, bool hostile, int modularRace)
+        {
+            if (original == null) return hull;
+            Dictionary<(Material, int), Material> cache = hostile ?
+                legacyHostileSurfaces : legacySurfaces;
+            var key = (original, modularRace);
+            if (cache.TryGetValue(key, out Material ready)) return ready;
+            Shader shader = Resources.Load<Shader>("LegacyShip");
+            if (shader == null) return original;
+            var surface = new Material(shader); materials.Add(surface);
+            string name = original.name.ToLowerInvariant();
+            bool engine = name.Contains("engine") || name.Contains("jet") ||
+                name.Contains("lite") || name.Contains("glow");
+            bool window = name.Contains("window") || name.Contains("cockpit");
+            bool textured = original.mainTexture != null;
+            if (textured) surface.SetTexture("_MainTex", original.mainTexture);
+            bool modular = modularRace >= 0;
+            bool progen = modularRace == 2 || name.Contains("progen") || name.Contains("pvf") ||
+                name.Contains("pve") || name.Contains("pvt");
+            Color tint = textured ? hostile ? new Color(1f, .78f, .74f) :
+                modular ? modularRace == 2 ? new Color(.47f, .39f, .34f) :
+                modularRace == 1 ? new Color(.36f, .42f, .57f) :
+                new Color(.39f, .48f, .55f) :
+                progen ? new Color(.82f, .86f, .77f) : Color.white :
+                engine ? new Color(.18f, .7f, 1f) : window ?
+                new Color(.12f, .26f, .34f) : new Color(.75f, .79f, .82f);
+            surface.SetColor("_Tint", tint);
+            if (modular)
+            {
+                surface.SetColor("_Accent", modularRace == 2 ?
+                    new Color(1f, .43f, .19f) : modularRace == 1 ?
+                    new Color(.34f, .75f, 1f) : new Color(1f, .67f, .31f));
+                surface.SetFloat("_PaintStrength", .8f);
+            }
+            surface.SetFloat("_Lift", textured ? hostile ? 1.55f :
+                modular ? 1.4f : 1.28f : 1.3f);
+            surface.SetFloat("_Desaturate", progen ? .48f : .12f);
+            surface.SetFloat("_Glow", engine ? 1.15f : window ? .34f :
+                modular ? 0f : .11f);
+            if (!textured && !engine && !window)
+            {
+                surface.SetTexture("_DetailTex", LoadDetail("HullPlating"));
+                surface.SetFloat("_UseDetail", 1f);
+            }
+            surface.SetFloat("_UseAlpha", name.Contains("flare") ||
+                name.Contains("gradient") || name.Contains("scanner") ||
+                name.Contains("decal") || name.Contains("sjh02") ||
+                name.StartsWith("lf", StringComparison.Ordinal) ||
+                name.Contains("glow") ? 1f : 0f);
+            cache.Add(key, surface);
+            return surface;
+        }
+
+        /// <returns>Transform: A detailed race hull, or null when its model is unavailable.</returns>
+        private Transform ModernShip(Transform root, int classIndex)
+        {
+            int race = Mathf.Clamp(classIndex / 3, 0, 2);
+            GameObject asset = race == 0 ? eveCaldariAsset : race == 1 ?
+                eveGallenteAsset : proteronAssets[4];
+            Material surface = race == 0 ? eveCaldariSurface : race == 1 ?
+                eveGallenteSurface : proteronSurfaces[4];
+            float scale = race == 0 ? .36f : race == 1 ? .69f : .31f;
+            return Imported(root, asset, "Player hull visual " + asset?.name,
+                Vector3.one * scale, surface);
+        }
+
+        /// <returns>int: The native class slot for a server-published player hull asset.</returns>
+        public static int ClassIndex(ushort asset)
+        { return asset >= 1600 && asset <= 1626 ? (asset - 1600) / 3 : 0; }
+
+        /// <returns>uint: The visual upgrade stage encoded in a native player hull asset.</returns>
+        public static uint HullStage(ushort asset)
+        { return asset >= 1600 && asset <= 1626 ? (uint)((asset - 1600) % 3 * 3) : 0; }
+
+        /// <returns>GameObject: The available original hull for this class and upgrade stage.</returns>
+        private GameObject LegacyClassAsset(int classIndex, uint hullStage)
+        {
+            if (classIndex < 0 || classIndex >= legacyClassAssets.Length) return null;
+            return hullStage >= 5 && legacyVeteranAssets[classIndex] != null ?
+                legacyVeteranAssets[classIndex] : legacyClassAssets[classIndex];
+        }
+
+        /// <summary>Switch the local character's original hull after roster selection.</summary>
+        public void SetShipClass(Transform ship, int classIndex, uint hullStage = 0)
+        {
+            if (ship == null || classIndex < 0 || classIndex >= legacyClassAssets.Length) return;
+            GameObject asset = LegacyClassAsset(classIndex, hullStage);
+            string expected = "Original Earth and Beyond hull " + asset?.name;
+            foreach (Transform child in ship)
+                if (child.name == expected) return;
+            Transform replacement = ImportedLegacy(ship, asset) ??
+                ModernShip(ship, classIndex);
+            if (replacement == null) return;
+            foreach (Transform child in ship)
+                if (child != replacement && (child.name.StartsWith("Original Earth and Beyond hull ",
+                    StringComparison.Ordinal) || child.name.StartsWith("Player hull visual ",
+                    StringComparison.Ordinal))) Object.Destroy(child.gameObject);
+        }
+
         /// <returns>A spacecraft with a solid hull, swept wings, cockpit and twin engines.</returns>
-        public Transform Ship(Transform parent)
+        public Transform Ship(Transform parent, int classIndex = 0, uint hullStage = 0)
         {
             Transform root = Root(parent, "Explorer spacecraft");
+            Transform original = ImportedLegacy(root, LegacyClassAsset(classIndex, hullStage));
+            if (original != null)
+            {
+                return root;
+            }
+            if (ModernShip(root, classIndex) != null) return root;
             if (Imported(root, eveCaldariAsset, "Locally exported Caldari hull", Vector3.one * .36f,
                     eveCaldariSurface) != null)
                 return root;
@@ -651,10 +889,22 @@ namespace FortyTwoAndBeyond.Client
             return root;
         }
 
-        /// <returns>A distinct procedural NPC craft using shared rendering assets.</returns>
+        /// <returns>A server-mapped original enemy model, with optional art fallbacks.</returns>
         public Transform Mob(Transform parent, ushort nativeAsset, bool isHostile)
         {
             Transform root = Root(parent, "Server mob");
+            if (enemyModelPaths.TryGetValue(nativeAsset, out string path))
+            {
+                if (!enemyModels.TryGetValue(path, out GameObject model))
+                {
+                    model = Resources.Load<GameObject>(path);
+                    enemyModels[path] = model;
+                }
+                if (model != null && ImportedLegacy(root, model, isHostile) != null) return root;
+            }
+            if (legacyMobAssets.TryGetValue(nativeAsset, out GameObject original) &&
+                ImportedLegacy(root, original, isHostile) != null)
+                return root;
             GameObject asset = frigateAsset;
             Material surface = isHostile ? hostileFrigateSurface : frigateSurface;
             float size = 1.5f;
@@ -990,6 +1240,24 @@ namespace FortyTwoAndBeyond.Client
             Transform rings = Model(planet, belt, ringMaterial, Vector3.zero, Vector3.one * .5f);
             rings.localRotation = Quaternion.Euler(65, 0, 0);
             return root;
+        }
+
+        /// <returns>Transform: A bright camera-facing star and its distant corona.</returns>
+        public Transform Sun(Transform environment)
+        {
+            Transform star = Root(environment, "System sun");
+            Part(star, PrimitiveType.Quad, Vector3.zero, new Vector3(3500, 3500, 1),
+                sunCoronaSurface).name = "Stellar photosphere and corona";
+            Part(star, PrimitiveType.Quad, new Vector3(0, 0, 35),
+                new Vector3(7600, 7600, 1), sunHazeSurface).name = "Diffuse stellar glow";
+            return star;
+        }
+
+        /// <summary>Match the visible star's tint to its sector's directional light.</summary>
+        public void TintSun(Color color)
+        {
+            sunCoronaSurface.SetColor("_Tint", color);
+            sunHazeSurface.SetColor("_Tint", color);
         }
 
         /// <summary>Place the locally exported accretion disk around an opaque dark core.</summary>

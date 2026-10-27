@@ -44,6 +44,7 @@ pub mod protocol;
 pub mod psionic_shield;
 pub mod rally;
 pub mod reactor_optimization;
+pub mod recipe_grants;
 pub mod refining;
 pub mod repulsor_field;
 pub mod resources;

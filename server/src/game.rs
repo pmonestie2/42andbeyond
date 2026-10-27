@@ -65,6 +65,7 @@ pub struct GameState {
     groups_dirty: bool,
     last_deferred_error: Option<Instant>,
     player_sectors: HashMap<u32, u32>,
+    developer_commands: bool,
 }
 
 struct JumpstartOffer {
@@ -75,6 +76,11 @@ struct JumpstartOffer {
 }
 
 impl GameState {
+    /// Enable or disable the private sandbox's developer commands and market fast travel.
+    pub fn set_developer_mode(&mut self, enabled: bool) {
+        self.developer_commands = enabled;
+    }
+
     pub fn new(sector: Sector, bind: Ipv4Addr, root: PathBuf) -> io::Result<Self> {
         let mut state = Self {
             sessions: BTreeMap::new(),
@@ -94,6 +100,7 @@ impl GameState {
             groups_dirty: true,
             last_deferred_error: None,
             player_sectors: HashMap::new(),
+            developer_commands: true,
         };
         state.load_accounts()?;
         let clock = state
@@ -837,6 +844,10 @@ impl GameState {
             station_rooms
                 .entry((avatar.station, avatar.pose.room))
                 .or_default()
+                .push(avatar.clone());
+            station_rooms
+                .entry((avatar.station, u32::MAX))
+                .or_default()
                 .push(avatar);
         }
         let effects: Vec<_> = self
@@ -871,7 +882,7 @@ impl GameState {
             session.publish_corpses()?;
             session.publish_peers(&peers);
             let avatars = session
-                .station_location()
+                .station_visibility_bucket()
                 .and_then(|room| station_rooms.get(&room));
             session.publish_station_peers(avatars.map_or(&[], Vec::as_slice));
             for visual in &harvest_visuals {

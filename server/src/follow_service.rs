@@ -31,9 +31,11 @@ impl PlayerSession {
             ));
         }
         if self.target == self.player_id()
-            || (!self.peer_ids.contains(&self.target) && self.mob_follow_contact()?.is_none())
+            || (!self.peer_ids.contains(&self.target)
+                && self.mob_follow_contact()?.is_none()
+                && self.static_follow_contact().is_none())
         {
-            return Err(invalid("Select a visible ship or living MOB to follow."));
+            return Err(invalid("Select a visible ship or world object to follow."));
         }
         self.cancel_mining("Following target.")?;
         self.cancel_looting("Following target.")?;
@@ -72,6 +74,47 @@ impl PlayerSession {
             }))
     }
 
+    /// Returns:
+    ///     Option<FollowContact>: A stationary selected object and its safe stopping radius.
+    fn static_follow_contact(&self) -> Option<FollowContact> {
+        if let Some(nav) = self
+            .sector
+            .navpoints
+            .iter()
+            .find(|nav| nav.id == self.target && self.sector.bounds.contains(nav.position))
+        {
+            let stand_off = if nav.radius > 1000. {
+                nav.radius + 600.
+            } else {
+                850.
+            };
+            return Some(FollowContact {
+                position: nav.position,
+                speed: self.motion.max_speed,
+                radius: stand_off - 10.,
+            });
+        }
+        if self.visible_resources.contains(&self.target) {
+            if let Some(node) = self.sector.resources.iter().find(|node| {
+                node.object.id == self.target && self.sector.bounds.contains(node.object.position)
+            }) {
+                return Some(FollowContact {
+                    position: node.object.position,
+                    speed: self.motion.max_speed,
+                    radius: 790.,
+                });
+            }
+        }
+        self.visible_corpses
+            .get(&self.target)
+            .copied()
+            .map(|position| FollowContact {
+                position,
+                speed: self.motion.max_speed,
+                radius: 690.,
+            })
+    }
+
     pub(super) fn advance_following(&mut self, dt: f32) -> io::Result<bool> {
         if !self.following {
             return Ok(false);
@@ -85,13 +128,15 @@ impl PlayerSession {
             self.stop_following();
             return Ok(false);
         }
-        let contact = if self.peer_ids.contains(&self.target) {
-            self.follow_peer
+        let (contact, range_limit) = if self.peer_ids.contains(&self.target) {
+            (self.follow_peer, FOLLOW_VISIBILITY)
+        } else if let Some(contact) = self.static_follow_contact() {
+            (Some(contact), f32::MAX)
         } else {
-            self.mob_follow_contact()?
+            (self.mob_follow_contact()?, FOLLOW_VISIBILITY)
         };
         let Some(contact) =
-            contact.filter(|contact| contact.range_to(self.position) <= FOLLOW_VISIBILITY)
+            contact.filter(|contact| contact.range_to(self.position) <= range_limit)
         else {
             self.stop_following();
             return Ok(false);
@@ -111,6 +156,38 @@ impl PlayerSession {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn space_follow_turns_toward_a_selected_world_object_and_stops_near_it() {
+        let mut ship = super::super::tests::session();
+        ship.logged_in = true;
+        let nav = ship
+            .sector
+            .navpoints
+            .iter()
+            .find(|nav| nav.radius < 1000.)
+            .unwrap()
+            .clone();
+        ship.target = nav.id;
+        ship.position = [nav.position[0] - 1800., nav.position[1], nav.position[2]];
+        ship.begin_following().unwrap();
+        ship.advance_player(1.).unwrap();
+        assert!(ship.motion.heading()[0] > 0.99);
+        assert!(ship.position[0] > nav.position[0] - 1800.);
+        for _ in 0..40 {
+            ship.advance_player(1.).unwrap();
+        }
+        let center_range = crate::mob::distance(ship.position, nav.position);
+        assert!(
+            center_range < 1000.,
+            "stopped {center_range}m from target center"
+        );
+        assert!(
+            center_range >= 840.,
+            "overshot the stand-off at {center_range}m"
+        );
+        assert!(ship.following);
+    }
 
     #[test]
     fn native_follow_tracks_mobs_ignores_prediction_and_manual_stop_cancels() {
@@ -143,7 +220,7 @@ mod tests {
         ship.handle_input(0x14, &command).unwrap();
         assert!(!ship.following);
         assert_eq!(ship.motion.set_speed, 0.);
-        ship.target = 100000;
+        ship.target = u32::MAX;
         assert!(ship.begin_following().is_err());
         ship.target = MOB_ID;
         ship.begin_following().unwrap();

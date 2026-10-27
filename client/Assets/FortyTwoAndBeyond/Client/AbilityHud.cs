@@ -92,7 +92,7 @@ namespace FortyTwoAndBeyond.Client
         /// <returns>Rect: Bounds of the ability panel's persistent toolbar button.</returns>
         private Rect ButtonRect()
         {
-            return client.CurrentSnapshot?.Station != null ? new Rect(350, 120, 125, 30) :
+            return client.CurrentSnapshot?.Station != null ? new Rect(CanvasWidth - 570, 37, 110, 34) :
                 new Rect(CanvasWidth - 550, 25, 110, 28);
         }
 
@@ -105,7 +105,8 @@ namespace FortyTwoAndBeyond.Client
 
         /// <returns>Rect: Bounds of the six flight ability slots.</returns>
         private Rect QuickbarRect()
-        { return new Rect((CanvasWidth - 720) * .5f, CanvasHeight - 117, 720, 68); }
+        { return flightHud.RetainedVisible && flightHud.RetainedQuickbarRect.width > 0 ?
+            flightHud.RetainedQuickbarRect : new Rect((CanvasWidth - 720) * .5f, CanvasHeight - 117, 720, 68); }
 
         /// <returns>Vector2: Pointer in the HUD's scaled, top-left canvas coordinates.</returns>
         private Vector2 CanvasPointer()
@@ -286,11 +287,14 @@ namespace FortyTwoAndBeyond.Client
         private void SupportTargetBar(Snapshot snapshot, Rect panel)
         {
             ShipActor selectedCrew = SelectedCrew(snapshot);
-            bool peerRepair = snapshot.AvailableAbilities.Contains(89u) ||
+            bool peerSupport = snapshot.AvailableAbilities.Contains(89u) ||
                 snapshot.AvailableAbilities.Contains(95u) ||
                 snapshot.AvailableAbilities.Contains(31u) ||
-                snapshot.AvailableAbilities.Contains(32u);
-            ShipActor selectedPeer = peerRepair ?
+                snapshot.AvailableAbilities.Contains(32u) ||
+                snapshot.AvailableAbilities.Contains(122u) ||
+                snapshot.AvailableAbilities.Contains(130u) ||
+                snapshot.AvailableAbilities.Contains(74u);
+            ShipActor selectedPeer = peerSupport ?
                 snapshot.Players.FirstOrDefault(actor => actor.Id == snapshot.SelectedTargetId &&
                     actor.HasPosition) : selectedCrew;
             uint recipient = selectedPeer?.Id ?? snapshot.PlayerId;
@@ -305,7 +309,7 @@ namespace FortyTwoAndBeyond.Client
             if (GUI.Button(new Rect(panel.x + 18, panel.y + 229, 86, 29), "SELF", flightHud.ButtonStyle))
             { pendingSupportTarget = snapshot.PlayerId; pendingSupportAt = Time.unscaledTime; client.SelectAbilitySelf(); }
             ShipActor[] crew = snapshot.Players.Where(actor => actor.HasPosition &&
-                (peerRepair ||
+                (peerSupport ||
                  snapshot.Group.Members.Any(member => member.Id == actor.Id)))
                 .OrderByDescending(actor => snapshot.Group.Members.Any(member => member.Id == actor.Id))
                 .Take(4).ToArray();
@@ -319,9 +323,42 @@ namespace FortyTwoAndBeyond.Client
             }
         }
 
+        internal bool VariantsOpen => variantSlot >= 0;
+
+        /// <summary>Open or close the skill library from the retained toolbar.</summary>
+        internal void Toggle() { open = !open; }
+
+        /// Returns:
+        ///     ValueTuple: The bound action's display name, key, and optional skill icon.
+        internal (string Name, string Key, Texture2D Icon) QuickSlotDisplay(int index, Snapshot snapshot)
+        {
+            LoadSlots(snapshot.PlayerId);
+            int id = slots[index];
+            AbilityDefinition ability = id >= 0 ? catalog.FirstOrDefault(item => item.id == id) : null;
+            ItemView device = BoundDevice(snapshot, id);
+            return (ability?.name ?? device?.ActivationLabel ?? "+ Assign",
+                client.Bindings.Display((ControlAction)((int)ControlAction.AbilityOne + index)),
+                ability != null ? icons.ForSkill(ability.skill) : null);
+        }
+
+        /// <summary>Use the existing quickbar activation, assignment, and rank-selection behavior.</summary>
+        internal void PressQuickSlot(int index, bool rightClick, Snapshot snapshot)
+        {
+            LoadSlots(snapshot.PlayerId);
+            int id = slots[index];
+            AbilityDefinition ability = id >= 0 ? catalog.FirstOrDefault(item => item.id == id) : null;
+            ItemView device = BoundDevice(snapshot, id);
+            if (rightClick)
+            { if (ability != null) variantSlot = variantSlot == index ? -1 : index; return; }
+            if (ability == null && device == null)
+            { open = true; equipmentTab = id < -1; trainingTab = false; assigningSlot = index; }
+            else ActivateSlot(index, snapshot);
+        }
+
         /// <summary>Show bound abilities and their configured keys during flight.</summary>
         private void Quickbar(Snapshot snapshot)
         {
+            if (flightHud.RetainedVisible && !open && variantSlot < 0) return;
             EnsureStyles();
             Rect bar = QuickbarRect(); flightHud.Panel(bar);
             Event current = Event.current;
@@ -536,7 +573,7 @@ namespace FortyTwoAndBeyond.Client
             { dragBinding = int.MinValue; draggingAbility = false; DrawDockedTraining(snapshot); return; }
             if (!GUI.enabled) { dragBinding = int.MinValue; draggingAbility = false; }
             else HandleAbilityDrag(snapshot);
-            if (GUI.Button(ButtonRect(), open ? "Close skills" : "Skills", flightHud.ButtonStyle))
+            if ((!flightHud.RetainedVisible || open) && GUI.Button(ButtonRect(), open ? "Close skills" : "Skills", flightHud.ButtonStyle))
                 open = !open;
             if (!open) { Quickbar(snapshot); return; }
             Rect panel = PanelRect(); flightHud.Panel(panel);
@@ -644,6 +681,9 @@ namespace FortyTwoAndBeyond.Client
                     $"CHARGING {snapshot.CastRemainingSeconds:0.#} S" :
                     ability.id == 65 ? "ENERGY DEPENDS ON TARGET" :
                     $"RANK {ability.rank}  ·  {ability.energy:0} ENERGY";
+                if (ability.kind == "shield_charging")
+                    status += AbilityTargets.Directed((uint)ability.id) ?
+                        "  ·  SELECTED PILOT" : "  ·  SELF ONLY";
                 if (ability.kind == "hacking" && recovery <= 0 && !charging)
                     status = HackingTargetHint(snapshot);
                 float rowWidth = panel.width - 52;

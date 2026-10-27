@@ -21,7 +21,10 @@ namespace FortyTwoAndBeyond.Client
         public MissionHud(SpaceClient client, FlightHud flightHud)
         { this.client = client; this.flightHud = flightHud; }
 
-        /// <summary>Close the journal when another overlay takes focus.</summary>
+        /// <summary>Toggle this detail panel from the retained flight controls.</summary>
+        internal void Toggle() { open = !open; }
+
+        /// <summary>Dismiss this panel when its owning flight context closes.</summary>
         public void Close() { open = false; }
 
         /// <summary>
@@ -70,7 +73,7 @@ namespace FortyTwoAndBeyond.Client
         {
             if (snapshot?.Ready != true || snapshot.Dialogue != null) { open = false; return; }
             MissionState[] visible = snapshot.Missions.Where(mission => mission?.Visible == true).ToArray();
-            if (GUI.Button(ButtonRect(snapshot), "MISSIONS  " + visible.Length, flightHud.ButtonStyle))
+            if (!flightHud.RetainedVisible && GUI.Button(ButtonRect(snapshot), "MISSIONS  " + visible.Length, flightHud.ButtonStyle))
                 open = !open;
             if (!open) return;
             if (detailText == null)

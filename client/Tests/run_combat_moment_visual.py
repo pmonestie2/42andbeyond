@@ -20,8 +20,10 @@ def main() -> None:
     executable = server_root / 'target/debug/beyond-server'
     if not executable.is_file() or not args.unity.is_file():
         raise FileNotFoundError('Build the disposable server and provide a Unity Editor.')
-    names = ('combat-missile.png', 'combat-shield.png', 'combat-hull.png',
-             'combat-breakup.png')
+    names = ('combat-missile.png', 'combat-shield.png', 'combat-own-shield.png',
+             'combat-own-shield-bend.png',
+             'combat-hull.png',
+             'combat-breakup.png', 'combat-aftermath.png')
     screenshots = [project / 'Builds/verification' / name for name in names]
     for screenshot in screenshots:
         screenshot.unlink(missing_ok=True)
@@ -34,7 +36,7 @@ def main() -> None:
         mob = next(actor.copy() for sector in universe for actor in sector['mobs']
                    if actor['template_id'] == 2010)
         mob.update(source_id=10, spawn=[650.0, -230.0, 0.0], spawn_region=None,
-                   aggressive=False, aggression=0, respawn_seconds=120.0,
+                   aggressive=True, aggression=1, respawn_seconds=120.0,
                    combat_override={'hull': 180.0, 'shield': 100.0, 'dps': 2.5,
                                     'reload': 2.0, 'range': 1000.0, 'effect': 35,
                                     'damage_type': 3, 'variance': False})
@@ -76,6 +78,9 @@ def main() -> None:
                                 '-logFile', str(state / 'unity.log'),
                                 '--42andbeyond-combat-moment-smoke'],
                                check=True, timeout=200)
+                for screenshot in screenshots:
+                    if not screenshot.is_file():
+                        raise FileNotFoundError(screenshot.name)
             except BaseException:
                 if (state / 'unity.log').exists():
                     print((state / 'unity.log').read_text(errors='replace')[-6000:])
@@ -89,10 +94,5 @@ def main() -> None:
                 except subprocess.TimeoutExpired:
                     server.terminate()
                     server.wait(timeout=5)
-    for screenshot in screenshots:
-        if not screenshot.is_file():
-            raise FileNotFoundError(screenshot.name)
-
-
 if __name__ == '__main__':
     main()

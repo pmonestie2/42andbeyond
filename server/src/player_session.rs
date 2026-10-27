@@ -44,6 +44,8 @@ mod call_forward_service;
 mod combat_experience;
 #[path = "combat_trance.rs"]
 mod combat_trance;
+#[path = "component_market.rs"]
+mod component_market;
 #[path = "dev_session.rs"]
 mod dev_session;
 #[path = "energy_leech_service.rs"]
@@ -224,11 +226,16 @@ pub struct PlayerSession {
     replay: VecDeque<Datagram>,
     inputs: VecDeque<u32>,
     pending: Vec<Frame>,
+    awaiting_start_ack: bool,
+    deferred_start_frames: Vec<Frame>,
+    mob_login_refresh_at: Option<Instant>,
+    peer_login_refresh_at: Option<Instant>,
     outgoing: Vec<Outbound>,
     warp: Warp,
     warp_effects: Vec<u32>,
     next_effect: u32,
     last_motion_report: Option<Instant>,
+    teleport_report_guard: Option<Instant>,
     last_launch: u64,
     mob_damage_receipts: Vec<mob_damage::MobDamageReceipt>,
     high_fold_receipts: Vec<crate::fold_space_high::FoldReceipt>,
@@ -240,9 +247,11 @@ pub struct PlayerSession {
     gate_transit: Option<crate::gating::GateTransit>,
     docking_target: Option<u32>,
     handoff: Option<Vec<u8>>,
+    last_handoff_replay: Instant,
     transition_pending: Option<sector_transition::TransitionRecord>,
     transition_retry: Instant,
     station_pose: Option<StationPose>,
+    aggregate_station: bool,
     station_peers: HashMap<u32, StationPose>,
     station_view_dirty: bool,
     last_station_broadcast: Instant,
@@ -273,7 +282,9 @@ pub struct PlayerSession {
     repulsor_field_buff: Option<crate::repulsor_field::RepulsorBuff>,
     repulsor_field_revision: u64,
     combat_trance: combat_trance::CombatTrance,
+    combat_trance_suppressed: bool,
     shield: f32,
+    shield_recharge_after_ms: u64,
     pub(crate) hull: f32,
     energy: f32,
     energy_revision: u64,
@@ -300,6 +311,7 @@ pub struct PlayerSession {
     peer_contacts: HashMap<u32, crate::peers::PeerContact>,
     visible_peers: HashSet<u32>,
     peer_stats: HashMap<u32, crate::equipment_stats::ShipStats>,
+    peer_shield_charging: HashMap<u32, bool>,
     visible_resources: HashSet<u32>,
     resource_fractions: HashMap<u32, f32>,
     last_resource_visibility: Option<Instant>,
@@ -437,11 +449,16 @@ impl PlayerSession {
             replay: VecDeque::new(),
             inputs: VecDeque::new(),
             pending: Vec::new(),
+            awaiting_start_ack: false,
+            deferred_start_frames: Vec::new(),
+            mob_login_refresh_at: None,
+            peer_login_refresh_at: None,
             outgoing: Vec::new(),
             warp: Warp::default(),
             warp_effects: Vec::new(),
             next_effect,
             last_motion_report: None,
+            teleport_report_guard: None,
             last_launch: 0,
             mob_damage_receipts: Vec::new(),
             high_fold_receipts: Vec::new(),
@@ -453,9 +470,11 @@ impl PlayerSession {
             gate_transit: None,
             docking_target: None,
             handoff: None,
+            last_handoff_replay: now,
             transition_pending: None,
             transition_retry: now,
             station_pose: None,
+            aggregate_station: false,
             station_peers: HashMap::new(),
             station_view_dirty: false,
             last_station_broadcast: now,
@@ -486,7 +505,9 @@ impl PlayerSession {
             repulsor_field_buff: None,
             repulsor_field_revision: 0,
             combat_trance: combat_trance::CombatTrance::default(),
+            combat_trance_suppressed: false,
             shield: stats.shield_capacity,
+            shield_recharge_after_ms: 0,
             hull: stats.hull_capacity,
             energy: stats.energy_capacity,
             energy_revision,
@@ -513,6 +534,7 @@ impl PlayerSession {
             peer_contacts: HashMap::new(),
             visible_peers: HashSet::new(),
             peer_stats: HashMap::new(),
+            peer_shield_charging: HashMap::new(),
             visible_resources: HashSet::new(),
             resource_fractions: HashMap::new(),
             last_resource_visibility: None,
@@ -653,6 +675,7 @@ impl PlayerSession {
         }
         self.stop_following();
         self.selected_peer = Some(peer);
+        self.aggregate_station = false;
         self.session_epoch = rand::random::<u64>().max(1);
         self.gate_transit = None;
         self.endpoint = None;
@@ -768,6 +791,8 @@ impl PlayerSession {
             self.inputs.clear();
             self.session_epoch = rand::random::<u64>().max(1);
             self.pending.clear();
+            self.awaiting_start_ack = false;
+            self.deferred_start_frames.clear();
             let mut body = Vec::from(self.bind.octets());
             body.extend_from_slice(&SECTOR_PORT.to_le_bytes());
             body.extend_from_slice(&self.player_id().to_le_bytes());
@@ -833,6 +858,7 @@ impl PlayerSession {
                 self.visible_peers.clear();
                 self.attacker_ids.clear();
                 self.peer_stats.clear();
+                self.peer_shield_charging.clear();
                 self.visible_resources.clear();
                 self.resource_fractions.clear();
                 self.resource_window = None;
@@ -866,6 +892,7 @@ impl PlayerSession {
                         resources: self.ship_resources(),
                     },
                 ));
+                let start_boundary = self.pending.len();
                 self.publish_reputation();
                 self.publish_active_device_resume();
                 let shared = Arc::clone(&self.combat);
@@ -892,9 +919,91 @@ impl PlayerSession {
                 );
                 self.publish_weapon_states();
                 self.initialise_workbench_lab(true)?;
+                self.deferred_start_frames = self.pending.split_off(start_boundary);
+                self.awaiting_start_ack = true;
+                self.mob_login_refresh_at = None;
+                self.peer_login_refresh_at = None;
             }
-            6 | 0x3004 | 0x3008 => {}
+            6 => {
+                if self.awaiting_start_ack {
+                    self.awaiting_start_ack = false;
+                    self.pending.append(&mut self.deferred_start_frames);
+                    if self.sector.station.is_none() {
+                        let refresh_at = Instant::now() + Duration::from_secs(2);
+                        self.mob_login_refresh_at = Some(refresh_at);
+                        self.peer_login_refresh_at = Some(refresh_at);
+                    }
+                }
+            }
+            0x3004 | 0x3008 => {}
             0x8d => self.incap_request(body)?,
+            0x2033 => {
+                if let Err(error) = self.workbench_page_input(body) {
+                    self.pending.push(packets::message(&error.to_string()));
+                }
+            }
+            0x203a => {
+                if body.len() != 8 || reader.u32()? != self.player_id() || !self.logged_in {
+                    return Err(invalid(
+                        "Invalid station presentation capability owner or length.",
+                    ));
+                }
+                let enabled = reader.u32()?;
+                if enabled > 1 {
+                    return Err(invalid("Invalid station presentation capability value."));
+                }
+                let previous = self.aggregate_station;
+                self.aggregate_station = enabled == 1;
+                if let Err(error) = self.checkpoint_session(true) {
+                    self.aggregate_station = previous;
+                    return Err(error);
+                }
+                self.station_view_dirty |= self.aggregate_station != previous;
+                if !self.aggregate_station
+                    && self
+                        .npc_interaction
+                        .as_ref()
+                        .is_some_and(|active| !self.npc_in_current_room(active.npc))
+                {
+                    self.close_npc();
+                }
+                self.pending.push(Frame::new(
+                    0x203b,
+                    [self.player_id(), enabled].map(u32::to_le_bytes).concat(),
+                ));
+            }
+            0x2034 | 0x2037 | 0x2038 => {
+                let expected = if opcode == 0x2038 { 4 } else { 8 };
+                if body.len() != expected || reader.u32()? != self.player_id() {
+                    return Err(invalid("Invalid component market request owner or length."));
+                }
+                match opcode {
+                    0x2034 => self.client_events.push(ClientEvent::ComponentMarketQuery {
+                        template: reader.u32()?,
+                    }),
+                    0x2037 => self.client_events.push(ClientEvent::ComponentMarketTravel {
+                        station: reader.u32()?,
+                    }),
+                    _ => self.component_market_stock()?,
+                }
+            }
+            0x2036 => {
+                if body.len() != 24 || reader.u32()? != self.player_id() {
+                    return Err(invalid("Invalid component market trade owner or length."));
+                }
+                let (npc, template, action, slot, quantity) = (
+                    reader.u32()?,
+                    reader.u32()?,
+                    reader.u32()?,
+                    reader.u32()?,
+                    reader.u32()?,
+                );
+                if let Err(error) =
+                    self.component_market_trade(npc, template, action, slot, quantity)
+                {
+                    self.message(&format!("Component trade rejected: {error}"));
+                }
+            }
             0x79 | 0x7a | 0x7b | 0x7c | 0x7e | 0x80 => {
                 if let Err(error) = self.workbench_input(opcode, body) {
                     self.pending.push(packets::message(&error.to_string()));
@@ -1373,17 +1482,19 @@ impl PlayerSession {
                 &candidate_skills,
             )?;
         }
-        let active_device = self
+        let now_ms = crate::resources::unix_ms();
+        let (mut active_devices, removed_devices): (Vec<_>, Vec<_>) = self
             .active_device
-            .as_ref()
-            .filter(|active| active.valid_for(&candidate, &self.items, crate::resources::unix_ms()))
-            .cloned();
-        let additional_active_devices = self
-            .additional_active_devices
             .iter()
-            .filter(|active| active.valid_for(&candidate, &self.items, crate::resources::unix_ms()))
+            .chain(&self.additional_active_devices)
             .cloned()
-            .collect::<Vec<_>>();
+            .partition(|active| active.valid_for(&candidate, &self.items, now_ms));
+        let active_device = if active_devices.is_empty() {
+            None
+        } else {
+            Some(active_devices.remove(0))
+        };
+        let additional_active_devices = active_devices;
         let mut active_modifiers = active_device
             .as_ref()
             .map_or_else(Vec::new, session_equipment::ActiveDevice::modifiers);
@@ -1491,6 +1602,9 @@ impl PlayerSession {
         self.reputation = reputation;
         self.equipment = equipment;
         self.apply_equipment_parameters();
+        if !removed_devices.is_empty() {
+            self.publish_active_device_removals(&removed_devices);
+        }
         if hull_upgraded {
             self.hull = self.equipment.ship.hull_capacity;
         }
@@ -1573,7 +1687,7 @@ impl PlayerSession {
         }
         if let Some(nav) = self.sector.navpoints.iter().find(|nav| {
             nav.id == id
-                && (nav.navigation_type > 0 || nav.object_type == 37)
+                && (nav.advertised_navigation_type() > 0 || nav.object_type == 37)
                 && self.sector.bounds.contains(nav.position)
         }) {
             return Ok(Waypoint {
@@ -1614,6 +1728,9 @@ impl PlayerSession {
         let position = [reader.f32()?, reader.f32()?, reader.f32()?];
         if !self.logged_in
             || self.sector.station.is_some()
+            || self
+                .teleport_report_guard
+                .is_some_and(|at| at.elapsed() < Duration::from_millis(750))
             || self.warp.phase != WarpPhase::Idle
             || self.following
             || self.formation_leader.is_some()
@@ -1738,8 +1855,17 @@ impl PlayerSession {
         if self.pending.is_empty() {
             return Ok(());
         }
+        if self.awaiting_start_ack {
+            if let Some(start) = self.pending.iter().position(|frame| frame.opcode == 5) {
+                let mut later = self.pending.split_off(start + 1);
+                self.deferred_start_frames.append(&mut later);
+            } else {
+                self.deferred_start_frames.append(&mut self.pending);
+                return Ok(());
+            }
+        }
         // ACK requests are regular inner frames, not an extra UDP framing layer.
-        if self.last_ack_request.elapsed() >= Duration::from_secs(1) {
+        if !self.awaiting_start_ack && self.last_ack_request.elapsed() >= Duration::from_secs(1) {
             self.pending
                 .push(Frame::new(0x2020, self.sequence.to_le_bytes().to_vec()));
             self.last_ack_request = Instant::now();
@@ -1782,6 +1908,10 @@ impl PlayerSession {
         self.warp_effects.clear();
         self.last_motion_report = None;
         self.pending.clear();
+        self.awaiting_start_ack = false;
+        self.deferred_start_frames.clear();
+        self.mob_login_refresh_at = None;
+        self.peer_login_refresh_at = None;
         self.attacker_ids.clear();
         self.stop_weapons();
         self.active_device = None;
@@ -1829,6 +1959,37 @@ impl PlayerSession {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Hold post-login extensions until the native client acknowledges START.
+    #[test]
+    fn native_start_ack_releases_deferred_status() {
+        let mut ship = session();
+        ship.endpoint = Some("127.0.0.1:22343".parse().unwrap());
+        ship.pending = vec![
+            Frame::new(0x3c, vec![0; 4]),
+            Frame::new(5, vec![3, 0, 0, 0]),
+        ];
+        ship.awaiting_start_ack = true;
+        ship.deferred_start_frames = vec![Frame::new(0x2030, vec![1, 0])];
+        ship.flush().unwrap();
+        let outgoing = ship.take_outgoing();
+        assert_eq!(outgoing.len(), 2);
+        assert_eq!(
+            Datagram::decode(&outgoing[1].data).unwrap().body,
+            Frame::new(5, vec![3, 0, 0, 0]).encode().unwrap()
+        );
+        ship.pending.push(Frame::new(0x3e, vec![0; 4]));
+        ship.flush().unwrap();
+        assert!(ship.take_outgoing().is_empty());
+        ship.handle_input(6, &[]).unwrap();
+        ship.flush().unwrap();
+        let released = ship.take_outgoing();
+        assert!(!released.is_empty());
+        let body = &Datagram::decode(&released[0].data).unwrap().body;
+        assert!(body
+            .windows(2)
+            .any(|bytes| bytes == 0x2030u16.to_le_bytes()));
+    }
 
     /// Verify equipped Combat Trance and NPC-hit receipts survive replacement.
     #[test]
@@ -3395,10 +3556,11 @@ mod tests {
         for (before, after) in baseline.deflects.iter().zip(ship.equipment.ship.deflects) {
             assert_eq!(after, (*before + 10.).min(50.));
         }
-        let token = b"Shield_Charging";
+        let token = b"Megacharge_Shields";
         assert!(ship.pending.iter().any(|frame| frame.opcode == 0x1b
             && frame.body.windows(token.len()).any(|bytes| bytes == token)));
         assert!(!ship.pending.iter().any(|frame| frame.opcode == 0x09));
+        assert!(ship.pending.iter().any(|frame| frame.opcode == 0x0f));
         ship.apply_reactor_optimization_buff(
             crate::reactor_optimization::ReactorOptimizationBuff {
                 revision: 2,
@@ -3435,9 +3597,10 @@ mod tests {
         assert!(ship
             .pending
             .contains(&packets::ship_active_buff_slot(id, 13, "", 0)));
+        assert!(ship.pending.iter().any(|frame| frame.opcode == 0x0f));
     }
 
-    /// A short process replacement replays one timed native recipient status.
+    /// A short process replacement replays status and removes the old visual.
     #[test]
     fn shield_charging_status_replays_from_disposable_checkpoint() {
         let mut ship = session();
@@ -3467,9 +3630,10 @@ mod tests {
         assert!(restored.pending.iter().any(|frame| frame.opcode == 0x1b
             && frame
                 .body
-                .windows(b"Shield_Charging".len())
-                .any(|bytes| bytes == b"Shield_Charging")));
+                .windows(b"Megacharge_Shields".len())
+                .any(|bytes| bytes == b"Megacharge_Shields")));
         assert!(!restored.pending.iter().any(|frame| frame.opcode == 0x09));
+        assert!(restored.pending.iter().any(|frame| frame.opcode == 0x0f));
         fs::remove_dir_all(root).unwrap();
     }
 
@@ -3598,6 +3762,61 @@ mod tests {
         for effect in 24..=27 {
             assert!(ship.pending.contains(&packets::remove_effect(effect)));
         }
+    }
+
+    /// Confirm a credited group member receives a ship-centered shield sphere.
+    #[test]
+    fn shield_sap_group_award_emits_recipient_sphere() {
+        let mut recipient = session();
+        let target = recipient.player_id();
+        let source = target + 1;
+        recipient.publish_shield_sap_award(source, 51);
+        let visual = recipient
+            .pending
+            .iter()
+            .find(|frame| frame.opcode == 0x0b)
+            .unwrap();
+        assert_eq!(visual.body.get(2..6), Some(source.to_le_bytes().as_slice()));
+        assert_eq!(
+            visual.body.get(6..10),
+            Some(target.to_le_bytes().as_slice())
+        );
+        assert_eq!(
+            visual.body.get(10..12),
+            Some(146u16.to_le_bytes().as_slice())
+        );
+        assert!(recipient.pending.contains(&packets::remove_effect(51)));
+    }
+
+    /// Resume Shield Nova with a target-linked beam as well as its caster aura.
+    #[test]
+    fn shield_nova_resume_emits_target_beam() {
+        let mut ship = session();
+        let source = ship.player_id();
+        let target = MOB_ID;
+        ship.skills.active_inversion = Some(crate::shield_inversion::ActiveShieldInversion {
+            source,
+            sector: ship.sector.id,
+            ability: 110,
+            trained_rank: 7,
+            target,
+            target_generation: 0,
+            source_epoch: ship.session_epoch,
+            effect: 93,
+            expires_at_ms: crate::resources::unix_ms() + 15_000,
+            next_pulse_ms: crate::resources::unix_ms() + 1_000,
+            pulse_index: 0,
+        });
+        ship.publish_inversion_resume();
+        let beam = ship
+            .pending
+            .iter()
+            .find(|frame| frame.opcode == 0x0b)
+            .unwrap();
+        assert_eq!(beam.body.get(2..6), Some(source.to_le_bytes().as_slice()));
+        assert_eq!(beam.body.get(6..10), Some(target.to_le_bytes().as_slice()));
+        assert_eq!(beam.body.get(10..12), Some(98u16.to_le_bytes().as_slice()));
+        assert!(ship.pending.iter().any(|frame| frame.opcode == 0x09));
     }
 
     /// Legacy status icons resolve the underscore BuffType, including resume.
@@ -4551,17 +4770,84 @@ mod tests {
                 0x9f,
                 &[
                     restored.player_id().to_le_bytes(),
-                    1u32.to_le_bytes(),
+                    u32::MAX.to_le_bytes(),
                     0u32.to_le_bytes(),
                 ]
                 .concat(),
             )
             .unwrap();
-        assert!(restored.station_pose.is_none()); // await new-room coordinates
+        assert!(restored.station_pose.is_none()); // avatar left the concourse
         restored.pending.clear();
         restored.publish_station_peers(&[]);
         assert!(restored.station_peers.is_empty());
         assert_eq!(restored.position, old_ship_position);
+    }
+
+    /// Aggregate visibility includes other native rooms in this station, while native recipients remain isolated by room.
+    #[test]
+    fn aggregate_station_peers_include_all_local_rooms_only() {
+        let mut viewer = session();
+        viewer.sector = viewer.sectors.sector(10761).unwrap();
+        viewer.logged_in = true;
+        viewer.station_pose = Some(StationPose {
+            room: 0,
+            orientation: 0.,
+            position: [0.; 3],
+            action: 0x41,
+        });
+        let mut peer = viewer.station_snapshot().unwrap();
+        peer.profile.game_id += 1;
+        peer.pose.room = 2;
+        viewer.pending.clear();
+        viewer.publish_station_peers(&[peer.clone()]);
+        assert!(viewer.pending.is_empty());
+        assert_eq!(viewer.station_visibility_bucket(), Some((10761, 0)));
+        viewer.aggregate_station = true;
+        assert_eq!(viewer.station_visibility_bucket(), Some((10761, u32::MAX)));
+        viewer.publish_station_peers(&[peer.clone()]);
+        assert!(viewer.station_peers.contains_key(&peer.profile.game_id));
+        assert_eq!(
+            viewer
+                .pending
+                .iter()
+                .map(|frame| frame.opcode)
+                .collect::<Vec<_>>(),
+            vec![0x61, 0xa0, 0x9e]
+        );
+        peer.station = 17051;
+        viewer.pending.clear();
+        viewer.publish_station_peers(&[peer]);
+        assert!(viewer.station_peers.is_empty());
+        assert_eq!(viewer.pending.len(), 1);
+    }
+
+    /// Preserve a native station room across restart without moving the avatar.
+    #[test]
+    fn native_station_room_checkpoint_preserves_original_room() {
+        let mut ship = session();
+        ship.sector = ship.sectors.sector(10761).unwrap();
+        ship.logged_in = true;
+        ship.station_pose = Some(StationPose {
+            room: 0,
+            orientation: 0.,
+            position: [0., 0., 0.],
+            action: 0,
+        });
+        ship.selected_peer = Some("127.0.0.1".parse().unwrap());
+        ship.endpoint = Some("127.0.0.1:22050".parse().unwrap());
+        ship.save().unwrap();
+        ship.checkpoint_session(true).unwrap();
+        let checkpoint = ship.state_dir.join("session.local.json");
+        let mut saved: serde_json::Value =
+            serde_json::from_slice(&fs::read(&checkpoint).unwrap()).unwrap();
+        saved["station_pose"]["room"] = serde_json::json!(2);
+        fs::write(&checkpoint, serde_json::to_vec(&saved).unwrap()).unwrap();
+        let restored =
+            PlayerSession::new(ship.sector.clone(), ship.bind, ship.state_dir.clone()).unwrap();
+        assert!(restored.logged_in);
+        assert_eq!(restored.station_pose.as_ref().unwrap().room, 2);
+        assert_eq!(restored.inventory, ship.inventory);
+        assert!(restored.pending.iter().any(|frame| frame.opcode == 0x52));
     }
 
     fn npc_choice(ship: &mut PlayerSession, choice: u8) -> io::Result<()> {
@@ -5742,15 +6028,35 @@ mod tests {
         std::fs::remove_dir_all(root).unwrap();
     }
 
+    /// Native room restrictions remain authoritative unless an owned aggregate capability is negotiated.
     #[test]
-    fn npc_dialogue_and_vendor_require_the_npcs_room_after_a_room_change() {
-        let mut ship = session();
+    fn aggregate_station_capability_allows_local_contacts_and_leaving_closes_vendor_access() {
+        let mut ship = journal_ship();
         ship.sector = ship.sectors.sector(10761).unwrap();
         ship.logged_in = true;
         assert!(ship.open_npc(16).is_err()); // No confirmed room yet.
-        enter_npc_room(&mut ship, 7); // Room 1; vendor16 belongs to room 2.
-        assert!(ship.open_npc(16).is_err());
-        enter_npc_room(&mut ship, 16);
+        enter_npc_room(&mut ship, 7);
+        ship.save().unwrap();
+        assert!(ship.open_npc(16).is_err()); // Legacy client must enter the vendor's actual room.
+        ship.handle_input(
+            0x203a,
+            &[ship.player_id(), 1].map(u32::to_le_bytes).concat(),
+        )
+        .unwrap();
+        assert_eq!(
+            ship.pending.last().unwrap(),
+            &Frame::new(0x203b, [ship.player_id(), 1].map(u32::to_le_bytes).concat())
+        );
+        let mut recovered =
+            PlayerSession::new(ship.sector.clone(), ship.bind, ship.state_dir.clone()).unwrap();
+        assert!(recovered.aggregate_station);
+        assert_eq!(recovered.station_pose.as_ref().unwrap().room, 1);
+        assert!(recovered.npc_in_current_room(16));
+        recovered
+            .select(0, "127.0.0.1".parse().unwrap(), false)
+            .unwrap();
+        assert!(!recovered.aggregate_station);
+        assert!(ship.open_npc(9).is_err()); // Aggregate access never includes another station.
         ship.open_npc(16).unwrap();
         npc_choice(&mut ship, 2).unwrap();
         ship.inventory.credits = 10_000_000;
@@ -5764,7 +6070,9 @@ mod tests {
         assert!(ship.inventory_candidate(vendor_transfer).is_ok());
         ship.handle_input(
             0x9f,
-            &[ship.player_id(), 1, 2].map(u32::to_le_bytes).concat(),
+            &[ship.player_id(), u32::MAX, 0]
+                .map(u32::to_le_bytes)
+                .concat(),
         )
         .unwrap();
         assert!(ship.npc_interaction.is_none());
@@ -5772,6 +6080,25 @@ mod tests {
         assert!(ship.open_npc(16).is_err());
         enter_npc_room(&mut ship, 7);
         ship.open_npc(7).unwrap();
+        assert!(ship
+            .handle_input(
+                0x203a,
+                &[ship.player_id() + 1, 1].map(u32::to_le_bytes).concat()
+            )
+            .is_err());
+        assert!(ship
+            .handle_input(
+                0x203a,
+                &[ship.player_id(), 2].map(u32::to_le_bytes).concat()
+            )
+            .is_err());
+        ship.handle_input(
+            0x203a,
+            &[ship.player_id(), 0].map(u32::to_le_bytes).concat(),
+        )
+        .unwrap();
+        assert!(!ship.aggregate_station);
+        assert!(ship.open_npc(16).is_err());
     }
 
     #[test]
@@ -5966,6 +6293,27 @@ mod tests {
     }
 
     #[test]
+    fn native_start_refresh_reannounces_nearby_peer_once() {
+        let mut ship = session();
+        let mut other = session();
+        ship.logged_in = true;
+        other.logged_in = true;
+        other.account.character.game_id += 1;
+        let peer = other.peer_snapshot().unwrap();
+        ship.peer_ids.insert(other.player_id());
+        ship.publish_peers(std::slice::from_ref(&peer));
+        ship.pending.clear();
+        ship.peer_login_refresh_at = Some(Instant::now() - Duration::from_millis(1));
+        ship.publish_peers(std::slice::from_ref(&peer));
+        assert!(ship.pending.iter().any(|frame| frame.opcode == 4));
+        assert!(ship.pending.iter().any(|frame| frame.opcode == 0x89));
+        assert!(ship.peer_login_refresh_at.is_none());
+        ship.pending.clear();
+        ship.publish_peers(&[peer]);
+        assert!(!ship.pending.iter().any(|frame| frame.opcode == 4));
+    }
+
+    #[test]
     fn beams_use_equipped_damage_energy_and_reload_without_toggle_bypass() {
         let mut ship = session();
         ship.logged_in = true;
@@ -6147,9 +6495,33 @@ mod tests {
             ship.additional_active_devices[0].effect,
             session_equipment::ActiveEffect::ProjectileHandling
         );
-        let status = ship.pending.iter().rev().find(|frame| frame.opcode == 0x1b &&
-            frame.body.windows(b"Turbo Weapons".len())
-                .any(|window| window == b"Turbo Weapons")).unwrap();
+        let snapshot = ship
+            .pending
+            .iter()
+            .rev()
+            .find(|frame| frame.opcode == 0x2030)
+            .unwrap();
+        assert_eq!(snapshot.body[0..2], [1, 2]);
+        assert!(snapshot
+            .body
+            .windows(b"Turbo Weapons".len())
+            .any(|part| part == b"Turbo Weapons"));
+        assert!(snapshot
+            .body
+            .windows(b"Improved Projectile Handling".len())
+            .any(|part| part == b"Improved Projectile Handling"));
+        let status = ship
+            .pending
+            .iter()
+            .rev()
+            .find(|frame| {
+                frame.opcode == 0x1b
+                    && frame
+                        .body
+                        .windows(b"Turbo Weapons".len())
+                        .any(|window| window == b"Turbo Weapons")
+            })
+            .unwrap();
         assert!(!status.body.contains(&b'+'));
         ship.additional_active_devices[0].expires_at_ms = crate::resources::unix_ms() + 10;
         let old_expiry = ship.additional_active_devices[0].expires_at_ms;
@@ -6182,6 +6554,13 @@ mod tests {
             session_equipment::ActiveEffect::ProjectileHandling
         );
         assert!(relog.additional_active_devices.is_empty());
+        let snapshot = relog
+            .pending
+            .iter()
+            .rev()
+            .find(|frame| frame.opcode == 0x2030)
+            .unwrap();
+        assert_eq!(snapshot.body[0..2], [1, 1]);
         fs::remove_dir_all(root).unwrap();
     }
 
@@ -6279,8 +6658,8 @@ mod tests {
             frame.opcode == 0x1b
                 && frame
                     .body
-                    .windows(b"Increase Combat Speed".len())
-                    .any(|window| window == b"Increase Combat Speed")
+                    .windows(b"Impulse Turbo".len())
+                    .any(|window| window == b"Impulse Turbo")
         }));
         assert!(ship.pending.iter().any(|frame| {
             frame.opcode == 0x1d
@@ -6350,8 +6729,8 @@ mod tests {
             frame.opcode == 0x1b
                 && frame
                     .body
-                    .windows(b"Increase maneuver".len())
-                    .any(|window| window == b"Increase maneuver")
+                    .windows(b"Increase Maneuverability".len())
+                    .any(|window| window == b"Increase Maneuverability")
         }));
         let mut restored =
             PlayerSession::new(ship.sector.clone(), ship.bind, ship.state_dir.clone()).unwrap();
@@ -6406,8 +6785,8 @@ mod tests {
             frame.opcode == 0x1b
                 && frame
                     .body
-                    .windows(b"Maximize_Shields".len())
-                    .any(|window| window == b"Maximize_Shields")
+                    .windows(b"Maximize Shields".len())
+                    .any(|window| window == b"Maximize Shields")
         }));
         let mut restored =
             PlayerSession::new(ship.sector.clone(), ship.bind, ship.state_dir.clone()).unwrap();
@@ -6518,6 +6897,54 @@ mod tests {
         );
         restored.advance_ship_resources(1.);
         assert!((restored.shield - restored.equipment.ship.shield_recharge).abs() < 0.001);
+    }
+
+    /// Shield-mounted BOOST gear replenishes shields until its lease expires.
+    #[test]
+    fn shield_mounted_recharge_boost_activates_and_expires() {
+        let mut ship = session();
+        ship.logged_in = true;
+        let mut inventory = ship.inventory.clone();
+        inventory.equipped[0] = Some(crate::inventory::ItemInstance::stock(3700, 1));
+        ship.commit_inventory(inventory).unwrap();
+        let base_recharge = ship.equipment.ship.shield_recharge;
+        ship.shield = 0.;
+        let activation = [ship.player_id().to_le_bytes().as_slice(), &[2, 0]].concat();
+        ship.activate_equipped_item(&activation).unwrap();
+        let active = ship.active_device.as_ref().unwrap();
+        assert_eq!(
+            active.effect,
+            session_equipment::ActiveEffect::RechargeShields
+        );
+        assert_eq!(active.operation, 1);
+        assert!(active.valid_for(&ship.inventory, &ship.items, crate::resources::unix_ms()));
+        assert_eq!(ship.equipment.ship.shield_recharge, base_recharge + 200.);
+        ship.advance_ship_resources(1.);
+        assert!((ship.shield - base_recharge - 200.).abs() < 0.001);
+
+        ship.active_device.as_mut().unwrap().expires_at_ms = crate::resources::unix_ms() - 1;
+        ship.advance_active_device().unwrap();
+        assert_eq!(ship.equipment.ship.shield_recharge, base_recharge);
+        ship.publish_active_device_resume();
+        let snapshot = ship
+            .pending
+            .iter()
+            .rev()
+            .find(|frame| frame.opcode == 0x2030)
+            .unwrap();
+        assert_eq!(snapshot.body, [1, 0]);
+        ship.activate_equipped_item(&activation).unwrap();
+        let mut inventory = ship.inventory.clone();
+        inventory.equipped[0] = None;
+        ship.commit_inventory(inventory).unwrap();
+        assert!(ship.active_device.is_none());
+        let snapshot = ship
+            .pending
+            .iter()
+            .rev()
+            .find(|frame| frame.opcode == 0x2030)
+            .unwrap();
+        assert_eq!(snapshot.body, [1, 0]);
     }
 
     /// Device cost gear changes local admission and survives a saved activation.
@@ -7460,9 +7887,8 @@ mod tests {
         let mut login = vec![0; 137];
         login[..64].copy_from_slice(&ticket.body[4..]);
         session.handle_input(2, &login).unwrap();
-        assert!(session.pending.iter().any(|frame| frame.opcode == 0x52
-            && frame.body.len()
-                == 132 + 265 * session.sector.station.as_ref().unwrap().npcs.len()));
+        let station_layout = packets::station_layout(session.sector.station.as_ref().unwrap());
+        assert!(session.pending.iter().any(|frame| frame == &station_layout));
         assert!(session.pending.iter().any(|frame| frame.opcode == 0x4f
             && frame.body == [10761u32.to_le_bytes().as_slice(), &[0, 0]].concat()));
         assert!(session

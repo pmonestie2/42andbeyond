@@ -8,18 +8,19 @@ namespace FortyTwoAndBeyond.Protocol
     /// <summary>One formula advertised by the station's native workbench.</summary>
     public sealed class ProductionFormula
     {
-        public readonly uint Template, Level;
+        public readonly uint Template, Level, IconId, Type;
         public readonly string Name;
 
         /// <summary>Keep the displayed formula and its server template together.</summary>
-        public ProductionFormula(uint template, uint level, string name)
-        { Template = template; Level = level; Name = name; }
+        public ProductionFormula(uint template, uint level, string name, uint iconId = 0, uint type = 0)
+        { Template = template; Level = level; Name = name; IconId = iconId; Type = type; }
     }
 
     /// <summary>Worker-owned native workbench selection, quote, and formula list.</summary>
     public sealed class ProductionState
     {
         public uint LabId, Mode, Validity, Category, Additional, Filter;
+        public uint PageIndex, TotalFormulas, PageSize = 500;
         public ulong Cost, BaseCost;
         public float Chance;
         public string Failure = "";
@@ -32,6 +33,7 @@ namespace FortyTwoAndBeyond.Protocol
     public sealed class ProductionView
     {
         public readonly uint LabId, Mode, Validity, Category, Additional, Filter;
+        public readonly uint PageIndex, TotalFormulas, PageSize;
         public readonly ulong Cost, BaseCost;
         public readonly float Chance;
         public readonly string Failure;
@@ -54,7 +56,12 @@ namespace FortyTwoAndBeyond.Protocol
             for (int slot = 0; slot < Components.Length; slot++)
                 if (state.Components[slot]?.Present == true)
                     Components[slot] = new ItemView(slot, state.Components[slot], catalog);
-            Formulas = state.Formulas.Where(formula => formula != null).ToArray();
+            Formulas = state.Formulas.Where(formula => formula != null).Select(formula =>
+                catalog.TryGetValue(formula.Template, out ItemTemplateInfo item) ?
+                    new ProductionFormula(formula.Template, formula.Level, formula.Name, item.IconId, item.Type) :
+                    formula).ToArray();
+            PageIndex = state.PageIndex; PageSize = state.PageSize;
+            TotalFormulas = state.TotalFormulas > 0 ? state.TotalFormulas : (uint)Formulas.Length;
         }
     }
 

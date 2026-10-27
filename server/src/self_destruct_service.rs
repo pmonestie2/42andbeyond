@@ -129,6 +129,7 @@ impl PlayerSession {
             self_destruct::VISUAL_DESCRIPTOR,
             self.tick_ms(),
         ));
+        self.skills.temporary_effects.insert(receipt.effect, 3.0);
         self.message("Self Destruct discharged. Ship systems are recovering.");
         Ok(())
     }

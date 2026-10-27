@@ -43,13 +43,15 @@ impl GameState {
                     .checked_sub(MOB_ID)
                     .ok_or_else(|| invalid("Shield Sap target is not a MOB."))?
                     as usize;
-                let target_position = {
+                let target_range = {
                     let combat = lock_combat(&combat)?;
-                    combat.actors.get(index).map(|mob| mob.position)
+                    combat
+                        .actors
+                        .get(index)
+                        .map(|mob| mob.range_to(caster.position))
                 };
                 let eligible = caster.shield_sap_available()
-                    && target_position
-                        .is_some_and(|position| distance(caster.position, position) <= tier.range)
+                    && target_range.is_some_and(|range| range <= tier.range)
                     && caster
                         .shield_sap_target_generation(cast.target)
                         .is_ok_and(|generation| generation == cast.target_generation);
@@ -155,6 +157,17 @@ impl GameState {
                 receipt.drained
             ));
             caster.clear_pending_shield_sap()?;
+            if receipt.drained > 0. {
+                for (index, target) in receipt.recipients.iter().enumerate() {
+                    if let Some(recipient) = self.sessions.get_mut(target) {
+                        let award_effect = cast
+                            .effect
+                            .wrapping_add(1 + receipt.targets.len() as u32 * 2 + index as u32)
+                            .max(1);
+                        recipient.publish_shield_sap_award(source, award_effect);
+                    }
+                }
+            }
         }
         Ok(())
     }

@@ -80,4 +80,14 @@ impl PlayerSession {
             self.pending.push(packets::remove_effect(orb));
         }
     }
+
+    /// Show one confirmed group shield award on the recipient's own ship.
+    pub(crate) fn publish_shield_sap_award(&mut self, source: u32, effect: u32) {
+        let target = self.player_id();
+        let tick = self.tick_ms();
+        self.pending.push(packets::weapon_effect(
+            source, target, 146, effect, tick, 1000,
+        ));
+        self.pending.push(packets::remove_effect(effect));
+    }
 }

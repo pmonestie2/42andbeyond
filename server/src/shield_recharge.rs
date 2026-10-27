@@ -78,10 +78,11 @@ impl PlayerSession {
     pub(crate) fn publish_shield_recharge(&mut self, target: u32, effect: u32, self_rank: bool) {
         let tick = self.tick_ms();
         if self_rank {
-            let flash = effect.wrapping_add(1);
+            let flash = self.next_effect;
+            self.next_effect = self.next_effect.wrapping_add(1).max(1);
             self.pending
                 .push(packets::object_effect(target, flash, 136, tick));
-            self.pending.push(packets::remove_effect(flash));
+            self.skills.temporary_effects.insert(flash, 0.9);
         } else {
             self.pending
                 .push(packets::beam(self.player_id(), target, 139, effect, tick));

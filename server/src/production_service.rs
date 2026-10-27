@@ -29,6 +29,8 @@ pub(super) struct WorkbenchWindow {
     recovered_components: Vec<u32>,
     #[serde(default)]
     known_count: usize,
+    #[serde(default)]
+    page: u32,
     #[serde(skip)]
     last_view: Option<WorkbenchView>,
 }
@@ -38,6 +40,9 @@ impl WorkbenchWindow {
         self.station == station
             && self.filter & !0x1ff == 0
             && self.known_count <= 500
+            && self.page
+                < crate::inventory::MAX_KNOWN_FORMULAS
+                    .div_ceil(crate::production::FORMULA_PAGE_SIZE) as u32
             && self.recovered_components.len() <= 6
             && matches!(self.mode, 1..=4)
             && crate::production::valid_category(self.category)
@@ -51,6 +56,33 @@ impl WorkbenchWindow {
 }
 
 impl PlayerSession {
+    /// Select a bounded page of native formula slots without changing the selected recipe.
+    /// Raises:
+    ///     io::Error: The request owner, page, or active terminal mode is invalid.
+    pub(super) fn workbench_page_input(&mut self, body: &[u8]) -> io::Result<()> {
+        self.check_workbench_station()?;
+        if body.len() != 8 {
+            return Err(invalid("Invalid formula page request length."));
+        }
+        let mut reader = Reader::new(body);
+        let owner = reader.u32()?;
+        let page = reader.u32()?;
+        if owner != self.player_id()
+            || page
+                >= crate::inventory::MAX_KNOWN_FORMULAS
+                    .div_ceil(crate::production::FORMULA_PAGE_SIZE) as u32
+        {
+            return Err(invalid("Invalid formula page owner or index."));
+        }
+        let window = self
+            .workbench
+            .as_mut()
+            .filter(|window| window.mode == 1)
+            .ok_or_else(|| invalid("Open manufacturing before selecting a recipe page."))?;
+        window.page = page;
+        self.refresh_workbench(true)
+    }
+
     pub(super) fn refresh_workbench_target(&mut self) {
         if let Some(window) = &mut self.workbench {
             if matches!(window.mode, 2 | 3) {
@@ -124,6 +156,7 @@ impl PlayerSession {
                 .workbench
                 .as_mut()
                 .ok_or_else(|| invalid("Open a workbench first."))?;
+            window.page = 0;
             if enabled == 1 {
                 window.filter |= mask;
             } else {
@@ -156,6 +189,7 @@ impl PlayerSession {
                         operation_failed: false,
                         recovered_components: Vec::new(),
                         known_count: 0,
+                        page: 0,
                         last_view: None,
                     });
                 }
@@ -216,6 +250,7 @@ impl PlayerSession {
                         .ok_or_else(|| invalid("Open a terminal first."))?;
                     if window.mode == 1 {
                         window.category = value;
+                        window.page = 0;
                     }
                 }
                 0x7e if value == 0 => {
@@ -724,6 +759,8 @@ impl PlayerSession {
             additional: 0,
             filter: 0x1ff,
             products: Vec::new(),
+            page: 0,
+            total_products: 0,
             cost: refine_price,
             base_cost: crate::refining::REFINE_BASE_PRICE,
             chance: 1.,
@@ -773,6 +810,19 @@ impl PlayerSession {
                     }
                 }
             }
+            view.total_products = view.products.len() as u32;
+            if !view.products.is_empty() {
+                view.page = window.page.min(
+                    (view.products.len() - 1).div_euclid(crate::production::FORMULA_PAGE_SIZE)
+                        as u32,
+                );
+                view.products = view
+                    .products
+                    .into_iter()
+                    .skip(view.page as usize * crate::production::FORMULA_PAGE_SIZE)
+                    .take(crate::production::FORMULA_PAGE_SIZE)
+                    .collect();
+            }
             if !force && window.last_view.as_ref() == Some(&view) {
                 return Ok(());
             }
@@ -804,8 +854,11 @@ impl PlayerSession {
             previous,
             &self.items,
         ));
+        self.pending
+            .push(packets::workbench_page(self.workbench_lab_id(), &view));
         if let Some(window) = &mut self.workbench {
             window.known_count = view.products.len();
+            window.page = view.page;
             window.last_view = Some(view);
         }
         Ok(())
@@ -815,6 +868,93 @@ impl PlayerSession {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Paging exposes every learned formula beyond the native 500-slot limit without duplicates.
+    #[test]
+    fn manufacturing_pages_cover_large_skill_scoped_formula_sets() {
+        let root =
+            std::env::temp_dir().join(format!("enb-formula-pages-{}", rand::random::<u64>()));
+        let mut account =
+            crate::account::Account::create("tt".into(), "pass", "Trader".into()).unwrap();
+        account.character.race = 0;
+        account.character.profession = 1;
+        account.save_new(&root).unwrap();
+        let initial: Sector = serde_json::from_str(include_str!("../data/sector.json")).unwrap();
+        let mut ship =
+            PlayerSession::new(initial, Ipv4Addr::new(127, 0, 0, 2), root.clone()).unwrap();
+        ship.sector = ship.sectors.sector(10761).unwrap();
+        ship.logged_in = true;
+        let expected = crate::recipe_grants::eligible_formulas(&ship.skill_catalog, &ship.items);
+        assert!(expected.len() > crate::production::FORMULA_PAGE_SIZE);
+        ship.inventory.known_formulas = expected.clone();
+        ship.inventory.validate(&ship.items).unwrap();
+        ship.workbench_input(
+            0x79,
+            &[ship.player_id().to_be_bytes(), 1u32.to_be_bytes()].concat(),
+        )
+        .unwrap();
+        let mut seen = std::collections::BTreeSet::new();
+        for page in 0..expected
+            .len()
+            .div_ceil(crate::production::FORMULA_PAGE_SIZE) as u32
+        {
+            ship.pending.clear();
+            ship.workbench_page_input(
+                &[ship.player_id().to_le_bytes(), page.to_le_bytes()].concat(),
+            )
+            .unwrap();
+            let window = ship.workbench.as_ref().unwrap();
+            let view = window.last_view.as_ref().unwrap();
+            assert_eq!(view.page, page);
+            assert_eq!(view.total_products as usize, expected.len());
+            assert!(view.products.len() <= crate::production::FORMULA_PAGE_SIZE);
+            assert!(window.valid(ship.sector.id));
+            for id in &view.products {
+                assert!(seen.insert(*id));
+            }
+            let metadata = ship
+                .pending
+                .iter()
+                .find(|frame| frame.opcode == 0x2032)
+                .unwrap();
+            assert_eq!(
+                metadata.body,
+                [ship.workbench_lab_id(), page, expected.len() as u32, 500]
+                    .map(u32::to_le_bytes)
+                    .concat()
+            );
+        }
+        assert_eq!(seen, expected);
+        assert!(ship
+            .workbench_page_input(
+                &[ship.player_id().to_le_bytes(), u32::MAX.to_le_bytes()].concat()
+            )
+            .is_err());
+        ship.workbench_input(
+            0x7a,
+            &[ship.player_id().to_be_bytes(), 110u32.to_be_bytes()].concat(),
+        )
+        .unwrap();
+        assert_eq!(ship.workbench.as_ref().unwrap().page, 0);
+        ship.workbench_input(
+            0x80,
+            &[
+                ship.player_id().to_be_bytes().as_slice(),
+                &[0],
+                &0x1feu32.to_be_bytes(),
+            ]
+            .concat(),
+        )
+        .unwrap();
+        let view = ship.workbench.as_ref().unwrap().last_view.as_ref().unwrap();
+        assert_eq!(view.page, 0);
+        assert!(view
+            .products
+            .iter()
+            .all(|id| ship.items.get(*id).unwrap().level == 1));
+        drop(ship);
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     /// A TT refinery job freezes the quoted discount before its durable completion.
     #[test]

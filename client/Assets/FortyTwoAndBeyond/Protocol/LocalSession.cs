@@ -35,6 +35,8 @@ namespace FortyTwoAndBeyond.Protocol
         private double combatTargetAt, followTargetAt, pendingLootAt, pendingResourceAt, selfJumpstartAt, rescueRequestAt;
         private bool gateActivated, gateCamera, gateFinished, dockRequested, lootRequested, selfJumpstartPending, rescuePending, disposed, failed;
         private byte[] handoff;
+        private double aggregateStationAt;
+        private uint pendingStationContact;
         public uint Player { get; private set; }
         public World World { get; private set; } = new World();
         public bool Ready { get; private set; }
@@ -180,6 +182,7 @@ namespace FortyTwoAndBeyond.Protocol
             if (port == 0) throw new InvalidDataException("Missing sector port.");
             sector.Connect(address, port);
             stream = new SectorStream(Player); World = new World(); sequence = 1; Ready = false;
+            aggregateStationAt = 0; pendingStationContact = 0;
             gate = dock = followTarget = pendingResource = pendingDeviceTarget = 0;
             pendingDeviceSlot = -1; pendingDeviceTemplate = 0;
             pendingAbilityTarget = pendingAbilityId = 0;
@@ -277,11 +280,20 @@ namespace FortyTwoAndBeyond.Protocol
             Status = "Launching from " + World.Sector;
         }
 
+        /// <summary>Negotiate the Unity directory's cross-room access without changing native room layouts.</summary>
+        private void RequestStationAggregation()
+        {
+            if (!Ready) return;
+            Send(0x203a, Wire.Body(w => { w.Write(Player); w.Write(1u); }));
+            aggregateStationAt = clock.Elapsed.TotalSeconds + 1;
+        }
+
         /// <summary>Enter a server-advertised station room and publish this avatar's arrival.</summary>
         public void EnterStationRoom(uint room)
         {
             StationState station = World.Station;
-            if (!Ready || station == null || station.CurrentRoom == room || World.Dialogue != null ||
+            if (!Ready || station == null || station.CurrentRoom == room ||
+                World.Dialogue != null && station.RoomList.Count != 1 ||
                 !station.RoomList.Any(entry => entry.Index == room)) return;
             uint previous = station.CurrentRoom;
             Send(0x9f, Wire.Body(w => { w.Write(Player); w.Write(room); w.Write(previous); }));
@@ -305,8 +317,10 @@ namespace FortyTwoAndBeyond.Protocol
         public void OpenNpc(uint npcId)
         {
             if (!Ready || World.Station == null || World.Dialogue != null ||
-                !World.Station.Contacts.Any(contact => contact.Id == npcId &&
-                    contact.Room == World.Station.CurrentRoom)) return;
+                !World.Station.Contacts.Any(contact => contact.Id == npcId)) return;
+            if (!World.AggregateStation)
+            { pendingStationContact = npcId; RequestStationAggregation(); return; }
+            pendingStationContact = 0;
             World.StartDialogue(npcId);
             Send(0x4e, Wire.Body(w => { w.Write(Player); w.Write(npcId); w.Write((byte)4); }));
             Status = "Talking to station contact";
@@ -393,14 +407,15 @@ namespace FortyTwoAndBeyond.Protocol
             Status = "Moving inventory · awaiting server";
         }
 
-        /// <returns>bool: Whether a container belongs to cargo, installed gear, or magazines.</returns>
+        /// <returns>bool: Whether a container belongs to cargo, installed gear, vault, or magazines.</returns>
         private static bool InventoryContainer(uint container)
-        { return container >= 1 && container <= 3; }
+        { return container >= 1 && container <= 3 || container == 8; }
 
         /// <returns>ItemState[]: The live worker-owned slots for a native inventory container.</returns>
         private ItemState[] InventorySlots(uint container)
         { return container == 1 ? World.Equipment.Cargo :
-            container == 2 ? World.Equipment.Mounted : World.Equipment.Ammo; }
+            container == 2 ? World.Equipment.Mounted :
+            container == 3 ? World.Equipment.Vault : World.Equipment.Ammo; }
 
         /// <summary>Toggle one mounted weapon with the native item activation packet.</summary>
         public void ActivateWeapon(int slot)
@@ -550,6 +565,54 @@ namespace FortyTwoAndBeyond.Protocol
             SendProduction(0x7a, category);
         }
 
+        /// <summary>Request a bounded page of the server's eligible recipe list.</summary>
+        public void SelectProductionPage(uint page)
+        {
+            ProductionState production = World.Production;
+            if (!Ready || World.Station == null || !production.Open || production.PageSize == 0 ||
+                production.TotalFormulas == 0 || page > (production.TotalFormulas - 1) / production.PageSize) return;
+            Send(0x2033, Wire.Body(w => { w.Write(Player); w.Write(page); }));
+            Status = "Loading recipe page";
+        }
+
+        /// <summary>Request current station component stock without opening a conversation.</summary>
+        public void QueryComponentStock()
+        {
+            if (!Ready || gate != 0) return;
+            Send(0x2038, Wire.Body(w => w.Write(Player)));
+        }
+
+        /// <summary>Ask the server for real station suppliers and buyers of one component.</summary>
+        public void QueryComponentMarket(uint template)
+        {
+            if (!Ready || gate != 0 || template == 0) return;
+            Send(0x2034, Wire.Body(w => { w.Write(Player); w.Write(template); }));
+        }
+
+        /// <summary>Submit a quoted local component trade for authoritative validation.</summary>
+        public void TradeComponentMarket(uint npc, uint template, bool sell, int cargoSlot, uint quantity)
+        {
+            if (!Ready || gate != 0 || World.Station == null || quantity == 0 || quantity > 10000 ||
+                !World.ComponentMarkets.TryGetValue(template, out ComponentMarketView market) ||
+                !market.Sources.Any(source => source.Npc == npc && source.Station == World.Station.Id &&
+                    (sell ? source.SellPrice > 0 : source.BuyPrice > 0))) return;
+            if (sell && (cargoSlot < 0 || cargoSlot >= World.Equipment.Cargo.Length ||
+                World.Equipment.Cargo[cargoSlot]?.Template != template)) return;
+            Send(0x2036, Wire.Body(w =>
+            {
+                w.Write(Player); w.Write(npc); w.Write(template); w.Write(sell ? 1u : 0u);
+                w.Write((uint)Math.Max(0, cargoSlot)); w.Write(quantity);
+            }));
+        }
+
+        /// <summary>Use the server's explicitly enabled developer transport to a quoted station.</summary>
+        public void TravelComponentMarket(uint station)
+        {
+            if (!Ready || gate != 0 || station == 0 || !World.ComponentMarkets.Values.Any(market =>
+                market.DevEnabled && market.Sources.Any(source => source.Station == station))) return;
+            Send(0x2037, Wire.Body(w => { w.Write(Player); w.Write(station); }));
+        }
+
         /// <summary>Change one bounded native level-filter mask.</summary>
         public void SetProductionLevels(uint mask, bool enabled)
         {
@@ -634,10 +697,13 @@ namespace FortyTwoAndBeyond.Protocol
         /// <summary>Follow a visible ship after its matching target acknowledgment.</summary>
         public void FollowTarget(uint target)
         {
-            if (!Ready || gate != 0 || (!World.Mobs.ContainsKey(target) && !World.Players.ContainsKey(target))) return;
+            bool worldObject = World.Objects.TryGetValue(target, out MapObject item) &&
+                WarpTargets.WorldObject(item);
+            if (!Ready || gate != 0 || (!World.Mobs.ContainsKey(target) &&
+                !World.Players.ContainsKey(target) && !worldObject)) return;
             followTarget = target; followTargetAt = clock.Elapsed.TotalSeconds;
             Send(0x17, Wire.Body(w => { w.Write(Player); w.Write(target); }));
-            Status = "Selecting ship to follow";
+            Status = "Selecting target to follow";
         }
 
         /// <summary>Invite one visible online player through the native group action.</summary>
@@ -876,8 +942,12 @@ namespace FortyTwoAndBeyond.Protocol
                 case 5:
                     if (b.Length != 4) throw new InvalidDataException("Invalid sector start.");
                     Send(6, b); Send(0x3004, Wire.Body(w => w.Write(Player))); Ready = true; Status = "Connected";
+                    RequestStationAggregation();
                     if (World.Station?.RoomList.Count > 0 && World.Station.CurrentRoom == uint.MaxValue)
                         EnterStationRoom(World.Station.RoomList[0].Index);
+                    break;
+                case 0x203b:
+                    if (World.AggregateStation && pendingStationContact != 0) OpenNpc(pendingStationContact);
                     break;
                 case 0x52:
                     if (Ready && World.Station?.RoomList.Count > 0 && World.Station.CurrentRoom == uint.MaxValue)
@@ -946,7 +1016,7 @@ namespace FortyTwoAndBeyond.Protocol
                     if (b.Length == 8 && followTarget != 0 && Wire.U32(b, 0) == followTarget && Wire.U32(b, 4) == uint.MaxValue)
                     {
                         Send(0x14, Wire.Body(w => { w.Write(Player); w.Write((byte)12); }));
-                        followTarget = 0; Status = "Following selected ship";
+                        followTarget = 0; Status = "Following selected target";
                     }
                     if (b.Length == 8 && gate != 0 && Wire.U32(b, 0) == gate && Wire.U32(b, 4) == uint.MaxValue && !gateActivated)
                     { GateAction(18); gateActivated = true; gateAt = clock.Elapsed.TotalSeconds; Status = "Gate sequence running"; }
@@ -1001,6 +1071,8 @@ namespace FortyTwoAndBeyond.Protocol
                     }
                 }
                 if (handoff != null) { Enter(handoff); return; }
+                if (Ready && World.Station != null && !World.AggregateStation && now >= aggregateStationAt)
+                    RequestStationAggregation();
                 if (pendingLoot != 0 && now - pendingLootAt > 5)
                 { pendingLoot = 0; Status = "Wreck did not open"; }
                 if (pendingResource != 0 && now - pendingResourceAt > 5)

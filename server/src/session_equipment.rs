@@ -118,7 +118,7 @@ impl ActiveDevice {
 
     /// Returns:
     ///     Option<u16>: Catalog object visual, or none when this buff has no effect.
-    fn visual_asset(&self, items: &ItemCatalog) -> Option<u16> {
+    pub(super) fn visual_asset(&self, items: &ItemCatalog) -> Option<u16> {
         items
             .get(self.template)
             .ok()?
@@ -140,11 +140,25 @@ impl ActiveDevice {
                     self.slot == 1
                         && matches!(
                             self.effect,
-                            ActiveEffect::ImpulseTurbo | ActiveEffect::Maneuverability
+                            ActiveEffect::ImpulseTurbo
+                                | ActiveEffect::Maneuverability
+                                | ActiveEffect::RechargeReactor
+                                | ActiveEffect::RechargeShields
                         )
                 }
                 6 => self.slot == 2 && self.effect == ActiveEffect::Maneuverability,
-                2 => self.slot == 0 && self.effect == ActiveEffect::Maneuverability,
+                2 => {
+                    self.slot == 0
+                        && matches!(
+                            self.effect,
+                            ActiveEffect::Maneuverability
+                                | ActiveEffect::RechargeShields
+                                | ActiveEffect::TurboWeapons
+                                | ActiveEffect::DeflectImpact
+                                | ActiveEffect::DeflectExplosive
+                                | ActiveEffect::ShuntReactor
+                        )
+                }
                 _ => false,
             })
             && self.value.is_finite()
@@ -217,6 +231,7 @@ pub(super) fn device_effect(
             "Reactor Boost (Activated)" => ActiveEffect::ReactorBoost,
             "Recharge Reactor (Activated)" => ActiveEffect::RechargeReactor,
             "Recharge Shields (Activated)" => ActiveEffect::RechargeShields,
+            "Recharge Shields - BOOST (Activated)" => ActiveEffect::RechargeShields,
             "Deflect Impact (Activated)" => ActiveEffect::DeflectImpact,
             "Deflect Explosive (Activated)" => ActiveEffect::DeflectExplosive,
             "Deflect Plasma (Activated)" => ActiveEffect::DeflectPlasma,
@@ -237,10 +252,22 @@ pub(super) fn device_effect(
             && !(template.item_type == 7
                 && matches!(
                     kind,
-                    ActiveEffect::ImpulseTurbo | ActiveEffect::Maneuverability
+                    ActiveEffect::ImpulseTurbo
+                        | ActiveEffect::Maneuverability
+                        | ActiveEffect::RechargeReactor
+                        | ActiveEffect::RechargeShields
                 ))
             && !((template.item_type == 2 || template.item_type == 6)
                 && kind == ActiveEffect::Maneuverability)
+            && !(template.item_type == 2
+                && matches!(
+                    kind,
+                    ActiveEffect::RechargeShields
+                        | ActiveEffect::TurboWeapons
+                        | ActiveEffect::DeflectImpact
+                        | ActiveEffect::DeflectExplosive
+                        | ActiveEffect::ShuntReactor
+                ))
             || matches!(
                 kind,
                 ActiveEffect::Maneuverability | ActiveEffect::MaximizeShields
@@ -374,15 +401,49 @@ impl PlayerSession {
 
     /// Keep the primary device's native status label stable as other devices stack.
     fn publish_active_device_presentation(&mut self) {
-        let name = self.active_device.as_ref().map_or("", |device| device.effect.label());
-        let remaining_ms = self.active_device.as_ref().map_or(0, |device|
-            device.expires_at_ms.saturating_sub(crate::resources::unix_ms()));
-        let removal_tick = self.tick_ms().wrapping_add(remaining_ms as u32);
+        let now_ms = crate::resources::unix_ms();
+        let tick = self.tick_ms();
+        let name = self
+            .active_device
+            .as_ref()
+            .map_or("", |device| device.effect.label());
+        let remaining_ms = self
+            .active_device
+            .as_ref()
+            .map_or(0, |device| device.expires_at_ms.saturating_sub(now_ms));
+        let removal_tick = tick.wrapping_add(remaining_ms as u32);
         self.pending.push(packets::ship_active_buff(
             self.player_id(),
             name,
-            if self.active_device.is_none() { 0 } else { removal_tick },
+            if self.active_device.is_none() {
+                0
+            } else {
+                removal_tick
+            },
         ));
+        let devices = self
+            .active_device
+            .iter()
+            .chain(&self.additional_active_devices)
+            .map(|device| packets::ActiveDeviceStatus {
+                mount_slot: device.slot,
+                template_id: device.template,
+                removal_tick: tick.wrapping_add(device.expires_at_ms.saturating_sub(now_ms) as u32),
+                label: device.effect.label(),
+            })
+            .collect::<Vec<_>>();
+        self.pending.push(packets::active_device_snapshot(&devices));
+    }
+
+    /// Clear item statuses and visuals removed by an inventory transaction.
+    pub(super) fn publish_active_device_removals(&mut self, removed: &[ActiveDevice]) {
+        self.publish_active_device_presentation();
+        for active in removed {
+            if active.visual_asset(&self.items).is_some() {
+                self.pending
+                    .push(packets::remove_effect(active.visual_id(self.player_id())));
+            }
+        }
     }
 
     /// Publish one catalog visual for an active item's remaining lease.
@@ -852,9 +913,7 @@ impl PlayerSession {
 
     /// Reaffirm a durable self-buff after a transport session resumes.
     pub(super) fn publish_active_device_resume(&mut self) {
-        if self.active_device.is_some() || !self.additional_active_devices.is_empty() {
-            self.publish_active_device_presentation();
-        }
+        self.publish_active_device_presentation();
         for active in self
             .active_device
             .iter()
@@ -986,6 +1045,70 @@ mod tests {
         assert!(secondary.is_none());
         assert_eq!((value, operation, duration), (10., 2, 240_000));
         assert!(device_effect(items.get(1875).unwrap()).is_none());
+    }
+
+    /// Single-action shield-recharge boosts resolve to additive timed buffs.
+    #[test]
+    fn public_shield_recharge_boosts_have_supported_activation_rules() {
+        let items = ItemCatalog::load().unwrap();
+        let boosts = items
+            .iter()
+            .filter(|item| {
+                item.activated
+                    .iter()
+                    .any(|effect| effect.description == "Recharge Shields - BOOST (Activated)")
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(boosts.len(), 14);
+        assert_eq!(
+            boosts
+                .iter()
+                .filter(|item| item.activated.len() == 1)
+                .count(),
+            9
+        );
+        for item in boosts {
+            if item.activated.len() != 1 {
+                assert!(device_effect(item).is_none(), "item {}", item.id);
+                continue;
+            }
+            let (effect, bonus, operation, secondary, duration) =
+                device_effect(item).unwrap_or_else(|| panic!("item {}", item.id));
+            assert!(matches!(item.item_type, 2 | 11), "item {}", item.id);
+            assert_eq!(effect, ActiveEffect::RechargeShields, "item {}", item.id);
+            assert!((0. ..=1000.).contains(&bonus), "item {}", item.id);
+            assert_eq!(operation, 1, "item {}", item.id);
+            assert!(secondary.is_none(), "item {}", item.id);
+            assert_eq!(duration, 10_000, "item {}", item.id);
+        }
+    }
+
+    /// Single-action reactor and shield effects work from their native mounts.
+    #[test]
+    fn public_mounted_self_effects_have_supported_activation_rules() {
+        let items = ItemCatalog::load().unwrap();
+        let mounted = items
+            .iter()
+            .filter(|item| {
+                let Some(effect) = item.activated.first() else {
+                    return false;
+                };
+                item.activated.len() == 1
+                    && matches!(
+                        (item.item_type, effect.description.as_str()),
+                        (2 | 7, "Recharge Shields (Activated)")
+                            | (7, "Recharge Reactor (Activated)")
+                            | (2, "Turbo Weapons (Activated)")
+                            | (2, "Deflect Impact (Activated)")
+                            | (2, "Deflect Explosive (Activated)")
+                            | (2, "Shunt to Reactor (Activated)")
+                    )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(mounted.len(), 52);
+        for item in mounted {
+            assert!(device_effect(item).is_some(), "item {}", item.id);
+        }
     }
 
     #[test]

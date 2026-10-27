@@ -15,7 +15,7 @@ SHIPS = (('cc3_t1', 'cc3', 'cc3_t1_g.png'), ('gc3', 'gc3', 'gc3_t1_g.png'))
 
 
 def export_ship(object_name: str, stem: str, glow_name: str) -> None:
-    """Bake a compact lit hull texture and export its UV mesh and glow mask."""
+    """Bake the hull and export its UV mesh and packed material maps."""
     ship = bpy.data.objects.get(object_name)
     if ship is None or ship.type != 'MESH':
         raise ValueError(f'Missing EVE example ship: {object_name}')
@@ -40,6 +40,14 @@ def export_ship(object_name: str, stem: str, glow_name: str) -> None:
     glow.file_format = 'PNG'
     glow.save()
 
+    for suffix, output_name in (('_n.png', 'normal'), ('_r.png', 'roughness')):
+        detail = bpy.data.images.get(stem + '_t1' + suffix)
+        if detail is None:
+            raise ValueError(f'Missing EVE {output_name} map for {object_name}')
+        detail.filepath_raw = str(OUTPUT / (stem + '_' + output_name + '.png'))
+        detail.file_format = 'PNG'
+        detail.save()
+
     ship.location = (0, 0, 0)
     ship.rotation_euler = (0, 0, 0)
     bpy.context.view_layer.update()
@@ -53,6 +61,11 @@ def main() -> None:
     if not bpy.data.filepath:
         raise ValueError('Open the supplied EVE .blend file before running this script.')
     OUTPUT.mkdir(parents=True, exist_ok=True)
+    sky = bpy.data.images.get('a13_cube.png')
+    if sky is not None:
+        sky.filepath_raw = str(OUTPUT / 'a13_cube.png')
+        sky.file_format = 'PNG'
+        sky.save()
     scene = bpy.context.scene
     scene.render.engine = 'CYCLES'
     scene.cycles.samples = 16

@@ -102,6 +102,14 @@ impl PlayerSession {
                 shield_inversion::SHIELD_NOVA_EFFECT,
                 self.tick_ms(),
             ));
+            self.pending.push(packets::weapon_effect(
+                self.player_id(),
+                cast.target,
+                shield_inversion::SHIELD_NOVA_EFFECT,
+                cast.effect.wrapping_add(1).max(1),
+                self.tick_ms(),
+                duration.min(u16::MAX as u64) as u16,
+            ));
         }
         Ok(true)
     }
@@ -135,6 +143,14 @@ impl PlayerSession {
                 active.effect,
                 shield_inversion::SHIELD_NOVA_EFFECT,
                 self.tick_ms(),
+            ));
+            self.pending.push(packets::weapon_effect(
+                self.player_id(),
+                active.target,
+                shield_inversion::SHIELD_NOVA_EFFECT,
+                active.effect.wrapping_add(1).max(1),
+                self.tick_ms(),
+                remaining.min(u16::MAX as u64) as u16,
             ));
         }
     }
@@ -215,6 +231,8 @@ impl PlayerSession {
         ));
         if active.ability == 110 {
             self.pending.push(packets::remove_effect(active.effect));
+            self.pending
+                .push(packets::remove_effect(active.effect.wrapping_add(1).max(1)));
         }
     }
 }

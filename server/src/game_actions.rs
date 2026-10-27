@@ -304,6 +304,27 @@ impl GameState {
             return Err(invalid("Enter the game before using social commands."));
         }
         match event {
+            ClientEvent::ComponentMarketQuery { template } => self
+                .sessions
+                .get_mut(&source)
+                .unwrap()
+                .component_market_query(template, self.developer_commands),
+            ClientEvent::ComponentMarketTravel { station } => {
+                if !self.developer_commands {
+                    return Err(invalid("Developer fast travel is disabled on this server."));
+                }
+                if crate::sectors::SectorCatalog::load()?
+                    .sector(station)?
+                    .station
+                    .is_none()
+                {
+                    return Err(invalid("Market fast travel requires a hosted station."));
+                }
+                self.sessions
+                    .get_mut(&source)
+                    .unwrap()
+                    .developer_jump(station)
+            }
             ClientEvent::LootOpen { target, toggle } => {
                 self.update_views();
                 self.sessions
@@ -997,9 +1018,15 @@ impl GameState {
         if let Some(command) = text.strip_prefix('/') {
             let (command, argument) = command.split_once(' ').unwrap_or((command, ""));
             let argument = argument.trim();
+            if command.to_ascii_lowercase().starts_with("d_") && !self.developer_commands {
+                return Err(invalid("Developer commands are disabled on this server."));
+            }
             match command.to_ascii_lowercase().as_str() {
                 "d_spawn" => return self.developer_spawn(source, argument),
+                "d_mob_cl" => return self.developer_mob_level(source, argument),
+                "d_warp" => return self.developer_warp(source, argument),
                 "d_jump" => return self.developer_jump(source, argument),
+                "d_clear" => return self.developer_clear(source, argument),
                 "launch" => return self.sessions.get_mut(&source).unwrap().launch_from_station(),
                 "tow" => return self.sessions.get_mut(&source).unwrap().tow_to_station(),
                 "jumpstart" => return self.sessions.get_mut(&source).unwrap().self_jumpstart(),
@@ -1029,7 +1056,7 @@ impl GameState {
                     let message = format!("{}: {:.0}, {:.0}, {:.0}", session.sector.name, session.position[0], session.position[1], session.position[2]);
                     self.sessions.get_mut(&source).unwrap().message(&message);
                 }
-                "help" => self.sessions.get_mut(&source).unwrap().message("Commands: /who, /where, /invite NAME, /accept, /decline, /leave, /kick NAME, /disband, /ability NUMBER, /call SKILL NAME, /acceptcall, /declinecall, /jumpstart, /tow, /launch, /equip CARGO_SLOT MOUNT_SLOT, /unequip MOUNT_SLOT. Dev: /d_spawn [MOB_NAME_OR_ID] [COUNT] [level=1..66], /d_jump SECTOR_NAME_OR_ID. Slots are zero-based."),
+                "help" => self.sessions.get_mut(&source).unwrap().message("Commands: /who, /where, /invite NAME, /accept, /decline, /leave, /kick NAME, /disband, /ability NUMBER, /call SKILL NAME, /acceptcall, /declinecall, /jumpstart, /tow, /launch, /equip CARGO_SLOT MOUNT_SLOT, /unequip MOUNT_SLOT. Dev: /d_spawn [MOB_NAME_OR_ID] [COUNT] [level=1..66], /d_jump SECTOR_NAME_OR_ID, /d_warp [OBJECT_ID] (selected target), /d_mob_cl LEVEL (living MOBs within 20 km), /d_clear. Slots are zero-based."),
                 _ => return Err(invalid("Unknown local command. Use /help.")),
             }
             return Ok(());

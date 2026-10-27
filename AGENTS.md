@@ -9,6 +9,9 @@
 - Treat the server as authoritative for movement, inventory and combat.
 - Preserve process ownership and account state. Tests use disposable servers and
   must never drive or restart the live VM or user client.
+- For user-requested client deployments, the user authorizes stopping all running
+  instances of the installed 42 and Beyond app before replacing it. Match the
+  exact installed executable path and preserve other applications and VM clients.
 - Keep optional Windows launcher configuration reversible and preserve concurrent
   file edits. Do not add executable patching, memory injection or macro automation.
 - Check callers and dependencies when renaming components. Verify Rust, C# and

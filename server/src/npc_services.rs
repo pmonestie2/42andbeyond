@@ -102,15 +102,14 @@ impl PlayerSession {
         mission_reward(base, self.skill_catalog.level(36))
     }
 
-    /// Require the avatar to occupy the NPC's actual station room.
-    fn npc_in_current_room(&self, identity: u32) -> bool {
+    /// Require a local NPC and valid avatar room; aggregate clients may access every local contact.
+    pub(super) fn npc_in_current_room(&self, identity: u32) -> bool {
         self.sector.station.as_ref().is_some_and(|station| {
             station.npcs.iter().any(|npc| {
                 npc.id == identity
-                    && self
-                        .station_pose
-                        .as_ref()
-                        .is_some_and(|pose| pose.room == npc.room)
+                    && self.station_pose.as_ref().is_some_and(|pose| {
+                        pose.valid_for(station) && (self.aggregate_station || pose.room == npc.room)
+                    })
             })
         })
     }

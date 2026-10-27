@@ -26,6 +26,9 @@ fn run() -> io::Result<()> {
     let mut state_dir = root.join("state");
     let mut check = false;
     let mut seed_play_accounts = false;
+    let mut grant_build_recipes = false;
+    let mut dry_run = false;
+    let mut developer_commands = true;
     let mut create_account: Option<String> = None;
     let mut native_progression = false;
     let mut character = String::from("SandboxPilot");
@@ -54,6 +57,9 @@ fn run() -> io::Result<()> {
             }
             "--check" => check = true,
             "--seed-demo-accounts" | "--seed-play-accounts" => seed_play_accounts = true,
+            "--grant-build-recipes" => grant_build_recipes = true,
+            "--dry-run" => dry_run = true,
+            "--no-dev" => developer_commands = false,
             "--create-account" => create_account = arguments.next(),
             "--native-progression" => native_progression = true,
             "--class" => {
@@ -69,11 +75,41 @@ fn run() -> io::Result<()> {
                     .ok_or_else(|| io::Error::other("--character needs a name"))?
             }
             "--help" | "-h" => {
-                beyond_server::server_log!("beyond-server [--bind 127.0.0.1] [--content data/sector.json] [--state-dir state] [--check] [--create-account NAME --character NAME --class te|tt|ts|jd|js|je|pw|pp|ps [--native-progression]] [--seed-demo-accounts]\nConnect the 42 and Beyond client, or use win_legacy/launch_original_client.cmd on Windows. Demo account: local / local.");
+                beyond_server::server_log!("beyond-server [--bind 127.0.0.1] [--content data/sector.json] [--state-dir state] [--check] [--no-dev] [--create-account NAME --character NAME --class te|tt|ts|jd|js|je|pw|pp|ps [--native-progression]] [--seed-demo-accounts] [--grant-build-recipes [--dry-run]]\nConnect the 42 and Beyond client, or use win_legacy/launch_original_client.cmd on Windows. Demo account: local / local.");
                 return Ok(());
             }
             _ => return Err(io::Error::other(format!("unknown option {argument}"))),
         }
+    }
+    if grant_build_recipes {
+        if check || create_account.is_some() || seed_play_accounts || native_progression {
+            return Err(io::Error::other(
+                "Grant build recipes separately from other maintenance modes.",
+            ));
+        }
+        let reports = beyond_server::recipe_grants::grant_build_recipes(&state_dir, dry_run)?;
+        for report in &reports {
+            beyond_server::server_log!(
+                "{} build recipes: account={}; character={}; added={}; known={}",
+                if dry_run { "Preview" } else { "Granted" },
+                report.username,
+                report.character,
+                report.added,
+                report.known
+            );
+        }
+        beyond_server::server_log!(
+            "Build recipe {}: {} characters; {} additions.",
+            if dry_run { "preview" } else { "grant complete" },
+            reports.len(),
+            reports.iter().map(|report| report.added).sum::<usize>()
+        );
+        return Ok(());
+    }
+    if dry_run {
+        return Err(io::Error::other(
+            "--dry-run requires --grant-build-recipes.",
+        ));
     }
     if seed_play_accounts {
         if check || create_account.is_some() {
@@ -141,6 +177,7 @@ fn run() -> io::Result<()> {
             bind,
             sector,
             state_dir,
+            developer_commands,
         },
         stop,
     )

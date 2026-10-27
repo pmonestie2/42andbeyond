@@ -158,6 +158,9 @@ enum TargetingMode {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Mob {
     pub definition: MobDefinition,
+    /// An explicit developer override survives world reloads without replacing public content.
+    #[serde(default)]
+    pub developer_level: Option<u32>,
     pub state: MobState,
     pub position: [f32; 3],
     #[serde(default)]
@@ -265,6 +268,7 @@ impl Mob {
         let random_state =
             u64::from(definition.source_id) ^ (u64::from(definition.template_id) << 32);
         Self {
+            developer_level: None,
             position: definition.spawn,
             speed: 0.,
             motion: Motion::default(),
@@ -304,6 +308,9 @@ impl Mob {
             || self.definition.template_id != saved.definition.template_id
         {
             return Ok(());
+        }
+        if let Some(level) = saved.developer_level {
+            self.set_developer_level(level)?;
         }
         saved.aggro.validate()?;
         saved.sensors.validate()?;
@@ -415,6 +422,43 @@ impl Mob {
         }
         saved.definition = self.definition.clone();
         *self = saved;
+        Ok(())
+    }
+
+    /// Rescale a developer-selected combat level while preserving damage and reactor fractions.
+    /// Raises:
+    ///     io::Error: The level is outside the supported 1..66 range.
+    pub(crate) fn set_developer_level(&mut self, level: u32) -> std::io::Result<()> {
+        if !(1..=66).contains(&level) {
+            return Err(crate::protocol::invalid(
+                "Developer MOB level must be between 1 and 66.",
+            ));
+        }
+        let mut definition = self.definition.clone();
+        definition.level = level;
+        definition.combat_override = None;
+        definition.validate()?;
+        let fraction = |value: f32, cap: f32| {
+            if cap > 0. {
+                (value / cap).clamp(0., 1.)
+            } else {
+                1.
+            }
+        };
+        let stats = MobStats::derive(&definition);
+        let energy = fraction(
+            self.reactor_energy.unwrap_or(self.reactor_capacity()),
+            self.reactor_capacity(),
+        );
+        self.health = fraction(self.health, self.max_health) * stats.hull;
+        self.shield = fraction(self.shield, self.max_shield) * stats.shield;
+        self.definition = definition;
+        self.max_health = stats.hull;
+        self.max_shield = stats.shield;
+        self.combat = stats;
+        self.reactor_energy = Some(energy * self.reactor_capacity());
+        self.cooldown = self.cooldown.min(stats.reload);
+        self.developer_level = Some(level);
         Ok(())
     }
     pub fn damage(&mut self, damage: f32) {

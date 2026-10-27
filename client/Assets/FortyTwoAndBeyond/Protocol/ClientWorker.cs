@@ -5,7 +5,7 @@ using System.Threading;
 
 namespace FortyTwoAndBeyond.Protocol
 {
-    public enum CommandKind { Thrust, Steer, Warp, Gate, Dock, Launch, EnterStationRoom, StationPose, OpenNpc, ChooseNpc, BuyVendor, SellVendor, EquipCargo, UnequipMount, MoveInventory, StoreCargo, RetrieveVault, OpenProduction, CloseProduction, SelectProductionRecipe, SelectProductionCategory, SetProductionLevels, StartProduction, InsertAnalysisSample, ReturnAnalysisSample, ActivateWeapon, ActivateDevice, ActivateDeviceFor, ActivateTurboWeapons, Chat, ToggleWeapons, Formation, SelectTarget, FollowTarget, InvitePlayer, AnswerConfirmation, StopWeapons, OpenLoot, CloseLoot, TakeLoot, OpenResource, CloseResource, ProspectResource, ActivateAbility, ActivateAbilityFor, TrainSkill, RequestRescue, ChooseRescue, SelfJumpstart }
+    public enum CommandKind { Thrust, Steer, Warp, Gate, Dock, Launch, EnterStationRoom, StationPose, OpenNpc, ChooseNpc, BuyVendor, SellVendor, EquipCargo, UnequipMount, MoveInventory, StoreCargo, RetrieveVault, OpenProduction, CloseProduction, SelectProductionRecipe, SelectProductionCategory, SelectProductionPage, QueryComponentMarket, QueryComponentStock, TradeComponentMarket, TravelComponentMarket, SetProductionLevels, StartProduction, InsertAnalysisSample, ReturnAnalysisSample, ActivateWeapon, ActivateDevice, ActivateDeviceFor, ActivateTurboWeapons, Chat, ToggleWeapons, Formation, SelectTarget, FollowTarget, InvitePlayer, AnswerConfirmation, StopWeapons, OpenLoot, CloseLoot, TakeLoot, OpenResource, CloseResource, ProspectResource, ActivateAbility, ActivateAbilityFor, TrainSkill, RequestRescue, ChooseRescue, SelfJumpstart }
 
     public readonly struct ClientCommand
     {
@@ -17,17 +17,20 @@ namespace FortyTwoAndBeyond.Protocol
         public readonly uint StationRoom, StationAction;
         public readonly float StationOrientation, StationX, StationZ;
         public readonly InventoryMove InventoryMove;
+        public readonly uint MarketTemplate, MarketQuantity;
+        public readonly bool MarketSell;
 
         /// <summary>Store one immutable main-thread input for the network worker.</summary>
         public ClientCommand(CommandKind kind, uint target = 0, float yaw = 0, float pitch = 0,
             string text = "", int slot = 0, uint stationRoom = uint.MaxValue, uint stationAction = 0,
             float stationOrientation = 0, float stationX = 0, float stationZ = 0,
-            InventoryMove inventoryMove = default)
+            InventoryMove inventoryMove = default, uint marketTemplate = 0, uint marketQuantity = 1, bool marketSell = false)
         {
             Kind = kind; Target = target; Yaw = yaw; Pitch = pitch; Text = text; Slot = slot;
             StationRoom = stationRoom; StationAction = stationAction;
             StationOrientation = stationOrientation; StationX = stationX; StationZ = stationZ;
-            InventoryMove = inventoryMove;
+            InventoryMove = inventoryMove; MarketTemplate = marketTemplate;
+            MarketQuantity = marketQuantity; MarketSell = marketSell;
         }
     }
 
@@ -104,6 +107,12 @@ namespace FortyTwoAndBeyond.Protocol
                                 case CommandKind.CloseProduction: session.CloseProduction(); break;
                                 case CommandKind.SelectProductionRecipe: session.SelectProductionRecipe(command.Target); break;
                                 case CommandKind.SelectProductionCategory: session.SelectProductionCategory(command.Target); break;
+                                case CommandKind.QueryComponentStock: session.QueryComponentStock(); break;
+                                case CommandKind.QueryComponentMarket: session.QueryComponentMarket(command.Target); break;
+                                case CommandKind.TradeComponentMarket: session.TradeComponentMarket(command.Target,
+                                    command.MarketTemplate, command.MarketSell, command.Slot, command.MarketQuantity); break;
+                                case CommandKind.TravelComponentMarket: session.TravelComponentMarket(command.Target); break;
+                                case CommandKind.SelectProductionPage: session.SelectProductionPage(command.Target); break;
                                 case CommandKind.SetProductionLevels: session.SetProductionLevels(command.Target, command.Slot != 0); break;
                                 case CommandKind.StartProduction: session.StartProduction(command.Target != 0); break;
                                 case CommandKind.InsertAnalysisSample: session.InsertAnalysisSample((int)command.Target); break;

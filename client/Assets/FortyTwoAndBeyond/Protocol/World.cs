@@ -220,7 +220,8 @@ namespace FortyTwoAndBeyond.Protocol
                 int contactOffset = offset + 4 + i * 265;
                 contacts[i] = new StationContact(Wire.U32(body, contactOffset + 8), Wire.U32(body, contactOffset));
             }
-            return new StationState(Id, kind, terminals, roomList, contacts, uint.MaxValue, Name);
+            uint currentRoom = roomList.Any(room => room.Index == CurrentRoom) ? CurrentRoom : uint.MaxValue;
+            return new StationState(Id, kind, terminals, roomList, contacts, currentRoom, Name);
         }
 
         /// <returns>The same station with its announced name.</returns>
@@ -494,6 +495,7 @@ namespace FortyTwoAndBeyond.Protocol
         public readonly Queue<ShotEvent> Shots = new Queue<ShotEvent>();
         public readonly Dictionary<ulong, NativeObjectEffect> ObjectEffects =
             new Dictionary<ulong, NativeObjectEffect>();
+        public readonly HashSet<uint> ShieldChargingPeers = new HashSet<uint>();
         public GroupState Group { get; private set; } = new GroupState(false, Array.Empty<GroupMember>());
         public FormationAnchor Formation { get; private set; }
         public TargetVerbs Verbs { get; private set; } = TargetVerbs.Empty;
@@ -509,6 +511,9 @@ namespace FortyTwoAndBeyond.Protocol
         public void ClearInvitation() { if (Confirmation?.Kind == ConfirmationKind.Group) ClearConfirmation(); }
         public readonly Queue<string> Messages = new Queue<string>();
         public EquipmentState Equipment { get; } = new EquipmentState();
+        public bool AggregateStation { get; private set; }
+        public uint[] MarketItemTemplates = Array.Empty<uint>();
+        public Dictionary<uint, ComponentMarketView> ComponentMarkets { get; } = new Dictionary<uint, ComponentMarketView>();
         public Dictionary<uint, ItemTemplateInfo> ItemCatalog { get; } = new Dictionary<uint, ItemTemplateInfo>();
         public Dictionary<uint, ShipActor> Mobs { get; } = new Dictionary<uint, ShipActor>();
         public string Sector { get; private set; } = "Connecting";
@@ -525,9 +530,11 @@ namespace FortyTwoAndBeyond.Protocol
         public uint CastingAbilityId { get; private set; } = uint.MaxValue;
         public string ActiveDeviceLabel { get; private set; } = "";
         public long ActiveDeviceEndsAt { get; private set; }
-        private readonly TimedDeviceBuff[] buffs = { TimedDeviceBuff.Empty, TimedDeviceBuff.Empty,
-            TimedDeviceBuff.Empty, TimedDeviceBuff.Empty, TimedDeviceBuff.Empty,
-            TimedDeviceBuff.Empty };
+        private readonly TimedDeviceBuff[] buffs =
+            Enumerable.Repeat(TimedDeviceBuff.Empty, 16).ToArray();
+        private ActiveDeviceStatus[] activeDevices = Array.Empty<ActiveDeviceStatus>();
+        public bool HasActiveDeviceSnapshot { get; private set; }
+        public IReadOnlyList<ActiveDeviceStatus> ActiveDevices => activeDevices;
         private readonly System.Collections.Generic.List<int> pendingBuffVisuals =
             new System.Collections.Generic.List<int>();
         public TimedDeviceBuff ActiveBuff => buffs[0];
@@ -536,6 +543,9 @@ namespace FortyTwoAndBeyond.Protocol
         public TimedDeviceBuff ReactorBuff => buffs[3];
         public TimedDeviceBuff SignatureBuff => buffs[4];
         public TimedDeviceBuff RallyBuff => buffs[5];
+        /// Returns:
+        ///     TimedDeviceBuff: The immutable revision in one server-owned status slot.
+        public TimedDeviceBuff BuffAt(int slot) { return buffs[slot]; }
 
         /// <returns>ushort: The server's visual descriptor for a Rally buff token.</returns>
         private static ushort RallyDescriptor(string name)
@@ -549,7 +559,9 @@ namespace FortyTwoAndBeyond.Protocol
                 default: return 0;
             }
         }
-        public bool TurboWeaponsActive => ActiveDeviceLabel == "Turbo Weapons";
+        public bool TurboWeaponsActive => HasActiveDeviceSnapshot ?
+            activeDevices.Any(device => device.Name == "Turbo Weapons") :
+            ActiveDeviceLabel == "Turbo Weapons";
         public long CastEndsAt { get; private set; }
         public Dictionary<uint, long> AbilityCooldownEnds { get; } = new Dictionary<uint, long>();
         public ItemState[] Vendor { get; private set; } = Array.Empty<ItemState>();
@@ -638,13 +650,15 @@ namespace FortyTwoAndBeyond.Protocol
                     if (firstEnd < 0 || firstEnd + 1 >= b.Length) throw new InvalidDataException("Missing sector name.");
                     string name = Wire.Text(b, firstEnd + 1, b.Length - firstEnd - 1);
                     if (name.Length == 0) throw new InvalidDataException("Empty sector name.");
-                    if (Sector != name) { Objects.Clear(); Players.Clear(); Mobs.Clear(); attackerIds.Clear(); StationAvatars.Clear(); Loot.Clear(); Resources.Clear(); ResourceTargetId = 0; ResourceWindowOpen = false; MiningProspect = null; MiningTractor = null; LootActivity = null; Formation = null; Warp = WarpState.Decode(0, 0); lastServerTickAt = 0; OpenLootId = 0; Verbs = TargetVerbs.Empty; Shots.Clear(); Damages.Clear(); ObjectEffects.Clear(); ClearConfirmation(); nextShot = nextDamage = 0; }
+                    if (Sector != name) { Objects.Clear(); Players.Clear(); Mobs.Clear(); ShieldChargingPeers.Clear(); attackerIds.Clear(); StationAvatars.Clear(); Loot.Clear(); Resources.Clear(); ResourceTargetId = 0; ResourceWindowOpen = false; MiningProspect = null; MiningTractor = null; LootActivity = null; Formation = null; Warp = WarpState.Decode(0, 0); lastServerTickAt = 0; OpenLootId = 0; Verbs = TargetVerbs.Empty; Shots.Clear(); Damages.Clear(); ObjectEffects.Clear(); ClearConfirmation(); nextShot = nextDamage = 0; }
                     Sector = name;
+                    ComponentMarkets.Clear();
+                    MarketItemTemplates = Array.Empty<uint>();
                     break;
                 case 0x4f:
                     if (b.Length != 6) throw new InvalidDataException("Invalid station identity.");
                     Station = b[4] == 0 ? new StationState(Wire.U32(b, 0)) : null;
-                    if (Station != null) { ActiveDeviceLabel = ""; ActiveDeviceEndsAt = 0; for (int slot = 0; slot < buffs.Length; slot++) buffs[slot] = TimedDeviceBuff.Empty; pendingBuffVisuals.Clear(); Formation = null; ObjectEffects.Clear(); attackerIds.Clear(); }
+                    if (Station != null) { ActiveDeviceLabel = ""; ActiveDeviceEndsAt = 0; for (int slot = 0; slot < buffs.Length; slot++) buffs[slot] = TimedDeviceBuff.Empty; pendingBuffVisuals.Clear(); Formation = null; ObjectEffects.Clear(); ShieldChargingPeers.Clear(); attackerIds.Clear(); }
                     Production = new ProductionState();
                     StationAvatars.Clear();
                     Dialogue = null; Vendor = Array.Empty<ItemState>();
@@ -729,6 +743,54 @@ namespace FortyTwoAndBeyond.Protocol
                         selectedCorpse.Kind == 25) corpseId = selectedCorpse.Id;
                     LootActivity looting = LootActivity.FromTractor(b, player, corpseId);
                     if (looting != null) LootActivity = looting;
+                    break;
+                case 0x2030:
+                    activeDevices = ActiveDeviceStatus.DecodeSnapshot(b);
+                    HasActiveDeviceSnapshot = true;
+                    break;
+                case 0x2031:
+                    if (b.Length != 5 || b[4] > 1)
+                        throw new InvalidDataException("Invalid peer Shield Charging status.");
+                    uint chargingPeer = Wire.U32(b, 0);
+                    if (b[4] == 1 && Players.ContainsKey(chargingPeer))
+                        ShieldChargingPeers.Add(chargingPeer);
+                    else ShieldChargingPeers.Remove(chargingPeer);
+                    break;
+                case 0x203b:
+                    if (b.Length != 8 || Wire.U32(b, 0) != player || Wire.U32(b, 4) > 1)
+                        throw new InvalidDataException("Invalid station aggregation acknowledgement.");
+                    AggregateStation = Wire.U32(b, 4) == 1;
+                    break;
+                case 0x2039:
+                    Wire.Require(b, 0, 8);
+                    uint stockStation = Wire.U32(b, 0), stockCount = Wire.U32(b, 4);
+                    if (stockCount > 2048 || b.Length != 8 + stockCount * 4)
+                        throw new InvalidDataException("Invalid component stock response.");
+                    if (stockStation == (Station?.Id ?? 0))
+                    {
+                        MarketItemTemplates = new uint[stockCount];
+                        for (int index = 0; index < MarketItemTemplates.Length; index++)
+                            MarketItemTemplates[index] = Wire.U32(b, 8 + index * 4);
+                    }
+                    break;
+                case 0x2035:
+                    ComponentMarketView market = ComponentMarketView.Decode(b);
+                    if (!ComponentMarkets.ContainsKey(market.Template) && ComponentMarkets.Count >= 1024)
+                        ComponentMarkets.Clear();
+                    ComponentMarkets[market.Template] = market;
+                    break;
+                case 0x2032:
+                    if (b.Length != 16) throw new InvalidDataException("Invalid recipe page metadata.");
+                    uint recipeLab = Wire.U32(b, 0), recipePage = Wire.U32(b, 4);
+                    uint recipeTotal = Wire.U32(b, 8), recipePageSize = Wire.U32(b, 12);
+                    if (recipePageSize != 500 || recipeTotal > 100000 ||
+                        recipePage > (recipeTotal == 0 ? 0 : (recipeTotal - 1) / recipePageSize))
+                        throw new InvalidDataException("Recipe page metadata exceeds its bounds.");
+                    if (recipeLab == Production.LabId)
+                    {
+                        Production.PageIndex = recipePage; Production.TotalFormulas = recipeTotal;
+                        Production.PageSize = recipePageSize;
+                    }
                     break;
                 case 0x09:
                     NativeObjectEffect objectEffect = NativeObjectEffect.Decode(b);
@@ -833,7 +895,7 @@ namespace FortyTwoAndBeyond.Protocol
                     break;
                 case 0x25:
                     ItemTemplateInfo template = ItemTemplateInfo.Decode(b);
-                    if (!ItemCatalog.ContainsKey(template.Id) && ItemCatalog.Count >= 1000)
+                    if (!ItemCatalog.ContainsKey(template.Id) && ItemCatalog.Count >= 32768)
                         throw new InvalidDataException("Item template limit exceeded.");
                     ItemCatalog[template.Id] = template;
                     break;
@@ -971,6 +1033,7 @@ namespace FortyTwoAndBeyond.Protocol
                     if (OpenLootId == Wire.U32(b, 0)) { OpenLootId = 0; LootActivity = null; }
                     if (ResourceTargetId == Wire.U32(b, 0)) SetResourceTarget(0);
                     Players.Remove(Wire.U32(b, 0)); Mobs.Remove(Wire.U32(b, 0));
+                    ShieldChargingPeers.Remove(Wire.U32(b, 0));
                     attackerIds.Remove(Wire.U32(b, 0));
                     foreach (ulong key in ObjectEffects.Keys.Where(key => key >> 32 == Wire.U32(b, 0)).ToArray())
                         ObjectEffects.Remove(key);
@@ -1086,6 +1149,10 @@ namespace FortyTwoAndBeyond.Protocol
         public readonly DeviceBuffView PeerBuff;
         public readonly DeviceBuffView ShieldBuff, ReactorBuff, SignatureBuff;
         public readonly DeviceBuffView RallyBuff;
+        public readonly IReadOnlyList<DeviceBuffView> ActiveBuffs;
+        public readonly IReadOnlyList<uint> ShieldChargingPeers;
+        public readonly IReadOnlyList<ActiveDeviceView> ActiveDeviceEffects;
+        public readonly bool HasActiveDeviceSnapshot;
         public readonly float ActiveDeviceRemainingSeconds;
         public readonly float CastRemainingSeconds;
         public readonly IReadOnlyDictionary<uint, float> AbilityCooldownSeconds;
@@ -1106,12 +1173,14 @@ namespace FortyTwoAndBeyond.Protocol
         public readonly string Invitation;
         public readonly ConfirmationPrompt Confirmation;
         public readonly string[] Messages;
-        public readonly bool Ready, HasPosition;
+        public readonly bool Ready, HasPosition, AggregateStation;
         public readonly float Speed, Energy, Shield, Hull, MaxEnergy, MaxShield, MaxHull;
         public readonly ShipDefenseState Defense;
         public readonly float TargetSpeed, Acceleration, AngularY, AngularZ;
         public readonly ItemView[] Cargo, Mounted, Ammo, Vault;
         public readonly ProductionView Production;
+        public readonly IReadOnlyDictionary<uint, ComponentMarketView> ComponentMarkets;
+        public readonly ItemView[] MarketItems;
         public readonly CorpseLoot[] Loot;
         public readonly uint OpenLootId;
         public readonly uint WeaponMounts, DeviceMounts, SelectedTargetId, CargoCapacity;
@@ -1120,6 +1189,7 @@ namespace FortyTwoAndBeyond.Protocol
         /// <summary>Copy worker-owned state for main-thread rendering.</summary>
         public Snapshot(World world, string status, bool ready)
         {
+            AggregateStation = world.AggregateStation;
             Sector = world.Sector; Status = status; Position = world.Position;
             Orientation = (float[])world.Orientation.Clone(); HasPosition = world.HasPosition;
             Objects = world.Objects.Values.OrderBy(x => x.Name).ToArray(); Ready = ready;
@@ -1128,11 +1198,16 @@ namespace FortyTwoAndBeyond.Protocol
             TargetSpeed = world.TargetSpeed; Acceleration = world.Acceleration;
             AngularY = world.AngularY; AngularZ = world.AngularZ;
             Players = world.Players.Values.ToArray(); Mobs = world.Mobs.Values.ToArray();
+            ShieldChargingPeers = Array.AsReadOnly(world.ShieldChargingPeers.ToArray());
             PlayerId = world.PlayerId; Shots = world.Shots.ToArray(); Damages = world.Damages.ToArray();
             Attackers = Array.AsReadOnly(world.AttackerIds);
             Group = world.Group; Formation = world.Formation; Verbs = world.Verbs;
             Station = world.Station; StationAvatars = world.StationAvatars.Values.ToArray();
             Production = new ProductionView(world.Production, world.ItemCatalog);
+            ComponentMarkets = new System.Collections.ObjectModel.ReadOnlyDictionary<uint, ComponentMarketView>(
+                new Dictionary<uint, ComponentMarketView>(world.ComponentMarkets));
+            MarketItems = world.MarketItemTemplates.Select(template =>
+                new ItemView(-1, new ItemState { Template = template, Quantity = 0 }, world.ItemCatalog)).ToArray();
             Dialogue = world.Dialogue; Credits = world.Credits;
             Missions = (MissionState[])world.Missions.Clone();
             Reputation = world.Reputation;
@@ -1142,20 +1217,30 @@ namespace FortyTwoAndBeyond.Protocol
             Vendor = new ItemView[world.Vendor.Length];
             AvailableAbilities = (uint[])world.AvailableAbilities.Clone();
             long now = System.Diagnostics.Stopwatch.GetTimestamp();
-            DeviceBuff = world.ActiveBuff.Active ? new DeviceBuffView(world.ActiveBuff,
-                world.EstimatedServerTick(now)) : null;
-            PeerBuff = world.PeerBuff.Active ? new DeviceBuffView(world.PeerBuff,
-                world.EstimatedServerTick(now)) : null;
-            ShieldBuff = world.ShieldBuff.Active ? new DeviceBuffView(world.ShieldBuff,
-                world.EstimatedServerTick(now)) : null;
-            ReactorBuff = world.ReactorBuff.Active ? new DeviceBuffView(world.ReactorBuff,
-                world.EstimatedServerTick(now)) : null;
-            SignatureBuff = world.SignatureBuff.Active ? new DeviceBuffView(world.SignatureBuff,
-                world.EstimatedServerTick(now)) : null;
-            RallyBuff = world.RallyBuff.Active ? new DeviceBuffView(world.RallyBuff,
-                world.EstimatedServerTick(now)) : null;
+            uint? buffTick = world.EstimatedServerTick(now);
+            var buffViews = new DeviceBuffView[16];
+            for (int slot = 0; slot < buffViews.Length; slot++)
+            {
+                TimedDeviceBuff buff = world.BuffAt(slot);
+                if (!buff.Active) continue;
+                var view = new DeviceBuffView(buff, buffTick, slot);
+                if (view.Permanent || view.RemainingSeconds != 0) buffViews[slot] = view;
+            }
+            ActiveBuffs = Array.AsReadOnly(buffViews.Where(view => view != null).ToArray());
+            HasActiveDeviceSnapshot = world.HasActiveDeviceSnapshot;
+            ActiveDeviceEffects = Array.AsReadOnly(world.ActiveDevices
+                .Select(device => device.View(buffTick))
+                .Where(device => device.RemainingSeconds != 0).ToArray());
+            DeviceBuff = buffViews[0];
+            PeerBuff = buffViews[1];
+            ShieldBuff = buffViews[2];
+            ReactorBuff = buffViews[3];
+            SignatureBuff = buffViews[4];
+            RallyBuff = buffViews[5];
             CastingAbilityId = world.CastingAbilityId;
-            TurboWeaponsActive = world.TurboWeaponsActive;
+            TurboWeaponsActive = HasActiveDeviceSnapshot ?
+                ActiveDeviceEffects.Any(device => device.Name == "Turbo Weapons") :
+                world.TurboWeaponsActive;
             ActiveDeviceLabel = world.ActiveDeviceLabel;
             ActiveDeviceRemainingSeconds = ActiveDeviceLabel.Length == 0 || world.ActiveDeviceEndsAt == 0 ? 0 :
                 (float)Math.Max(0, (world.ActiveDeviceEndsAt - now) /

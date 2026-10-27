@@ -4,6 +4,20 @@ use super::*;
 use crate::peers::StationPeerSnapshot;
 
 impl PlayerSession {
+    /// Returns:
+    ///     Option<(u32, u32)>: Current station and either its native room or the aggregate visibility bucket.
+    pub(crate) fn station_visibility_bucket(&self) -> Option<(u32, u32)> {
+        self.station_location().map(|(station, room)| {
+            (
+                station,
+                if self.aggregate_station {
+                    u32::MAX
+                } else {
+                    room
+                },
+            )
+        })
+    }
     pub(crate) fn station_location(&self) -> Option<(u32, u32)> {
         if !self.logged_in || self.sector.station.is_none() {
             return None;
@@ -28,7 +42,10 @@ impl PlayerSession {
             .iter()
             .filter(|peer| {
                 peer.profile.game_id != self.player_id()
-                    && location == Some((peer.station, peer.pose.room))
+                    && location.is_some_and(|(station, room)| {
+                        station == peer.station
+                            && (self.aggregate_station || room == peer.pose.room)
+                    })
             })
             .map(|peer| peer.profile.game_id)
             .collect();

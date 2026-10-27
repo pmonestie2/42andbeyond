@@ -24,6 +24,7 @@ namespace FortyTwoAndBeyond.Protocol
             ["Transfer Reactor Energy (Instant)"] = "Transfer Reactor Energy",
             ["Recharge Reactor (Activated)"] = "Recharge Reactor",
             ["Recharge Shields (Activated)"] = "Recharge Shields",
+            ["Recharge Shields - BOOST (Activated)"] = "Recharge Shields",
             ["Reduce Ship Signature (Activated)"] = "Reduce Ship Signature",
             ["Deflect Impact (Activated)"] = "Deflect Impact",
             ["Deflect Explosive (Activated)"] = "Deflect Explosive",
@@ -56,11 +57,15 @@ namespace FortyTwoAndBeyond.Protocol
         {
             if (label.Length == 0) return false;
             if (type == 11) return slot >= 9 && slot < 9 + deviceMounts && slot < 20;
-            if (label == "Increase Maneuverability" &&
-                (type == 2 && slot == 0 || type == 6 && slot == 2)) return true;
+            if (type == 2 && slot == 0 &&
+                (label == "Increase Maneuverability" || label == "Recharge Shields" ||
+                    label == "Turbo Weapons" || label == "Deflect Impact" ||
+                    label == "Deflect Explosive" || label == "Shunt to Reactor")) return true;
+            if (label == "Increase Maneuverability" && type == 6 && slot == 2) return true;
             return type == 7 && slot == 1 &&
                 (label == "Impulse Turbo" || label == "Increase Maneuverability" ||
-                    label == "Scan Boost" ||
+                    label == "Scan Boost" || label == "Recharge Reactor" ||
+                    label == "Recharge Shields" ||
                     label == "Reroute Shield Energy");
         }
     }
