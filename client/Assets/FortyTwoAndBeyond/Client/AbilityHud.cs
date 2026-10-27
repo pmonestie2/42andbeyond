@@ -35,6 +35,8 @@ namespace FortyTwoAndBeyond.Client
         private readonly FlightHud flightHud;
         private readonly AbilityDefinition[] catalog;
         private readonly Dictionary<uint, string> skillNames = new Dictionary<uint, string>();
+        private readonly AbilityIcons icons = new AbilityIcons();
+        private readonly HashSet<int> expandedSkills = new HashSet<int>();
         private readonly int[] slots = { -1, -1, -1, -1, -1, -1 };
         private GUIStyle quickbarName, abilityName, abilityMeta;
         private Vector2 scroll;
@@ -42,6 +44,7 @@ namespace FortyTwoAndBeyond.Client
         private bool trainingTab;
         private bool equipmentTab;
         private int assigningSlot = -1;
+        private int variantSlot = -1;
         private int dragBinding = int.MinValue;
         private bool draggingAbility, dragCanActivate;
         private Vector2 dragStart;
@@ -82,7 +85,8 @@ namespace FortyTwoAndBeyond.Client
                 (Screen.height - Input.mousePosition.y) / flightHud.Scale);
             return ButtonRect().Contains(point) ||
                 (open && PanelRect().Contains(point)) ||
-                client.CurrentSnapshot?.Station == null && QuickbarRect().Contains(point);
+                client.CurrentSnapshot?.Station == null &&
+                (QuickbarRect().Contains(point) || VariantPickerRect(client.CurrentSnapshot).Contains(point));
         }
 
         /// <returns>Rect: Bounds of the ability panel's persistent toolbar button.</returns>
@@ -117,12 +121,28 @@ namespace FortyTwoAndBeyond.Client
             return -1;
         }
 
+        /// <returns>Rect: Bounds of the active quickbar variant picker, if one is open.</returns>
+        private Rect VariantPickerRect(Snapshot snapshot)
+        {
+            if (variantSlot < 0 || variantSlot >= slots.Length || snapshot == null)
+                return Rect.zero;
+            AbilityDefinition bound = catalog.FirstOrDefault(item => item.id == slots[variantSlot]);
+            if (bound == null) return Rect.zero;
+            int count = catalog.Count(item => item.skill == bound.skill &&
+                snapshot.AvailableAbilities.Contains((uint)item.id));
+            if (count == 0) return Rect.zero;
+            Rect bar = QuickbarRect();
+            float height = 47 + count * 36;
+            float x = Mathf.Clamp(bar.x + variantSlot * 118, 8, CanvasWidth - 310);
+            return new Rect(x, bar.y - height - 5, 302, height);
+        }
+
         /// <summary>Save one per-character ability or equipped device assignment.</summary>
         private void BindSlot(int slot, int binding)
         {
             slots[slot] = binding;
             PlayerPrefs.SetInt($"42andBeyond.ability.{slotOwner}.{slot}", binding);
-            PlayerPrefs.Save(); assigningSlot = -1;
+            PlayerPrefs.Save(); assigningSlot = -1; variantSlot = -1;
         }
 
         /// <returns>int: A device template encoded apart from existing ability IDs and empty slots.</returns>
@@ -209,6 +229,7 @@ namespace FortyTwoAndBeyond.Client
         {
             if (slotOwner == playerId) return;
             slotOwner = playerId; assigningSlot = -1; pendingSupportTarget = 0;
+            variantSlot = -1; expandedSkills.Clear();
             trainingTab = equipmentTab = false;
             dragBinding = int.MinValue; draggingAbility = false;
             for (int i = 0; i < slots.Length; i++)
@@ -303,6 +324,7 @@ namespace FortyTwoAndBeyond.Client
         {
             EnsureStyles();
             Rect bar = QuickbarRect(); flightHud.Panel(bar);
+            Event current = Event.current;
             for (int i = 0; i < slots.Length; i++)
             {
                 int id = slots[i];
@@ -312,14 +334,22 @@ namespace FortyTwoAndBeyond.Client
                 string name = ability?.name ?? device?.ActivationLabel ??
                     (id < -1 ? "Equip device" : "Assign action");
                 Rect slot = new Rect(bar.x + 9 + i * 118, bar.y + 8, 110, 52);
+                if (ability != null && current.type == EventType.MouseDown &&
+                    current.button == 1 && slot.Contains(current.mousePosition))
+                { variantSlot = variantSlot == i ? -1 : i; current.Use(); }
                 if (GUI.Button(slot, new GUIContent("", name), flightHud.ButtonStyle))
                 {
                     if (ability == null && device == null)
                     { open = true; equipmentTab = id < -1; trainingTab = false; assigningSlot = i; }
                     else ActivateSlot(i, snapshot);
                 }
-                GUI.Label(new Rect(slot.x + 7, slot.y + 2, 96, 18), key, flightHud.SmallStyle);
-                GUI.Label(new Rect(slot.x + 7, slot.y + 20, 96, 31), name,
+                if (ability != null)
+                    GUI.DrawTexture(new Rect(slot.x + 5, slot.y + 17, 30, 30),
+                        icons.ForSkill(ability.skill));
+                GUI.Label(new Rect(slot.x + 7, slot.y + 2, 96, 18), key +
+                    (ability != null ? "  ·  RMB" : ""), flightHud.SmallStyle);
+                GUI.Label(new Rect(slot.x + (ability == null ? 7 : 38), slot.y + 19,
+                    ability == null ? 96 : 69, 32), name,
                     ability == null && device == null ? flightHud.SmallStyle : quickbarName);
                 if (draggingAbility && QuickbarSlotAt(CanvasPointer()) == i)
                     GUI.Box(new Rect(slot.x + 1, slot.y + 1, slot.width - 2, slot.height - 2),
@@ -334,6 +364,41 @@ namespace FortyTwoAndBeyond.Client
                 GUI.Label(new Rect(point.x + 14, point.y - 15, 195, 34),
                     dragged?.name ?? device?.ActivationLabel ?? "Action", flightHud.BodyStyle);
             }
+            DrawVariantPicker(snapshot, bar);
+        }
+
+        /// <summary>Change one assigned button to another server-available rank or variant.</summary>
+        private void DrawVariantPicker(Snapshot snapshot, Rect bar)
+        {
+            if (variantSlot < 0 || variantSlot >= slots.Length) return;
+            AbilityDefinition bound = catalog.FirstOrDefault(item => item.id == slots[variantSlot]);
+            if (bound == null) { variantSlot = -1; return; }
+            AbilityDefinition[] variants = catalog.Where(item => item.skill == bound.skill &&
+                snapshot.AvailableAbilities.Contains((uint)item.id))
+                .OrderBy(item => item.rank).ThenBy(item => item.name).ToArray();
+            if (variants.Length == 0) { variantSlot = -1; return; }
+            Rect menu = VariantPickerRect(snapshot);
+            flightHud.Panel(menu);
+            string family = skillNames.TryGetValue((uint)bound.skill, out string known) ? known :
+                bound.kind.Replace('_', ' ');
+            GUI.Label(new Rect(menu.x + 12, menu.y + 7, 274, 25),
+                family.ToUpperInvariant() + "  ·  CHOOSE VARIANT", flightHud.SmallStyle);
+            for (int i = 0; i < variants.Length; i++)
+            {
+                AbilityDefinition option = variants[i];
+                Rect row = new Rect(menu.x + 8, menu.y + 36 + i * 36, menu.width - 16, 32);
+                if (GUI.Button(row, new GUIContent("", option.description), flightHud.ButtonStyle))
+                    BindSlot(variantSlot, option.id);
+                GUI.DrawTexture(new Rect(row.x + 4, row.y + 2, 27, 27),
+                    icons.ForSkill(option.skill));
+                GUI.Label(new Rect(row.x + 36, row.y + 5, row.width - 43, 23),
+                    $"R{option.rank}  {option.name}" +
+                    (option.id == bound.id ? "  ✓" : ""), flightHud.SmallStyle);
+            }
+            Event current = Event.current;
+            if (current.type == EventType.MouseDown && current.button == 0 &&
+                !menu.Contains(current.mousePosition) && !bar.Contains(current.mousePosition))
+                variantSlot = -1;
         }
 
         /// <summary>Draw server-owned combat, trade, and explore progress beside the skill list.</summary>
@@ -387,7 +452,10 @@ namespace FortyTwoAndBeyond.Client
                 string name = skillNames.TryGetValue(skill.Id, out string known) ? known :
                     "Skill " + skill.Id;
                 GUILayout.BeginHorizontal(GUILayout.Height(52));
-                GUILayout.BeginVertical(GUILayout.Width(318));
+                Rect badge = GUILayoutUtility.GetRect(38, 38, GUILayout.Width(38),
+                    GUILayout.Height(38));
+                GUI.DrawTexture(badge, icons.ForSkill((int)skill.Id));
+                GUILayout.BeginVertical(GUILayout.Width(272));
                 GUILayout.Label(name, flightHud.BodyStyle);
                 GUILayout.Label($"RANK {skill.Rank}/{skill.Maximum}  ·  " +
                     (skill.CanTrain ? $"NEXT {skill.Cost} POINTS" : skill.GateReason()),
@@ -478,7 +546,8 @@ namespace FortyTwoAndBeyond.Client
             if (GUI.Button(new Rect(panel.xMax - 48, panel.y + 12, 30, 28), "×", flightHud.ButtonStyle))
             { open = false; return; }
             GUI.Label(new Rect(panel.x + 18, panel.y + 42, panel.width - 36, 20),
-                assigningSlot < 0 ? "Drag an action to the bottom bar · click a row to use it." :
+                assigningSlot < 0 ?
+                "Drag to quickbar · click to use · right-click a bound skill for variants." :
                 $"Choose an action for slot {assigningSlot + 1}.", flightHud.SmallStyle);
             for (int i = 0; i < slots.Length; i++)
             {
@@ -519,16 +588,51 @@ namespace FortyTwoAndBeyond.Client
                     client.Status, flightHud.SmallStyle);
                 return;
             }
-            AbilityDefinition[] available = catalog.Where(item => item.id >= 0 && snapshot.AvailableAbilities.Contains((uint)item.id))
-                .OrderBy(item => item.name).ToArray();
+            AbilityDefinition[] available = catalog.Where(item => item.id >= 0 &&
+                snapshot.AvailableAbilities.Contains((uint)item.id)).ToArray();
             GUILayout.BeginArea(new Rect(panel.x + 18, panel.y + 300, panel.width - 36, panel.height - 349));
             scroll = GUILayout.BeginScrollView(scroll);
             if (available.Length == 0)
                 GUILayout.Label(snapshot.AvailableAbilities.Length == 0 ?
                     "Waiting for class abilities from the server…" :
                     "Ability display catalog is out of date.", flightHud.SmallStyle);
-            foreach (AbilityDefinition ability in available)
+            foreach (IGrouping<int, AbilityDefinition> family in available.GroupBy(item => item.skill)
+                .OrderBy(group => skillNames.TryGetValue((uint)group.Key, out string name) ?
+                    name : group.First().kind))
             {
+                AbilityDefinition[] variants = family.OrderBy(item => item.rank)
+                    .ThenBy(item => item.name).ToArray();
+                string familyName = skillNames.TryGetValue((uint)family.Key, out string known) ?
+                    known : variants[0].kind.Replace('_', ' ');
+                bool expanded = expandedSkills.Contains(family.Key);
+                Rect heading = GUILayoutUtility.GetRect(0, 50, GUILayout.ExpandWidth(true),
+                    GUILayout.Height(50));
+                if (GUI.Button(heading, GUIContent.none, flightHud.ButtonStyle))
+                {
+                    if (!expandedSkills.Add(family.Key)) expandedSkills.Remove(family.Key);
+                }
+                GUI.DrawTexture(new Rect(heading.x + 7, heading.y + 4, 42, 42),
+                    icons.ForSkill(family.Key));
+                GUI.Label(new Rect(heading.x + 57, heading.y + 5, heading.width - 84, 23),
+                    familyName.ToUpperInvariant(), abilityName);
+                GUI.Label(new Rect(heading.x + 57, heading.y + 27, heading.width - 84, 20),
+                    $"{variants.Length} VARIANT{(variants.Length == 1 ? "" : "S")}  ·  " +
+                    $"HIGHEST RANK {variants[variants.Length - 1].rank}  ·  " +
+                    (expanded ? "COLLAPSE ▲" : "EXPAND ▼"), abilityMeta);
+                if (!expanded) continue;
+                foreach (AbilityDefinition ability in variants)
+                    DrawAbilityVariant(snapshot, panel, ability);
+            }
+            GUILayout.EndScrollView(); GUILayout.EndArea();
+            Quickbar(snapshot);
+            string tooltip = GUI.tooltip;
+            GUI.Label(new Rect(panel.x + 18, panel.yMax - 43, panel.width - 36, 35),
+                string.IsNullOrEmpty(tooltip) ? client.Status : tooltip, flightHud.SmallStyle);
+        }
+
+        /// <summary>Draw one available rank inside its native skill family.</summary>
+        private void DrawAbilityVariant(Snapshot snapshot, Rect panel, AbilityDefinition ability)
+        {
                 snapshot.AbilityCooldownSeconds.TryGetValue((uint)ability.skill, out float recovery);
                 bool charging = snapshot.CastRemainingSeconds > 0;
                 string description = ability.id == 65 ?
@@ -544,7 +648,7 @@ namespace FortyTwoAndBeyond.Client
                     status = HackingTargetHint(snapshot);
                 float rowWidth = panel.width - 52;
                 float nameHeight = Mathf.Max(22,
-                    abilityName.CalcHeight(new GUIContent(ability.name), rowWidth - 24));
+                    abilityName.CalcHeight(new GUIContent(ability.name), rowWidth - 65));
                 float metaHeight = Mathf.Max(20,
                     abilityMeta.CalcHeight(new GUIContent(status), rowWidth - 24));
                 float rowHeight = nameHeight + metaHeight + 16;
@@ -561,16 +665,12 @@ namespace FortyTwoAndBeyond.Client
                     dragCanActivate = canActivate; draggingAbility = false;
                     Event.current.Use();
                 }
-                GUI.Label(new Rect(row.x + 12, row.y + 5, row.width - 24, nameHeight),
+                GUI.DrawTexture(new Rect(row.x + 8, row.y + 7, 32, 32),
+                    icons.ForSkill(ability.skill));
+                GUI.Label(new Rect(row.x + 47, row.y + 5, row.width - 59, nameHeight),
                     ability.name, abilityName);
-                GUI.Label(new Rect(row.x + 12, row.y + nameHeight + 6,
-                    row.width - 24, metaHeight), status, abilityMeta);
-            }
-            GUILayout.EndScrollView(); GUILayout.EndArea();
-            Quickbar(snapshot);
-            string tooltip = GUI.tooltip;
-            GUI.Label(new Rect(panel.x + 18, panel.yMax - 43, panel.width - 36, 35),
-                string.IsNullOrEmpty(tooltip) ? client.Status : tooltip, flightHud.SmallStyle);
+                GUI.Label(new Rect(row.x + 47, row.y + nameHeight + 6,
+                    row.width - 59, metaHeight), status, abilityMeta);
         }
     }
 }
