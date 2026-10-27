@@ -39,10 +39,12 @@ class ProfileTests(unittest.TestCase):
                      patch.object(ProfileDns, 'flush'):
                     for owner in owners:
                         owner.__enter__()
+                    self.assertIn(b'127.0.0.1\tlocal.net-7.org', hosts.read_bytes())
                     user_edit = b'10.0.0.4 user.local\r\n'
                     hosts.write_bytes(hosts.read_bytes() + user_edit)
                     owners[order[0]].__exit__(None, None, None)
                     self.assertIn(owners[order[1]].line, hosts.read_bytes())
+                    self.assertIn(b'127.0.0.1\tlocal.net-7.org', hosts.read_bytes())
                     owners[order[1]].__exit__(None, None, None)
                     self.assertEqual(hosts.read_bytes(), original + user_edit)
 
