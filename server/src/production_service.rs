@@ -117,6 +117,8 @@ impl PlayerSession {
             .push(Frame::new(0x7f, lab.to_be_bytes().to_vec()));
         if create {
             self.pending.push(packets::manufacturing_lab(lab));
+            self.pending.push(packets::relationship(lab, 2));
+            self.pending.push(packets::constant_position(lab, [0.; 3]));
         }
         self.workbench_lab_ready = true;
         if self
@@ -125,6 +127,21 @@ impl PlayerSession {
             .is_some_and(|window| window.station != self.sector.id)
         {
             self.workbench = None;
+        }
+        if self.workbench.is_none() {
+            self.workbench = Some(WorkbenchWindow {
+                mode: 1,
+                category: 0,
+                station: self.sector.id,
+                selected: 0,
+                filter: 0x1ff,
+                completed: false,
+                operation_failed: false,
+                recovered_components: Vec::new(),
+                known_count: 0,
+                page: 0,
+                last_view: None,
+            });
         }
         self.refresh_workbench(true)
     }
@@ -175,6 +192,11 @@ impl PlayerSession {
                         ));
                     }
                     self.close_npc();
+                    let previous_view = self
+                        .workbench
+                        .as_ref()
+                        .filter(|window| window.mode == value)
+                        .and_then(|window| window.last_view.clone());
                     self.workbench = Some(WorkbenchWindow {
                         mode: value,
                         category: 0,
@@ -190,7 +212,7 @@ impl PlayerSession {
                         recovered_components: Vec::new(),
                         known_count: 0,
                         page: 0,
-                        last_view: None,
+                        last_view: previous_view,
                     });
                 }
                 0x79 if value == 0 => {
@@ -272,7 +294,16 @@ impl PlayerSession {
                 _ => return Err(invalid("Unsupported workbench action.")),
             }
         }
-        self.refresh_workbench(true)
+        self.refresh_workbench(true)?;
+        if opcode == 0x79 {
+            crate::server_log!("Production terminal opened: {}; station={}; mode={}; learned={}; visible={}; page={}",
+                self.account.character.name,self.sector.id,
+                self.workbench.as_ref().map_or(0,|window|window.mode),
+                self.inventory.known_formulas.len(),
+                self.workbench.as_ref().and_then(|window|window.last_view.as_ref()).map_or(0,|view|view.products.len()),
+                self.workbench.as_ref().map_or(0,|window|window.page));
+        }
+        Ok(())
     }
 
     fn cancel_production(&mut self) -> io::Result<()> {
@@ -810,6 +841,10 @@ impl PlayerSession {
                     }
                 }
             }
+            if matches!(window.mode, 2 | 3) {
+                view.products.clear();
+                view.available_categories.clear();
+            }
             view.total_products = view.products.len() as u32;
             if !view.products.is_empty() {
                 view.page = window.page.min(
@@ -829,6 +864,12 @@ impl PlayerSession {
         } else if !force {
             return Ok(());
         }
+        let previous_products: std::collections::BTreeSet<_> = self
+            .workbench
+            .as_ref()
+            .and_then(|window| window.last_view.as_ref())
+            .map(|previous| previous.products.iter().copied().collect())
+            .unwrap_or_default();
         for id in view
             .products
             .iter()
@@ -837,23 +878,42 @@ impl PlayerSession {
             .chain((view.selected != 0).then_some(view.selected))
             .collect::<std::collections::BTreeSet<_>>()
         {
-            self.pending.push(self.items.get(id)?.packet());
+            if !previous_products.contains(&id) {
+                self.pending.push(self.items.get(id)?.packet());
+            }
         }
+        let formulas_changed = self
+            .workbench
+            .as_ref()
+            .and_then(|window| window.last_view.as_ref())
+            .is_none_or(|previous| {
+                previous.products != view.products
+                    || previous.page != view.page
+                    || previous.mode != view.mode
+            });
         let previous = self
             .workbench
             .as_ref()
             .map_or(0, |window| window.known_count);
-        self.pending.push(packets::workbench_snapshot(
-            self.workbench_lab_id(),
-            &view,
-            &self.items,
-        ));
-        self.pending.push(packets::workbench_formulas(
-            self.workbench_lab_id(),
-            &view.products,
-            previous,
-            &self.items,
-        ));
+        if formulas_changed {
+            self.pending.push(packets::workbench_snapshot(
+                self.workbench_lab_id(),
+                &view,
+                &self.items,
+            ));
+            self.pending.extend(packets::workbench_formula_chunks(
+                self.workbench_lab_id(),
+                &view.products,
+                previous,
+                &self.items,
+            ));
+        } else {
+            self.pending.push(packets::workbench_quote(
+                self.workbench_lab_id(),
+                &view,
+                &self.items,
+            ));
+        }
         self.pending
             .push(packets::workbench_page(self.workbench_lab_id(), &view));
         if let Some(window) = &mut self.workbench {
@@ -868,6 +928,103 @@ impl PlayerSession {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Bootstrap delivers the native book once; repeated opens/quotes preserve it, and analysis avoids manufacturing metadata.
+    #[test]
+    fn manufacturing_bootstrap_and_repeated_quotes_preserve_formula_book_without_retransmitting_it()
+    {
+        let mut ship = super::super::tests::journal_ship();
+        ship.account.character.race = 0;
+        ship.account.character.profession = 0;
+        ship.skill_catalog = SkillCatalog::for_profile(&ship.account.character).unwrap();
+        ship.inventory.known_formulas =
+            crate::recipe_grants::eligible_formulas(&ship.skill_catalog, &ship.items);
+        ship.sector = ship.sectors.sector(10601).unwrap();
+        ship.logged_in = true;
+        ship.initialise_workbench_lab(true).unwrap();
+        let window = ship.workbench.as_ref().unwrap();
+        assert_eq!((window.mode, window.category, window.filter), (1, 0, 0x1ff));
+        assert_eq!(window.last_view.as_ref().unwrap().products.len(), 500);
+        assert_eq!(
+            ship.pending
+                .iter()
+                .filter(|frame| frame.opcode == 0x25)
+                .count(),
+            500
+        );
+        assert!(ship
+            .pending
+            .contains(&packets::relationship(ship.workbench_lab_id(), 2)));
+        assert!(ship.pending.contains(&packets::constant_position(
+            ship.workbench_lab_id(),
+            [0.; 3]
+        )));
+        ship.pending.clear();
+        ship.workbench_input(
+            0x79,
+            &[ship.player_id().to_be_bytes(), 1u32.to_be_bytes()].concat(),
+        )
+        .unwrap();
+        assert!(!ship.pending.iter().any(|frame| frame.opcode == 0x25));
+        let quotes: Vec<_> = ship
+            .pending
+            .iter()
+            .filter(|frame| frame.opcode == 0x1b)
+            .collect();
+        assert_eq!(quotes.len(), 1);
+        assert_eq!(quotes[0].body[7] & 0xf, 2); // One-bit AUX diff, not full/default-reset record.
+        assert_eq!(quotes[0].body[8] & 0x80, 0); // Formula field11 is absent and therefore remains intact.
+        ship.pending.clear();
+        ship.refresh_workbench(true).unwrap();
+        assert_eq!(
+            ship.pending
+                .iter()
+                .filter(|frame| frame.opcode == 0x1b)
+                .count(),
+            1
+        );
+        for mode in [2u32, 2, 3, 3] {
+            ship.pending.clear();
+            ship.workbench_input(
+                0x79,
+                &[ship.player_id().to_be_bytes(), mode.to_be_bytes()].concat(),
+            )
+            .unwrap();
+            assert!(ship
+                .workbench
+                .as_ref()
+                .unwrap()
+                .last_view
+                .as_ref()
+                .unwrap()
+                .products
+                .is_empty());
+            assert!(!ship.pending.iter().any(|frame| frame.opcode == 0x25));
+        }
+        ship.pending.clear();
+        ship.workbench_input(
+            0x79,
+            &[ship.player_id().to_be_bytes(), 1u32.to_be_bytes()].concat(),
+        )
+        .unwrap();
+        assert_eq!(
+            ship.pending
+                .iter()
+                .filter(|frame| frame.opcode == 0x25)
+                .count(),
+            500
+        );
+        let view = ship.workbench.as_ref().unwrap().last_view.as_ref().unwrap();
+        assert_eq!(view.products.len(), 500);
+        assert!(packets::workbench_formula_chunks(
+            ship.workbench_lab_id(),
+            &view.products,
+            0,
+            &ship.items
+        )
+        .iter()
+        .all(|frame| ship.pending.contains(frame)));
+    }
 
     /// Paging exposes every learned formula beyond the native 500-slot limit without duplicates.
     #[test]

@@ -49,7 +49,8 @@ namespace FortyTwoAndBeyond.Client
             if ((!snapshot.Production.Open || snapshot.Production.Mode != selectedMode) &&
                 Time.unscaledTime >= requestAt)
             {
-                client.OpenProduction(selectedMode); requestAt = Time.unscaledTime + 2f;
+                // Leave room for a paced recipe book before retrying a missing response.
+                client.OpenProduction(selectedMode); requestAt = Time.unscaledTime + 8f;
             }
             Rect panel = SingleRoomStationHud.Workspace(CanvasWidth, CanvasHeight);
             if (collapsed) panel.height = 54;

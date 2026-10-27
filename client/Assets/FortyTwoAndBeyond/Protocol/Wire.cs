@@ -95,11 +95,20 @@ namespace FortyTwoAndBeyond.Protocol
 
     public sealed class SectorStream
     {
+        // Keep the existing reorder bound for old replay checkpoints. Each repair
+        // request is smaller because the server retains only 128 sent datagrams.
+        public const uint MaxReorderDistance = 255;
+        public const uint MaxResendDatagrams = 128;
         private readonly uint player;
         private readonly SortedDictionary<uint, byte[]> waiting = new SortedDictionary<uint, byte[]>();
         private readonly List<byte> pending = new List<byte>();
         public uint Expected { get; private set; }
-        public uint MissingCount => waiting.Count == 0 ? 0 : waiting.First().Key - Expected;
+        /// <summary>
+        /// Returns:
+        ///     uint: The next missing range, bounded to the server's replay cache capacity.
+        /// </summary>
+        public uint MissingCount => waiting.Count == 0 ? 0 :
+            Math.Min(MaxResendDatagrams, waiting.First().Key - Expected);
 
         /// <summary>Bind reassembly to one selected character.</summary>
         public SectorStream(uint playerId) { player = playerId; }
@@ -112,7 +121,7 @@ namespace FortyTwoAndBeyond.Protocol
             uint sequence = Wire.U32(packet, 8);
             var frames = new List<Frame>();
             if (sequence < Expected) return frames;
-            if (sequence - Expected > 255) throw new InvalidDataException("Sequence window exceeded.");
+            if (sequence - Expected > MaxReorderDistance) throw new InvalidDataException("Sequence window exceeded.");
             byte[] payload = Wire.Slice(packet, 12, packet.Length - 12);
             if (waiting.TryGetValue(sequence, out byte[] previous) && !previous.SequenceEqual(payload))
                 throw new InvalidDataException("Conflicting duplicate datagram.");

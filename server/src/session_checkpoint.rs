@@ -36,6 +36,8 @@ pub(super) struct Checkpoint {
     workbench_lab_ready: bool,
     sequence: u32,
     replay: VecDeque<Datagram>,
+    #[serde(default)]
+    queued_output: VecDeque<Datagram>,
     inputs: VecDeque<u32>,
     #[serde(default)]
     awaiting_start_ack: bool,
@@ -125,6 +127,8 @@ pub(super) struct Checkpoint {
     station_pose: Option<StationPose>,
     #[serde(default)]
     aggregate_station: bool,
+    #[serde(default)]
+    ack_capable: bool,
     #[serde(default)]
     station_peers: HashMap<u32, StationPose>,
     #[serde(default)]
@@ -220,6 +224,17 @@ impl PlayerSession {
             || saved.mobs.len() > 256
             || saved.mob_visible.len() > 256
             || saved.replay.len() > 128
+            || saved.queued_output.len() > 8192
+            || saved
+                .replay
+                .iter()
+                .chain(&saved.queued_output)
+                .any(|packet| {
+                    packet.player != self.player_id()
+                        || packet.sequence >= saved.sequence
+                        || !matches!(packet.opcode, 0x2016 | 0x201a)
+                        || packet.body.len() > crate::protocol::MAX_FRAME
+                })
             || saved.inputs.len() > 256
             || saved.peer_buffs.len() > 3
             || saved.rally_buff.as_ref().is_some_and(|buff| {
@@ -419,6 +434,8 @@ impl PlayerSession {
         self.workbench_lab_ready = saved.workbench_lab_ready;
         self.sequence = saved.sequence;
         self.replay = saved.replay;
+        self.queued_output = saved.queued_output;
+        self.replay_retry_cursor = None;
         self.inputs = saved.inputs;
         self.awaiting_start_ack = saved.awaiting_start_ack;
         self.deferred_start_frames = saved.deferred_start_frames;
@@ -531,6 +548,7 @@ impl PlayerSession {
         self.peer_contacts.clear();
         self.station_pose = saved.station_pose;
         self.aggregate_station = saved.aggregate_station;
+        self.ack_capable = saved.ack_capable;
         self.station_peers = saved.station_peers;
         self.mining = saved.mining;
         self.tractor_mining = saved.tractor_mining;
@@ -728,6 +746,7 @@ impl PlayerSession {
             workbench_lab_ready: self.workbench_lab_ready,
             sequence: self.sequence,
             replay: self.replay.clone(),
+            queued_output: self.queued_output.clone(),
             inputs: self.inputs.clone(),
             awaiting_start_ack: self.awaiting_start_ack,
             deferred_start_frames: self.deferred_start_frames.clone(),
@@ -776,6 +795,7 @@ impl PlayerSession {
             peer_ids: self.visible_peers.clone(),
             station_pose: self.station_pose.clone(),
             aggregate_station: self.aggregate_station,
+            ack_capable: self.ack_capable,
             station_peers: self.station_peers.clone(),
             mining: self.mining.clone(),
             tractor_mining: self.tractor_mining.clone(),

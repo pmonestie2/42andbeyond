@@ -1321,10 +1321,42 @@ pub fn manufacturing_lab(id: u32) -> Frame {
     frame
 }
 
+/// Returns:
+///     Frame: Native constant-position initialization for a non-moving station object.
+pub fn constant_position(id: u32, position: [f32; 3]) -> Frame {
+    let mut body = Vec::from(id.to_le_bytes());
+    for value in position {
+        body.extend_from_slice(&value.to_le_bytes());
+    }
+    body.extend_from_slice(&[0; 16]);
+    Frame::new(0x40, body)
+}
+
 pub fn workbench_snapshot(
     id: u32,
     view: &crate::production::WorkbenchView,
     items: &ItemCatalog,
+) -> Frame {
+    workbench_view_update(id, view, items, true)
+}
+
+/// Returns:
+///     Frame: A production quote diff preserving the already delivered native formula array.
+pub fn workbench_quote(
+    id: u32,
+    view: &crate::production::WorkbenchView,
+    items: &ItemCatalog,
+) -> Frame {
+    workbench_view_update(id, view, items, false)
+}
+
+/// Returns:
+///     Frame: Native production AUX initialization or an update retaining unchanged formulas.
+fn workbench_view_update(
+    id: u32,
+    view: &crate::production::WorkbenchView,
+    items: &ItemCatalog,
+    reset_formulas: bool,
 ) -> Frame {
     let target = if matches!(view.mode, 2 | 3) {
         view.target.clone()
@@ -1369,7 +1401,14 @@ pub fn workbench_snapshot(
     for (index, value) in [(14, view.chance), (15, 0.), (16, 1.), (17, 1.), (18, 1.)] {
         values.insert(index, value.to_le_bytes().to_vec());
     }
-    aux_frame(id, aux_record(21, &[5, 6, 7, 10, 11, 12], values))
+    aux_frame(
+        id,
+        if reset_formulas {
+            aux_record(21, &[5, 6, 7, 10, 11, 12], values)
+        } else {
+            aux_diff(21, values)
+        },
+    )
 }
 
 fn manufacturing_categories(available: &[(i32, i32)]) -> Vec<u8> {
@@ -1455,7 +1494,36 @@ pub fn workbench_formulas(
     previous_count: usize,
     items: &ItemCatalog,
 ) -> Frame {
-    let values = (0..products.len().max(previous_count).min(500))
+    workbench_formula_range(id, products, previous_count, items, 0, 500)
+}
+
+/// Returns:
+///     Vec<Frame>: Complete native AUX diffs of at most twenty formula slots, retaining original slot indices.
+pub fn workbench_formula_chunks(
+    id: u32,
+    products: &[u32],
+    previous_count: usize,
+    items: &ItemCatalog,
+) -> Vec<Frame> {
+    (0..products.len().max(previous_count).min(500))
+        .step_by(20)
+        .map(|start| {
+            workbench_formula_range(id, products, previous_count, items, start, start + 20)
+        })
+        .collect()
+}
+
+/// Returns:
+///     Frame: A native formula-array diff updating only the requested absolute slot range.
+fn workbench_formula_range(
+    id: u32,
+    products: &[u32],
+    previous_count: usize,
+    items: &ItemCatalog,
+    start: usize,
+    end: usize,
+) -> Frame {
+    let values = (start..products.len().max(previous_count).min(end).min(500))
         .map(|index| {
             let fields = if let Some(product) = products.get(index) {
                 let item = items.get(*product).expect("validated refinery product");

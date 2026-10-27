@@ -12,7 +12,14 @@ internal static class Program
     /// <summary>Run pure protocol checks, with explicit opt-in to a disposable local server.</summary>
     private static void Main(string[] args)
     {
-        CheckReassembly(); CheckWorld(); CheckMissionJournal(); CheckMissionDialogue();
+        if (args.Length == 1 && args[0] == "--transport-only")
+        {
+            SectorTransportChecks.Check(exerciseLoopback: true);
+            Console.WriteLine("PASS: bounded replay, manufacture burst loss/reorder/fragmentation, UDP receive queue, unchanged ACK echo");
+            return;
+        }
+        CheckReassembly(); SectorTransportChecks.Check(exerciseLoopback: false);
+        CheckWorld(); CheckMissionJournal(); CheckMissionDialogue();
         CheckExperience(); CheckHullProgression(); CheckReputation(); CheckMiningPhases(); CheckLootTractor(); CheckLootSweep(); CheckWarpPhases(); CheckNavigationSelection(); CheckWarpTargets(); CheckWeaponReady();
         CheckDamageResults(); CheckCombatEngagement(); CheckAttackerSelection(); CheckShotPresentation(); CheckContactSelection(); CheckTargetVerbs(); CheckDeviceEffects();
         CheckNativeDeviceBuff(); CheckPeerScanBuff(); CheckConcurrentRecipientBuffs();

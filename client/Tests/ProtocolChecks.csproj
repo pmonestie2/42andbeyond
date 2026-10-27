@@ -10,7 +10,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="Program.cs" />
-    <Compile Include="PeerChecks.cs" />
+    <Compile Include="*Checks.cs" />
     <None Include="Fixtures/*.hex" CopyToOutputDirectory="PreserveNewest" />
     <None Include="Fixtures/*.bin" CopyToOutputDirectory="PreserveNewest" />
     <Compile Include="../Assets/FortyTwoAndBeyond/Client/FlightThrottle.cs" Link="FlightThrottle.cs" />

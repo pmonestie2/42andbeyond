@@ -485,7 +485,6 @@ impl PlayerSession {
             self.save()?;
         }
         self.flush()?;
-        self.retry_handoff_output()?;
         self.checkpoint_session(false)
     }
 }

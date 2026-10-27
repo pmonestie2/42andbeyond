@@ -14,6 +14,9 @@ namespace FortyTwoAndBeyond.Protocol
     public sealed class LocalSession : IDisposable
     {
         public const float StationEntryZ = -16f;
+        private const int UdpReceiveBufferBytes = 1024 * 1024;
+        private const int MaximumDatagramsPerPoll = 128;
+        private const double ReceiveBatchSeconds = .004;
         private readonly CancellationToken cancel;
         private readonly Stopwatch clock = Stopwatch.StartNew();
         private UdpClient comms, sector;
@@ -118,7 +121,14 @@ namespace FortyTwoAndBeyond.Protocol
         private UdpClient NewUdp(int port)
         {
             var socket = new UdpClient(AddressFamily.InterNetwork);
-            try { socket.Client.ReceiveTimeout = 100; socket.Client.SendTimeout = 1000; socket.Connect(address, port); return socket; }
+            try
+            {
+                socket.Client.ReceiveBufferSize = UdpReceiveBufferBytes;
+                socket.Client.ReceiveTimeout = 100;
+                socket.Client.SendTimeout = 1000;
+                socket.Connect(address, port);
+                return socket;
+            }
             catch { socket.Dispose(); throw; }
         }
 
@@ -1057,19 +1067,11 @@ namespace FortyTwoAndBeyond.Protocol
             cancel.ThrowIfCancellationRequested();
             try
             {
-                byte[] packet = null;
-                try { IPEndPoint endpoint = null; packet = sector.Receive(ref endpoint); }
-                catch (SocketException e) when (e.SocketErrorCode == SocketError.TimedOut || e.SocketErrorCode == SocketError.WouldBlock) { }
+                bool receivedSector = ReceiveSectorBatch();
+                // A replayed datagram may carry no new frames. Re-acknowledge the
+                // ordered prefix anyway so a lost ACK cannot stall the sender.
+                if (receivedSector) Send(0x2021, Wire.Body(w => w.Write(stream.Expected)));
                 double now = clock.Elapsed.TotalSeconds;
-                if (packet != null)
-                {
-                    ushort opcode = Wire.Datagram(packet, Player);
-                    if (opcode == 0x2016 || opcode == 0x201a)
-                    {
-                        foreach (Frame frame in stream.Feed(packet)) { Apply(frame); if (handoff != null) break; }
-                        receivedAt = now;
-                    }
-                }
                 if (handoff != null) { Enter(handoff); return; }
                 if (Ready && World.Station != null && !World.AggregateStation && now >= aggregateStationAt)
                     RequestStationAggregation();
@@ -1111,6 +1113,35 @@ namespace FortyTwoAndBeyond.Protocol
             }
             catch (OperationCanceledException) { throw; }
             catch { failed = true; throw; }
+        }
+
+        /// <summary>Drain queued datagrams without making commands or snapshot publication wait for an unbounded burst.</summary>
+        /// <returns>bool: Whether a valid sector datagram arrived, including an already applied duplicate.</returns>
+        private bool ReceiveSectorBatch()
+        {
+            bool received = false;
+            double deadline = double.PositiveInfinity;
+            for (int count = 0; count < MaximumDatagramsPerPoll; count++)
+            {
+                cancel.ThrowIfCancellationRequested();
+                if (count > 0 && sector.Available == 0) return received;
+                byte[] packet;
+                try { IPEndPoint endpoint = null; packet = sector.Receive(ref endpoint); }
+                catch (SocketException error) when (error.SocketErrorCode == SocketError.TimedOut ||
+                    error.SocketErrorCode == SocketError.WouldBlock) { return received; }
+                double now = clock.Elapsed.TotalSeconds;
+                if (count == 0) deadline = now + ReceiveBatchSeconds;
+                ushort opcode = Wire.Datagram(packet, Player);
+                if (opcode == 0x2016 || opcode == 0x201a)
+                {
+                    received = true;
+                    foreach (Frame frame in stream.Feed(packet))
+                    { Apply(frame); if (handoff != null) return received; }
+                    receivedAt = now;
+                }
+                if (clock.Elapsed.TotalSeconds >= deadline) return received;
+            }
+            return received;
         }
 
         /// <summary>Log out on deliberate closure and release worker-owned sockets.</summary>

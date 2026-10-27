@@ -127,34 +127,6 @@ impl PlayerSession {
         self.pending.push(Frame::new(0x3a, join));
     }
 
-    /// Retry the bounded unacknowledged departure window without allocating new packet sequences.
-    /// Raises:
-    ///     io::Error: A previously validated replay datagram cannot be encoded.
-    pub(super) fn retry_handoff_output(&mut self) -> io::Result<()> {
-        if self.handoff.is_none()
-            || self.transition_pending.is_some()
-            || self.replay.is_empty()
-            || self.last_handoff_replay.elapsed() < Duration::from_secs(1)
-        {
-            return Ok(());
-        }
-        let Some(peer) = self.endpoint else {
-            return Ok(());
-        };
-        self.last_handoff_replay = Instant::now();
-        // A missing final redirect cannot trigger the proxy's gap detector:
-        // simulation stops after departure, so no later sequence arrives. An
-        // earlier missing packet also blocks that redirect in the ordered proxy.
-        // Replay the existing capped cache; never invent a new sequence or pose.
-        for packet in &self.replay {
-            self.outgoing.push(Outbound {
-                port: SECTOR_PORT,
-                peer,
-                data: packet.encode()?,
-            });
-        }
-        Ok(())
-    }
     pub(super) fn transfer_sector(
         &mut self,
         destination: u32,

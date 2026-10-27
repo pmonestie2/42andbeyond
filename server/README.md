@@ -14,6 +14,15 @@ and brief server restarts and resets on fresh authenticated character selection.
 Aggregate recipients also see avatars from every room in the current station;
 native recipients continue to see only avatars in their own room.
 
+Large station metadata updates are paced to eight UDP packets per simulation
+tick. Clients that acknowledge reliable output use a 64-packet flight window;
+unacknowledged packets and the unsent suffix survive server replacement. Legacy
+proxies without ACK support retain the paced rolling 128-packet replay contract.
+Native manufacturing books use complete AUX diffs of twenty formula slots each,
+and custom extensions are isolated from native lab initialization messages.
+Unchanged formula books remain in place during quote refreshes; analysis and
+dismantling do not resend the manufacturing catalog.
+
 In space, `/d_mob_cl 10` sets all living MOBs whose centers are within 20 km to
 combat level 10. Supported levels are 1 through 66. It uses the same native stat
 derivation as `/d_spawn ... level=10`, preserves damage fractions, and saves the

@@ -15,7 +15,7 @@ use crate::npcs::NpcCatalog;
 use crate::packets;
 use crate::peers::StationPose;
 use crate::protocol::SECTOR_PORT;
-use crate::protocol::{invalid, split_frames, Datagram, Frame, Reader};
+use crate::protocol::{invalid, Datagram, Frame, Reader};
 use crate::resources::{lock_resources, ResourceField};
 use crate::sector_combat::{lock_combat, PlayerThreat, SectorCombat, MOB_ID};
 use crate::sectors::SectorCatalog;
@@ -98,6 +98,8 @@ mod rally_service;
 mod reactor_optimization_service;
 #[path = "recovery.rs"]
 mod recovery;
+#[path = "reliable_transport.rs"]
+mod reliable_transport;
 #[path = "repulsor_field_service.rs"]
 mod repulsor_field_service;
 #[path = "reputation_service.rs"]
@@ -224,6 +226,9 @@ pub struct PlayerSession {
     registrations: HashMap<IpAddr, Instant>,
     sequence: u32,
     replay: VecDeque<Datagram>,
+    queued_output: VecDeque<Datagram>,
+    replay_retry_cursor: Option<u32>,
+    requested_replay: VecDeque<Datagram>,
     inputs: VecDeque<u32>,
     pending: Vec<Frame>,
     awaiting_start_ack: bool,
@@ -252,6 +257,7 @@ pub struct PlayerSession {
     transition_retry: Instant,
     station_pose: Option<StationPose>,
     aggregate_station: bool,
+    ack_capable: bool,
     station_peers: HashMap<u32, StationPose>,
     station_view_dirty: bool,
     last_station_broadcast: Instant,
@@ -306,7 +312,6 @@ pub struct PlayerSession {
     started: Instant,
     tick_offset: u32,
     last_checkpoint: Instant,
-    last_ack_request: Instant,
     peer_ids: HashSet<u32>,
     peer_contacts: HashMap<u32, crate::peers::PeerContact>,
     visible_peers: HashSet<u32>,
@@ -447,6 +452,9 @@ impl PlayerSession {
             registrations: HashMap::new(),
             sequence: 0,
             replay: VecDeque::new(),
+            queued_output: VecDeque::new(),
+            replay_retry_cursor: None,
+            requested_replay: VecDeque::new(),
             inputs: VecDeque::new(),
             pending: Vec::new(),
             awaiting_start_ack: false,
@@ -475,6 +483,7 @@ impl PlayerSession {
             transition_retry: now,
             station_pose: None,
             aggregate_station: false,
+            ack_capable: false,
             station_peers: HashMap::new(),
             station_view_dirty: false,
             last_station_broadcast: now,
@@ -529,7 +538,6 @@ impl PlayerSession {
             started: now,
             tick_offset: 0,
             last_checkpoint: now,
-            last_ack_request: now,
             peer_ids: HashSet::new(),
             peer_contacts: HashMap::new(),
             visible_peers: HashSet::new(),
@@ -672,10 +680,14 @@ impl PlayerSession {
             self.client_events.clear();
             self.inputs.clear();
             self.replay.clear();
+            self.queued_output.clear();
+            self.replay_retry_cursor = None;
+            self.requested_replay.clear();
         }
         self.stop_following();
         self.selected_peer = Some(peer);
         self.aggregate_station = false;
+        self.ack_capable = false;
         self.session_epoch = rand::random::<u64>().max(1);
         self.gate_transit = None;
         self.endpoint = None;
@@ -788,6 +800,9 @@ impl PlayerSession {
             self.endpoint = Some(peer);
             self.sequence = 0;
             self.replay.clear();
+            self.queued_output.clear();
+            self.replay_retry_cursor = None;
+            self.requested_replay.clear();
             self.inputs.clear();
             self.session_epoch = rand::random::<u64>().max(1);
             self.pending.clear();
@@ -1081,23 +1096,27 @@ impl PlayerSession {
             0x2017 => {
                 let first = reader.u32()?;
                 let count = reader.u32()?;
-                if count > 128 {
-                    return Err(invalid("resend window exceeds cache limit"));
-                }
-                if let Some(peer) = self.endpoint {
-                    for p in &self.replay {
-                        if p.sequence >= first && p.sequence < first.saturating_add(count) {
-                            self.outgoing.push(Outbound {
-                                port: SECTOR_PORT,
-                                peer,
-                                data: p.encode()?,
-                            });
-                        }
-                    }
+                let count = count.min(128);
+                if self.requested_replay.is_empty() {
+                    self.requested_replay.extend(
+                        self.replay
+                            .iter()
+                            .filter(|packet| {
+                                packet.sequence >= first
+                                    && packet.sequence < first.saturating_add(count)
+                            })
+                            .cloned(),
+                    );
                 }
             }
             0x2021 => {
                 let ack = reader.u32()?;
+                if ack > self.sequence {
+                    return Err(invalid(
+                        "Acknowledgement exceeds allocated packet sequence.",
+                    ));
+                }
+                self.ack_capable = true;
                 while self.replay.front().is_some_and(|p| p.sequence < ack) {
                     self.replay.pop_front();
                 }
@@ -1847,43 +1866,6 @@ impl PlayerSession {
             self.last_warp_broadcast = Instant::now();
         }
     }
-    fn flush(&mut self) -> io::Result<()> {
-        let Some(peer) = self.endpoint else {
-            self.pending.clear();
-            return Ok(());
-        };
-        if self.pending.is_empty() {
-            return Ok(());
-        }
-        if self.awaiting_start_ack {
-            if let Some(start) = self.pending.iter().position(|frame| frame.opcode == 5) {
-                let mut later = self.pending.split_off(start + 1);
-                self.deferred_start_frames.append(&mut later);
-            } else {
-                self.deferred_start_frames.append(&mut self.pending);
-                return Ok(());
-            }
-        }
-        // ACK requests are regular inner frames, not an extra UDP framing layer.
-        if !self.awaiting_start_ack && self.last_ack_request.elapsed() >= Duration::from_secs(1) {
-            self.pending
-                .push(Frame::new(0x2020, self.sequence.to_le_bytes().to_vec()));
-            self.last_ack_request = Instant::now();
-        }
-        let frames = std::mem::take(&mut self.pending);
-        for packet in split_frames(self.player_id(), &mut self.sequence, &frames)? {
-            self.outgoing.push(Outbound {
-                port: SECTOR_PORT,
-                peer,
-                data: packet.encode()?,
-            });
-            self.replay.push_back(packet);
-            if self.replay.len() > 128 {
-                self.replay.pop_front();
-            }
-        }
-        Ok(())
-    }
     pub fn take_outgoing(&mut self) -> Vec<Outbound> {
         std::mem::take(&mut self.outgoing)
     }
@@ -1908,6 +1890,10 @@ impl PlayerSession {
         self.warp_effects.clear();
         self.last_motion_report = None;
         self.pending.clear();
+        self.queued_output.clear();
+        self.replay.clear();
+        self.replay_retry_cursor = None;
+        self.requested_replay.clear();
         self.awaiting_start_ack = false;
         self.deferred_start_frames.clear();
         self.mob_login_refresh_at = None;
