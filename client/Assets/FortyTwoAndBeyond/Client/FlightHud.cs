@@ -246,7 +246,7 @@ namespace FortyTwoAndBeyond.Client
         /// <returns>Whether the pointer is over foreground controls.</returns>
         public bool ContainsPointer()
         {
-            if (client.ComponentMarketOpen) return true;
+            if (client.ComponentMarketOpen || client.GalaxyTravelOpen) return true;
             Vector2 p = new Vector2(Input.mousePosition.x / Scale, (Screen.height - Input.mousePosition.y) / Scale);
             if (client.Chart && client.CurrentSnapshot?.Station == null &&
                 (tacticalMap == null || tacticalMap.ContainsPointer(p))) return true;
@@ -686,8 +686,7 @@ namespace FortyTwoAndBeyond.Client
             if (Time.unscaledTime >= refreshAt || sector != snapshot.Sector)
             {
                 if (sector != snapshot.Sector) { lastDamage = 0; damageLabels.Clear(); }
-                destinations = snapshot.Objects.Where(item => item.Kind == 12 || item.Navigable ||
-                    item.Kind == 37 && item.Position.Distance(snapshot.Position) <= 20000)
+                destinations = snapshot.Objects.Where(TacticalSectorMap.IsNavigationTarget)
                     .OrderBy(item => item.Position.Distance(snapshot.Position)).ToArray();
                 nearbyWrecks = snapshot.Objects.Where(item => item.Kind == 25)
                     .OrderBy(item => item.Position.Distance(snapshot.Position)).Take(12).ToArray();

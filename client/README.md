@@ -114,7 +114,8 @@ connect to the live server.
 | A / D | Turn while held |
 | Up / Down | Pitch while held |
 | RMB / wheel / C | Orbit / zoom / reset camera |
-| Tab | Toggle chase camera / top-down sector chart |
+| Tab | Open the navigation-only sector chart |
+| M | Open client-side galaxy travel |
 | E | Open ship loadout |
 | F | Fire on the selected MOB, or stop active weapons |
 | B | Activate an equipped Turbo Weapons device |
@@ -488,3 +489,29 @@ resized maps and meshes are kept in git-ignored `Resources/AsteroidPack/` and
 `Resources/BlackHolePack/` because the archives contain no redistribution
 terms. Existing packaged rocks and scenery remain available when the local
 assets are absent.
+
+Galaxy travel opens from **Galaxy / M** in flight or at a station, and from the
+Tab sector chart. Search the client's known gate/station directory, select a
+destination, review the local route, and choose **Go · Auto Travel**. A selected
+gate is the final crossing; a station route ends docked. The browser can close
+while travel continues; the flight strip keeps Route and Cancel available.
+Manual flight takes control and cancels the itinerary. An incapacitated ship,
+unknown link, or failed transition stops travel with a readable status.
+
+Route search and breadth-first planning run entirely in the client. The bundled
+`Resources/GalaxyNavigation.bytes` map can be regenerated with
+`python3 client/Tools/build_navigation_catalog.py`; `--check` verifies it against
+the checked-in map data. Observed gates constrain the first crossing in the
+current sector. Execution uses the normal warp, gate, launch and docking packets;
+there are no galaxy travel server endpoints and no teleport commands.
+
+Equipment dragging lifts the original item icon under the pointer, dims its
+source, highlights compatible sockets and shows the prospective operation.
+The item remains server-owned while the drop is pending. A confirmed transfer
+snaps into its destination and pulses; an invalid drop, Escape or focus loss
+returns the card to its source. This also applies to loading and unloading
+weapon magazines.
+
+The Tab sector map and navigation directory show navigation points, gates and
+stations. Decorative asteroids, border demarcation markers, resource fields,
+wrecks and ship contacts do not clutter the navigation chart.

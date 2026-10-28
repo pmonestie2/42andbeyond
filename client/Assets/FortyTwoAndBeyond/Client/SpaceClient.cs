@@ -33,6 +33,7 @@ namespace FortyTwoAndBeyond.Client
         private VaultHud vaultHud;
         private ProductionHud productionHud;
         private ComponentMarketHud componentMarketHud;
+        private GalaxyTravelHud galaxyTravelHud;
         private MissionHud missionHud;
         private DefenseHud defenseHud;
         private readonly FlightThrottle flightThrottle = new FlightThrottle();
@@ -122,6 +123,7 @@ namespace FortyTwoAndBeyond.Client
             vaultHud = new VaultHud(this, hud);
             productionHud = new ProductionHud(this, hud);
             componentMarketHud = new ComponentMarketHud(this, hud);
+            galaxyTravelHud = new GalaxyTravelHud(this, hud);
             missionHud = new MissionHud(this, hud);
             defenseHud = new DefenseHud(hud);
             worldRoot = new GameObject("Server world").transform; worldRoot.SetParent(transform, false);
@@ -212,7 +214,8 @@ namespace FortyTwoAndBeyond.Client
             selectedHullStage = 0;
             art.SetShipClass(ship, character.ClassIndex);
             picker.Dispose(); picker = null;
-            worker = new ClientWorker(host, username, password, slot); password = "";
+            worker = new ClientWorker(host, username, password, slot,
+                navigationData: Resources.Load<TextAsset>("GalaxyNavigation")?.bytes); password = "";
             status = "Entering " + name + "…";
         }
 
@@ -358,20 +361,23 @@ namespace FortyTwoAndBeyond.Client
             }
             if (!Ready || !Application.isFocused)
             { flightThrottle.Reset(); StopStationWalk(); return; }
+            if (bindings.Pressed(ControlAction.Galaxy) && !chatOpen && !hud.InputFocused && !hud.SettingsOpen &&
+                !hud.GroupInviteOpen && !GalaxyTravelOpen) OpenGalaxyTravel();
             if (bindings.Pressed(ControlAction.OpenChat) && !chatOpen && !hud.InputFocused &&
-                !hud.SettingsOpen && !hud.GroupInviteOpen && !ComponentMarketOpen)
+                !hud.SettingsOpen && !hud.GroupInviteOpen && !ComponentMarketOpen && !GalaxyTravelOpen)
             {
                 OpenChatEntry();
             }
             if (Input.GetKeyDown(KeyCode.Escape))
             {
                 if (hud.GroupInviteOpen) AnswerConfirmation(false);
+                else if (GalaxyTravelOpen) galaxyTravelHud.Close();
                 else if (ComponentMarketOpen) componentMarketHud.Close();
                 else { chatOpen = false; hud.ReleaseInputFocus(); }
             }
             if (hud.InputFocused && Input.GetMouseButtonDown(0) && !hud.ContainsPointer())
                 hud.ReleaseInputFocus();
-            if (chatOpen || hud.InputFocused || hud.SettingsOpen || hud.GroupInviteOpen || ComponentMarketOpen)
+            if (chatOpen || hud.InputFocused || hud.SettingsOpen || hud.GroupInviteOpen || ComponentMarketOpen || GalaxyTravelOpen)
             {
                 flightThrottle.Reset();
                 StopStationWalk();
@@ -910,8 +916,45 @@ namespace FortyTwoAndBeyond.Client
         {
             if (!Ready) return;
             chatOpen = false; hud.ReleaseInputFocus();
-            componentMarketHud.Open(item);
+            galaxyTravelHud.Close(); componentMarketHud.Open(item);
         }
+
+        /// <summary>Returns:
+        ///     bool: Whether the galaxy destination browser owns foreground input.
+        /// </summary>
+        public bool GalaxyTravelOpen => galaxyTravelHud?.IsOpen == true;
+
+        /// <summary>Open a galaxy-wide directory of gates and stations.</summary>
+        public void OpenGalaxyTravel()
+        {
+            if (!Ready) return;
+            chatOpen = false; hud.ReleaseInputFocus(); hud.EndChartInteraction();
+            componentMarketHud.Close(); galaxyTravelHud.Open();
+        }
+
+        /// <summary>Search the client's bundled known gate and station map.</summary>
+        public void QueryGalaxyDestinations(string query, uint page, uint flags)
+        {
+            if (Ready) worker.Submit(new ClientCommand(CommandKind.QueryGalaxyDestinations, page, text: query, slot: (int)flags));
+        }
+
+        /// <summary>Plan a local itinerary using known gates and station locations.</summary>
+        public void PreviewGalaxyRoute(uint sector, uint objectId)
+        {
+            if (Ready) worker.Submit(new ClientCommand(CommandKind.PreviewGalaxyRoute, sector, stationRoom: objectId));
+        }
+
+        /// <summary>Begin following the locally previewed route with normal flight commands.</summary>
+        public void StartGalaxyTravel()
+        {
+            if (!Ready) return;
+            previousYaw = previousPitch = 0; flightThrottle.Reset();
+            worker.Submit(new ClientCommand(CommandKind.StartGalaxyTravel));
+        }
+
+        /// <summary>Stop scheduling journey legs and brake or cancel warp when possible.</summary>
+        public void CancelGalaxyTravel()
+        { if (worker != null) worker.Submit(new ClientCommand(CommandKind.CancelGalaxyTravel)); }
 
         /// <summary>Load the current station's purchasable components into the market browser.</summary>
         public void QueryComponentStock()
@@ -1292,6 +1335,8 @@ namespace FortyTwoAndBeyond.Client
             try
             {
                 bool groupInvite = hud.GroupInviteOpen;
+                if (GalaxyTravelOpen && !groupInvite)
+                { galaxyTravelHud.Draw(snapshot); return; }
                 if (ComponentMarketOpen && !groupInvite)
                 {
                     componentMarketHud.Draw(snapshot);
@@ -1300,6 +1345,7 @@ namespace FortyTwoAndBeyond.Client
                 if (groupInvite && !hud.RetainedVisible) hud.HandleGroupInviteInput(Event.current);
                 if (groupInvite || ComponentMarketOpen) GUI.enabled = false;
                 hud.Draw(ref host, ref username, ref password);
+                if (!groupInvite && !GalaxyTravelOpen && !ComponentMarketOpen) DrawGalaxyTravelProgress();
                 if (!hud.SettingsOpen && !hud.EquipmentOpen && !AbilitiesOpen && !Incapacitated)
                     defenseHud.Draw(snapshot);
                 else defenseHud.Close();
@@ -1330,6 +1376,19 @@ namespace FortyTwoAndBeyond.Client
             }
         }
 
+        /// <summary>Keep active journey status and cancellation available with the browser closed.</summary>
+        private void DrawGalaxyTravelProgress()
+        {
+            GalaxyTravelView travel = snapshot?.GalaxyTravel;
+            if (travel?.Active != true) return;
+            float width = Screen.width / hud.Scale;
+            Rect strip = new Rect(365, 71, Mathf.Max(350, width - 730), 28);
+            hud.Panel(strip);
+            GUI.Label(new Rect(strip.x + 8, strip.y + 4, strip.width - 161, 22), travel.Status, hud.SmallStyle);
+            if (GUI.Button(new Rect(strip.xMax - 148, strip.y + 2, 78, 24), "Route / " + bindings.Display(ControlAction.Galaxy), hud.ButtonStyle)) OpenGalaxyTravel();
+            if (GUI.Button(new Rect(strip.xMax - 66, strip.y + 2, 62, 24), "Cancel", hud.ButtonStyle)) CancelGalaxyTravel();
+        }
+
         /// <summary>Join the worker before removing the connected world's resources.</summary>
         public void Disconnect()
         {
@@ -1344,6 +1403,7 @@ namespace FortyTwoAndBeyond.Client
             selectedShipClass = -1; selectedHullStage = uint.MaxValue;
             defenseHud?.Close();
             componentMarketHud?.Close();
+            galaxyTravelHud?.Close();
             previousYaw = previousPitch = 0; flightThrottle.Reset(); ClearWorld(); status = "Disconnected";
         }
 

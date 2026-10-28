@@ -29,8 +29,7 @@ namespace FortyTwoAndBeyond.Client
             if (Time.unscaledTime >= refreshAt || sector != snapshot.Sector)
             {
                 if (sector != snapshot.Sector) { lastDamage = 0; damageLabels.Clear(); }
-                destinations = snapshot.Objects.Where(item => item.Kind == 12 || item.Navigable ||
-                    item.Kind == 37 && item.Position.Distance(snapshot.Position) <= 20000)
+                destinations = snapshot.Objects.Where(TacticalSectorMap.IsNavigationTarget)
                     .OrderBy(item => item.Position.Distance(snapshot.Position)).ToArray();
                 nearbyWrecks = snapshot.Objects.Where(item => item.Kind == 25)
                     .OrderBy(item => item.Position.Distance(snapshot.Position)).Take(12).ToArray();
@@ -75,11 +74,12 @@ namespace FortyTwoAndBeyond.Client
             private readonly Image[] quickIcons = new Image[6];
             private readonly VisualElement[] quickSlots = new VisualElement[6];
             private readonly RadarDial radar;
-            private readonly Label dragCaption;
+            private readonly Label dragCaption, dragStatus;
+            private readonly Image dragIcon;
             private readonly Image preview;
             private readonly Dial dial;
             private readonly Gauge shield, reactor, hull, targetShield, targetHull, fitShield, fitReactor;
-            private readonly Button fire, follow, warp, dock, install, remove, activate, unload, jumpstart;
+            private readonly Button galaxy, fire, follow, warp, dock, install, remove, activate, unload, jumpstart;
             private readonly VisualElement travelActions;
             private readonly VisualElement inviteOverlay;
             private readonly Label invitationText;
@@ -106,6 +106,14 @@ namespace FortyTwoAndBeyond.Client
             private uint itemContainer;
             private int itemSlot = -1;
             private VisualElement itemSource;
+            private VisualElement animatedTarget;
+            private ItemView heldItem, previousDestination;
+            private int itemPointer = -1, pendingSlot;
+            private uint pendingContainer;
+            private string dragPhase = "idle", pendingMessage;
+            private Vector2 ghostPosition, animationFrom, animationTo, sourcePosition;
+            private float animationStarted, pendingStarted;
+            private bool releasingPointer;
             private uint selectedActor;
             public bool Visible { get; private set; }
             public Rect QuickbarBounds => quickbar.worldBound;
@@ -141,6 +149,7 @@ namespace FortyTwoAndBeyond.Client
                 ActionButton(toolbar, "Controls", () => hud.settingsOpen = true);
                 ActionButton(toolbar, "New client", () => Client.OpenAnotherClient());
                 ActionButton(toolbar, "Disconnect", () => Client.Disconnect());
+                galaxy = ActionButton(toolbar, "Galaxy", () => Client.OpenGalaxyTravel());
                 ActionButton(toolbar, "Chart / Tab", () => Client.SetChart(!Client.Chart));
                 foreach (VisualElement action in toolbar.Children()) action.style.marginLeft = 7;
 
@@ -327,13 +336,25 @@ namespace FortyTwoAndBeyond.Client
                 }); unload.style.marginTop = 6;
                 var footer = Box(fitting, "window-footer"); Text(footer, "DRAG TO FIT  /  CLICK TO INSPECT", "drag-label");
                 Text(footer, "I  CLOSE       •       DRAG HEADER TO MOVE", "drag-label");
-                dragGhost = Box(root, "panel row"); dragGhost.style.position = UnityEngine.UIElements.Position.Absolute;
-                dragGhost.pickingMode = PickingMode.Ignore; dragCaption = Text(dragGhost, "", "item-name");
-                dragCaption.pickingMode = PickingMode.Ignore;
+                dragGhost = Box(root, "inventory-drag-card row"); dragGhost.name = "inventory-drag-ghost";
+                dragGhost.style.position = UnityEngine.UIElements.Position.Absolute;
+                dragGhost.pickingMode = PickingMode.Ignore;
+                dragIcon = new Image { name = "inventory-drag-icon", pickingMode = PickingMode.Ignore };
+                dragIcon.AddToClassList("inventory-drag-icon"); dragGhost.Add(dragIcon);
+                var dragText = Box(dragGhost, "inventory-drag-text"); dragText.pickingMode = PickingMode.Ignore;
+                dragCaption = Text(dragText, "", "item-name"); dragCaption.pickingMode = PickingMode.Ignore;
+                dragStatus = Text(dragText, "", "drag-label"); dragStatus.name = "inventory-drag-status";
+                dragStatus.pickingMode = PickingMode.Ignore;
                 dragGhost.style.display = DisplayStyle.None;
                 root.RegisterCallback<GeometryChangedEvent>(_ => ClampMovedPanels());
                 root.RegisterCallback<PointerMoveEvent>(MoveItem);
                 root.RegisterCallback<PointerUpEvent>(DropItem);
+                root.focusable = true;
+                root.RegisterCallback<PointerCancelEvent>(_ => CancelItem("MOVE CANCELLED"));
+                root.RegisterCallback<PointerCaptureOutEvent>(_ =>
+                { if (!releasingPointer && itemPointer >= 0 && !root.HasPointerCapture(itemPointer)) CancelItem("MOVE CANCELLED"); });
+                root.RegisterCallback<KeyDownEvent>(evt =>
+                { if (evt.keyCode == KeyCode.Escape && itemPointer >= 0) { CancelItem("MOVE CANCELLED"); evt.StopPropagation(); } });
                 flight.Add(fitting);
                 MakeCollapsible(scanner, scannerHead, "overview");
                 MakeCollapsible(nav, navHead, "destinations");
@@ -364,10 +385,12 @@ namespace FortyTwoAndBeyond.Client
             public void Update()
             {
                 Snapshot s = Client.CurrentSnapshot;
+                galaxy.text = "Galaxy / " + Client.Bindings.Display(ControlAction.Galaxy);
                 Visible = Client.Connected && !Client.ChoosingCharacter && s != null && !hud.settingsOpen &&
-                    (!Client.ComponentMarketOpen || hud.GroupInviteOpen);
+                    (!(Client.ComponentMarketOpen || Client.GalaxyTravelOpen) || hud.GroupInviteOpen);
                 root.style.display = Visible ? DisplayStyle.Flex : DisplayStyle.None;
-                if (!Visible) return;
+                TickItem(s);
+                if (!Visible) { if (itemPointer >= 0) CancelItem("MOVE CANCELLED"); return; }
                 settings.scale = hud.Scale;
                 scanner.style.display = hud.crewTab ? DisplayStyle.None : DisplayStyle.Flex;
                 bool expandedComms = hud.communicationsOpen || Client.ChatOpen;
@@ -507,7 +530,6 @@ namespace FortyTwoAndBeyond.Client
                     v.Icon.style.opacity = item == null ? .25f : 1;
                     v.Root.EnableInClassList("empty", item == null);
                     v.Root.EnableInClassList("chosen", hud.selectedMount == slot);
-                    v.Root.EnableInClassList("drop-valid", draggingItem && FitsHardpoint(Item(s, itemContainer, itemSlot), slot, s));
                     v.State.text = item == null ? "+" : item.Type == 15 || item.Type == 16 ? (ammo?.Quantity ?? 0).ToString() : "ONLINE";
                     v.Root.tooltip = item == null ? "Empty hardpoint • drop equipment here" : item.Name + (ammo != null ? $"\nMagazine: {ammo.Quantity}/{ammo.MaxStack}" : "");
                 }
@@ -585,7 +607,7 @@ namespace FortyTwoAndBeyond.Client
                 MapObject[] stations = s.Objects.Where(o => o.Kind == 12)
                     .OrderBy(o => o.Name).ToArray();
                 MapObject[] objects = stations.Concat(s.Objects.Where(o => o.Kind != 12 &&
-                    (o.Navigable || o.Kind == 37)).OrderBy(o => o.Kind == 11 ? 0 : 1).ThenBy(o => o.Name)).ToArray();
+                    TacticalSectorMap.IsNavigationTarget(o)).OrderBy(o => o.Kind == 11 ? 0 : 1).ThenBy(o => o.Name)).ToArray();
                 string navKey = s.Sector + string.Join("|", objects.Select(o => $"{o.Id}:{o.Kind}:{o.Name}"));
                 if (navKey != navigationKey)
                 {
@@ -727,62 +749,178 @@ namespace FortyTwoAndBeyond.Client
                 sockets.Add(slot, socket); return socket;
             }
 
-            /// <summary>Begin pointer capture for an inventory row and keep click inspection independent of dragging.</summary>
+            /// <summary>Capture a source slot without changing inventory.</summary>
             private void BindItem(VisualElement element, uint container, int slot)
             {
                 dropTargets.Add((element, container, slot));
                 element.RegisterCallback<PointerDownEvent>(evt =>
                 {
-                    if (evt.button != 0) return;
-                    if (container == 3 && Item(Client.CurrentSnapshot, container, slot) == null) return;
+                    if (evt.button != 0 || dragPhase == "pending") return;
                     if (container == 1) { hud.selectedCargo = slot; hud.inspectMount = false; }
                     else { hud.selectedMount = slot; hud.inspectMount = true; }
-                    itemContainer = container; itemSlot = slot; itemDown = evt.position; itemSource = element;
-                    draggingItem = false; root.CapturePointer(evt.pointerId); evt.StopPropagation();
                     RefreshInspector(Client.CurrentSnapshot);
+                    ItemView item = Item(Client.CurrentSnapshot, container, slot);
+                    if (item == null) return;
+                    FinishItem();
+                    itemContainer = container; itemSlot = slot; heldItem = item;
+                    itemDown = root.WorldToLocal(evt.position); itemSource = element;
+                    sourcePosition = root.WorldToLocal(element.worldBound.center) - new Vector2(28, 28);
+                    itemPointer = evt.pointerId;
+                    root.Focus(); root.CapturePointer(evt.pointerId); evt.StopPropagation();
                 });
             }
 
-            /// <summary>Show a dragged item only after a deliberate movement threshold.</summary>
+            /// <summary>Lift a native item icon after a deliberate panel-space movement.</summary>
             private void MoveItem(PointerMoveEvent evt)
             {
-                if (itemSource == null || itemSlot < 0) return;
-                ItemView item = Item(Client.CurrentSnapshot, itemContainer, itemSlot);
-                if (item == null || !draggingItem && Vector2.Distance(itemDown, evt.position) < 7) return;
-                draggingItem = true; dragGhost.style.display = DisplayStyle.Flex;
-                dragGhost.style.left = evt.position.x + 16; dragGhost.style.top = evt.position.y + 12;
-                dragGhost.BringToFront();
-                dragCaption.text = item.Name + (itemContainer == 3 ? "  ·  UNLOAD" : "");
-                evt.StopPropagation();
+                if (itemPointer != evt.pointerId || itemSource == null || heldItem == null) return;
+                Vector2 point = root.WorldToLocal(evt.position);
+                if (!draggingItem && Vector2.Distance(itemDown, point) < 7) return;
+                draggingItem = true; dragPhase = "dragging";
+                itemSource.AddToClassList("drag-source"); dragIcon.image = hud.icons.ForItem(heldItem);
+                dragCaption.text = heldItem.Name;
+                dragStatus.text = heldItem.Quantity + " ×  ·  " + (itemContainer == 3 ? "UNLOAD" : "MOVE / FIT");
+                SetGhostPosition(point + new Vector2(14, -28));
+                dragGhost.style.display = DisplayStyle.Flex; dragGhost.style.opacity = 1; dragGhost.BringToFront();
+                UpdateDropFeedback(Client.CurrentSnapshot, evt.position); evt.StopPropagation();
             }
 
-            /// <summary>Submit a drop through existing inventory validation without editing local item state.</summary>
+            /// Returns:
+            ///     bool: Whether a visible compatible inventory target lies under the pointer.
+            private bool FindDrop(Snapshot s, Vector2 point, out VisualElement destination, out uint container, out int slot)
+            {
+                destination = null; container = 0; slot = -1;
+                hud.draggedContainer = itemContainer; hud.draggedSlot = itemSlot;
+                for (VisualElement hit = root.panel.Pick(point); hit != null; hit = hit.parent)
+                    foreach (var target in dropTargets)
+                    {
+                        if (target.Element != hit) continue;
+                        int candidate = target.Slot < 0 ? FirstFreeCargo(s) : target.Slot;
+                        if (!hud.CanInventoryDrop(s, target.Container, candidate)) continue;
+                        destination = hit; container = target.Container; slot = candidate; return true;
+                    }
+                return false;
+            }
+
+            /// <summary>Highlight compatible targets and distinguish an invalid hover immediately.</summary>
+            private void UpdateDropFeedback(Snapshot s, Vector2 point)
+            {
+                hud.draggedContainer = itemContainer; hud.draggedSlot = itemSlot;
+                foreach (var target in dropTargets)
+                {
+                    int slot = target.Slot < 0 ? FirstFreeCargo(s) : target.Slot;
+                    target.Element.EnableInClassList("drop-valid", hud.CanInventoryDrop(s, target.Container, slot));
+                    target.Element.RemoveFromClassList("drop-hover"); target.Element.RemoveFromClassList("drop-invalid");
+                }
+                bool valid = FindDrop(s, point, out VisualElement hovered, out uint destination, out _);
+                dragGhost.EnableInClassList("drop-rejected", !valid);
+                dragStatus.text = heldItem.Quantity + " ×  ·  " + (!valid ? "NO COMPATIBLE SLOT" :
+                    destination == 1 ? (itemContainer == 3 ? "UNLOAD TO CARGO" : "MOVE TO CARGO") :
+                    heldItem.Type == 10 ? "LOAD MAGAZINE" : "FIT HARDPOINT");
+                if (valid) hovered.AddToClassList("drop-hover");
+                else
+                    for (VisualElement hit = root.panel.Pick(point); hit != null; hit = hit.parent)
+                        if (dropTargets.Any(t => t.Element == hit)) { hit.AddToClassList("drop-invalid"); break; }
+                hud.ClearInventoryDrag();
+            }
+
+            /// <summary>Submit one inventory command and keep its visual pending until confirmed.</summary>
             private void DropItem(PointerUpEvent evt)
             {
-                if (itemSource == null) return;
-                if (draggingItem)
+                if (itemPointer != evt.pointerId) return;
+                if (!draggingItem) { FinishItem(); return; }
+                Snapshot s = Client.CurrentSnapshot;
+                if (FindDrop(s, evt.position, out VisualElement target, out uint container, out int slot))
                 {
-                    Snapshot s = Client.CurrentSnapshot;
-                    hud.draggedContainer = itemContainer; hud.draggedSlot = itemSlot;
-                    // Walk the visible hit hierarchy so hidden or covered windows cannot take a drop.
-                    // An occupied cargo row can fall through to the cargo area's first free slot.
-                    VisualElement hit = root.panel.Pick(evt.position);
-                    bool submitted = false;
-                    for (VisualElement element = hit; element != null && !submitted; element = element.parent)
-                    {
-                        foreach (var target in dropTargets)
-                        {
-                            if (target.Element != element) continue;
-                            int slot = target.Slot < 0 ? FirstFreeCargo(s) : target.Slot;
-                            if (slot < 0 || !hud.CanInventoryDrop(s, target.Container, slot)) continue;
-                            hud.SubmitInventoryDrop(s, target.Container, slot);
-                            submitted = true; break;
-                        }
-                    }
-                    hud.ClearInventoryDrag();
+                    pendingContainer = container == 3 && itemContainer == 1 ? 2u : container;
+                    if (heldItem.Type == 10 && pendingContainer == 2) pendingContainer = 3;
+                    pendingSlot = slot; previousDestination = Item(s, pendingContainer, slot);
+                    animatedTarget = target; pendingMessage = s.Messages.LastOrDefault(); pendingStarted = Time.unscaledTime;
+                    dragPhase = "pending"; dragStatus.text = "AWAITING SHIP CONFIRMATION";
+                    animationFrom = ghostPosition; animationTo = root.WorldToLocal(target.worldBound.center) - new Vector2(28, 28);
+                    animationStarted = Time.unscaledTime;
+                    hud.SubmitInventoryDrop(s, container, slot); ClearDropFeedback(); ReleaseItemPointer();
                 }
-                root.ReleasePointer(evt.pointerId); itemSource = null; itemSlot = -1;
-                draggingItem = false; dragGhost.style.display = DisplayStyle.None; evt.StopPropagation();
+                else CancelItem("INCOMPATIBLE SLOT · RETURNED");
+                hud.ClearInventoryDrag(); evt.StopPropagation();
+            }
+
+            /// <summary>Release capture without treating expected capture loss as cancellation.</summary>
+            private void ReleaseItemPointer()
+            {
+                int pointer = itemPointer; itemPointer = -1; releasingPointer = true;
+                if (pointer >= 0 && root.HasPointerCapture(pointer)) root.ReleasePointer(pointer);
+                releasingPointer = false;
+            }
+
+            /// <summary>Return a rejected or cancelled item to its original visual position.</summary>
+            private void CancelItem(string reason)
+            {
+                ReleaseItemPointer(); ClearDropFeedback(); hud.ClearInventoryDrag();
+                if (!draggingItem) { FinishItem(); return; }
+                dragPhase = "returning"; dragStatus.text = reason; dragGhost.AddToClassList("drop-rejected");
+                animationFrom = ghostPosition; animationTo = sourcePosition; animationStarted = Time.unscaledTime;
+            }
+
+            /// <summary>Clear temporary target highlights without clearing a pending source.</summary>
+            private void ClearDropFeedback()
+            {
+                foreach (var target in dropTargets)
+                { target.Element.RemoveFromClassList("drop-valid"); target.Element.RemoveFromClassList("drop-hover"); target.Element.RemoveFromClassList("drop-invalid"); }
+            }
+
+            /// <summary>Advance animations and verify both ends against authoritative snapshots.</summary>
+            private void TickItem(Snapshot s)
+            {
+                if (itemPointer >= 0 && (!Application.isFocused || Input.GetKeyDown(KeyCode.Escape))) CancelItem("MOVE CANCELLED");
+                if (dragPhase == "idle" || dragPhase == "dragging") return;
+                float elapsed = Time.unscaledTime - animationStarted;
+                float t = Mathf.Clamp01(elapsed / (dragPhase == "returning" ? .28f : .22f));
+                SetGhostPosition(Vector2.Lerp(animationFrom, animationTo, 1 - Mathf.Pow(1 - t, 3)));
+                if (dragPhase == "pending")
+                {
+                    ItemView destination = Item(s, pendingContainer, pendingSlot);
+                    bool sourceChanged = !SameItem(heldItem, Item(s, itemContainer, itemSlot));
+                    if (sourceChanged && destination != null && destination.Template == heldItem.Template && !SameItem(previousDestination, destination))
+                    {
+                        dragPhase = "confirmed"; dragStatus.text = "TRANSFER CONFIRMED";
+                        animatedTarget?.AddToClassList("drop-confirmed"); itemSource?.RemoveFromClassList("drag-source");
+                        animationFrom = ghostPosition; animationStarted = Time.unscaledTime;
+                    }
+                    else if (Time.unscaledTime - pendingStarted > 5) CancelItem("NO CONFIRMATION · RETURNED");
+                    else if (s != null && s.Messages.LastOrDefault() != pendingMessage && Time.unscaledTime - pendingStarted > .15f && RejectedMessage(s.Messages.LastOrDefault()))
+                        CancelItem("SERVER REJECTED MOVE · RETURNED");
+                }
+                else if (dragPhase == "confirmed")
+                { dragGhost.style.opacity = 1 - t; if (elapsed > .32f) FinishItem(); }
+                else if (dragPhase == "returning" && elapsed >= .85f) FinishItem();
+            }
+
+            /// Returns:
+            ///     bool: Whether a server message describes a failed inventory operation.
+            private static bool RejectedMessage(string message)
+            {
+                string text = (message ?? "").ToLowerInvariant();
+                return text.Contains("cannot") || text.Contains("unable") || text.Contains("invalid") || text.Contains("incompatible") || text.Contains("not enough") || text.Contains("full");
+            }
+
+            /// Returns:
+            ///     bool: Whether both snapshot slots describe the same item identity and quantity.
+            private static bool SameItem(ItemView first, ItemView second) => first == null ? second == null :
+                second != null && first.Template == second.Template && first.Quantity == second.Quantity && first.Structure == second.Structure;
+
+            /// <summary>Place the non-pickable icon card in root-local coordinates.</summary>
+            private void SetGhostPosition(Vector2 position)
+            { ghostPosition = position; dragGhost.style.left = position.x; dragGhost.style.top = position.y; }
+
+            /// <summary>Restore visual state without mutating inventory.</summary>
+            private void FinishItem()
+            {
+                ReleaseItemPointer(); ClearDropFeedback();
+                itemSource?.RemoveFromClassList("drag-source"); animatedTarget?.RemoveFromClassList("drop-confirmed");
+                itemSource = null; animatedTarget = null; heldItem = null; itemSlot = -1;
+                draggingItem = false; dragPhase = "idle";
+                dragGhost.RemoveFromClassList("drop-rejected"); dragGhost.style.display = DisplayStyle.None; hud.ClearInventoryDrag();
             }
 
             /// Returns:
@@ -941,7 +1079,7 @@ namespace FortyTwoAndBeyond.Client
             private static void Rule(VisualElement parent) { Box(parent, "rule"); }
 
             /// <summary>Release only the UI objects owned by this client.</summary>
-            public void Dispose() { Object.Destroy(gameObject); Object.Destroy(settings); }
+            public void Dispose() { FinishItem(); Object.Destroy(gameObject); Object.Destroy(settings); }
 
             /// <summary>A cached numeric gauge with an independently updated fill.</summary>
             private sealed class Gauge

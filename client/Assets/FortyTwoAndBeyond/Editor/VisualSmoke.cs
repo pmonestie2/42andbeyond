@@ -455,9 +455,19 @@ namespace FortyTwoAndBeyond.Editor
                 FlightHud mapHud = typeof(SpaceClient).GetField("hud", BindingFlags.Instance | BindingFlags.NonPublic)?.GetValue(client) as FlightHud;
                 TacticalSectorMap map = typeof(FlightHud).GetField("tacticalMap", BindingFlags.Instance | BindingFlags.NonPublic)?.GetValue(mapHud) as TacticalSectorMap;
                 if (map == null) { Fail("Dedicated tactical map was not created."); return; }
-                int navigables = client.CurrentSnapshot.Objects.Count(item => item.Navigable || item.Kind == 11 || item.Kind == 12 || item.Kind == 37);
-                if (map.NavigationCount != navigables)
-                { Fail("Sector map discarded known navigation points."); return; }
+                Snapshot mapSnapshot = client.CurrentSnapshot;
+                MapObject[] navigables = mapSnapshot.Objects.Where(TacticalSectorMap.IsNavigationTarget).ToArray();
+                if (map.NavigationCount != navigables.Length || navigables.Any(item => !map.ContainsNavigationTarget(item.Id)))
+                { Fail("Sector map discarded valid known navigation points."); return; }
+                MapObject[] scenery = mapSnapshot.Objects.Where(item => item.Kind == 25 || item.Kind == 38 ||
+                    item.Kind != 11 && item.Kind != 12 && item.Name.StartsWith("Asteroid", StringComparison.OrdinalIgnoreCase) ||
+                    item.Name.Replace(" ", "").IndexOf("BorderDemarcation", StringComparison.OrdinalIgnoreCase) >= 0).ToArray();
+                if (scenery.Any(item => map.ContainsNavigationTarget(item.Id)) ||
+                    mapSnapshot.Players.Concat(mapSnapshot.Mobs).Any(actor => map.ContainsNavigationTarget(actor.Id)))
+                { Fail("Navigation-only map displayed asteroid, border, resource, wreck or actor markers."); return; }
+                if (mapSnapshot.Objects.Any(item => item.Name == "Dutch Flat") &&
+                    !mapSnapshot.Objects.Where(item => item.Name == "Dutch Flat").All(item => map.ContainsNavigationTarget(item.Id)))
+                { Fail("Navigation map incorrectly filtered a legitimate asteroid-asset navigation point."); return; }
                 MapObject marker = client.CurrentSnapshot.Objects.First(item => item.Navigable && item.Name == "Bedrock Cluster");
                 Vector2 point = map.ProjectPosition(marker.Position);
                 if (!map.PlotBounds.Contains(point) || !map.SelectAtPoint(point))

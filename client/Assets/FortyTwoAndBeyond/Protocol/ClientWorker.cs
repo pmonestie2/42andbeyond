@@ -5,7 +5,7 @@ using System.Threading;
 
 namespace FortyTwoAndBeyond.Protocol
 {
-    public enum CommandKind { Thrust, Steer, Warp, Gate, Dock, Launch, EnterStationRoom, StationPose, OpenNpc, ChooseNpc, BuyVendor, SellVendor, EquipCargo, UnequipMount, MoveInventory, StoreCargo, RetrieveVault, OpenProduction, CloseProduction, SelectProductionRecipe, SelectProductionCategory, SelectProductionPage, QueryComponentMarket, QueryComponentStock, TradeComponentMarket, TravelComponentMarket, SetProductionLevels, StartProduction, InsertAnalysisSample, ReturnAnalysisSample, ActivateWeapon, ActivateDevice, ActivateDeviceFor, ActivateTurboWeapons, Chat, ToggleWeapons, Formation, SelectTarget, FollowTarget, InvitePlayer, AnswerConfirmation, StopWeapons, OpenLoot, CloseLoot, TakeLoot, OpenResource, CloseResource, ProspectResource, ActivateAbility, ActivateAbilityFor, TrainSkill, RequestRescue, ChooseRescue, SelfJumpstart }
+    public enum CommandKind { Thrust, Steer, Warp, Gate, Dock, Launch, EnterStationRoom, StationPose, OpenNpc, ChooseNpc, BuyVendor, SellVendor, EquipCargo, UnequipMount, MoveInventory, StoreCargo, RetrieveVault, OpenProduction, CloseProduction, SelectProductionRecipe, SelectProductionCategory, SelectProductionPage, QueryGalaxyDestinations, PreviewGalaxyRoute, StartGalaxyTravel, CancelGalaxyTravel, QueryComponentMarket, QueryComponentStock, TradeComponentMarket, TravelComponentMarket, SetProductionLevels, StartProduction, InsertAnalysisSample, ReturnAnalysisSample, ActivateWeapon, ActivateDevice, ActivateDeviceFor, ActivateTurboWeapons, Chat, ToggleWeapons, Formation, SelectTarget, FollowTarget, InvitePlayer, AnswerConfirmation, StopWeapons, OpenLoot, CloseLoot, TakeLoot, OpenResource, CloseResource, ProspectResource, ActivateAbility, ActivateAbilityFor, TrainSkill, RequestRescue, ChooseRescue, SelfJumpstart }
 
     public readonly struct ClientCommand
     {
@@ -42,6 +42,7 @@ namespace FortyTwoAndBeyond.Protocol
         private readonly Thread thread;
         private readonly string host, username;
         private readonly int characterSlot;
+        private readonly byte[] navigationData;
         private string password;
         private Snapshot latest;
         private string error;
@@ -51,10 +52,11 @@ namespace FortyTwoAndBeyond.Protocol
         public bool Running => thread.IsAlive;
 
         /// <summary>Start an isolated connection worker with explicit local credentials.</summary>
-        public ClientWorker(string host, string username, string password, int characterSlot = 0)
+        public ClientWorker(string host, string username, string password, int characterSlot = 0, byte[] navigationData = null)
         {
             this.host = host; this.username = username; this.password = password;
             this.characterSlot = characterSlot;
+            this.navigationData = navigationData == null ? null : (byte[])navigationData.Clone();
             thread = new Thread(Run) { IsBackground = true, Name = "42 and Beyond local client" }; thread.Start();
         }
 
@@ -66,12 +68,30 @@ namespace FortyTwoAndBeyond.Protocol
             commands.Enqueue(command);
         }
 
+        /// <summary>
+        /// Returns:
+        ///     bool: Whether a manual command takes control from automatic navigation.
+        /// </summary>
+        private static bool OverridesGalaxyTravel(ClientCommand command)
+        {
+            switch (command.Kind)
+            {
+                case CommandKind.Thrust: case CommandKind.Steer: case CommandKind.Warp:
+                case CommandKind.Gate: case CommandKind.Dock: case CommandKind.Launch:
+                case CommandKind.FollowTarget: case CommandKind.Formation: case CommandKind.ToggleWeapons:
+                case CommandKind.OpenResource: case CommandKind.OpenLoot: case CommandKind.TravelComponentMarket:
+                    return true;
+                case CommandKind.Chat: return command.Text.TrimStart().StartsWith("/d_", StringComparison.OrdinalIgnoreCase);
+                default: return false;
+            }
+        }
+
         /// <summary>Own all protocol state until the session and its sockets are closed.</summary>
         private void Run()
         {
             try
             {
-                using (var session = new LocalSession(stop.Token))
+                using (var session = new LocalSession(stop.Token, navigationData))
                 {
                     try { session.Connect(host, username, password, characterSlot); }
                     finally { password = null; }
@@ -82,6 +102,10 @@ namespace FortyTwoAndBeyond.Protocol
                         while (commands.TryDequeue(out ClientCommand command))
                         {
                             stop.Token.ThrowIfCancellationRequested();
+                            if (OverridesGalaxyTravel(command)) session.CancelGalaxyTravel(stopMotion:
+                                command.Kind != CommandKind.Warp && command.Kind != CommandKind.Gate &&
+                                command.Kind != CommandKind.Dock && command.Kind != CommandKind.Launch &&
+                                command.Kind != CommandKind.TravelComponentMarket);
                             switch (command.Kind)
                             {
                                 case CommandKind.Thrust: session.Thrust((byte)command.Target); break;
@@ -108,6 +132,10 @@ namespace FortyTwoAndBeyond.Protocol
                                 case CommandKind.SelectProductionRecipe: session.SelectProductionRecipe(command.Target); break;
                                 case CommandKind.SelectProductionCategory: session.SelectProductionCategory(command.Target); break;
                                 case CommandKind.QueryComponentStock: session.QueryComponentStock(); break;
+                                case CommandKind.QueryGalaxyDestinations: session.QueryGalaxyDestinations(command.Text, command.Target, (uint)command.Slot); break;
+                                case CommandKind.PreviewGalaxyRoute: session.PreviewGalaxyRoute(command.Target, command.StationRoom); break;
+                                case CommandKind.StartGalaxyTravel: session.StartGalaxyTravel(); break;
+                                case CommandKind.CancelGalaxyTravel: session.CancelGalaxyTravel(stopMotion: true); break;
                                 case CommandKind.QueryComponentMarket: session.QueryComponentMarket(command.Target); break;
                                 case CommandKind.TradeComponentMarket: session.TradeComponentMarket(command.Target,
                                     command.MarketTemplate, command.MarketSell, command.Slot, command.MarketQuantity); break;

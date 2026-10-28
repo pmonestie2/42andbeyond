@@ -49,6 +49,7 @@ namespace FortyTwoAndBeyond.Client
                 string.IsNullOrEmpty(station.Name) ? "STATION CONCOURSE" : station.Name.ToUpperInvariant(), hud.BodyStyle);
             GUI.Label(new Rect(42, 62, width - 370, 20),
                 "ONE CONCOURSE  /  VENDORS  /  INDUSTRY  /  SHIP SERVICES", hud.SmallStyle);
+            if (GUI.Button(new Rect(width - 700, 37, 128, 34), "Galaxy · " + client.Bindings.Display(ControlAction.Galaxy), hud.ButtonStyle)) client.OpenGalaxyTravel();
             if (GUI.Button(new Rect(width - 330, 37, 144, 34), "Inventory  ·  I", hud.ButtonStyle)) hud.ToggleEquipment();
             if (GUI.Button(new Rect(width - 176, 37, 134, 34), "Launch", hud.ButtonStyle)) client.Launch();
 

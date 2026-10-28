@@ -511,6 +511,14 @@ namespace FortyTwoAndBeyond.Protocol
         public void ClearInvitation() { if (Confirmation?.Kind == ConfirmationKind.Group) ClearConfirmation(); }
         public readonly Queue<string> Messages = new Queue<string>();
         public EquipmentState Equipment { get; } = new EquipmentState();
+        public readonly uint SectorId;
+        public GalaxyCatalogPage GalaxyCatalog;
+        public GalaxyRoutePlan GalaxyRoute;
+        public GalaxyTravelView GalaxyTravel = new GalaxyTravelView(false, false, 0, "Choose a destination.");
+
+        /// <summary>Bind a fresh worker world to the authenticated sector handoff identity.</summary>
+        public World(uint sectorId = 0) { SectorId = sectorId; }
+
         public bool AggregateStation { get; private set; }
         public uint[] MarketItemTemplates = Array.Empty<uint>();
         public Dictionary<uint, ComponentMarketView> ComponentMarkets { get; } = new Dictionary<uint, ComponentMarketView>();
@@ -1120,6 +1128,10 @@ namespace FortyTwoAndBeyond.Protocol
     public sealed class Snapshot
     {
         public readonly string Sector, Status;
+        public readonly uint SectorId;
+        public readonly GalaxyCatalogPage GalaxyCatalog;
+        public readonly GalaxyRoutePlan GalaxyRoute;
+        public readonly GalaxyTravelView GalaxyTravel;
         public readonly Position Position;
         public readonly float[] Orientation;
         public readonly MapObject[] Objects;
@@ -1189,6 +1201,8 @@ namespace FortyTwoAndBeyond.Protocol
         /// <summary>Copy worker-owned state for main-thread rendering.</summary>
         public Snapshot(World world, string status, bool ready)
         {
+            SectorId = world.SectorId; GalaxyCatalog = world.GalaxyCatalog;
+            GalaxyRoute = world.GalaxyRoute; GalaxyTravel = world.GalaxyTravel;
             AggregateStation = world.AggregateStation;
             Sector = world.Sector; Status = status; Position = world.Position;
             Orientation = (float[])world.Orientation.Clone(); HasPosition = world.HasPosition;

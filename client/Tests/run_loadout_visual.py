@@ -14,6 +14,8 @@ def main() -> None:
     """Run one owned local server and graphical Editor, then check its capture."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--unity', required=True, type=Path)
+    parser.add_argument('--batchmode', action='store_true',
+                        help='Run the owned Unity Editor in batch mode while preserving rendering.')
     options = parser.parse_args()
     root = Path(__file__).resolve().parents[2]
     project = root / 'client'
@@ -73,7 +75,8 @@ def main() -> None:
                 unity_log = state / 'unity.log'
                 subprocess.run([str(options.unity), '-projectPath', str(project),
                                 '-logFile', str(unity_log),
-                                '--42andbeyond-loadout-smoke'],
+                                '--42andbeyond-loadout-smoke'] +
+                               (['-batchmode'] if options.batchmode else []),
                                check=True, timeout=140)
                 (project / 'Builds/verification/loadout-ui.log').write_text(unity_log.read_text(errors='replace'))
                 if 'PASS: cargo reordered, magazine loaded' not in unity_log.read_text(
@@ -83,7 +86,9 @@ def main() -> None:
                 for name in ('server.log', 'unity.log'):
                     path = state / name
                     if path.exists():
-                        print(f'{name}:\n{path.read_text(errors="replace")[-5000:]}')
+                        text = path.read_text(errors='replace')
+                        (project / 'Builds/verification' / ('loadout-' + name)).write_text(text)
+                        print(f'{name}:\n{text[-5000:]}')
                 raise
             finally:
                 (state / 'stop.request').write_text('stop\n')
@@ -98,6 +103,10 @@ def main() -> None:
     flight = project / 'Builds/verification/loadout-flight.png'
     if not flight.is_file():
         raise FileNotFoundError(flight)
+    for name in ('loadout-drag.png', 'loadout-drag-invalid.png', 'galaxy-travel.png'):
+        capture = project / 'Builds/verification' / name
+        if not capture.is_file():
+            raise FileNotFoundError(capture)
     print(f'PASS: {screenshot}')
 
 

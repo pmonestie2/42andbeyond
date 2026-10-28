@@ -73,3 +73,19 @@
 .deck .unity-base-slider__dragger-border { border-width: 0; background-color: rgba(0,0,0,0); }
 .deck .unity-base-slider__dragger { background-color: rgb(77,92,105); border-width: 0; min-width: 5px; }
 .deck .quick-drag { position: absolute; top: 0; right: 1px; width: 6px; bottom: 0; background-color: rgba(140,159,171,0.12); }
+
+/* Lifted native item card and authoritative inventory feedback. */
+.deck .inventory-drag-card { width: 242px; min-height: 72px; padding: 8px; align-items: center; background-color: rgba(12,26,37,0.97); border-radius: 9px; border-width: 2px; border-color: rgb(111,214,225); }
+.deck .inventory-drag-icon { width: 56px; height: 56px; margin-right: 10px; background-color: rgba(78,125,144,0.22); border-radius: 5px; }
+.deck .inventory-drag-text { flex-grow: 1; flex-shrink: 1; min-width: 0; }
+.deck .inventory-drag-text .item-name { font-size: 13px; white-space: normal; }
+.deck .inventory-drag-text .drag-label { font-size: 10px; white-space: normal; color: rgb(130,224,229); }
+.deck .drag-source { opacity: 0.36; }
+.deck .drop-valid { border-color: rgb(88,159,151); background-color: rgba(39,83,78,0.36); }
+.deck .drop-hover { border-width: 3px; border-color: rgb(139,244,213); background-color: rgba(61,130,113,0.65); }
+.deck .drop-invalid { border-color: rgb(224,117,92); background-color: rgba(124,48,39,0.44); }
+.deck .drop-rejected { border-color: rgb(230,135,106); background-color: rgba(47,23,25,0.97); }
+.deck .drop-confirmed { border-width: 3px; border-color: rgb(220,240,172); background-color: rgba(124,159,85,0.65); }
+.deck .socket.drop-hover, .deck .cargo-row.drop-hover { border-width: 3px; border-color: rgb(139,244,213); background-color: rgba(61,130,113,0.65); }
+.deck .socket.drop-invalid { border-color: rgb(224,117,92); background-color: rgba(124,48,39,0.44); }
+.deck .socket.drop-confirmed, .deck .cargo-row.drop-confirmed { border-width: 3px; border-color: rgb(220,240,172); background-color: rgba(124,159,85,0.65); }

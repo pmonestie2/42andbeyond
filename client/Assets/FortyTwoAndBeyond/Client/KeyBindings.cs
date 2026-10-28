@@ -9,7 +9,7 @@ namespace FortyTwoAndBeyond.Client
         OpenChat, Forward, Reverse, TurnLeft, TurnRight, PitchUp, PitchDown, Brake,
         Warp, Fire, NextHostile, Follow, Gate, Dock, Launch, Chart, Equipment, ResetCamera,
         AbilityOne, AbilityTwo, AbilityThree, AbilityFour, AbilityFive, AbilitySix, TurboWeapons,
-        NextAttacker
+        NextAttacker, Galaxy
     }
 
     /// <summary>Persist one unique keyboard key for each flight action.</summary>
@@ -23,7 +23,7 @@ namespace FortyTwoAndBeyond.Client
             KeyCode.T, KeyCode.R, KeyCode.G, KeyCode.O, KeyCode.L,
             KeyCode.Tab, KeyCode.I, KeyCode.C,
             KeyCode.Alpha1, KeyCode.Alpha2, KeyCode.Alpha3,
-            KeyCode.Alpha4, KeyCode.Alpha5, KeyCode.Alpha6, KeyCode.B, KeyCode.Y
+            KeyCode.Alpha4, KeyCode.Alpha5, KeyCode.Alpha6, KeyCode.B, KeyCode.Y, KeyCode.M
         };
         public static readonly ControlAction[] Actions = (ControlAction[])Enum.GetValues(typeof(ControlAction));
         private readonly KeyCode[] keys = (KeyCode[])Defaults.Clone();
@@ -34,7 +34,8 @@ namespace FortyTwoAndBeyond.Client
             foreach (ControlAction action in Actions)
             {
                 int index = (int)action;
-                int stored = PlayerPrefs.GetInt(PreferencePrefix + action, (int)Defaults[index]);
+                int fallback = action == ControlAction.Galaxy ? (int)keys[index] : (int)Defaults[index];
+                int stored = PlayerPrefs.GetInt(PreferencePrefix + action, fallback);
                 if (action == ControlAction.Equipment && stored == (int)KeyCode.E)
                 {
                     stored = (int)KeyCode.I;
@@ -95,6 +96,7 @@ namespace FortyTwoAndBeyond.Client
                 case ControlAction.Dock: return "Dock at station";
                 case ControlAction.Launch: return "Launch from station";
                 case ControlAction.Chart: return "Sector chart";
+                case ControlAction.Galaxy: return "Galaxy travel";
                 case ControlAction.Equipment: return "Inventory";
                 case ControlAction.ResetCamera: return "Reset camera";
                 case ControlAction.AbilityOne: return "Ability slot 1";

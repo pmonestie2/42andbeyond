@@ -12,6 +12,10 @@ internal static class Program
     /// <summary>Run pure protocol checks, with explicit opt-in to a disposable local server.</summary>
     private static void Main(string[] args)
     {
+        if (args.Length == 1 && args[0] == "--galaxy-only")
+        { GalaxyTravelChecks.Check(); return; }
+        if (args.Length == 2 && args[0] == "--galaxy-server")
+        { GalaxyTravelChecks.Check(); GalaxyTravelChecks.Live(args[1]); return; }
         if (args.Length == 1 && args[0] == "--transport-only")
         {
             SectorTransportChecks.Check(exerciseLoopback: true);

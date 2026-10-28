@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using FortyTwoAndBeyond.Protocol;
@@ -15,7 +16,6 @@ namespace FortyTwoAndBeyond.Client
             public Position Position;
             public Color Color;
             public int Shape;
-            public bool Actor, Resource, Navigation;
         }
 
         private readonly SpaceClient client;
@@ -28,7 +28,7 @@ namespace FortyTwoAndBeyond.Client
         private Rect bounds, plot;
         private Vector2 centerKm, dragStart, dragCenter;
         private float radiusKm = 40, refreshAt;
-        private bool dragging, showResources = true;
+        private bool dragging;
         private string sector = "";
         private uint selectedId, pressedId;
 
@@ -37,7 +37,7 @@ namespace FortyTwoAndBeyond.Client
         { this.client = client; this.hud = hud; }
 
         /// <returns>int: Every server-advertised navigation point retained by this map.</returns>
-        public int NavigationCount => markers.Count(marker => marker.Navigation);
+        public int NavigationCount => markers.Count;
 
         /// <returns>Rect: The drawable map area in HUD coordinates.</returns>
         public Rect PlotBounds => plot;
@@ -85,15 +85,13 @@ namespace FortyTwoAndBeyond.Client
             Fill(bounds, new Color(.012f, .022f, .032f, .99f));
             Fill(new Rect(bounds.x, bounds.y, bounds.width, 2), new Color(.35f, .72f, .82f, .8f));
             GUI.Label(new Rect(bounds.x + 15, bounds.y + 10, 180, 24), "TACTICAL SECTOR MAP", title);
-            GUI.Label(new Rect(bounds.xMax - 180, bounds.y + 13, 165, 20),
-                radiusKm.ToString("0.#") + " km radius", caption);
+            if (GUI.Button(new Rect(bounds.xMax - 119, bounds.y + 8, 107, 26), "Galaxy / " + client.Bindings.Display(ControlAction.Galaxy), hud.ButtonStyle))
+                client.OpenGalaxyTravel();
             float x = bounds.x + 13, y = bounds.y + 40;
             if (GUI.Button(new Rect(x, y, 86, 27), "My ship", hud.ButtonStyle)) centerKm = Coordinate(snapshot.Position);
             if (GUI.Button(new Rect(x + 94, y, 88, 27), "Fit sector", hud.ButtonStyle)) FitSector(snapshot);
             if (GUI.Button(new Rect(x + 190, y, 31, 27), "−", hud.ButtonStyle)) Zoom(1.35f, plot.center);
             if (GUI.Button(new Rect(x + 227, y, 31, 27), "+", hud.ButtonStyle)) Zoom(1 / 1.35f, plot.center);
-            if (GUI.Button(new Rect(x + 271, y, 118, 27), showResources ? "Resources: on" : "Resources: off", hud.ButtonStyle))
-                showResources = !showResources;
             Fill(plot, new Color(.008f, .017f, .025f, 1));
             DrawGrid();
             Marker hovered = Hovered(Event.current.mousePosition);
@@ -105,7 +103,6 @@ namespace FortyTwoAndBeyond.Client
             Rect markerArea = new Rect(plot.x + 13, plot.y + 13, plot.width - 26, plot.height - 26);
             foreach (Marker marker in markers)
             {
-                if (marker.Resource && !showResources) continue;
                 Vector2 point = Project(marker.Position);
                 if (!markerArea.Contains(point)) continue;
                 plotted.Add((marker, point, marker.Id == selectedId || hovered?.Id == marker.Id));
@@ -122,9 +119,8 @@ namespace FortyTwoAndBeyond.Client
             if (markerArea.Contains(own))
             { Glyph(own, 3, Color.white, 7); Ring(own, 13, new Color(.7f, .9f, 1, .35f)); }
             // Reserve the selected and hovered label positions before ordinary navigation names.
-            foreach (var item in plotted.OrderBy(item => item.Marker.Id == selectedId ? 0 : item.Emphasized ? 1 : item.Marker.Navigation ? 2 : 3))
-                if (item.Marker.Navigation || item.Emphasized || labels.Count < 7)
-                    DrawLabel(item.Marker, item.Point, item.Emphasized);
+            foreach (var item in plotted.OrderBy(item => item.Marker.Id == selectedId ? 0 : item.Emphasized ? 1 : 2))
+                DrawLabel(item.Marker, item.Point, item.Emphasized);
             DrawFooter(snapshot, hovered ?? selected);
             GUI.enabled = previousEnabled;
         }
@@ -139,33 +135,42 @@ namespace FortyTwoAndBeyond.Client
             details = new GUIStyle(hud.BodyStyle) { fontSize = 13, wordWrap = true };
         }
 
-        /// <summary>Keep every known navigation point, without a distance or row limit.</summary>
+        /// Returns:
+        ///     bool: Whether an advertised object belongs on the navigation-only map.
+        public static bool IsNavigationTarget(MapObject item)
+        {
+            if (item == null) return false;
+            string name = item.Name ?? "";
+            if (name.IndexOf("Border Demarcation", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                name.IndexOf("BorderDemarcation", StringComparison.OrdinalIgnoreCase) >= 0) return false;
+            if (item.Kind == 11 || item.Kind == 12) return true;
+            return item.Navigable && item.Kind != 25 && item.Kind != 38 &&
+                !name.StartsWith("Asteroid", StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// Returns:
+        ///     bool: Whether a destination remains available for map selection at the current zoom.
+        public bool ContainsNavigationTarget(uint id) => markers.Any(marker => marker.Id == id);
+
+        /// <summary>Keep every valid navigation point at any distance, excluding scenery and contacts.</summary>
         private void RefreshMarkers(Snapshot snapshot)
         {
             markers.Clear();
             foreach (MapObject item in snapshot.Objects)
             {
-                bool nav = item.Navigable || item.Kind == 11 || item.Kind == 12 || item.Kind == 37;
-                if (!nav && item.Kind != 25 && item.Kind != 38) continue;
+                if (!IsNavigationTarget(item)) continue;
                 markers.Add(new Marker { Id = item.Id, Name = item.Name, Position = item.Position,
-                    Category = item.Kind == 12 ? "STATION" : item.Kind == 11 ? "GATE" : item.Kind == 38 ? "RESOURCE" : item.Kind == 25 ? "WRECK" : "NAVIGATION",
-                    Color = item.Kind == 12 ? new Color(.96f, .77f, .4f) : item.Kind == 11 ? new Color(.72f, .56f, 1) :
-                        item.Kind == 38 ? new Color(.39f, .81f, .57f) : item.Kind == 25 ? new Color(.55f, .61f, .65f) : new Color(.35f, .77f, .88f),
-                    Shape = item.Kind == 12 ? 0 : item.Kind == 11 ? 1 : item.Kind == 38 ? 4 : 2,
-                    Navigation = nav, Resource = item.Kind == 38 });
+                    Category = item.Kind == 12 ? "STATION" : item.Kind == 11 ? "GATE" : "NAVIGATION",
+                    Color = item.Kind == 12 ? new Color(.96f, .77f, .4f) : item.Kind == 11 ? new Color(.72f, .56f, 1) : new Color(.35f, .77f, .88f),
+                    Shape = item.Kind == 12 ? 0 : item.Kind == 11 ? 1 : 2 });
             }
-            foreach (ShipActor actor in snapshot.Players.Concat(snapshot.Mobs).Where(actor => actor.HasPosition))
-                markers.Add(new Marker { Id = actor.Id, Name = actor.Name, Position = actor.Position, Actor = true,
-                    Category = actor.IsPlayer ? "PILOT" : actor.Hostile ? "HOSTILE" : "NEUTRAL SHIP",
-                    Shape = actor.IsPlayer ? 3 : 5,
-                    Color = actor.IsPlayer ? new Color(.4f, .76f, 1) : actor.Hostile ? new Color(1, .36f, .29f) : new Color(.91f, .77f, .39f) });
         }
 
         /// <summary>Fit all advertised navigation points and the pilot into the map viewport.</summary>
         private void FitSector(Snapshot snapshot)
         {
             Vector2 minimum = Coordinate(snapshot.Position), maximum = minimum;
-            foreach (Marker marker in markers.Where(marker => marker.Navigation))
+            foreach (Marker marker in markers)
             { Vector2 point = Coordinate(marker.Position); minimum = Vector2.Min(minimum, point); maximum = Vector2.Max(maximum, point); }
             centerKm = (minimum + maximum) * .5f;
             Vector2 span = maximum - minimum;
@@ -237,7 +242,6 @@ namespace FortyTwoAndBeyond.Client
             Marker best = null; float distance = 16;
             foreach (Marker marker in markers)
             {
-                if (marker.Resource && !showResources) continue;
                 float next = Vector2.Distance(pointer, Project(marker.Position));
                 if (next >= distance) continue;
                 best = marker; distance = next;
@@ -252,9 +256,7 @@ namespace FortyTwoAndBeyond.Client
         private void Select(Marker marker)
         {
             selectedId = marker.Id;
-            if (marker.Actor) hud.SelectContact(marker.Id);
-            else if (marker.Category == "WRECK") hud.SelectWreck(marker.Id);
-            else client.Select(marker.Id);
+            client.Select(marker.Id);
         }
 
         /// <summary>Draw a coordinate grid with a scale chosen for the current zoom.</summary>
@@ -312,7 +314,7 @@ namespace FortyTwoAndBeyond.Client
                 GUI.Label(new Rect(bounds.x + 14, y + 42, bounds.width - 24, 19),
                     marker.Category + "  ·  " + (marker.Position.Distance(snapshot.Position) / 1000).ToString("0.00") + " km  ·  E " + (marker.Position.Y / 1000).ToString("0.0") + " / N " + (marker.Position.X / 1000).ToString("0.0"), caption);
                 if (GUI.Button(new Rect(bounds.xMax - 124, y, 110, 27), "Center target", hud.ButtonStyle)) centerKm = Coordinate(marker.Position);
-                if (marker.Navigation && GUI.Button(new Rect(bounds.xMax - 124, y + 34, 110, 27), "Warp here", hud.ButtonStyle))
+                if (GUI.Button(new Rect(bounds.xMax - 124, y + 34, 110, 27), "Warp here", hud.ButtonStyle))
                 { Select(marker); client.WarpSelected(); }
             }
             else
@@ -320,10 +322,10 @@ namespace FortyTwoAndBeyond.Client
                 GUI.Label(new Rect(bounds.x + 14, y, bounds.width - 28, 24), snapshot.Sector, title);
                 GUI.Label(new Rect(bounds.x + 14, y + 29, bounds.width - 28, 22), "Drag to pan  ·  Wheel to zoom  ·  Click a marker to select", caption);
             }
-            string[] legend = { "■ Station", "◇ Gate", "+ Nav", "▲ Hostile", "› Pilot", "◆ Resource" };
-            Color[] colors = { new Color(.96f,.77f,.4f),new Color(.72f,.56f,1),new Color(.35f,.77f,.88f),new Color(1,.36f,.29f),new Color(.4f,.76f,1),new Color(.39f,.81f,.57f) };
+            string[] legend = { "■ Station", "◇ Gate", "+ Navigation" };
+            Color[] colors = { new Color(.96f,.77f,.4f),new Color(.72f,.56f,1),new Color(.35f,.77f,.88f) };
             for (int index = 0; index < legend.Length; index++)
-            { Color old = GUI.color; GUI.color = colors[index]; GUI.Label(new Rect(bounds.x + 14 + index * (bounds.width - 28) / 6, bounds.yMax - 24, (bounds.width - 28) / 6, 20), legend[index], caption); GUI.color = old; }
+            { Color old = GUI.color; GUI.color = colors[index]; GUI.Label(new Rect(bounds.x + 14 + index * (bounds.width - 28) / legend.Length, bounds.yMax - 24, (bounds.width - 28) / legend.Length, 20), legend[index], caption); GUI.color = old; }
         }
 
         /// <summary>Draw distinguishable marker silhouettes without allocating textures.</summary>

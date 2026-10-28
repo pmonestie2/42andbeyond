@@ -11,7 +11,7 @@ using System.Threading;
 namespace FortyTwoAndBeyond.Protocol
 {
     /// <summary>Single-worker local-server session; never calls an engine API.</summary>
-    public sealed class LocalSession : IDisposable
+    public sealed partial class LocalSession : IDisposable
     {
         public const float StationEntryZ = -16f;
         private const int UdpReceiveBufferBytes = 1024 * 1024;
@@ -46,7 +46,8 @@ namespace FortyTwoAndBeyond.Protocol
         public string Status { get; private set; } = "Connecting";
 
         /// <summary>Bind session lifetime to a worker cancellation token.</summary>
-        public LocalSession(CancellationToken token) { cancel = token; }
+        public LocalSession(CancellationToken token, byte[] navigationData = null)
+        { cancel = token; navigation = GalaxyNavigationCatalog.Decode(navigationData); }
 
         /// <returns>A validated explicit loopback or private IPv4 address.</returns>
         public static IPAddress LocalAddress(string host)
@@ -191,7 +192,9 @@ namespace FortyTwoAndBeyond.Protocol
             int port = Wire.U16(reply, 16);
             if (port == 0) throw new InvalidDataException("Missing sector port.");
             sector.Connect(address, port);
-            stream = new SectorStream(Player); World = new World(); sequence = 1; Ready = false;
+            stream = new SectorStream(Player);
+            World = new World(destination) { GalaxyCatalog = World.GalaxyCatalog, GalaxyRoute = World.GalaxyRoute, GalaxyTravel = galaxyPilot.View };
+            sectorGeneration++; sequence = 1; Ready = false;
             aggregateStationAt = 0; pendingStationContact = 0;
             gate = dock = followTarget = pendingResource = pendingDeviceTarget = 0;
             pendingDeviceSlot = -1; pendingDeviceTemplate = 0;
@@ -270,11 +273,11 @@ namespace FortyTwoAndBeyond.Protocol
         }
 
         /// <summary>Select a nearby station and wait for clearance before docking.</summary>
-        public void Dock(uint target)
+        public void Dock(uint target, float radius = 0)
         {
             if (!Ready || World.Station != null || gate != 0 || dock != 0 ||
                 !World.Objects.TryGetValue(target, out MapObject item) || item.Kind != 12 ||
-                !World.HasPosition || World.Position.Distance(item.Position) > 5000)
+                !World.HasPosition || World.Position.Distance(item.Position) > 5000 + Math.Max(0, radius))
                 return;
             followTarget = 0;
             dock = target; dockAt = clock.Elapsed.TotalSeconds; dockRequested = false;
@@ -1070,9 +1073,10 @@ namespace FortyTwoAndBeyond.Protocol
                 bool receivedSector = ReceiveSectorBatch();
                 // A replayed datagram may carry no new frames. Re-acknowledge the
                 // ordered prefix anyway so a lost ACK cannot stall the sender.
-                if (receivedSector) Send(0x2021, Wire.Body(w => w.Write(stream.Expected)));
+                if (receivedSector && handoff == null) Send(0x2021, Wire.Body(w => w.Write(stream.Expected)));
                 double now = clock.Elapsed.TotalSeconds;
                 if (handoff != null) { Enter(handoff); return; }
+                AdvanceGalaxyTravel(now);
                 if (Ready && World.Station != null && !World.AggregateStation && now >= aggregateStationAt)
                     RequestStationAggregation();
                 if (pendingLoot != 0 && now - pendingLootAt > 5)
