@@ -2,13 +2,41 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 import socket
 import unittest
+from unittest.mock import Mock, patch
 
-from .local_relays import LoopbackRelay, proxy_listener_ports
+from .local_relays import LoopbackRelay, ProfileRelays, proxy_listener_ports
 
 
 class RelayTests(unittest.TestCase):
+    def test_slow_proxy_start_is_not_killed_after_ten_seconds(self) -> None:
+        """Accept dynamic listeners appearing after the old premature deadline."""
+        with patch('win_legacy.local_relays.time.monotonic', side_effect=[0., 0., 11.]), \
+             patch('win_legacy.local_relays.time.sleep'), \
+             patch('win_legacy.local_relays.proxy_listener_ports', side_effect=[[], [51001, 51002]]), \
+             patch('win_legacy.local_relays.LoopbackRelay', side_effect=[Mock(), Mock()]):
+            relays = ProfileRelays(42, '127.0.0.2')
+            relays.start()
+            self.assertEqual(len(relays.relays), 2)
+            for relay in relays.relays:
+                relay.start.assert_called_once()
+            relays.close()
+
+    @unittest.skipUnless(os.name == 'nt', 'Windows owned process handle mocks')
+    def test_reports_proxy_exit_immediately_with_log_path(self) -> None:
+        """Do not hide an exited proxy behind a generic listener timeout."""
+        import win32event
+
+        with patch('win32event.WaitForSingleObject', return_value=win32event.WAIT_OBJECT_0), \
+             patch('win32process.GetExitCodeProcess', return_value=5), \
+             patch('win_legacy.local_relays.proxy_listener_ports') as listeners:
+            relays = ProfileRelays(42, '127.0.0.2', process_handle=123, log_path=Path('proxy.log'))
+            with self.assertRaisesRegex(RuntimeError, r'exited with code 5.*proxy\.log'):
+                relays.start()
+            listeners.assert_not_called()
+
     def test_bidirectional_stream_survives_client_half_close(self) -> None:
         """Allow a response after the client finishes sending its request."""
         with socket.socket() as server:

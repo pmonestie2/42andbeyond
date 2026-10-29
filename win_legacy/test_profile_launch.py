@@ -46,7 +46,8 @@ class ProfileLaunchTests(unittest.TestCase):
                 launch_profile('pilot1', '192.168.47.1', client, proxy, no_build=True, scale='normal')
             ensure.assert_called_once_with(profile.client, profile.proxy)
             scaling.assert_called_once_with(profile.client, 'normal')
-            self.assertEqual(job.start.call_args.kwargs, {'loopback': '127.0.0.2'})
+            self.assertEqual(job.start.call_args.kwargs['loopback'], '127.0.0.2')
+            self.assertTrue(job.start.call_args.kwargs['log_path'].is_relative_to(profile.directory / 'logs'))
             job.close.assert_called_once()
             relays.close.assert_called_once()
             job.wait.assert_not_called()
@@ -81,3 +82,20 @@ class ProfileLaunchTests(unittest.TestCase):
             close.assert_called_once()
             process.Close.assert_called_once()
             thread.Close.assert_called_once()
+
+    def test_proxy_output_is_written_to_private_log_with_scoped_handle_inheritance(self) -> None:
+        """Capture native output without changing console handles or game processes."""
+        import win32file
+        import win32process
+        from .local_windows import proxy_output
+
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / 'logs/proxy.log'
+            startup = win32process.STARTUPINFO()
+            with patch('os.set_handle_inheritable', wraps=os.set_handle_inheritable) as set_inherit:
+                with proxy_output(startup, path) as inherit:
+                    self.assertTrue(inherit)
+                    self.assertTrue(os.get_handle_inheritable(int(startup.hStdOutput)))
+                    win32file.WriteFile(startup.hStdOutput, b'proxy startup fixture\n')
+                self.assertEqual([call.args[1] for call in set_inherit.call_args_list], [True, True, False, False])
+            self.assertEqual(path.read_bytes(), b'proxy startup fixture\n')
