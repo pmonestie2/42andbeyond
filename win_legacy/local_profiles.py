@@ -267,12 +267,13 @@ def launch_profile(name: str, server: str, client: Path, proxy: Path, *, no_buil
         with ProfileDns(profile), LocalProxyCertificate(profile.proxy, instances=True), ClientScaling(profile.client, scale):
             job = ProxyJob()
             relays: ProfileRelays | None = None
+            proxy_log = profile.directory / 'logs' / f'proxy-{uuid.uuid4().hex}.log'
             try:
                 with named_mutex('Global\\FortyTwoAndBeyondClientStartup', timeout=0):
                     isolate_existing_windows(client)
-                    job.start(plan.arguments(), profile.proxy.parent, loopback=profile.address)
+                    job.start(plan.arguments(), profile.proxy.parent, loopback=profile.address, log_path=proxy_log)
                     if job.pid is None: raise RuntimeError('Private proxy process was not created')
-                    relays = ProfileRelays(job.pid,profile.address)
+                    relays = ProfileRelays(job.pid,profile.address, process_handle=job.process, log_path=proxy_log)
                     relays.start()
                     wait_for_client_window(job)
                 (profile.directory / 'launch.local.json').write_text(json.dumps({'proxy_pid': job.pid, 'server': server}))

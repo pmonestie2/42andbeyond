@@ -45,6 +45,11 @@ replaces its existing session. Finish one client's startup dialog before opening
 the next. Keep each launcher console open. The original installed client may
 stay open while named instances run.
 
+Slow game startup has up to two minutes to open the proxy listeners. If the
+proxy exits first, the launcher reports its exit code immediately. Native proxy
+output is retained in `server/state/clients/<name>/logs/proxy-<id>.log`; a startup
+error names the relevant log.
+
 Each name reserves one of eight private loopback addresses (`127.0.0.2` through
 `127.0.0.9`). All instances use the installed game assets directly through
 directory/file links. The small launch view under `server/state/clients/<name>`

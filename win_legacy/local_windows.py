@@ -6,6 +6,8 @@ before the temporary local-certificate DNS override is restored.
 """
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 import os
 from pathlib import Path
 import subprocess
@@ -21,6 +23,36 @@ from server.tools.build import ROOT
 from server.tools.process_info import process_path
 
 from .hosts_config import MARKER, local_hosts, restore_local_hosts
+
+
+@contextmanager
+def proxy_output(startup: win32process.STARTUPINFO, log_path: Path | None) -> Iterator[bool]:
+    """Redirect only the newly created proxy's output to its startup log.
+
+    Returns:
+        Iterator[bool]: Whether CreateProcess must inherit the standard handles.
+
+    Raises:
+        OSError: The startup log or inheritable handles cannot be prepared.
+    """
+    if log_path is None:
+        yield False
+        return
+    import msvcrt
+
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with log_path.open('ab', buffering=0) as output, open(os.devnull, 'rb') as input_stream:
+        handles = [msvcrt.get_osfhandle(output.fileno()), msvcrt.get_osfhandle(input_stream.fileno())]
+        try:
+            for handle in handles:
+                os.set_handle_inheritable(handle, True)
+            startup.dwFlags |= win32con.STARTF_USESTDHANDLES
+            startup.hStdOutput = startup.hStdError = handles[0]
+            startup.hStdInput = handles[1]
+            yield True
+        finally:
+            for handle in handles:
+                os.set_handle_inheritable(handle, False)
 
 
 
@@ -81,7 +113,7 @@ class ProxyJob:
         self.process: int | None = None
         self.pid: int | None = None
 
-    def start(self, arguments: list[str], directory: Path, *, loopback: str | None = None) -> None:
+    def start(self, arguments: list[str], directory: Path, *, loopback: str | None = None, log_path: Path | None = None) -> None:
         """Start only the owned proxy, configuring its private interface before resume."""
         job = win32job.CreateJobObject(None, '')
         settings = win32job.QueryInformationJobObject(job, win32job.JobObjectExtendedLimitInformation)
@@ -93,8 +125,9 @@ class ProxyJob:
         startup.wShowWindow = win32con.SW_HIDE
         # Suspend before assigning the job so the game cannot spawn outside our
         # owned process tree between CreateProcess and AssignProcessToJobObject.
-        process, thread, pid, _ = win32process.CreateProcess(arguments[0], subprocess.list2cmdline(arguments), None, None, False,
-            win32con.CREATE_SUSPENDED | win32con.CREATE_NO_WINDOW, None, str(directory), startup)
+        with proxy_output(startup, log_path) as inherit:
+            process, thread, pid, _ = win32process.CreateProcess(arguments[0], subprocess.list2cmdline(arguments), None, None, inherit,
+                win32con.CREATE_SUSPENDED | win32con.CREATE_NO_WINDOW, None, str(directory), startup)
         try:
             if loopback is not None:
                 from .proxy_loopback import configure_proxy_loopback

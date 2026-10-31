@@ -188,10 +188,11 @@ class LoopbackRelay:
 
 
 class ProfileRelays:
-    def __init__(self, pid: int, address: str, *, log_path: Path | None = None) -> None:
+    def __init__(self, pid: int, address: str, *, process_handle: int | None = None, log_path: Path | None = None) -> None:
         """Track fallback relays for one owned proxy and private interface."""
         self.pid = pid
         self.address = address
+        self.process_handle = process_handle
         self.log_path = log_path
         self.relays: list[LoopbackRelay] = []
 
@@ -199,15 +200,27 @@ class ProfileRelays:
         """Discover both dynamic listeners and install their localhost relays.
 
         Raises:
-            TimeoutError: The proxy does not create both listeners within ten seconds.
+            RuntimeError: The owned proxy exits before opening its listeners.
+            TimeoutError: The proxy does not create both listeners within two minutes.
             OSError: A listener cannot be enumerated or a relay port is unavailable.
         """
-        deadline = time.monotonic() + 10
+        # The native proxy itself waits up to 50s for the game window before
+        # starting listeners. A 10s launcher deadline killed valid slow starts.
+        deadline = time.monotonic() + 120
+        ports: list[int] = []
+        diagnostic = f'; proxy log: {self.log_path}' if self.log_path is not None else ''
         while time.monotonic() < deadline:
+            if self.process_handle is not None:
+                import win32event
+                import win32process
+                if win32event.WaitForSingleObject(self.process_handle, 0) == win32event.WAIT_OBJECT_0:
+                    code = win32process.GetExitCodeProcess(self.process_handle)
+                    raise RuntimeError(f'Private proxy exited with code {code} before opening master/sector listeners{diagnostic}')
             ports = proxy_listener_ports(self.pid,self.address)
             if len(ports) == 2: break
             time.sleep(.1)
-        else: raise TimeoutError('Private proxy master/sector listeners did not appear')
+        else:
+            raise TimeoutError(f'Private proxy master/sector listeners did not appear within 120s (observed {ports}){diagnostic}')
         try:
             for port in ports:
                 relay = LoopbackRelay(self.address,port,log_path=self.log_path)
