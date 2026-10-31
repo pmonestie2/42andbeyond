@@ -252,7 +252,7 @@ impl PlayerSession {
                 self.mob_visible.get(index).copied().unwrap_or(false),
             )
     }
-    pub(super) fn mob_target_in_scan(&self, target: u32) -> io::Result<bool> {
+    pub(crate) fn mob_target_in_scan(&self, target: u32) -> io::Result<bool> {
         let Some(index) = target.checked_sub(MOB_ID).map(|index| index as usize) else {
             return Ok(false);
         };
@@ -314,7 +314,8 @@ impl PlayerSession {
             .is_some_and(|when| Instant::now() >= when);
         for (index, mob) in combat.actors.iter().enumerate() {
             if mob.state != self.mob_states[index] {
-                if mob.state == MobState::Dead && self.mob_visible[index] {
+                if mob.state == MobState::Dead && !mob.developer_removed && self.mob_visible[index]
+                {
                     self.pending
                         .push(packets::message("MOB defeated; waiting for respawn."));
                 }

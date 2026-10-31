@@ -16,15 +16,19 @@ def main() -> None:
     """Run editor checks without reading or modifying existing player state."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--editor')
+    parser.add_argument('--server-binary', type=Path, help='Use an existing server build for the owned loopback fixture')
     parser.add_argument('--skip-build', action='store_true')
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument('--art-only', action='store_true', help='Capture the flight view without warp travel')
     mode.add_argument('--buff-only', action='store_true', help='Exercise mounted Turbo Weapons through the quick bar')
     mode.add_argument('--ui-only', action='store_true', help='Capture the tactical target and equipment panels')
     mode.add_argument('--follow-only', action='store_true', help='Verify server-directed ship heading')
+    mode.add_argument('--transit-only', action='store_true', help='Verify native wormhole and gate departure/arrival')
     mode.add_argument('--warp-only', action='store_true', help='Capture the warped flight view and motion')
     mode.add_argument('--rally-only', action='store_true', help='Capture original Rally rigs in a disposable flight scene')
     mode.add_argument('--invite-only', action='store_true', help='Accept a peer invitation through the retained popup')
+    mode.add_argument('--items-only', action='store_true', help='Verify local item search and explicit vendor inspection')
+    mode.add_argument('--cloak-only', action='store_true', help='Verify authoritative JE cloak fade and restoration')
     parser.add_argument('--batchmode', action='store_true', help='Run the editor without its interactive window')
     parser.add_argument('--character-class', choices=('te', 'tt', 'ts', 'jd', 'js', 'je',
                                                        'pw', 'pp', 'ps'), default='te',
@@ -41,7 +45,7 @@ def main() -> None:
     editor = find_editor(args.editor)
     output = project / 'Builds/verification'
     output.mkdir(parents=True, exist_ok=True)
-    captures = ('group-invite.png',) if args.invite_only else ('rally-native.png', 'rally-oblique.png') if args.rally_only else ('warp-motion.png',) if args.warp_only else (
+    captures = ('wormhole-departure.png', 'wormhole-arrival.png', 'wormhole-repeat-0.png', 'wormhole-repeat-1.png', 'wormhole-repeat-2.png', 'gate-departure.png', 'gate-arrival.png') if args.transit_only else ('item-search.png', 'vendor-inspect.png') if args.items_only else ('cloak-before.png', 'cloak-active.png', 'cloak-restored.png') if args.cloak_only else ('group-invite.png',) if args.invite_only else ('rally-native.png', 'rally-oblique.png') if args.rally_only else ('warp-motion.png',) if args.warp_only else (
         'follow-turn.png', 'follow.png', 'follow-object.png') if args.follow_only else (
         'mob-target.png', 'equipment.png', 'ui-chart.png') if args.ui_only else (
         'turbo-buff.png',) if args.buff_only else ('chase.png',) if args.art_only else (
@@ -56,11 +60,14 @@ def main() -> None:
             '-executeMethod', 'FortyTwoAndBeyond.Editor.BuildClient.BuildMac', '-logFile', str(output / 'build.log'),
         ], check=True, timeout=600)
     cargo = shutil.which('cargo') or str(Path.home() / '.cargo/bin/cargo')
-    subprocess.run([cargo, 'build', '--locked', '--manifest-path', str(root / 'server/Cargo.toml')], check=True)
+    if args.server_binary is None:
+        subprocess.run([cargo, 'build', '--locked', '--manifest-path', str(root / 'server/Cargo.toml')], check=True)
+    executable = args.server_binary.resolve() if args.server_binary else root / 'server/target/debug/beyond-server'
+    if not executable.is_file():
+        raise FileNotFoundError(executable)
     with tempfile.TemporaryDirectory(prefix='client-visual-') as temporary:
         state = Path(temporary)
-        executable = root / 'server/target/debug/beyond-server'
-        if args.buff_only or args.rally_only:
+        if args.buff_only or args.rally_only or args.transit_only:
             subprocess.run([str(executable), '--state-dir', str(state), '--seed-demo-accounts'],
                            check=True, stdout=subprocess.DEVNULL)
         for account, character, password in (
@@ -69,8 +76,10 @@ def main() -> None:
             subprocess.run([
                 str(executable), '--state-dir', str(state), '--create-account', account,
                 '--character', character,
-                *(['--class', args.character_class] if account == 'local' else []),
+                *(['--class', 'je' if args.cloak_only or args.transit_only else args.character_class] if account == 'local' else []),
             ], input=password + '\n', text=True, check=True, stdout=subprocess.DEVNULL)
+        if args.items_only:
+            (state / 'player.json').write_text(json.dumps({'version': 1, 'sector': 10761, 'home_station': 10761, 'position': [0, 0, 0]}))
         sector = json.loads((root / 'server/data/asteroid_belt_alpha.json').read_text())
         sector['mobs'][0]['spawn'] = [0.0, 3000.0, 0.0] if args.follow_only else [1000.0, 0.0, 0.0]
         if args.follow_only:
@@ -102,12 +111,17 @@ def main() -> None:
                 if args.batchmode:
                     editor_command.append('-batchmode')
                 editor_command.extend(['-projectPath', str(project),
+                    '--42andbeyond-transit-smoke' if args.transit_only else
                     '--42andbeyond-invite-smoke' if args.invite_only else
                     '--42andbeyond-buff-visual-smoke' if args.buff_only else
                     '--42andbeyond-follow-smoke' if args.follow_only else
                     '--42andbeyond-rally-art-smoke' if args.rally_only else
                     '--42andbeyond-warp-motion-smoke' if args.warp_only else
                     '--42andbeyond-art-smoke' if args.art_only else '--42andbeyond-visual-smoke'])
+                if args.items_only:
+                    editor_command.append('--42andbeyond-items-smoke')
+                if args.cloak_only:
+                    editor_command.append('--42andbeyond-cloak-smoke')
                 if args.ui_only:
                     editor_command.append('--42andbeyond-ui-smoke')
                 if args.isolated_art:
@@ -123,7 +137,10 @@ def main() -> None:
     for name in captures:
         if not (output / name).is_file():
             raise FileNotFoundError(f'Missing Unity screenshot: {name}')
-    check_name = ('peer invitation popup and acceptance' if args.invite_only else
+    if args.transit_only and 'PASS: four native wormholes' not in (output / 'visual.log').read_text(errors='replace'):
+        raise RuntimeError('Unity did not confirm repeated native transfers and presentation cleanup.')
+    check_name = ('four wormholes, same-sector repeats, cleanup and gate transit' if args.transit_only else
+                  'peer invitation popup and acceptance'  if args.invite_only else
                   'clean Rally effect in chase and oblique views' if args.rally_only else
                   'warp motion and distortion' if args.warp_only else
                   'follow heading' if args.follow_only else

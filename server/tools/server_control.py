@@ -2,14 +2,17 @@
 from __future__ import annotations
 
 import argparse
+import errno
 import json
 from pathlib import Path
+import socket
 import subprocess
 import sys
 import time
 
 from restart_server import launch, process_identity, wait_ready
 from build import ROOT
+from server_network import sandbox_address
 
 
 def print_banner() -> None:
@@ -75,6 +78,30 @@ def follow_log() -> None:
         viewer.wait()
 
 
+def require_local_address(address: str) -> None:
+    """Check an explicit bind before launching or changing saved server state.
+
+    Raises:
+        ValueError: The address is not loopback or private IPv4.
+        RuntimeError: The selected address is absent from this machine.
+        OSError: Another socket error prevents the availability check.
+    """
+    address = sandbox_address(address)
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+            probe.bind((address, 0))
+    except OSError as error:
+        if error.errno == errno.EADDRNOTAVAIL or getattr(error, 'winerror', None) == 10049:
+            raise RuntimeError(
+                f'{address} is not assigned to this machine. Restore its LAN/VM network '
+                'and retry, or choose an existing interface with --bind ADDRESS. '
+                'For Mac-only play: ./serverctrl start --bind 127.0.0.1 '
+                '(connect the Mac client to 127.0.0.1). '
+                'No address was substituted; Windows clients need the same reachable server address.'
+            ) from error
+        raise
+
+
 def control(action: str, state: Path, bind: str | None, binary: Path | None,
             follow: bool = True) -> None:
     """Perform one process-owned action using the server's durable record."""
@@ -124,6 +151,7 @@ def control(action: str, state: Path, bind: str | None, binary: Path | None,
         command = [str(executable), '--bind', address,
                    '--content', str(ROOT / 'data/asteroid_belt_alpha.json'),
                    '--state-dir', str(state)]
+    require_local_address(address)
     process = launch(command, ROOT / 'logs')
     wait_ready(process, address)
     ready = recorded_command(state)

@@ -1,0 +1,8 @@
+{
+  "source": "https://github.com/CosmosMuseum/cosmos-museum-sun",
+  "commit": "342f1fb56affdd1e8b1ec744c698f8afe89e1cbb",
+  "license": "MIT",
+  "credit": "Cosmos Museum / Sebasti\u00e1n Vasquez; original procedural shader by Panteleymonov Aleksandr (2015\u20132016).",
+  "sha256": "ed0e6b34f2513105488fd7860355c21bc5cd31cfe4f32f6f93915c185c3239f4",
+  "adaptations": "GLSL to HLSL; actual 3D opaque photosphere plus separately blended corona, warm palette, scene lighting and GPU time uniforms. No web UI or background renderer imported."
+}

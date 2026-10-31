@@ -12,6 +12,7 @@ namespace FortyTwoAndBeyond.Client
             new Vector2(9, -12), new Vector2(9, 22),
             new Vector2(-181, -12), new Vector2(-181, 22)
         };
+        private readonly HudWindowDrag windowDrag = new HudWindowDrag();
         private readonly SpaceClient client;
         private readonly FlightHud flightHud;
         private uint selectedId;
@@ -70,7 +71,7 @@ namespace FortyTwoAndBeyond.Client
         private Rect PanelRect(bool open, bool concurrent)
         {
             float height = open ? concurrent ? 338 : 286 : 160;
-            return new Rect((CanvasWidth - 370) * .5f, CanvasHeight - height - 122, 370, height);
+            return windowDrag.Bounds(new Rect((CanvasWidth - 370) * .5f, CanvasHeight - height - 122, 370, height), CanvasWidth, CanvasHeight);
         }
 
         /// <summary>Draw limited world labels and the selected asteroid's server-owned ore stock.</summary>
@@ -96,10 +97,9 @@ namespace FortyTwoAndBeyond.Client
             bool open = snapshot.ResourceWindowOpen && snapshot.ResourceTargetId == selectedId;
             bool prospecting = snapshot.MiningProspect?.TargetId == selectedId;
             bool tractoring = snapshot.MiningTractor?.TargetId == selectedId;
-            Rect panel = PanelRect(open, prospecting && tractoring);
-            flightHud.Panel(panel);
-            Fill(new Rect(panel.x + 12, panel.y + 13, 5, 5), new Color(.25f, .95f, .85f));
-            GUI.Label(new Rect(panel.x + 25, panel.y + 7, panel.width - 37, 18), "RESOURCE SCAN", flightHud.SmallStyle);
+            Rect panel = windowDrag.Handle(PanelRect(open, prospecting && tractoring), CanvasWidth, CanvasHeight);
+            flightHud.Panel(panel); HudWindowDrag.DrawGrip(panel);
+            GUI.Label(new Rect(panel.x + 36, panel.y + 7, panel.width - 37, 18), "RESOURCE SCAN", flightHud.SmallStyle);
             GUI.Label(new Rect(panel.x + 12, panel.y + 27, panel.width - 24, 22),
                 resource.Name.ToUpperInvariant(), flightHud.BodyStyle);
             float distance = resource.Position.Distance(snapshot.Position);
@@ -180,7 +180,6 @@ namespace FortyTwoAndBeyond.Client
                     new Color(.38f, .87f, .82f);
                 Fill(new Rect(point.x - 5, point.y - 5, 10, 2), signal);
                 Fill(new Rect(point.x - 5, point.y - 5, 2, 10), signal);
-                if (client.Chart && selectedId != resource.Id) continue;
                 if (shown >= 4 && selectedId != resource.Id) continue;
                 Rect label = Rect.zero;
                 foreach (Vector2 offset in ResourceLabelOffsets)

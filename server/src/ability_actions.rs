@@ -342,7 +342,8 @@ impl PlayerSession {
             return Err(invalid("Insufficient reactor energy."));
         }
         if ability.kind == AbilityKind::Wormhole {
-            self.sectors.sector(ability.destination.unwrap())?;
+            self.sectors
+                .wormhole_arrival(ability.destination.unwrap())?;
         }
         if ability.kind == AbilityKind::Cloak && ability.rank < 5 && self.motion.speed.abs() > 0.1 {
             return Err(invalid("Stop the ship before using this cloak rank."));
@@ -1656,7 +1657,7 @@ impl PlayerSession {
                     origin_sector: self.sector.id,
                     origin: self.position,
                 });
-                self.transfer_sector(destination, false)?;
+                self.transfer_wormhole(destination)?;
             }
             AbilityKind::RechargeShields => {
                 let amount = recharge_amount

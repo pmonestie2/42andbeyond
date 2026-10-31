@@ -159,7 +159,6 @@ namespace FortyTwoAndBeyond.Client
         private LineRenderer lootHalo, lootCore, lootFilament, lootRing;
         private LootActivity lootActivity;
         private Vector3 lootPoint;
-        private readonly LineRenderer[] warpStreaks = new LineRenderer[28];
         private readonly LineRenderer[] driveHalos = new LineRenderer[2];
         private readonly LineRenderer[] driveCores = new LineRenderer[2];
         private readonly LineRenderer[] driveFins = new LineRenderer[2];
@@ -211,14 +210,11 @@ namespace FortyTwoAndBeyond.Client
         private readonly Dictionary<ulong, NativeFoldVisual> nativeFold =
             new Dictionary<ulong, NativeFoldVisual>();
         private readonly Dictionary<ulong, uint> foldTargets = new Dictionary<ulong, uint>();
-        private NativeWormholeVisual nativeWormhole;
-        private uint wormholeEffectId;
         private uint rallyEffectId;
         private ushort rallyDescriptor;
         private RallyHullFrame rallyHull;
         private WarpPhase warpPhase;
         private bool warpArrived;
-        private float warpChangedAt;
         private long lastShotSequence, lastDamageSequence;
         private uint playerId;
 
@@ -443,7 +439,6 @@ namespace FortyTwoAndBeyond.Client
             SetInversionVisual(snapshot);
             SetSelfDestructVisual(snapshot);
             SetFoldVisuals(snapshot);
-            SetWormholeVisual(snapshot);
             foreach (ShotEvent shot in snapshot.Shots)
             {
                 if (shot.Sequence <= lastShotSequence) continue;
@@ -1065,7 +1060,6 @@ namespace FortyTwoAndBeyond.Client
             TickInversionVisual();
             nativeSelfDestruct?.Tick(player.position, player.forward, ViewCamera());
             TickFoldVisuals();
-            nativeWormhole?.Tick(player.position, player.rotation);
         }
 
         /// <summary>Track each confirmed Shield Sap strand for its one-second native duration.</summary>
@@ -1609,31 +1603,6 @@ namespace FortyTwoAndBeyond.Client
             foldTargets.Clear();
         }
 
-        /// <summary>Attach original Create Wormhole cast emitters to the pilot.</summary>
-        private void SetWormholeVisual(Snapshot snapshot)
-        {
-            NativeObjectEffect effect = snapshot.Station == null ?
-                snapshot.ObjectEffects.FirstOrDefault(candidate =>
-                    candidate.OwnerId == snapshot.PlayerId && candidate.Descriptor == 689) : null;
-            if (effect == null)
-            {
-                ClearWormholeVisual();
-                return;
-            }
-            if (nativeWormhole != null && wormholeEffectId == effect.EffectId) return;
-            ClearWormholeVisual();
-            nativeWormhole = new NativeWormholeVisual(parent);
-            wormholeEffectId = effect.EffectId;
-        }
-
-        /// <summary>Release the original portal when its cast effect ends.</summary>
-        private void ClearWormholeVisual()
-        {
-            nativeWormhole?.Dispose();
-            nativeWormhole = null;
-            wormholeEffectId = 0;
-        }
-
         /// <summary>Create a ship-local tactical field only for a confirmed Rally visual.</summary>
         private void SetRallyBuff(DeviceBuffView buff, bool docked)
         {
@@ -2118,7 +2087,7 @@ namespace FortyTwoAndBeyond.Client
         private void SetWarpPhase(WarpPhase phase, bool arrived)
         {
             if (warpPhase == phase && warpArrived == arrived) return;
-            warpPhase = phase; warpArrived = arrived; warpChangedAt = Time.unscaledTime;
+            warpPhase = phase; warpArrived = arrived;
             if (phase == WarpPhase.Idle)
             { ClearWarp(); return; }
             if (phase == WarpPhase.Charging || phase == WarpPhase.Traveling)
@@ -2130,71 +2099,19 @@ namespace FortyTwoAndBeyond.Client
                 ClearMining();
                 ClearLoot();
             }
-            for (int index = 0; index < warpStreaks.Length; index++)
-                if (warpStreaks[index] == null)
-                {
-                    warpStreaks[index] = Line("Warp velocity streak", .045f,
-                        new Color(.45f, .84f, 1f, .4f), 8);
-                    if (warpStreaks[index] != null)
-                    {
-                        warpStreaks[index].widthCurve = new AnimationCurve(
-                            new Keyframe(0, .05f), new Keyframe(.35f, 1f),
-                            new Keyframe(1, .1f));
-                        warpStreaks[index].enabled = false;
-                    }
-                }
             TickWarp();
         }
 
-        /// <summary>Curve phase-specific star trails through the distorted warp view.</summary>
+        /// <summary>Ease the camera's field of view with the native warp phase; scene lensing owns motion cues.</summary>
         private void TickWarp()
         {
             if (warpPhase == WarpPhase.Idle) return;
             Camera camera = ViewCamera();
-            if (camera == null) return;
-            if (camera.orthographic)
-            {
-                foreach (LineRenderer streak in warpStreaks)
-                    if (streak != null) streak.enabled = false;
-                return;
-            }
-            float age = Time.unscaledTime - warpChangedAt;
-            float fade = warpPhase == WarpPhase.Charging ? Mathf.Clamp01(age / 1.2f) :
-                warpPhase == WarpPhase.Recovering ? 1 - Mathf.Clamp01(age / 2f) : 1;
-            float targetFieldOfView = warpPhase == WarpPhase.Traveling ? normalFieldOfView + 11f :
-                warpPhase == WarpPhase.Charging ? normalFieldOfView + 4f : normalFieldOfView;
+            if (camera == null || camera.orthographic) return;
+            float targetFieldOfView = warpPhase == WarpPhase.Traveling ? normalFieldOfView + 6f :
+                warpPhase == WarpPhase.Charging ? normalFieldOfView + 1.5f : normalFieldOfView;
             camera.fieldOfView = Mathf.Lerp(camera.fieldOfView, targetFieldOfView,
-                1 - Mathf.Exp(-5f * Time.unscaledDeltaTime));
-            for (int index = 0; index < warpStreaks.Length; index++)
-            {
-                LineRenderer streak = warpStreaks[index];
-                if (streak == null) continue;
-                float angle = index * 2.39996f;
-                float radius = .085f + (index % 7) * .036f;
-                float rate = warpPhase == WarpPhase.Traveling ? .8f : .28f;
-                float drift = Mathf.Repeat(Time.unscaledTime * rate + index * .217f, 1f) * .19f;
-                float length = warpPhase == WarpPhase.Traveling ? .24f :
-                    warpPhase == WarpPhase.Charging ? .055f : .1f;
-                for (int point = 0; point < 8; point++)
-                {
-                    float progress = point / 7f;
-                    float twist = fade * progress * progress *
-                        (.07f * Mathf.Sin(age * 1.7f + index * .83f) +
-                        .025f * Mathf.Sin(progress * 6f + index));
-                    float reach = radius + drift + length * progress;
-                    float heading = angle + twist;
-                    streak.SetPosition(point, camera.ViewportToWorldPoint(new Vector3(
-                        .5f + Mathf.Cos(heading) * reach,
-                        .5f + Mathf.Sin(heading) * reach, 8f)));
-                }
-                streak.enabled = true;
-                Color color = warpArrived ? new Color(1f, .74f, .34f) : new Color(.44f, .83f, 1f);
-                color.a = .22f * fade;
-                streak.startColor = streak.endColor = color;
-                Color tip = color; tip.a = .78f * fade;
-                streak.endColor = tip;
-                streak.widthMultiplier = (warpPhase == WarpPhase.Traveling ? .07f : .045f) * fade;
-            }
+                1 - Mathf.Exp(-3f * Time.unscaledDeltaTime));
         }
 
         /// <summary>Draw tapered engine wakes from authoritative speed and warp phase.</summary>
@@ -2245,15 +2162,10 @@ namespace FortyTwoAndBeyond.Client
             }
         }
 
-        /// <summary>Remove travel streaks when the server returns to idle or the scene resets.</summary>
+        /// <summary>Restore the camera when the server returns to idle or the scene resets.</summary>
         private void ClearWarp()
         {
             if (effectCamera != null) effectCamera.fieldOfView = normalFieldOfView;
-            for (int index = 0; index < warpStreaks.Length; index++)
-            {
-                if (warpStreaks[index] != null) Object.Destroy(warpStreaks[index].gameObject);
-                warpStreaks[index] = null;
-            }
         }
 
         /// <summary>Remove both independent mining visuals when leaving the sector or warping.</summary>
@@ -2380,7 +2292,6 @@ namespace FortyTwoAndBeyond.Client
             ClearInversionVisual();
             ClearSelfDestructVisual();
             ClearFoldVisuals();
-            ClearWormholeVisual();
             ClearWarp(); warpPhase = WarpPhase.Idle; warpArrived = false;
             driveSpeed = 0;
             for (int side = 0; side < 2; side++)

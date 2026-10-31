@@ -14,6 +14,8 @@ def main() -> None:
     """Run one owned local server and graphical Editor, then check its capture."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--unity', required=True, type=Path)
+    parser.add_argument('--shortcuts-only', action='store_true', help='Verify fitted-item shortcuts and the five-resolution UI regression matrix')
+    parser.add_argument('--motion-only', action='store_true', help='Measure real-server normal turning and warp interpolation')
     parser.add_argument('--batchmode', action='store_true',
                         help='Run the owned Unity Editor in batch mode while preserving rendering.')
     options = parser.parse_args()
@@ -23,6 +25,21 @@ def main() -> None:
     executable = server_root / 'target/debug/beyond-server'
     if not executable.is_file() or not options.unity.is_file():
         raise FileNotFoundError('Build the debug server and provide the Unity Editor executable.')
+    verification = project / 'Builds/verification'
+    verification.mkdir(parents=True, exist_ok=True)
+    captures = (['equipment-shortcuts.png', 'systems-expanded.png', 'systems-selector.png'] +
+                [f'ui-fitting-{width}x{height}.png' for width, height in
+                 ((960, 640), (1366, 768), (1920, 1080), (2560, 1440), (3840, 2160))] +
+                ['ui-login-960x640.png', 'ui-login-3840x2160.png', 'ui-fitting-expanded-24.png', 'ui-polished-flight.png', 'ui-polished-flight-clear.png', 'ui-combined-five-crew.png', 'ui-combined-organic.png', 'ui-combined-hover.png'] +
+                [f'ui-chat-{width}x{height}.png' for width, height in
+                 ((960, 640), (1366, 768), (1920, 1080), (2560, 1440), (3840, 2160))]) if options.shortcuts_only else [
+                    'loadout-ammo.png', 'loadout-flight.png', 'flight-deck-menu.png', 'launcher-ammo-menu.png',
+                    'loadout-hover.png', 'loadout-drag.png',
+                    'loadout-drag-invalid.png', 'galaxy-travel.png']
+    if options.motion_only:
+        captures=['warp-motion.png']
+    for name in captures:
+        (verification / name).unlink(missing_ok=True)
     with tempfile.TemporaryDirectory(prefix='loadout-visual-') as temporary:
         state = Path(temporary)
         subprocess.run([str(executable), '--state-dir', str(state), '--create-account',
@@ -52,10 +69,13 @@ def main() -> None:
         cargo = [None] * 22
         cargo[0], cargo[1] = stock(507, 20), stock(5931, 3)
         mounted = [None] * 20
-        for slot, template in ((0, 3628), (1, 3184), (2, 2507), (3, 2656)):
+        for slot, template in ((0, 3628), (1, 3184), (2, 2507), (3, 2656), (9, 1806)):
             mounted[slot] = stock(template)
+        ammunition = [None] * 20
+        if options.shortcuts_only:
+            ammunition[3] = stock(507, 20)
         (state / 'inventory.json').write_text(json.dumps({
-            'cargo': cargo, 'equipped': mounted, 'ammunition': [None] * 20}))
+            'cargo': cargo, 'equipped': mounted, 'ammunition': ammunition}))
         (state / 'player.json').write_text(json.dumps({
             'version': 1, 'sector': sector['id'], 'position': [0.0, 0.0, 0.0],
             'home_station': 10761}))
@@ -75,11 +95,11 @@ def main() -> None:
                 unity_log = state / 'unity.log'
                 subprocess.run([str(options.unity), '-projectPath', str(project),
                                 '-logFile', str(unity_log),
-                                '--42andbeyond-loadout-smoke'] +
+                                '--42andbeyond-warp-motion-smoke' if options.motion_only else ('--42andbeyond-shortcuts-smoke' if options.shortcuts_only else '--42andbeyond-loadout-smoke')] +
                                (['-batchmode'] if options.batchmode else []),
-                               check=True, timeout=140)
+                               check=True, timeout=220)
                 (project / 'Builds/verification/loadout-ui.log').write_text(unity_log.read_text(errors='replace'))
-                if 'PASS: cargo reordered, magazine loaded' not in unity_log.read_text(
+                if ('PASS: own warp render advanced' if options.motion_only else ('PASS: equipped weapon/device/passive drag' if options.shortcuts_only else 'PASS: cargo reordered, magazine loaded')) not in unity_log.read_text(
                         errors='replace'):
                     raise RuntimeError('Unity did not confirm authoritative ammo consumption.')
             except BaseException:
@@ -97,6 +117,18 @@ def main() -> None:
                 except subprocess.TimeoutExpired:
                     server.terminate()
                     server.wait(timeout=5)
+    for name in captures:
+        if not (verification / name).is_file():
+            raise FileNotFoundError(verification / name)
+    if options.motion_only:
+        print(f'PASS: real-server normal flight and warp; {verification / "warp-motion.png"}')
+        return
+    if options.shortcuts_only:
+        screenshot = project / 'Builds/verification/equipment-shortcuts.png'
+        if not screenshot.is_file():
+            raise FileNotFoundError(screenshot)
+        print(f'PASS: {screenshot}')
+        return
     screenshot = project / 'Builds/verification/loadout-ammo.png'
     if not screenshot.is_file():
         raise FileNotFoundError(screenshot)

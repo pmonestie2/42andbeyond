@@ -41,7 +41,9 @@ def exercise(binary: Path, host: str) -> None:
         (state/'sandbox_loadout.json').write_bytes((ROOT/'data/sandbox_loadout.json').read_bytes())
         universe=json.loads((ROOT/'data/universe.json').read_text())
         boss=next(mob for sector in universe for mob in sector['mobs'] if mob['name']=='The Controller')
-        boss.update(source_id=10,spawn=[4000.,0.,0.],respawn_seconds=120.)
+        # Keep the disposable Controller within the pilot's real beam range.
+        # Motion reports are corrective telemetry, not a way to move the pilot.
+        boss.update(source_id=10,spawn=[2200.,0.,0.],respawn_seconds=120.)
         content=json.loads((ROOT/'data/sector.json').read_text())
         content['mobs'],content['resources']=[boss],[]
         content_file=folder/'sector.json'
@@ -71,9 +73,6 @@ def exercise(binary: Path, host: str) -> None:
             player=client.ticket.player_id
             client.send(0x17,struct.pack('<II',player,0x10000001))
             client.send(0x2c,struct.pack('<4I',player,9,0x10000001,0))
-            # Native proxy prediction report: a bounded impulse-position update
-            # puts the test pilot in beam range while the MOB approaches it.
-            client.send(0x1004,struct.pack('<3f',1800.,0.,0.))
             wait(lambda:snapshot()['mobs'][0]['shield']<original['mobs'][0]['shield'])
             wait(lambda:snapshot()['shield']<original['shield']-2000.)
             assert any(frame.opcode==0xb and struct.unpack_from('<I',frame.body,2)[0]==player for frame in observed)

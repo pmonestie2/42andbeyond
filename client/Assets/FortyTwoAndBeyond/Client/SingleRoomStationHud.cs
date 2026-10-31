@@ -8,6 +8,8 @@ namespace FortyTwoAndBeyond.Client
     /// <summary>Aggregate the station's native rooms into one client directory and service workspace.</summary>
     public sealed class SingleRoomStationHud
     {
+        private readonly HudWindowDrag directoryDrag = new HudWindowDrag();
+        private readonly HudWindowDrag welcomeDrag = new HudWindowDrag();
         private readonly SpaceClient client;
         private readonly FlightHud hud;
         private Vector2 directoryScroll;
@@ -55,15 +57,16 @@ namespace FortyTwoAndBeyond.Client
 
             Rect directory = new Rect(24, 112, 304, height - 142);
             if (directoryCollapsed) directory.height = 54;
-            hud.Panel(directory);
-            GUI.Label(new Rect(40, 128, 230, 24), "STATION DIRECTORY", hud.BodyStyle);
-            if (GUI.Button(new Rect(278, 124, 34, 30), directoryCollapsed ? "+" : "−", hud.ButtonStyle))
+            directory = directoryDrag.Handle(directory, width, height);
+            hud.Panel(directory); HudWindowDrag.DrawGrip(directory);
+            GUI.Label(new Rect(directory.x + 36, directory.y + 16, 210, 24), "STATION DIRECTORY", hud.BodyStyle);
+            if (GUI.Button(new Rect(directory.xMax - 50, directory.y + 12, 34, 30), directoryCollapsed ? "+" : "−", hud.ButtonStyle))
                 directoryCollapsed = !directoryCollapsed;
             if (!directoryCollapsed)
             {
                 RenderedContacts = RenderedServices = 0;
                 if (Event.current.type == EventType.Repaint) DirectoryRenderCount++;
-                GUILayout.BeginArea(new Rect(40, 158, 272, Mathf.Max(180, height - 268)));
+                GUILayout.BeginArea(new Rect(directory.x + 16, directory.y + 46, 272, Mathf.Max(180, directory.height - 126)));
                 directoryScroll = GUILayout.BeginScrollView(directoryScroll);
                 GUILayout.Label("INDUSTRY SERVICES", hud.SmallStyle);
                 GUILayout.Space(7);
@@ -76,6 +79,8 @@ namespace FortyTwoAndBeyond.Client
                     { pendingContact = 0; client.ShowStationService(mode); }
                     RenderedServices++;
                 }
+                GUILayout.Space(8);
+                if (GUILayout.Button("Search galaxy items   ›", hud.ButtonStyle, GUILayout.Height(34))) client.OpenItemBrowser();
                 GUILayout.Space(12);
                 GUILayout.Label("VENDORS & CONTACTS", hud.SmallStyle);
                 GUILayout.Space(7);
@@ -94,15 +99,15 @@ namespace FortyTwoAndBeyond.Client
                 }
                 if (station.Contacts.Count == 0) GUILayout.Label("No contacts advertised here.", hud.SmallStyle);
                 GUILayout.EndScrollView(); GUILayout.EndArea();
-                GUI.Label(new Rect(40, height - 94, 272, 21), $"{snapshot.Credits:N0} CREDITS", hud.BodyStyle);
-                GUI.Label(new Rect(40, height - 68, 272, 20), station.Contacts.Count + " contacts in this concourse", hud.SmallStyle);
+                GUI.Label(new Rect(directory.x + 16, directory.yMax - 64, 272, 21), $"{snapshot.Credits:N0} CREDITS", hud.BodyStyle);
+                GUI.Label(new Rect(directory.x + 16, directory.yMax - 38, 272, 20), station.Contacts.Count + " contacts in this concourse", hud.SmallStyle);
             }
 
             if (!client.StationServiceOpen && snapshot.Dialogue == null)
             {
-                Rect workspace = Workspace(width, height);
-                hud.Panel(workspace);
-                GUI.Label(new Rect(workspace.x + 24, workspace.y + 22, workspace.width - 48, 30), "WELCOME TO THE CONCOURSE", hud.BodyStyle);
+                Rect workspace = welcomeDrag.Handle(Workspace(width, height), width, height);
+                hud.Panel(workspace); HudWindowDrag.DrawGrip(workspace);
+                GUI.Label(new Rect(workspace.x + 36, workspace.y + 22, workspace.width - 60, 30), "WELCOME TO THE CONCOURSE", hud.BodyStyle);
                 GUI.Label(new Rect(workspace.x + 24, workspace.y + 63, workspace.width - 48, 60),
                     "Choose a vendor or industry service from the directory.\nEvery station service is available in this room.", hud.SmallStyle);
                 GUI.Label(new Rect(workspace.x + 24, workspace.y + 149, workspace.width - 48, 30),

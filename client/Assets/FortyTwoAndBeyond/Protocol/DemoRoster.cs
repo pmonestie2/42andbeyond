@@ -54,6 +54,7 @@ namespace FortyTwoAndBeyond.Protocol
     public sealed class DemoRosterWorker : IDisposable
     {
         private readonly Thread thread;
+        private readonly CancellationTokenSource stop = new CancellationTokenSource();
         private readonly string host;
         private UdpClient socket;
         private DemoAccount[] accounts;
@@ -62,11 +63,10 @@ namespace FortyTwoAndBeyond.Protocol
         public DemoAccount[] Accounts => Volatile.Read(ref accounts);
         public string Error => Volatile.Read(ref error);
 
-        /// <summary>Start one bounded read-only query of a private server address.</summary>
+        /// <summary>Start one bounded read-only query of the selected server.</summary>
         public DemoRosterWorker(string host)
         {
-            LocalSession.LocalAddress(host);
-            this.host = host;
+            this.host = ServerEndpoint.NormalizeHost(host);
             thread = new Thread(Run) { IsBackground = true, Name = "42 and Beyond demo roster" };
             thread.Start();
         }
@@ -76,7 +76,7 @@ namespace FortyTwoAndBeyond.Protocol
         {
             try
             {
-                var endpoint = new IPEndPoint(LocalSession.LocalAddress(host), 3806);
+                var endpoint = new IPEndPoint(ServerEndpoint.Resolve(host, stop.Token), 3806);
                 using (var query = new UdpClient(AddressFamily.InterNetwork))
                 {
                     Volatile.Write(ref socket, query);
@@ -102,8 +102,10 @@ namespace FortyTwoAndBeyond.Protocol
         public void Dispose()
         {
             if (Interlocked.Exchange(ref disposed, 1) != 0) return;
+            stop.Cancel();
             Volatile.Read(ref socket)?.Close();
             thread.Join();
+            stop.Dispose();
         }
     }
 }

@@ -4,7 +4,18 @@ use super::*;
 
 impl PlayerSession {
     pub(super) fn refresh_target_verbs(&mut self, force: bool) {
-        if !self.logged_in || self.target == u32::MAX || self.sector.station.is_some() {
+        if !self.logged_in || self.target == u32::MAX {
+            return;
+        }
+        if self.sector.station.is_some() {
+            let verbs = if self.station_peers.contains_key(&self.target) {
+                vec![(6, if self.trade_ready() { 0 } else { 2 })]
+            } else { Vec::new() };
+            let frame = packets::target_verbs(self.target, &verbs);
+            if force || self.last_verbs.as_ref() != Some(&frame) {
+                self.pending.push(frame.clone());
+                self.last_verbs = Some(frame);
+            }
             return;
         }
         let mut verbs = Vec::new();
@@ -29,6 +40,7 @@ impl PlayerSession {
             // keyboard follow remains handled by the existing impulse command.
             let range =
                 (distance(self.position, peer.position) - crate::following::PLAYER_RADIUS).max(0.);
+            verbs.push((6, if alive && can_act && range <= 1000. { 0 } else { 2 }));
             verbs.push((13, if alive && range <= 1500. { 0 } else { 2 }));
             if peer.incapacitated && self.jumpstart_definition().is_ok() {
                 // Player::OnTargeted's UI range is one skill step shorter than
@@ -128,14 +140,14 @@ mod tests {
         ship.refresh_target_verbs(true);
         assert_eq!(
             ship.last_verbs,
-            Some(packets::target_verbs(ship.target, &[(4, 0), (13, 2)]))
+            Some(packets::target_verbs(ship.target, &[(4, 0), (6, 2), (13, 2)]))
         );
         peer.position[0] = 1745.; // Native player radius245 + follow range1500.
         ship.update_peer_view(&[peer.clone()], &[]);
         ship.refresh_target_verbs(false);
         assert_eq!(
             ship.last_verbs,
-            Some(packets::target_verbs(ship.target, &[(4, 0), (13, 0)]))
+            Some(packets::target_verbs(ship.target, &[(4, 0), (6, 2), (13, 0)]))
         );
         peer.hull = 0.;
         ship.update_peer_view(&[peer], &[]);
@@ -144,7 +156,7 @@ mod tests {
             ship.last_verbs,
             Some(packets::target_verbs(
                 ship.target,
-                &[(4, 2), (13, 2), (12, 0)]
+                &[(4, 2), (6, 2), (13, 2), (12, 0)]
             ))
         );
     }

@@ -1,6 +1,8 @@
 Shader "42 and Beyond/LegacyShip"
 {
     Properties {
+        [HideInInspector] _TravelClip ("Travel clip", Float) = 0
+        [HideInInspector] _TravelPlane ("Travel plane", Vector) = (0,0,1,0)
         _MainTex ("Original hull texture", 2D) = "white" {}
         _DetailTex ("Unwrapped panel texture", 2D) = "white" {}
         _UseDetail ("Use projected panels", Range(0,1)) = 0
@@ -16,6 +18,7 @@ Shader "42 and Beyond/LegacyShip"
     SubShader {
         Tags { "Queue"="AlphaTest" "RenderType"="TransparentCutout" }
         CGPROGRAM
+        float _TravelClip; float4 _TravelPlane;
         #pragma surface surf Standard fullforwardshadows alphatest:_Cutoff
         #pragma target 3.0
         sampler2D _MainTex, _DetailTex;
@@ -23,6 +26,7 @@ Shader "42 and Beyond/LegacyShip"
         half _Lift, _Glow, _UseAlpha, _UseDetail, _Desaturate, _PaintStrength;
         struct Input { float2 uv_MainTex; float3 worldPos; };
         void surf(Input input, inout SurfaceOutputStandard output) {
+            if (_TravelClip > .5) clip(dot(float4(input.worldPos,1), _TravelPlane));
             fixed4 paint = tex2D(_MainTex, input.uv_MainTex);
             float3 localPosition = mul(unity_WorldToObject, float4(input.worldPos, 1)).xyz;
             fixed4 panels = tex2D(_DetailTex, localPosition.xz * .035 + .5);

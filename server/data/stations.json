@@ -78834,5 +78834,1181 @@
         ]
       }
     ]
+  },
+  {
+    "id": 10251,
+    "parent": 1025,
+    "exterior": 103932,
+    "name": "Guiana Space Port",
+    "kind": 0,
+    "rooms": [
+      {
+        "index": 0,
+        "style": 16,
+        "fog_near": 0.0,
+        "fog_far": 0.0,
+        "fog_color": [
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "index": 1,
+        "style": 1,
+        "fog_near": 0.0,
+        "fog_far": 0.0,
+        "fog_color": [
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "index": 2,
+        "style": 2,
+        "fog_near": 0.0,
+        "fog_far": 0.0,
+        "fog_color": [
+          0,
+          0,
+          0
+        ]
+      }
+    ],
+    "terminals": [
+      {
+        "room": 1,
+        "location": 2,
+        "kind": 2
+      },
+      {
+        "room": 1,
+        "location": 1,
+        "kind": 1
+      }
+    ],
+    "npcs": [],
+    "layout_source": "Standard service layout from 10761; public exterior link"
+  },
+  {
+    "id": 10301,
+    "parent": 1030,
+    "exterior": 103873,
+    "name": "Arx Prima",
+    "kind": 0,
+    "rooms": [
+      {
+        "index": 0,
+        "style": 16,
+        "fog_near": 0.0,
+        "fog_far": 0.0,
+        "fog_color": [
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "index": 1,
+        "style": 1,
+        "fog_near": 0.0,
+        "fog_far": 0.0,
+        "fog_color": [
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "index": 2,
+        "style": 2,
+        "fog_near": 0.0,
+        "fog_far": 0.0,
+        "fog_color": [
+          0,
+          0,
+          0
+        ]
+      }
+    ],
+    "terminals": [
+      {
+        "room": 1,
+        "location": 2,
+        "kind": 2
+      },
+      {
+        "room": 1,
+        "location": 1,
+        "kind": 1
+      }
+    ],
+    "npcs": [],
+    "layout_source": "Standard service layout from 10761; public exterior link"
+  },
+  {
+    "id": 10521,
+    "parent": 1052,
+    "exterior": 101738,
+    "name": "Nishino Research Facility",
+    "kind": 0,
+    "rooms": [
+      {
+        "index": 0,
+        "style": 16,
+        "fog_near": 0.0,
+        "fog_far": 0.0,
+        "fog_color": [
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "index": 1,
+        "style": 1,
+        "fog_near": 0.0,
+        "fog_far": 0.0,
+        "fog_color": [
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "index": 2,
+        "style": 2,
+        "fog_near": 0.0,
+        "fog_far": 0.0,
+        "fog_color": [
+          0,
+          0,
+          0
+        ]
+      }
+    ],
+    "terminals": [
+      {
+        "room": 1,
+        "location": 2,
+        "kind": 2
+      },
+      {
+        "room": 1,
+        "location": 1,
+        "kind": 1
+      }
+    ],
+    "npcs": [],
+    "layout_source": "Standard service layout from 10761; public exterior link"
+  },
+  {
+    "id": 10651,
+    "parent": 1065,
+    "exterior": 100096,
+    "name": "Arx Magister",
+    "kind": 0,
+    "rooms": [
+      {
+        "index": 0,
+        "style": 16,
+        "fog_near": 0.0,
+        "fog_far": 0.0,
+        "fog_color": [
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "index": 1,
+        "style": 1,
+        "fog_near": 0.0,
+        "fog_far": 0.0,
+        "fog_color": [
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "index": 2,
+        "style": 2,
+        "fog_near": 0.0,
+        "fog_far": 0.0,
+        "fog_color": [
+          0,
+          0,
+          0
+        ]
+      }
+    ],
+    "terminals": [
+      {
+        "room": 1,
+        "location": 2,
+        "kind": 2
+      },
+      {
+        "room": 1,
+        "location": 1,
+        "kind": 1
+      }
+    ],
+    "npcs": [],
+    "layout_source": "Standard service layout from 10761; public exterior link"
+  },
+  {
+    "id": 10691,
+    "parent": 1069,
+    "exterior": 104716,
+    "name": "Net 7 Central Command",
+    "kind": 0,
+    "rooms": [
+      {
+        "index": 0,
+        "style": 16,
+        "fog_near": 0.0,
+        "fog_far": 0.0,
+        "fog_color": [
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "index": 1,
+        "style": 1,
+        "fog_near": 0.0,
+        "fog_far": 0.0,
+        "fog_color": [
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "index": 2,
+        "style": 2,
+        "fog_near": 0.0,
+        "fog_far": 0.0,
+        "fog_color": [
+          0,
+          0,
+          0
+        ]
+      }
+    ],
+    "terminals": [
+      {
+        "room": 1,
+        "location": 2,
+        "kind": 2
+      },
+      {
+        "room": 1,
+        "location": 1,
+        "kind": 1
+      }
+    ],
+    "npcs": [],
+    "layout_source": "Standard service layout from 10761; public exterior link"
+  },
+  {
+    "id": 10701,
+    "parent": 1070,
+    "exterior": 103894,
+    "name": "Jove's Fury",
+    "kind": 0,
+    "rooms": [
+      {
+        "index": 0,
+        "style": 16,
+        "fog_near": 0.0,
+        "fog_far": 0.0,
+        "fog_color": [
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "index": 1,
+        "style": 1,
+        "fog_near": 0.0,
+        "fog_far": 0.0,
+        "fog_color": [
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "index": 2,
+        "style": 2,
+        "fog_near": 0.0,
+        "fog_far": 0.0,
+        "fog_color": [
+          0,
+          0,
+          0
+        ]
+      }
+    ],
+    "terminals": [
+      {
+        "room": 1,
+        "location": 2,
+        "kind": 2
+      },
+      {
+        "room": 1,
+        "location": 1,
+        "kind": 1
+      }
+    ],
+    "npcs": [],
+    "layout_source": "Standard service layout from 10761; public exterior link"
+  },
+  {
+    "id": 10711,
+    "parent": 1071,
+    "exterior": 100030,
+    "name": "Net-7 SOL",
+    "kind": 0,
+    "rooms": [
+      {
+        "index": 0,
+        "style": 16,
+        "fog_near": 0.0,
+        "fog_far": 0.0,
+        "fog_color": [
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "index": 1,
+        "style": 1,
+        "fog_near": 0.0,
+        "fog_far": 0.0,
+        "fog_color": [
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "index": 2,
+        "style": 2,
+        "fog_near": 0.0,
+        "fog_far": 0.0,
+        "fog_color": [
+          0,
+          0,
+          0
+        ]
+      }
+    ],
+    "terminals": [
+      {
+        "room": 1,
+        "location": 2,
+        "kind": 2
+      },
+      {
+        "room": 1,
+        "location": 1,
+        "kind": 1
+      }
+    ],
+    "npcs": [],
+    "layout_source": "Standard service layout from 10761; public exterior link"
+  },
+  {
+    "id": 11151,
+    "parent": 1115,
+    "exterior": 100786,
+    "name": "Kinshasa-Mbali",
+    "kind": 0,
+    "rooms": [
+      {
+        "index": 0,
+        "style": 16,
+        "fog_near": 0.0,
+        "fog_far": 0.0,
+        "fog_color": [
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "index": 1,
+        "style": 1,
+        "fog_near": 0.0,
+        "fog_far": 0.0,
+        "fog_color": [
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "index": 2,
+        "style": 2,
+        "fog_near": 0.0,
+        "fog_far": 0.0,
+        "fog_color": [
+          0,
+          0,
+          0
+        ]
+      }
+    ],
+    "terminals": [
+      {
+        "room": 1,
+        "location": 2,
+        "kind": 2
+      },
+      {
+        "room": 1,
+        "location": 1,
+        "kind": 1
+      }
+    ],
+    "npcs": [],
+    "layout_source": "Standard service layout from 10761; public exterior link"
+  },
+  {
+    "id": 14251,
+    "parent": 1425,
+    "exterior": 100391,
+    "name": "Earthcorps High Command",
+    "kind": 0,
+    "rooms": [
+      {
+        "index": 0,
+        "style": 16,
+        "fog_near": 0.0,
+        "fog_far": 0.0,
+        "fog_color": [
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "index": 1,
+        "style": 1,
+        "fog_near": 0.0,
+        "fog_far": 0.0,
+        "fog_color": [
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "index": 2,
+        "style": 2,
+        "fog_near": 0.0,
+        "fog_far": 0.0,
+        "fog_color": [
+          0,
+          0,
+          0
+        ]
+      }
+    ],
+    "terminals": [
+      {
+        "room": 1,
+        "location": 2,
+        "kind": 2
+      },
+      {
+        "room": 1,
+        "location": 1,
+        "kind": 1
+      }
+    ],
+    "npcs": [],
+    "layout_source": "Standard service layout from 10761; public exterior link"
+  },
+  {
+    "id": 14401,
+    "parent": 1440,
+    "exterior": 103120,
+    "name": "Grand Ole Homestead",
+    "kind": 0,
+    "rooms": [
+      {
+        "index": 0,
+        "style": 16,
+        "fog_near": 0.0,
+        "fog_far": 0.0,
+        "fog_color": [
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "index": 1,
+        "style": 1,
+        "fog_near": 0.0,
+        "fog_far": 0.0,
+        "fog_color": [
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "index": 2,
+        "style": 2,
+        "fog_near": 0.0,
+        "fog_far": 0.0,
+        "fog_color": [
+          0,
+          0,
+          0
+        ]
+      }
+    ],
+    "terminals": [
+      {
+        "room": 1,
+        "location": 2,
+        "kind": 2
+      },
+      {
+        "room": 1,
+        "location": 1,
+        "kind": 1
+      }
+    ],
+    "npcs": [],
+    "layout_source": "Standard service layout from 10761; public exterior link"
+  },
+  {
+    "id": 14931,
+    "parent": 1493,
+    "exterior": 101250,
+    "name": "Jagerstadt City",
+    "kind": 0,
+    "rooms": [
+      {
+        "index": 0,
+        "style": 16,
+        "fog_near": 0.0,
+        "fog_far": 0.0,
+        "fog_color": [
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "index": 1,
+        "style": 1,
+        "fog_near": 0.0,
+        "fog_far": 0.0,
+        "fog_color": [
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "index": 2,
+        "style": 2,
+        "fog_near": 0.0,
+        "fog_far": 0.0,
+        "fog_color": [
+          0,
+          0,
+          0
+        ]
+      }
+    ],
+    "terminals": [
+      {
+        "room": 1,
+        "location": 2,
+        "kind": 2
+      },
+      {
+        "room": 1,
+        "location": 1,
+        "kind": 1
+      }
+    ],
+    "npcs": [],
+    "layout_source": "Standard service layout from 10761; public exterior link"
+  },
+  {
+    "id": 15051,
+    "parent": 1505,
+    "exterior": 100843,
+    "name": "Antares 1 [Under Construction]",
+    "kind": 0,
+    "rooms": [
+      {
+        "index": 0,
+        "style": 16,
+        "fog_near": 0.0,
+        "fog_far": 0.0,
+        "fog_color": [
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "index": 1,
+        "style": 1,
+        "fog_near": 0.0,
+        "fog_far": 0.0,
+        "fog_color": [
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "index": 2,
+        "style": 2,
+        "fog_near": 0.0,
+        "fog_far": 0.0,
+        "fog_color": [
+          0,
+          0,
+          0
+        ]
+      }
+    ],
+    "terminals": [
+      {
+        "room": 1,
+        "location": 2,
+        "kind": 2
+      },
+      {
+        "room": 1,
+        "location": 1,
+        "kind": 1
+      }
+    ],
+    "npcs": [],
+    "layout_source": "Standard service layout from 10761; public exterior link"
+  },
+  {
+    "id": 22101,
+    "parent": 2210,
+    "exterior": 100611,
+    "name": "Arx Spartoi",
+    "kind": 0,
+    "rooms": [
+      {
+        "index": 0,
+        "style": 16,
+        "fog_near": 0.0,
+        "fog_far": 0.0,
+        "fog_color": [
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "index": 1,
+        "style": 1,
+        "fog_near": 0.0,
+        "fog_far": 0.0,
+        "fog_color": [
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "index": 2,
+        "style": 2,
+        "fog_near": 0.0,
+        "fog_far": 0.0,
+        "fog_color": [
+          0,
+          0,
+          0
+        ]
+      }
+    ],
+    "terminals": [
+      {
+        "room": 1,
+        "location": 2,
+        "kind": 2
+      },
+      {
+        "room": 1,
+        "location": 1,
+        "kind": 1
+      }
+    ],
+    "npcs": [],
+    "layout_source": "Standard service layout from 10761; public exterior link"
+  },
+  {
+    "id": 22951,
+    "parent": 2295,
+    "exterior": 100630,
+    "name": "Porvenir Mons",
+    "kind": 0,
+    "rooms": [
+      {
+        "index": 0,
+        "style": 16,
+        "fog_near": 0.0,
+        "fog_far": 0.0,
+        "fog_color": [
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "index": 1,
+        "style": 1,
+        "fog_near": 0.0,
+        "fog_far": 0.0,
+        "fog_color": [
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "index": 2,
+        "style": 2,
+        "fog_near": 0.0,
+        "fog_far": 0.0,
+        "fog_color": [
+          0,
+          0,
+          0
+        ]
+      }
+    ],
+    "terminals": [
+      {
+        "room": 1,
+        "location": 2,
+        "kind": 2
+      },
+      {
+        "room": 1,
+        "location": 1,
+        "kind": 1
+      }
+    ],
+    "npcs": [],
+    "layout_source": "Standard service layout from 10761; public exterior link"
+  },
+  {
+    "id": 35301,
+    "parent": 3530,
+    "exterior": 101454,
+    "name": "Arx Tiberius",
+    "kind": 0,
+    "rooms": [
+      {
+        "index": 0,
+        "style": 16,
+        "fog_near": 0.0,
+        "fog_far": 0.0,
+        "fog_color": [
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "index": 1,
+        "style": 1,
+        "fog_near": 0.0,
+        "fog_far": 0.0,
+        "fog_color": [
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "index": 2,
+        "style": 2,
+        "fog_near": 0.0,
+        "fog_far": 0.0,
+        "fog_color": [
+          0,
+          0,
+          0
+        ]
+      }
+    ],
+    "terminals": [
+      {
+        "room": 1,
+        "location": 2,
+        "kind": 2
+      },
+      {
+        "room": 1,
+        "location": 1,
+        "kind": 1
+      }
+    ],
+    "npcs": [],
+    "layout_source": "Standard service layout from 10761; public exterior link"
+  },
+  {
+    "id": 36061,
+    "parent": 3606,
+    "exterior": 104591,
+    "name": "Shakti Station",
+    "kind": 0,
+    "rooms": [
+      {
+        "index": 0,
+        "style": 16,
+        "fog_near": 0.0,
+        "fog_far": 0.0,
+        "fog_color": [
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "index": 1,
+        "style": 1,
+        "fog_near": 0.0,
+        "fog_far": 0.0,
+        "fog_color": [
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "index": 2,
+        "style": 2,
+        "fog_near": 0.0,
+        "fog_far": 0.0,
+        "fog_color": [
+          0,
+          0,
+          0
+        ]
+      }
+    ],
+    "terminals": [
+      {
+        "room": 1,
+        "location": 2,
+        "kind": 2
+      },
+      {
+        "room": 1,
+        "location": 1,
+        "kind": 1
+      }
+    ],
+    "npcs": [],
+    "layout_source": "Standard service layout from 10761; public exterior link"
+  },
+  {
+    "id": 40151,
+    "parent": 4015,
+    "exterior": 100649,
+    "name": "Somerled Station",
+    "kind": 0,
+    "rooms": [
+      {
+        "index": 0,
+        "style": 16,
+        "fog_near": 0.0,
+        "fog_far": 0.0,
+        "fog_color": [
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "index": 1,
+        "style": 1,
+        "fog_near": 0.0,
+        "fog_far": 0.0,
+        "fog_color": [
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "index": 2,
+        "style": 2,
+        "fog_near": 0.0,
+        "fog_far": 0.0,
+        "fog_color": [
+          0,
+          0,
+          0
+        ]
+      }
+    ],
+    "terminals": [
+      {
+        "room": 1,
+        "location": 2,
+        "kind": 2
+      },
+      {
+        "room": 1,
+        "location": 1,
+        "kind": 1
+      }
+    ],
+    "npcs": [],
+    "layout_source": "Standard service layout from 10761; public exterior link"
+  },
+  {
+    "id": 40931,
+    "parent": 4093,
+    "exterior": 101212,
+    "name": "Inverness Down",
+    "kind": 0,
+    "rooms": [
+      {
+        "index": 0,
+        "style": 16,
+        "fog_near": 0.0,
+        "fog_far": 0.0,
+        "fog_color": [
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "index": 1,
+        "style": 1,
+        "fog_near": 0.0,
+        "fog_far": 0.0,
+        "fog_color": [
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "index": 2,
+        "style": 2,
+        "fog_near": 0.0,
+        "fog_far": 0.0,
+        "fog_color": [
+          0,
+          0,
+          0
+        ]
+      }
+    ],
+    "terminals": [
+      {
+        "room": 1,
+        "location": 2,
+        "kind": 2
+      },
+      {
+        "room": 1,
+        "location": 1,
+        "kind": 1
+      }
+    ],
+    "npcs": [],
+    "layout_source": "Standard service layout from 10761; public exterior link"
+  },
+  {
+    "id": 41151,
+    "parent": 4115,
+    "exterior": 101495,
+    "name": "Prasad Station",
+    "kind": 0,
+    "rooms": [
+      {
+        "index": 0,
+        "style": 16,
+        "fog_near": 0.0,
+        "fog_far": 0.0,
+        "fog_color": [
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "index": 1,
+        "style": 1,
+        "fog_near": 0.0,
+        "fog_far": 0.0,
+        "fog_color": [
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "index": 2,
+        "style": 2,
+        "fog_near": 0.0,
+        "fog_far": 0.0,
+        "fog_color": [
+          0,
+          0,
+          0
+        ]
+      }
+    ],
+    "terminals": [
+      {
+        "room": 1,
+        "location": 2,
+        "kind": 2
+      },
+      {
+        "room": 1,
+        "location": 1,
+        "kind": 1
+      }
+    ],
+    "npcs": [],
+    "layout_source": "Standard service layout from 10761; public exterior link"
+  },
+  {
+    "id": 41952,
+    "parent": 4195,
+    "exterior": 101242,
+    "name": "Yasuragi",
+    "kind": 0,
+    "rooms": [
+      {
+        "index": 0,
+        "style": 16,
+        "fog_near": 0.0,
+        "fog_far": 0.0,
+        "fog_color": [
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "index": 1,
+        "style": 1,
+        "fog_near": 0.0,
+        "fog_far": 0.0,
+        "fog_color": [
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "index": 2,
+        "style": 2,
+        "fog_near": 0.0,
+        "fog_far": 0.0,
+        "fog_color": [
+          0,
+          0,
+          0
+        ]
+      }
+    ],
+    "terminals": [
+      {
+        "room": 1,
+        "location": 2,
+        "kind": 2
+      },
+      {
+        "room": 1,
+        "location": 1,
+        "kind": 1
+      }
+    ],
+    "npcs": [],
+    "layout_source": "Standard service layout from 10761; public exterior link"
+  },
+  {
+    "id": 41951,
+    "parent": 4195,
+    "exterior": 101246,
+    "name": "Master Cha'han's Dojo",
+    "kind": 0,
+    "rooms": [
+      {
+        "index": 0,
+        "style": 16,
+        "fog_near": 0.0,
+        "fog_far": 0.0,
+        "fog_color": [
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "index": 1,
+        "style": 1,
+        "fog_near": 0.0,
+        "fog_far": 0.0,
+        "fog_color": [
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "index": 2,
+        "style": 2,
+        "fog_near": 0.0,
+        "fog_far": 0.0,
+        "fog_color": [
+          0,
+          0,
+          0
+        ]
+      }
+    ],
+    "terminals": [
+      {
+        "room": 1,
+        "location": 2,
+        "kind": 2
+      },
+      {
+        "room": 1,
+        "location": 1,
+        "kind": 1
+      }
+    ],
+    "npcs": [],
+    "layout_source": "Standard service layout from 10761; public exterior link"
   }
 ]

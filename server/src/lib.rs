@@ -63,6 +63,7 @@ mod world_random;
 pub mod sandbox_loadout;
 
 pub mod ammunition;
+pub mod ammo_refill;
 pub mod biorepression;
 
 pub mod classes;
@@ -72,6 +73,7 @@ pub mod mob_stats;
 
 pub mod demo_accounts;
 pub mod durable_json;
+mod trade_store;
 pub mod projectiles;
 
 pub mod combat_damage;

@@ -139,12 +139,13 @@ impl Corpse {
             && (stock.credits > 0 || stock.items.iter().any(Option::is_some)))
     }
 
-    fn authorize(&self, player: u32, now_ms: u64) -> io::Result<()> {
+    fn authorize(&self, player: u32, now_ms: u64, grouped_with_killer: bool) -> io::Result<()> {
         if !self.available(now_ms)? {
             return Err(invalid("Corpse is empty or expired."));
         }
         let opened = self.released || self.receipts.values().any(|receipt| receipt.credits);
         if player != self.killer
+            && !grouped_with_killer
             && !opened
             && now_ms < self.created_ms.saturating_add(PRIVATE_LOOT_MS)
         {
@@ -174,6 +175,7 @@ struct WorldFile {
 pub struct LootWorld {
     path: PathBuf,
     state: WorldFile,
+    group_members: BTreeMap<u32, Vec<u32>>,
 }
 
 pub struct LootCollection<'world> {
@@ -265,7 +267,21 @@ impl LootWorld {
                 }
             }
         }
-        Ok(Self { path, state })
+        Ok(Self {
+            path,
+            state,
+            group_members: BTreeMap::new(),
+        })
+    }
+
+    /// Refresh current killer-group entitlements from the authoritative social coordinator.
+    pub(crate) fn set_groups(&mut self, groups: &crate::groups::GroupManager) {
+        self.group_members = self
+            .state
+            .corpses
+            .values()
+            .map(|corpse| (corpse.killer, groups.members(corpse.killer)))
+            .collect();
     }
 
     pub fn generation(&self, spawn: u32) -> u64 {
@@ -494,7 +510,7 @@ impl LootWorld {
         let seed = (u64::from(self.state.sector) << 48)
             ^ (u64::from(birth.death.spawn) << 16)
             ^ birth.death.generation.wrapping_mul(0xd1342543de82ef95);
-        let initial = catalog.generate(birth.template, birth.level, seed, items)?;
+        let initial = catalog.generate_stocked(birth.template, birth.level, seed, items)?;
         candidate.next_id += 1;
         candidate.deaths.insert(
             birth.death.spawn,
@@ -625,7 +641,11 @@ impl LootWorld {
             .corpses
             .get_mut(&corpse)
             .ok_or_else(|| invalid("Unknown corpse."))?;
-        corpse.authorize(owner, now_ms)?;
+        let grouped = self
+            .group_members
+            .get(&corpse.killer)
+            .is_some_and(|members| members.contains(&owner));
+        corpse.authorize(owner, now_ms, grouped)?;
         if slot >= LOOT_SLOTS || corpse.remaining()?.items[slot].is_none() {
             return Err(invalid("Corpse slot is empty or invalid."));
         }
@@ -654,7 +674,11 @@ impl LootWorld {
         now_ms: u64,
     ) -> io::Result<Option<LootCollection<'_>>> {
         let corpse = self.get(id)?;
-        corpse.authorize(owner, now_ms)?;
+        let grouped = self
+            .group_members
+            .get(&corpse.killer)
+            .is_some_and(|members| members.contains(&owner));
+        corpse.authorize(owner, now_ms, grouped)?;
         if let Some(slot) = slot {
             if slot >= LOOT_SLOTS || corpse.claim != Some((owner, slot)) {
                 return Err(invalid("Loot claim is no longer valid."));
@@ -719,6 +743,58 @@ mod tests {
 
     const ALICE: u32 = 0x40000001;
     const BOB: u32 = 0x40000002;
+
+    /// Current group members can reserve killer-locked loot; outsiders and competing claims cannot.
+    #[test]
+    fn killer_group_members_share_private_loot_without_stealing_existing_claims() {
+        let items = ItemCatalog::load().unwrap();
+        let path = path();
+        let mut world = LootWorld::load(path.clone(), 1076, &items).unwrap();
+        let id = world.spawn(birth(1), &catalog(), &items).unwrap().unwrap();
+        let outsider = BOB + 1;
+        let mut groups = crate::groups::GroupManager::default();
+        groups.invite(ALICE, BOB).unwrap();
+        groups.accept(BOB).unwrap();
+        world.set_groups(&groups);
+        assert!(world.prepare_collection(outsider, id, None, 1001).is_err());
+        world.claim(BOB, id, 0, 1001).unwrap();
+        assert!(world.claim(ALICE, id, 0, 1001).is_err());
+        assert!(world.prepare_collection(ALICE, id, None, 1001).is_err());
+        groups.leave(BOB);
+        world.set_groups(&groups);
+        assert!(world.prepare_collection(BOB, id, Some(0), 1001).is_err());
+        world.release(BOB, id);
+        groups.invite(ALICE, BOB).unwrap();
+        groups.accept(BOB).unwrap();
+        world.set_groups(&groups);
+        let opening = world
+            .prepare_collection(BOB, id, None, 1001)
+            .unwrap()
+            .unwrap();
+        let bob = Inventory::starter(&items)
+            .unwrap()
+            .collected_loot(&opening, &items)
+            .unwrap();
+        assert_eq!(
+            bob.credits,
+            Inventory::starter(&items).unwrap().credits + opening.credits
+        );
+        opening.commit();
+        // Preserve the native rule: the first open releases the private lock,
+        // but credits are still paid only once regardless of which pilot opened.
+        assert!(world
+            .prepare_collection(ALICE, id, None, 1001)
+            .unwrap()
+            .is_none());
+        assert!(world
+            .prepare_collection(outsider, id, None, 1001)
+            .unwrap()
+            .is_none());
+        world.claim(BOB, id, 0, 1001).unwrap();
+        assert!(world.claim(outsider, id, 0, 1001).is_err());
+        fs::remove_file(&path).unwrap();
+        fs::remove_dir(path.parent().unwrap()).unwrap();
+    }
 
     #[test]
     fn combat_killer_death_generations_persist_and_prevent_checkpoint_resurrection() {

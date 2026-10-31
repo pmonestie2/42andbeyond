@@ -127,10 +127,26 @@ impl PlayerSession {
         self.pending.push(Frame::new(0x3a, join));
     }
 
+    /// Commit wormhole travel to the native destination weft, including same-sector casts.
+    pub(super) fn transfer_wormhole(&mut self, destination: u32) -> io::Result<()> {
+        let position = self.sectors.wormhole_arrival(destination)?;
+        self.transfer_sector_at(destination, false, Some(position))
+    }
+
     pub(super) fn transfer_sector(
         &mut self,
         destination: u32,
         use_return_gate: bool,
+    ) -> io::Result<()> {
+        self.transfer_sector_at(destination, use_return_gate, None)
+    }
+
+    /// Prepare the final arrival position before journaling any transport or location mutation.
+    fn transfer_sector_at(
+        &mut self,
+        destination: u32,
+        use_return_gate: bool,
+        arrival: Option<[f32; 3]>,
     ) -> io::Result<()> {
         self.recover_weapon_launch()?;
         if self.transition_pending.is_some() {
@@ -167,7 +183,9 @@ impl PlayerSession {
             &self.items,
         )?;
         loot.register_receipts(self.player_id(), &self.inventory.loot_receipts)?;
-        let position = if destination == previous {
+        let position = if let Some(position) = arrival {
+            position
+        } else if destination == previous {
             self.position
         } else if use_return_gate {
             next.navpoints
@@ -267,6 +285,28 @@ impl PlayerSession {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Every native destination, including repeat casts, commits the actual weft rather than sector origin.
+    #[test]
+    fn wormholes_land_at_wefts_including_same_sector() {
+        let mut ship = super::super::tests::journal_ship();
+        for destination in [1077, 4520, 2210, 1070, 1910, 4120, 1705] {
+            let expected = ship.sectors.wormhole_arrival(destination).unwrap();
+            assert_ne!(expected, [0.; 3]);
+            ship.transfer_wormhole(destination).unwrap();
+            assert_eq!(ship.sector.id, destination);
+            assert_eq!(ship.position, expected);
+            ship.position = [100., 200., 300.];
+            ship.transfer_wormhole(destination).unwrap();
+            assert_eq!(
+                ship.position, expected,
+                "same-sector destination {destination}"
+            );
+        }
+        let before = (ship.sector.id, ship.position);
+        assert!(ship.transfer_wormhole(1076).is_err());
+        assert_eq!((ship.sector.id, ship.position), before);
+    }
 
     /// Lost final redirects and predecessor gaps recover with identical sequences, then stop at destination handshake.
     #[test]

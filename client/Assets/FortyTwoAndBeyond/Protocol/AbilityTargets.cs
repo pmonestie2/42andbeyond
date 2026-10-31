@@ -5,7 +5,7 @@ namespace FortyTwoAndBeyond.Protocol
     {
         /// <returns>bool: Whether this ability needs a confirmed selected recipient.</returns>
         public static bool Directed(uint id)
-        { return id == 31 || id == 32 || id == 89 || id == 95 || id == 125 || id == 44 || id == 45 ||
+        { return id == 9 || id == 14 || id == 60 || id == 61 || id == 31 || id == 32 || id == 89 || id == 95 || id == 125 || id == 44 || id == 45 ||
             id == 48 || id == 68 || id == 128 || id == 122 || id == 130 || id == 74; }
 
         /// <returns>bool: Whether a peer recipient must belong to the pilot's group.</returns>
@@ -26,6 +26,10 @@ namespace FortyTwoAndBeyond.Protocol
         /// <returns>string: A concise name for worker status feedback.</returns>
         public static string Name(uint id)
         {
+            if (id == 9) return "Area Hull Repair";
+            if (id == 60) return "Improved Area Hull Repair";
+            if (id == 14) return "Area Shield Recharge";
+            if (id == 61) return "Improved Area Recharge";
             if (id == 89) return "Recharge Shields";
             if (id == 95) return "Repair Hull";
             if (id == 31) return "Combat Hull Repair";

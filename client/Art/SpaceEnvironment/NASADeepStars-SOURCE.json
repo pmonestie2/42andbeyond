@@ -1,0 +1,9 @@
+{
+  "title": "Deep Star Maps 2020",
+  "source": "https://svs.gsfc.nasa.gov/4851/",
+  "download": "https://svs.gsfc.nasa.gov/vis/a000000/a004800/a004851/starmap_2020_4k.exr",
+  "credit": "NASA/Goddard Space Flight Center Scientific Visualization Studio; Ernie Wright (USRA); Gaia DR2: ESA/Gaia/DPAC.",
+  "usage": "https://www.nasa.gov/nasa-brand-center/images-and-media/",
+  "sha256": "69b841cd048c2ef35543eb1c5819b322530e78aa4b0cab97ec1de3ef56a4ddcd",
+  "modifications": "Original HDR map retained; shader applies exposure, moving projection and color layers for a stylized sky."
+}

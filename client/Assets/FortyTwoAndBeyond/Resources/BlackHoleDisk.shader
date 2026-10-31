@@ -31,14 +31,24 @@ Shader "42 and Beyond/BlackHoleDisk"
                 float2 center = i.uv - .5;
                 float radius = length(center);
                 float disk = smoothstep(.19,.28,radius) * (1 - smoothstep(.43,.5,radius));
-                float opacity = tex2D(_OpacityTex,i.uv).r * disk;
-                float3 source = tex2D(_MainTex,i.uv).rgb;
                 float orbit = atan2(center.y,center.x);
-                float stream = .92 + .08 * sin(orbit * 8 - _Time.y * .35);
+                float shear = _Time.y * (.13 + .27 * (1-smoothstep(.23,.46,radius)));
+                float sine=sin(shear), cosine=cos(shear);
+                float2 flow=float2(center.x*cosine-center.y*sine,center.x*sine+center.y*cosine)+.5;
+                float opacity = tex2D(_OpacityTex,flow).r * disk;
+                float3 source = tex2D(_MainTex,flow).rgb;
+                float stream = .82 + .18 * sin(orbit * 8 - _Time.y * 1.4 + radius*32);
                 float doppler = .62 + 1.05 * saturate(cos(orbit - .72));
                 float glow = pow(1 - smoothstep(.22,.43,radius),3);
-                float3 color = source * _Tint.rgb * stream * doppler +
-                    glow * _Tint.rgb * .36;
+                float3 color = source * _Tint.rgb * stream * doppler + glow * _Tint.rgb * .36;
+                // Differential rotation drives local hot knots and occasional magnetic eruptions.
+                float knot=atan2(sin(orbit-_Time.y*.48),cos(orbit-_Time.y*.48));
+                float hot=exp(-knot*knot*25-pow((radius-.315)*48,2));
+                float knot2=atan2(sin(orbit+_Time.y*.23-2.1),cos(orbit+_Time.y*.23-2.1));
+                hot+=exp(-knot2*knot2*38-pow((radius-.38)*55,2))*.6;
+                float flare=pow(saturate(.5+.5*sin(_Time.y*.62)),10);
+                color+=float3(1,.65,.25)*hot*(.8+flare*2.7)*_Opacity;
+                opacity=saturate(opacity+hot*.2);
                 return fixed4(color,opacity * _Opacity);
             }
             ENDCG

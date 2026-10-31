@@ -31,10 +31,7 @@ namespace FortyTwoAndBeyond.Client
         private readonly GameObject[] moonRockHigh = new GameObject[2], moonRockLow = new GameObject[2];
         private readonly GameObject[] packAsteroids = new GameObject[10];
         private readonly Material packRockSurface;
-        private readonly GameObject blackHoleRing, blackHoleCore;
-        private readonly Material blackHoleDiskSurface, blackHoleCloudSurface,
-            blackHoleCoreSurface, blackHolePhotonSurface, blackHoleLensSurface;
-        private readonly Material sunCoronaSurface, sunHazeSurface;
+        private readonly List<SpaceEnvironmentBackground> backgrounds = new List<SpaceEnvironmentBackground>();
         private readonly Material[] moonStone = new Material[2], moonOre = new Material[2],
             moonMetal = new Material[2], moonHydrocarbon = new Material[2];
         private readonly Material corvetteSurface, frigateSurface, destroyerSurface, cruiserSurface, carrierSurface;
@@ -109,30 +106,10 @@ namespace FortyTwoAndBeyond.Client
             oreRock.SetFloat("_TextureStrength", 1f);
             oreRock.SetFloat("_DetailGain", 1.35f);
             field = ShaderMaterial("42 and Beyond/GateField");
-            sunCoronaSurface = ShaderMaterial("42 and Beyond/SunCorona");
-            sunCoronaSurface.SetFloat("_Strength", 2.2f);
-            sunHazeSurface = ShaderMaterial("42 and Beyond/SunCorona");
-            sunHazeSurface.SetFloat("_Strength", .55f);
-            Sky = ShaderMaterial("42 and Beyond/SpaceSky");
-            Texture2D vividSky = Resources.Load<Texture2D>("NebulaPanorama");
-            Texture2D proceduralSky = Resources.Load<Texture2D>("ProceduralSpace");
-            Sky.SetTexture("_NebulaTex", vividSky != null ? vividSky :
-                proceduralSky != null ? proceduralSky : LoadDetail("SpaceNebula"));
-            Sky.SetFloat("_Exposure", vividSky != null ? .45f :
-                proceduralSky != null ? 1.65f : .16f);
-            Texture2D eveSky = Resources.Load<Texture2D>("EveShips/a13_cube");
-            if (eveSky != null)
-            {
-                Sky.SetTexture("_AccentTex", eveSky);
-                Sky.SetFloat("_AccentExposure", vividSky != null ? .55f : .34f);
-                Sky.SetFloat("_AccentBlend", vividSky != null ? .1f : .42f);
-            }
-            Texture2D veil = Resources.Load<Texture2D>("NebulaVeil");
-            if (veil != null)
-            {
-                Sky.SetTexture("_VeilTex", veil);
-                Sky.SetFloat("_VeilStrength", .12f);
-            }
+            Material importedSky = Resources.Load<Material>("SpaceEnvironment/BlackHole/Materials/StarfieldSkybox");
+            if (importedSky == null) throw new InvalidOperationException("Missing imported space sky material.");
+            Sky = new Material(importedSky); Sky.SetFloat("_SkyIntensity", 1.25f);
+            SpaceEnvironmentBackground.ConfigureSky(Sky); materials.Add(Sky);
             Shader effectShader = Resources.Load<Shader>("BeamAdditive");
             if (effectShader != null) { EffectLine = new Material(effectShader); materials.Add(EffectLine); }
             corvetteAsset = Resources.Load<GameObject>("ViktorShips/corvette03");
@@ -223,35 +200,6 @@ namespace FortyTwoAndBeyond.Client
                 packRockSurface.SetTexture("_RoughnessTex", Resources.Load<Texture2D>("AsteroidPack/rock_roughness"));
                 packRockSurface.SetTexture("_AoTex", Resources.Load<Texture2D>("AsteroidPack/rock_ao"));
                 packRockSurface.SetColor("_Tint", new Color(.78f, .84f, .92f));
-            }
-            blackHoleRing = Resources.Load<GameObject>("BlackHolePack/Blackhole_ring");
-            blackHoleCore = Resources.Load<GameObject>("BlackHolePack/Blackhole_core");
-            Texture2D ringColor = Resources.Load<Texture2D>("BlackHolePack/ring_color");
-            if (blackHoleRing != null && blackHoleCore != null && ringColor != null)
-            {
-                blackHoleDiskSurface = ShaderMaterial("42 and Beyond/BlackHoleDisk");
-                blackHoleDiskSurface.SetTexture("_MainTex", ringColor);
-                blackHoleDiskSurface.SetTexture("_OpacityTex",
-                    Resources.Load<Texture2D>("BlackHolePack/ring_opacity"));
-                blackHoleDiskSurface.SetColor("_Tint", new Color(1.6f, .98f, .6f));
-                blackHoleDiskSurface.SetFloat("_Opacity", .82f);
-                Texture2D clouds = Resources.Load<Texture2D>("BlackHolePack/ring_clouds");
-                if (clouds != null)
-                {
-                    blackHoleCloudSurface = ShaderMaterial("42 and Beyond/BlackHoleDisk");
-                    blackHoleCloudSurface.SetTexture("_MainTex", clouds);
-                    blackHoleCloudSurface.SetTexture("_OpacityTex",
-                        Resources.Load<Texture2D>("BlackHolePack/ring_opacity"));
-                    blackHoleCloudSurface.SetColor("_Tint", new Color(.65f, .78f, 1.12f));
-                    blackHoleCloudSurface.SetFloat("_Opacity", .42f);
-                }
-                blackHoleCoreSurface = ShaderMaterial("42 and Beyond/BlackHoleCore");
-                blackHolePhotonSurface = ShaderMaterial("42 and Beyond/BlackHolePhoton");
-                blackHolePhotonSurface.SetColor("_Tint", new Color(1f, .76f, .5f, .6f));
-                blackHolePhotonSurface.SetFloat("_Intensity", 1.1f);
-                blackHoleLensSurface = ShaderMaterial("42 and Beyond/BlackHolePhoton");
-                blackHoleLensSurface.SetColor("_Tint", new Color(.2f, .42f, .9f, .11f));
-                blackHoleLensSurface.SetFloat("_Intensity", .4f);
             }
             ring = Torus(1, .12f, 48, 8); meshes.Add(ring);
             gateArc = GateArc(); meshes.Add(gateArc);
@@ -473,7 +421,9 @@ namespace FortyTwoAndBeyond.Client
             if (asset.name == "OriginalPW")
                 instance.GetComponent<PwWarpArms>()?.ConfigureWeaponScale();
             bool playerHull = modular || Array.IndexOf(legacyClassAssets, asset) >= 0;
-            instance.transform.localRotation = Quaternion.Euler(0, playerHull ? -90 : 90, 0);
+            // JE source hulls use the opposite longitudinal axis, including the animated assembly.
+            bool jenquaiExplorer = asset.name == "OriginalJEBase" || asset.name == "OriginalJE" || asset.name == "JVE01A";
+            instance.transform.localRotation = Quaternion.Euler(0, playerHull && !jenquaiExplorer ? -90 : 90, 0);
             instance.transform.localPosition = -(instance.transform.localRotation *
                 (bounds.center * scale));
             foreach (Collider collider in instance.GetComponentsInChildren<Collider>())
@@ -1151,26 +1101,30 @@ namespace FortyTwoAndBeyond.Client
         /// <summary>Assemble a segmented jump gate with armored arcs and a recessed energy field.</summary>
         private void Gate(Transform root)
         {
-            Model(root, gateArc, gateArmor, Vector3.zero, Vector3.one);
-            Model(root, ring, gateInset, new Vector3(0, 0, .18f), Vector3.one * 4.13f);
-            Model(root, gateLightRing, gateCircuit, new Vector3(0, 0, -.23f),
+            Transform assembly = Root(root, "Gate complete assembly");
+            Transform rotor = Root(assembly, "Rotating armored sectors");
+            Model(rotor, gateArc, gateArmor, Vector3.zero, Vector3.one);
+            Model(assembly, ring, gateInset, new Vector3(0, 0, .18f), Vector3.one * 4.13f);
+            Transform collar = Model(assembly, gateLightRing, gateCircuit, new Vector3(0, 0, -.23f),
                 Vector3.one * 4.02f);
+            var channels = new System.Collections.Generic.List<Renderer> { collar.GetComponent<Renderer>() };
             for (int i = 0; i < 8; i++)
             {
-                float a = i * Mathf.PI / 4;
-                Transform pylon = Root(root, "Gate radial actuator");
+                Transform pylon = Root(assembly, "Gate radial actuator");
                 pylon.localRotation = Quaternion.Euler(0, 0, i * 45);
                 Part(pylon, PrimitiveType.Cube, new Vector3(5.05f, 0, 0),
                     new Vector3(1.05f, .85f, 1.65f), gateInset);
                 Part(pylon, PrimitiveType.Cube, new Vector3(5.05f, 0, -.88f),
                     new Vector3(.7f, .34f, .14f), gateArmor);
-                Part(pylon, PrimitiveType.Cube, new Vector3(4.54f, 0, -.99f),
+                Transform channel = Part(pylon, PrimitiveType.Cube, new Vector3(4.54f, 0, -.99f),
                     new Vector3(.27f, .2f, .035f), gateCircuit);
+                channels.Add(channel.GetComponent<Renderer>());
                 Part(pylon, PrimitiveType.Cube, new Vector3(5.72f, 0, .22f),
                     new Vector3(.14f, .42f, 1.3f), gateArmor);
             }
-            Part(root, PrimitiveType.Quad, new Vector3(0, 0, .07f),
+            Part(assembly, PrimitiveType.Quad, new Vector3(0, 0, .07f),
                 new Vector3(7.75f, 7.75f, 1), field);
+            root.gameObject.AddComponent<GateTransitVisual>().Configure(assembly, rotor, collar, channels.ToArray());
         }
 
         /// <summary>Assemble a station with a central core, habitation ring and docking arms.</summary>
@@ -1202,84 +1156,33 @@ namespace FortyTwoAndBeyond.Client
             Part(root, PrimitiveType.Sphere, new Vector3(0, 1.6f, 0), Vector3.one * .35f, amber);
         }
 
-        /// <returns>A non-interactive distant planet used as a depth reference in the sky.</returns>
+        /// Returns:
+        ///     Transform: The imported animated demo scenery, separate from server-owned objects.
         public Transform Environment(Transform parent)
         {
-            Transform root = Root(parent, "Distant sky scenery");
-            BlackHole(root);
-            GameObject volcanicMesh = Resources.Load<GameObject>("PlanetPack/planet");
-            Texture2D volcanicMap = Resources.Load<Texture2D>("PlanetPack/planet_diffuse");
-            if (volcanicMesh != null && volcanicMap != null)
-            {
-                Material surface = ShaderMaterial("42 and Beyond/ProceduralPlanet");
-                surface.SetTexture("_MainTex", volcanicMap);
-                surface.SetTexture("_NormalTex", Resources.Load<Texture2D>("PlanetPack/planet_normal"));
-                surface.SetTexture("_RoughnessTex", Resources.Load<Texture2D>("PlanetPack/planet_roughness"));
-                surface.SetTexture("_AoTex", Resources.Load<Texture2D>("PlanetPack/planet_ao"));
-                Vector3 location = new Vector3(6500, -2000, 16000);
-                Transform world = Imported(root, volcanicMesh, "Procedural volcanic world",
-                    Vector3.one * (4400f / 1.711f), surface);
-                world.localPosition = location;
-                world.localRotation = Quaternion.Euler(-14, 28, -18);
-                Material atmosphere = ShaderMaterial("42 and Beyond/PlanetAtmosphere");
-                Part(root, PrimitiveType.Sphere, location, Vector3.one * 4570, atmosphere);
-                return root;
-            }
-            Material planetMaterial = ShaderMaterial("42 and Beyond/Planet");
-            Texture2D saturn = Resources.Load<Texture2D>("SaturnNASA");
-            if (saturn != null)
-            {
-                planetMaterial.SetTexture("_MainTex", saturn);
-                planetMaterial.SetFloat("_UseTexture", 1f);
-            }
-            Transform planet = Part(root, PrimitiveType.Sphere, new Vector3(6500, -2000, 16000),
-                Vector3.one * 4400, planetMaterial);
-            planet.localRotation = Quaternion.Euler(0, 0, -18);
-            Material ringMaterial = ShaderMaterial("42 and Beyond/PlanetRings");
-            Mesh belt = Annulus(1.25f, 2.15f, 160); meshes.Add(belt);
-            Transform rings = Model(planet, belt, ringMaterial, Vector3.zero, Vector3.one * .5f);
-            rings.localRotation = Quaternion.Euler(65, 0, 0);
-            return root;
+            SpaceEnvironmentBackground background = SpaceEnvironmentBackground.Create(parent);
+            backgrounds.Add(background); return background.transform;
         }
 
-        /// <returns>Transform: A bright camera-facing star and its distant corona.</returns>
+        /// Returns:
+        ///     Transform: The textured Sun already assembled inside the imported environment.
         public Transform Sun(Transform environment)
+        { return environment.GetComponent<SpaceEnvironmentBackground>().Sun; }
+
+        /// <summary>Apply the same stable composition on each return to an authoritative sector.</summary>
+        public void ConfigureSector(uint sectorId,string sectorName)
         {
-            Transform star = Root(environment, "System sun");
-            Part(star, PrimitiveType.Quad, Vector3.zero, new Vector3(3500, 3500, 1),
-                sunCoronaSurface).name = "Stellar photosphere and corona";
-            Part(star, PrimitiveType.Quad, new Vector3(0, 0, 35),
-                new Vector3(7600, 7600, 1), sunHazeSurface).name = "Diffuse stellar glow";
-            return star;
+            SectorSceneryProfile profile=SectorSceneryProfile.Generate(sectorId,sectorName);
+            SpaceEnvironmentBackground.SetSkyProfile(Sky,profile);
+            foreach(SpaceEnvironmentBackground background in backgrounds)
+                if(background!=null)background.ConfigureSector(profile);
         }
 
-        /// <summary>Match the visible star's tint to its sector's directional light.</summary>
+        /// <summary>Match imported planet and solar lighting to the sector's directional light.</summary>
         public void TintSun(Color color)
         {
-            sunCoronaSurface.SetColor("_Tint", color);
-            sunHazeSurface.SetColor("_Tint", color);
-        }
-
-        /// <summary>Place the locally exported accretion disk around an opaque dark core.</summary>
-        private void BlackHole(Transform root)
-        {
-            if (blackHoleDiskSurface == null || blackHoleCoreSurface == null) return;
-            Transform body = Root(root, "Distant accretion disk");
-            body.localPosition = new Vector3(0, -7500, 17000);
-            body.localRotation = Quaternion.Euler(7, -14, 24);
-            Imported(body, blackHoleCore, "Black hole event horizon", Vector3.one * 3000,
-                blackHoleCoreSurface);
-            Transform disk = Imported(body, blackHoleRing, "Black hole accretion disk",
-                Vector3.one * 1350, blackHoleDiskSurface);
-            if (disk != null) disk.localRotation = Quaternion.Euler(66, -12, 8);
-            Transform clouds = Imported(body, blackHoleRing, "Black hole outer plasma",
-                Vector3.one * 1430, blackHoleCloudSurface);
-            if (clouds != null) clouds.localRotation = Quaternion.Euler(61, 19, -28);
-            Transform photon = Model(body, gateLightRing, blackHolePhotonSurface, Vector3.zero,
-                Vector3.one * 1450);
-            photon.localRotation = Quaternion.Euler(68, -9, 5);
-            Model(body, gateLightRing, blackHoleLensSurface, Vector3.zero,
-                Vector3.one * 2250);
+            foreach (SpaceEnvironmentBackground background in backgrounds)
+                if (background != null) background.TintSun(color);
         }
 
         /// <returns>Mesh: A tapered octagonal armor shell shared by the station pilot's suit.</returns>

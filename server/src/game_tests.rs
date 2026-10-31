@@ -3850,6 +3850,12 @@ fn groups_and_both_space_sessions_survive_restart_then_share_wormhole() {
     advance(&mut replacement, 3.2);
     assert_eq!(replacement.sessions[&a].sector.id, 1910);
     assert_eq!(replacement.sessions[&b].sector.id, 1910);
+    let weft = crate::sectors::SectorCatalog::load()
+        .unwrap()
+        .wormhole_arrival(1910)
+        .unwrap();
+    assert_eq!(replacement.sessions[&a].position, weft);
+    assert_eq!(replacement.sessions[&b].position, weft);
     assert!(replacement.groups.together(a, b));
     let handoff_tick = replacement.sessions[&a].tick_ms();
     replacement.save().unwrap();

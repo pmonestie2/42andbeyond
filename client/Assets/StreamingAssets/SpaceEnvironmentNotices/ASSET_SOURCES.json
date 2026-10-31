@@ -1,0 +1,19 @@
+{
+  "URP Black Hole": {
+    "url": "https://github.com/tantaneity/urp-black-hole",
+    "commit": "c826aa96475cf47355391cd3245fa61184d0ed4a",
+    "license": "MIT",
+    "import": "Shaders, Materials and Prefabs copied unmodified. Demo uses a separate tuned material."
+  },
+  "Procedural Planets": {
+    "url": "https://github.com/SebLague/Procedural-Planets",
+    "commit": "6b551429541d988e00ca9e509450e51e1f2f6f12",
+    "license": "MIT",
+    "import": "Episode 07 C# sources copied unmodified. TerrainFace and ShapeGenerator bake noise-displaced asteroid meshes. Built-in-pipeline graphics and scenes deliberately excluded."
+  },
+  "Solar System Scope": {
+    "url": "https://www.solarsystemscope.com/textures/",
+    "license": "CC BY 4.0 https://creativecommons.org/licenses/by/4.0/",
+    "attribution": "Solar System Scope textures by INOVE, based on NASA imagery. Original 8K planet/sun/moon maps and 2K Ceres map retained. Texture import capped to 4K for this demo; rings remain 8K."
+  }
+}

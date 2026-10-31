@@ -19,11 +19,16 @@ namespace FortyTwoAndBeyond.Protocol
         private const double ReceiveBatchSeconds = .004;
         private readonly CancellationToken cancel;
         private readonly Stopwatch clock = Stopwatch.StartNew();
+        private readonly System.Collections.Generic.HashSet<string> subscribedChatChannels =
+            new System.Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private UdpClient comms, sector;
         private IPAddress address;
+        private IPEndPoint sectorPeer;
         private SectorStream stream;
         private uint sequence = 1;
-        private double receivedAt, keepaliveAt, resendAt, gateAt, dockAt, enteredAt;
+        private double keepaliveAt, resendAt, gateAt, dockAt, enteredAt;
+        private double nextMotionReportAt, motionReportInterval = .5;
+        private double lastStreamProgressAt, gapStartedAt;
         private uint gate, dock, combatTarget, followTarget, pendingLoot, pendingResource;
         private uint pendingDeviceTarget;
         private uint pendingDeviceTemplate;
@@ -31,14 +36,17 @@ namespace FortyTwoAndBeyond.Protocol
         private double pendingDeviceAt;
         private uint pendingAbilityTarget, pendingAbilityId;
         private double pendingAbilityAt;
-        private uint requestedTarget;
+        private uint requestedTarget, acknowledgedTarget;
         private double requestedTargetAt;
         private int pendingSkillId = -1;
         private double pendingSkillAt;
         private double combatTargetAt, followTargetAt, pendingLootAt, pendingResourceAt, selfJumpstartAt, rescueRequestAt;
         private bool gateActivated, gateCamera, gateFinished, dockRequested, lootRequested, selfJumpstartPending, rescuePending, disposed, failed;
         private byte[] handoff;
+        private const int MaximumAggregationAttempts = 3;
         private double aggregateStationAt;
+        private int aggregateStationAttempts;
+        private bool nativeStationContacts;
         private uint pendingStationContact;
         public uint Player { get; private set; }
         public World World { get; private set; } = new World();
@@ -46,25 +54,19 @@ namespace FortyTwoAndBeyond.Protocol
         public string Status { get; private set; } = "Connecting";
 
         /// <summary>Bind session lifetime to a worker cancellation token.</summary>
-        public LocalSession(CancellationToken token, byte[] navigationData = null)
-        { cancel = token; navigation = GalaxyNavigationCatalog.Decode(navigationData); }
-
-        /// <returns>A validated explicit loopback or private IPv4 address.</returns>
-        public static IPAddress LocalAddress(string host)
+        public LocalSession(CancellationToken token, byte[] navigationData = null, ItemTemplateInfo[] fallbackItems = null)
         {
-            if (!IPAddress.TryParse(host, out IPAddress ip) || ip.AddressFamily != AddressFamily.InterNetwork)
-                throw new ArgumentException("Enter a loopback or private LAN IPv4 address.");
-            byte[] b = ip.GetAddressBytes();
-            if (!(b[0] == 127 || b[0] == 10 || b[0] == 192 && b[1] == 168 || b[0] == 172 && b[1] >= 16 && b[1] <= 31))
-                throw new ArgumentException("This client connects only to your local development server.");
-            return ip;
+            cancel = token; navigation = GalaxyNavigationCatalog.Decode(navigationData);
+            if (fallbackItems != null)
+                foreach (ItemTemplateInfo item in fallbackItems)
+                    if (item != null && !World.ItemCatalog.ContainsKey(item.Id)) World.ItemCatalog.Add(item.Id, item);
         }
 
         /// <summary>Authenticate through the existing plaintext local bridge and enter space.</summary>
         public void Connect(string host, string username, string password, int characterSlot = 0)
         {
             cancel.ThrowIfCancellationRequested();
-            address = LocalAddress(host);
+            address = ServerEndpoint.Resolve(host, cancel);
             comms = NewUdp(3806);
             SendUdp(comms, 0x1000, Wire.Body(w => w.Write(246u)), 0, 0);
             byte[] registration = ReceiveUdp(comms, 10);
@@ -99,8 +101,7 @@ namespace FortyTwoAndBeyond.Protocol
                 Write(network, 0x2002, Encoding.ASCII.GetBytes(ticket));
                 Frame characters = Read(tcp);
                 if (characters.Opcode != 0x70 || characters.Body.Length < 1874) throw new InvalidDataException("Character list rejected.");
-                uint slotCount = Wire.U32(characters.Body, 8, true);
-                if (characterSlot < 0 || characterSlot >= slotCount || characterSlot >= 5)
+                if (!CharacterInfo.DecodeRoster(characters.Body).Any(character => character.Slot == characterSlot))
                     throw new InvalidDataException("Choose an available character.");
                 int characterOffset = 133 + characterSlot * 374;
                 if (Wire.Text(characters.Body, characterOffset, 20).Length == 0)
@@ -113,7 +114,7 @@ namespace FortyTwoAndBeyond.Protocol
                 Player = Wire.U32(join, 16, true);
                 if (Player == 0) throw new InvalidDataException("Missing player identity.");
                 SendUdp(comms, 0x200f, Array.Empty<byte>(), Player, 0);
-                sector = NewUdp(3808);
+                StartPacketJournal();
                 Enter(join);
             }
         }
@@ -144,10 +145,25 @@ namespace FortyTwoAndBeyond.Protocol
             while (true)
             {
                 cancel.ThrowIfCancellationRequested();
-                try { IPEndPoint endpoint = null; return socket.Receive(ref endpoint); }
+                if (clock.Elapsed.TotalSeconds >= deadline) throw new TimeoutException("Local server response timed out.");
+                try { if (ReceiveCurrentPeer(socket, out byte[] packet)) return packet; }
                 catch (SocketException error) when (error.SocketErrorCode == SocketError.TimedOut || error.SocketErrorCode == SocketError.WouldBlock)
                 { if (clock.Elapsed.TotalSeconds >= deadline) throw new TimeoutException("Local server response timed out."); }
             }
+        }
+
+        /// Returns:
+        ///     bool: Whether this datagram came from the socket's currently connected peer, rather than a queued previous-sector source.
+        private bool ReceiveCurrentPeer(UdpClient socket, out byte[] packet, IPEndPoint expectedPeer = null)
+        {
+            var expected = expectedPeer ?? socket.Client.RemoteEndPoint as IPEndPoint;
+            if (expected == null) throw new InvalidOperationException("UDP peer is not connected.");
+            IPEndPoint remote = null;
+            packet = socket.Receive(ref remote);
+            if (remote != null && remote.Port == expected.Port && remote.Address.Equals(expected.Address)) return true;
+            RecordTransportLine("ignore-foreign bytes=" + packet.Length + " source=" + remote + " expected-peer=" + expected);
+            packet = null;
+            return false;
         }
 
         /// <summary>Write a framed request to the local TCP bridge.</summary>
@@ -179,27 +195,47 @@ namespace FortyTwoAndBeyond.Protocol
             return new Frame(Wire.U16(header, 2), ReadExact(tcp, size - 4));
         }
 
-        /// <summary>Perform a fresh sector handoff using the existing UDP socket.</summary>
-        private void Enter(byte[] join)
+        /// <summary>Register a fresh sector socket before replacing the previous connection and reliable stream.</summary>
+        private void Enter(byte[] join) { EnterSector(join, 3808); }
+
+        /// <summary>Complete a sector entry through its explicit master endpoint before replacing the old socket.</summary>
+        private void EnterSector(byte[] join, int masterPort)
         {
             uint owner = Wire.U32(join, 16, true), destination = Wire.U32(join, 20, true);
             if (owner != Player || destination == 0) throw new InvalidDataException("Invalid sector handoff identity.");
-            sector.Connect(address, 3808);
-            SendUdp(sector, 0x2008, Wire.Body(w => { w.Write(destination); w.Write((byte)1); }), Player, 0);
-            byte[] reply = ReceiveUdp(sector, 15);
-            if (Wire.Datagram(reply, Player) != 0x2009 || reply.Length < 22 || Wire.U32(reply, 18) != Player)
-                throw new InvalidDataException("Sector handoff identity mismatch.");
-            int port = Wire.U16(reply, 16);
-            if (port == 0) throw new InvalidDataException("Missing sector port.");
-            sector.Connect(address, port);
+            int transferKind = World.TransferKind();
+            UdpClient incoming = NewUdp(masterPort);
+            int sectorPort;
+            try
+            {
+                SendUdp(incoming, 0x2008, Wire.Body(w => { w.Write(destination); w.Write((byte)1); }), Player, 0);
+                byte[] reply = ReceiveUdp(incoming, 15);
+                if (Wire.Datagram(reply, Player) != 0x2009 || reply.Length < 22 || Wire.U32(reply, 18) != Player)
+                    throw new InvalidDataException("Sector handoff identity mismatch.");
+                sectorPort = Wire.U16(reply, 16);
+                if (sectorPort == 0) throw new InvalidDataException("Missing sector port.");
+                incoming.Connect(address, sectorPort);
+            }
+            catch { incoming.Dispose(); throw; }
+            UdpClient previousSocket = sector;
+            sector = incoming;
+            sectorPeer = new IPEndPoint(address, sectorPort);
+            RecordTransportLine("sector-peer local=" + sector.Client.LocalEndPoint + " remote=" + sectorPeer +
+                " previous-local=" + previousSocket?.Client.LocalEndPoint);
+            previousSocket?.Dispose();
             stream = new SectorStream(Player);
-            World = new World(destination) { GalaxyCatalog = World.GalaxyCatalog, GalaxyRoute = World.GalaxyRoute, GalaxyTravel = galaxyPilot.View };
+            World previousWorld = World;
+            World = new World(destination) { EntryGeneration = sectorGeneration + 1, ArrivalKind = transferKind, GalaxyCatalog = World.GalaxyCatalog, GalaxyRoute = World.GalaxyRoute, GalaxyTravel = galaxyPilot.View };
+            World.InheritCharacterProgress(previousWorld);
+            foreach (var item in previousWorld.ItemCatalog) World.ItemCatalog[item.Key] = item.Value;
+            foreach (var cooldown in previousWorld.AbilityCooldownEnds)
+                World.AbilityCooldownEnds[cooldown.Key] = cooldown.Value;
             sectorGeneration++; sequence = 1; Ready = false;
-            aggregateStationAt = 0; pendingStationContact = 0;
+            aggregateStationAt = 0; aggregateStationAttempts = 0; nativeStationContacts = false; pendingStationContact = 0;
             gate = dock = followTarget = pendingResource = pendingDeviceTarget = 0;
             pendingDeviceSlot = -1; pendingDeviceTemplate = 0;
             pendingAbilityTarget = pendingAbilityId = 0;
-            requestedTarget = 0;
+            requestedTarget = acknowledgedTarget = 0;
             pendingSkillId = -1;
             selfJumpstartPending = rescuePending = false; handoff = null;
             byte[] body = Wire.Body(w =>
@@ -209,13 +245,22 @@ namespace FortyTwoAndBeyond.Protocol
                 w.Write(new byte[11]);
             });
             Send(2, body);
-            receivedAt = enteredAt = keepaliveAt = clock.Elapsed.TotalSeconds;
+            enteredAt = keepaliveAt = lastStreamProgressAt = clock.Elapsed.TotalSeconds;
+            gapStartedAt = 0;
             Status = "Receiving sector";
         }
 
         /// <summary>Send one input with this session's monotonically increasing sequence.</summary>
         private void Send(ushort opcode, byte[] body)
-        { cancel.ThrowIfCancellationRequested(); SendUdp(sector, opcode, body, Player, sequence++); }
+        {
+            cancel.ThrowIfCancellationRequested();
+            RecordTransport("send", opcode, body.Length + 12, sequence);
+            uint sentSequence = sequence++;
+            SendUdp(sector, opcode, body, Player, sentSequence);
+            if (opcode == 0x14 && body.Length == 5)
+                RecordTransportLine("sent-thrust14 command=" + body[4] +
+                    " sequence=" + sentSequence);
+        }
 
         /// <summary>Submit forward, reverse, or brake input.</summary>
         public void Thrust(byte command)
@@ -238,6 +283,47 @@ namespace FortyTwoAndBeyond.Protocol
             Send(0x33, Wire.Body(w => { w.Write(Player); w.Write(channel); w.Write((ushort)encoded.Length); w.Write(encoded); }));
         }
 
+        /// <summary>Subscribe once to a canonical public chat channel on this session.</summary>
+        public void SubscribeChatChannel(string channel)
+        {
+            if (!Ready || gate != 0 || !NativeChatChannel(channel) ||
+                !subscribedChatChannels.Add(channel)) return;
+            SendNativeChat(6, channel, "");
+        }
+
+        /// <summary>Send a named native chat line after subscribing to its channel.</summary>
+        public void ChatNamed(string text, string channel)
+        {
+            if (!Ready || gate != 0 || !NativeChatChannel(channel)) return;
+            if (string.IsNullOrWhiteSpace(text) || text.Length > 180 || text.IndexOf('\0') >= 0)
+                throw new ArgumentException("Enter a chat line up to 180 characters.", nameof(text));
+            SubscribeChatChannel(channel);
+            SendNativeChat(0, channel, text);
+        }
+
+        /// <returns>bool: Whether a named channel is supported by the native chat service.</returns>
+        private static bool NativeChatChannel(string channel)
+        { return channel == "Local" || channel == "General Chat" || channel == "Market" || channel == "NewPlayers"; }
+
+        /// <summary>Write the native three-string chat request without hidden terminators.</summary>
+        private void SendNativeChat(uint kind, string channel, string message)
+        {
+            Send(0xa3, Wire.Body(writer =>
+            {
+                writer.Write(Player); writer.Write(kind);
+                WriteChatText(writer, ""); WriteChatText(writer, channel); WriteChatText(writer, message);
+                writer.Write(0u);
+            }));
+        }
+
+        /// <summary>Write one bounded native length-prefixed UTF-8 field.</summary>
+        private static void WriteChatText(BinaryWriter writer, string value)
+        {
+            byte[] bytes = Encoding.UTF8.GetBytes(value);
+            if (bytes.Length > ushort.MaxValue) throw new InvalidDataException("Chat field too long.");
+            writer.Write((ushort)bytes.Length); writer.Write(bytes);
+        }
+
         /// <summary>Submit yaw and pitch intensities in the range minus one to one.</summary>
         public void Steer(float yaw, float pitch)
         {
@@ -246,6 +332,21 @@ namespace FortyTwoAndBeyond.Protocol
             followTarget = 0;
             Send(0x12, Wire.Body(w => { w.Write(Player); w.Write(yaw); }));
             Send(0x13, Wire.Body(w => { w.Write(Player); w.Write(pitch); }));
+        }
+
+        /// <summary>Report the rendered native MVAS pose from the worker-owned comms socket.</summary>
+        public void MotionReport(Position position, Position heading, float speedMetersPerSecond,
+            int entryGeneration)
+        {
+            if (!Ready || comms == null || World.Station != null || World.Warp.Phase != WarpPhase.Idle ||
+                World.Formation != null && World.Group.Formed ||
+                entryGeneration != World.EntryGeneration ||
+                clock.Elapsed.TotalSeconds < nextMotionReportAt) return;
+            byte[] body = NativeMotionReport.Encode(position, heading, speedMetersPerSecond);
+            byte[] packet = Wire.Encode(0x1004, body, Player, 1);
+            comms.Send(packet, packet.Length);
+            RecordMotionPacket(packet);
+            nextMotionReportAt = clock.Elapsed.TotalSeconds + motionReportInterval;
         }
 
         /// <summary>Warp toward a server-visible object or MOB, fly ahead, or cancel warp.</summary>
@@ -266,6 +367,7 @@ namespace FortyTwoAndBeyond.Protocol
         {
             if (!Ready || gate != 0 || !World.Objects.TryGetValue(target, out MapObject item) || item.Kind != 11) return;
             followTarget = 0;
+            World.ClearTransferIntent();
             gate = target; gateActivated = gateCamera = gateFinished = false; gateAt = clock.Elapsed.TotalSeconds;
             Send(0x17, Wire.Body(w => { w.Write(Player); w.Write(target); }));
             Send(0x5a, Wire.Body(w => { Wire.Big(w, Player); Wire.Big(w, target); w.Write(1u); }));
@@ -280,6 +382,7 @@ namespace FortyTwoAndBeyond.Protocol
                 !World.HasPosition || World.Position.Distance(item.Position) > 5000 + Math.Max(0, radius))
                 return;
             followTarget = 0;
+            World.ClearTransferIntent();
             dock = target; dockAt = clock.Elapsed.TotalSeconds; dockRequested = false;
             Send(0x17, Wire.Body(w => { w.Write(Player); w.Write(target); }));
             Status = "Requesting docking clearance: " + item.Name;
@@ -296,8 +399,9 @@ namespace FortyTwoAndBeyond.Protocol
         /// <summary>Negotiate the Unity directory's cross-room access without changing native room layouts.</summary>
         private void RequestStationAggregation()
         {
-            if (!Ready) return;
+            if (!Ready || World.AggregateStation || nativeStationContacts || aggregateStationAttempts >= MaximumAggregationAttempts) return;
             Send(0x203a, Wire.Body(w => { w.Write(Player); w.Write(1u); }));
+            aggregateStationAttempts++;
             aggregateStationAt = clock.Elapsed.TotalSeconds + 1;
         }
 
@@ -326,17 +430,44 @@ namespace FortyTwoAndBeyond.Protocol
             Send(0x9d, Wire.StationAvatarPose(Player, room, orientation, x, z, action));
         }
 
-        /// <summary>Open one NPC present in the authoritative station layout.</summary>
+        /// <summary>Open an advertised contact through negotiated aggregation or its native station room.</summary>
         public void OpenNpc(uint npcId)
         {
-            if (!Ready || World.Station == null || World.Dialogue != null ||
-                !World.Station.Contacts.Any(contact => contact.Id == npcId)) return;
-            if (!World.AggregateStation)
-            { pendingStationContact = npcId; RequestStationAggregation(); return; }
+            if (!Ready || World.Station == null || World.Dialogue != null) return;
+            StationContact contact = World.Station.Contacts.FirstOrDefault(entry => entry.Id == npcId);
+            if (contact == null) return;
+            if (!World.AggregateStation && World.Station.CurrentRoom != contact.Room)
+            {
+                if (!World.Station.RoomList.Any(room => room.Index == contact.Room))
+                { pendingStationContact = 0; Status = "Station contact room is unavailable"; return; }
+                if (!nativeStationContacts)
+                {
+                    pendingStationContact = npcId;
+                    if (aggregateStationAttempts == 0) RequestStationAggregation();
+                    Status = "Opening station contact";
+                    return;
+                }
+                EnterStationRoom(contact.Room);
+                if (World.Station.CurrentRoom != contact.Room)
+                { pendingStationContact = 0; Status = "Could not enter station contact room"; return; }
+            }
             pendingStationContact = 0;
             World.StartDialogue(npcId);
             Send(0x4e, Wire.Body(w => { w.Write(Player); w.Write(npcId); w.Write((byte)4); }));
             Status = "Talking to station contact";
+        }
+
+        /// <summary>Bound optional aggregation negotiation and release pending contacts through native room movement.</summary>
+        private void AdvanceStationContacts(double now)
+        {
+            if (!Ready || World.Station == null) return;
+            if (!World.AggregateStation && !nativeStationContacts && now >= aggregateStationAt)
+            {
+                if (aggregateStationAttempts < MaximumAggregationAttempts) RequestStationAggregation();
+                else nativeStationContacts = true;
+            }
+            if (pendingStationContact != 0 && (World.AggregateStation || nativeStationContacts))
+                OpenNpc(pendingStationContact);
         }
 
         /// <summary>Choose only a branch offered by an authoritative talk tree.</summary>
@@ -408,6 +539,10 @@ namespace FortyTwoAndBeyond.Protocol
             if (!Ready || gate != 0 || move.Quantity == 0 ||
                 move.SourceSlot < 0 || move.DestinationSlot < 0 ||
                 !InventoryContainer(move.Source) || !InventoryContainer(move.Destination)) return;
+            if ((move.Source == 16 || move.Destination == 16) &&
+                (!World.Trade.Open ||
+                 !(move.Source == 1 && move.Destination == 16 ||
+                   move.Source == 16 && move.Destination == 1))) return;
             ItemState[] source = InventorySlots(move.Source);
             ItemState[] destination = InventorySlots(move.Destination);
             if (move.SourceSlot >= source.Length || move.DestinationSlot >= destination.Length ||
@@ -420,15 +555,30 @@ namespace FortyTwoAndBeyond.Protocol
             Status = "Moving inventory · awaiting server";
         }
 
-        /// <returns>bool: Whether a container belongs to cargo, installed gear, vault, or magazines.</returns>
+        /// <summary>Request one server-owned launcher reload preference.</summary>
+        public void SetLauncherAutoReload(int mount, bool enabled)
+        {
+            if (!Ready || gate != 0 || mount < 3 || mount > 8) return;
+            Send(0x203d, Wire.Body(writer =>
+            { writer.Write(Player); writer.Write((uint)mount); writer.Write(enabled ? 1u : 0u); }));
+            Status = "Updating launcher reload preference";
+        }
+
+        /// <summary>Subscribe to authoritative compatible ammunition and reload revisions.</summary>
+        private void QueryLauncherAmmo()
+        { Send(0x203d, Wire.Body(writer =>
+            { writer.Write(Player); writer.Write(uint.MaxValue); writer.Write(0u); })); }
+
+        /// <returns>bool: Whether a container belongs to cargo, gear, vault, magazines, or an open trade.</returns>
         private static bool InventoryContainer(uint container)
-        { return container >= 1 && container <= 3 || container == 8; }
+        { return container >= 1 && container <= 3 || container == 8 || container == 16; }
 
         /// <returns>ItemState[]: The live worker-owned slots for a native inventory container.</returns>
         private ItemState[] InventorySlots(uint container)
         { return container == 1 ? World.Equipment.Cargo :
             container == 2 ? World.Equipment.Mounted :
-            container == 3 ? World.Equipment.Vault : World.Equipment.Ammo; }
+            container == 3 ? World.Equipment.Vault :
+            container == 16 ? World.Trade.Own.Slots : World.Equipment.Ammo; }
 
         /// <summary>Toggle one mounted weapon with the native item activation packet.</summary>
         public void ActivateWeapon(int slot)
@@ -700,9 +850,11 @@ namespace FortyTwoAndBeyond.Protocol
             bool selectableObject = World.Objects.TryGetValue(target, out MapObject item) &&
                 WarpTargets.WorldObject(item);
             if (!Ready || gate != 0 || (target != Player && !World.Mobs.ContainsKey(target) &&
-                !World.Players.ContainsKey(target) && !selectableObject)) return;
+                !World.Players.ContainsKey(target) && !World.StationAvatars.ContainsKey(target) && !selectableObject)) return;
             if (followTarget != target) followTarget = 0;
             if (World.Equipment.TargetId != target) World.SetOpenLoot(0);
+            if (pendingLoot != 0 && pendingLoot != target) { pendingLoot = 0; lootRequested = false; World.SetLootRequest(0); }
+            acknowledgedTarget = 0;
             requestedTarget = target; requestedTargetAt = clock.Elapsed.TotalSeconds;
             Send(0x17, Wire.Body(w => { w.Write(Player); w.Write(target); }));
         }
@@ -728,6 +880,45 @@ namespace FortyTwoAndBeyond.Protocol
             Status = "Requesting group invitation";
         }
 
+        /// <summary>Request a server-offered trade with the currently selected peer.</summary>
+        public void OpenTrade(uint peer)
+        {
+            if (!Ready || gate != 0 || World.Trade.Open ||
+                (!World.Players.ContainsKey(peer) && !World.StationAvatars.ContainsKey(peer)) ||
+                World.Equipment.TargetId != peer || World.Verbs.Available(peer, 6) != true) return;
+            SendTradeAction(20, peer, 0);
+            Status = "Opening peer trade";
+        }
+
+        /// <summary>Confirm the current native offer once; edits may reset this approval.</summary>
+        public void ConfirmTrade()
+        {
+            if (!Ready || gate != 0 || !World.Trade.Open || World.Trade.OwnConfirmed) return;
+            SendTradeAction(21, World.Trade.PeerId, 0);
+            Status = "Confirming peer trade";
+        }
+
+        /// <summary>Cancel the current native trade without moving its reserved offers.</summary>
+        public void CancelTrade()
+        {
+            if (!Ready || gate != 0 || !World.Trade.Open) return;
+            SendTradeAction(22, World.Trade.PeerId, 0);
+            Status = "Cancelling peer trade";
+        }
+
+        /// <summary>Set an offered credit amount, leaving admission to the server.</summary>
+        public void SetTradeCredits(uint credits)
+        {
+            if (!Ready || gate != 0 || !World.Trade.Open) return;
+            SendTradeAction(24, World.Trade.PeerId, credits);
+            Status = "Updating trade credits";
+        }
+
+        /// <summary>Send one native four-integer peer-trade action.</summary>
+        private void SendTradeAction(uint action, uint peer, uint optional)
+        { Send(0x2c, Wire.Body(w =>
+            { w.Write(Player); w.Write(action); w.Write(peer); w.Write(optional); })); }
+
         /// <summary>Answer the native group or ability confirmation currently offered by the server.</summary>
         public void AnswerConfirmation(bool accept)
         {
@@ -745,16 +936,25 @@ namespace FortyTwoAndBeyond.Protocol
             Send(0x2c, Wire.Body(w => { w.Write(Player); w.Write(9u); w.Write(0u); w.Write(0u); }));
         }
 
-        /// <summary>Select a visible wreck before requesting its server loot window.</summary>
+        /// <summary>Request native loot, reusing an acknowledged current selection without a redundant target request.</summary>
         public void OpenLoot(uint target)
         {
-            if (!Ready || gate != 0 || pendingLoot != 0 || !World.Objects.TryGetValue(target, out MapObject corpse) || corpse.Kind != 25)
-                return;
+            if (!Ready || gate != 0 || !World.Objects.TryGetValue(target, out MapObject corpse) || corpse.Kind != 25) return;
+            if (World.OpenLootId == target) { Status = "Wreck open"; return; }
+            if (pendingLoot == target) return;
             followTarget = 0;
             pendingLoot = target; pendingLootAt = clock.Elapsed.TotalSeconds; lootRequested = false;
-            World.SetOpenLoot(0);
-            Send(0x17, Wire.Body(w => { w.Write(Player); w.Write(target); }));
-            Status = "Selecting wreck: " + corpse.Name;
+            World.SetOpenLoot(0); World.SetLootRequest(target);
+            if (acknowledgedTarget == target && World.Equipment.TargetId == target) RequestLootPermission();
+            else { SelectTarget(target); Status = "Selecting wreck: " + corpse.Name; }
+        }
+
+        /// <summary>Ask for server permission after selection; only its grant opens the wreck.</summary>
+        private void RequestLootPermission()
+        {
+            lootRequested = true; World.SetLootRequest(pendingLoot, true);
+            Send(0x51, Wire.Body(w => { w.Write(Player); w.Write(0u); }));
+            Status = "Opening wreck";
         }
 
         /// <summary>Close the server-owned wreck window and cancel any active tractor.</summary>
@@ -831,6 +1031,7 @@ namespace FortyTwoAndBeyond.Protocol
             }
             if (!Ready || gate != 0 || World.Station != null ||
                 !World.AvailableAbilities.Contains(id)) return;
+            World.ClearTransferIntent();
             Send(0x58, Wire.Body(w => { w.Write(Player); w.Write(0u); w.Write(id); }));
             Status = "Activating ability " + id;
         }
@@ -930,7 +1131,11 @@ namespace FortyTwoAndBeyond.Protocol
         /// <summary>Select a visible MOB and toggle equipped weapons only after its matching acknowledgment.</summary>
         public void ToggleWeapons(uint target)
         {
-            if (!Ready || gate != 0 || combatTarget != 0 || !World.Mobs.TryGetValue(target, out ShipActor mob) || !mob.HasPosition)
+            if (!Ready || gate != 0 || combatTarget != 0) return;
+            if (!World.Equipment.Mounted.Skip(3).Take((int)Math.Min(6u, World.Equipment.WeaponMounts))
+                .Any(item => item?.Present == true))
+            { Status = "No weapons equipped"; return; }
+            if (!World.Mobs.TryGetValue(target, out ShipActor mob) || !mob.HasPosition)
                 return;
             combatTarget = target; combatTargetAt = clock.Elapsed.TotalSeconds;
             Send(0x17, Wire.Body(w => { w.Write(Player); w.Write(target); }));
@@ -944,6 +1149,7 @@ namespace FortyTwoAndBeyond.Protocol
         /// <summary>Apply a world frame and answer required session control messages.</summary>
         private void Apply(Frame frame)
         {
+            RecordSectorFrame(frame);
             bool wasLootWindow = World.OpenLootId != 0;
             SkillRank[] previousSkills = World.Skills;
             World.Apply(frame, Player); byte[] b = frame.Body;
@@ -951,16 +1157,38 @@ namespace FortyTwoAndBeyond.Protocol
                 pendingSkillId = -1;
             switch (frame.Opcode)
             {
+                case 7:
+                    if (b.Length == 4)
+                    {
+                        uint removed = Wire.U32(b, 0);
+                        if (pendingLoot == removed) { pendingLoot = 0; lootRequested = false; World.SetLootRequest(0); }
+                        if (acknowledgedTarget == removed) acknowledgedTarget = 0;
+                    }
+                    break;
+                case 4:
+                    if (b.Length == 23 && b[10] == 25)
+                    {
+                        uint created = Wire.U32(b, 0);
+                        if (pendingLoot == created) { pendingLoot = 0; lootRequested = false; World.SetLootRequest(0); }
+                        if (acknowledgedTarget == created) acknowledgedTarget = 0;
+                    }
+                    break;
+                case 0x20:
+                case 0x22:
+                    Status = NativePriorityNotice.Decode(b).Message;
+                    break;
                 case 0x2020: if (b.Length == 4) Send(0x2021, b); break;
                 case 5:
                     if (b.Length != 4) throw new InvalidDataException("Invalid sector start.");
                     Send(6, b); Send(0x3004, Wire.Body(w => w.Write(Player))); Ready = true; Status = "Connected";
                     RequestStationAggregation();
+                    QueryLauncherAmmo();
                     if (World.Station?.RoomList.Count > 0 && World.Station.CurrentRoom == uint.MaxValue)
                         EnterStationRoom(World.Station.RoomList[0].Index);
                     break;
                 case 0x203b:
-                    if (World.AggregateStation && pendingStationContact != 0) OpenNpc(pendingStationContact);
+                    nativeStationContacts = !World.AggregateStation;
+                    if (pendingStationContact != 0) OpenNpc(pendingStationContact);
                     break;
                 case 0x52:
                     if (Ready && World.Station?.RoomList.Count > 0 && World.Station.CurrentRoom == uint.MaxValue)
@@ -970,6 +1198,7 @@ namespace FortyTwoAndBeyond.Protocol
                     if (rescuePending) { rescuePending = false; Status = "Rescue options received"; }
                     break;
                 case 0x19:
+                    if (b.Length == 8 && Wire.U32(b, 4) == uint.MaxValue) acknowledgedTarget = Wire.U32(b, 0);
                     if (b.Length == 8 && Wire.U32(b, 0) == requestedTarget &&
                         Wire.U32(b, 4) == uint.MaxValue) requestedTarget = 0;
                     if (b.Length == 8 && pendingAbilityId != 0 &&
@@ -1011,9 +1240,7 @@ namespace FortyTwoAndBeyond.Protocol
                     }
                     if (b.Length == 8 && pendingLoot != 0 && !lootRequested && Wire.U32(b, 0) == pendingLoot && Wire.U32(b, 4) == uint.MaxValue)
                     {
-                        lootRequested = true;
-                        Send(0x51, Wire.Body(w => { w.Write(Player); w.Write(0u); }));
-                        Status = "Opening wreck";
+                        RequestLootPermission();
                     }
                     if (b.Length == 8 && pendingResource != 0 && Wire.U32(b, 0) == pendingResource && Wire.U32(b, 4) == uint.MaxValue)
                     {
@@ -1036,7 +1263,7 @@ namespace FortyTwoAndBeyond.Protocol
                     break;
                 case 0x8c:
                     if (b.Length == 4 && pendingLoot != 0 && Wire.U32(b, 0, true) == pendingLoot)
-                    { World.SetOpenLoot(pendingLoot); pendingLoot = 0; Status = "Wreck open"; }
+                    { World.SetOpenLoot(pendingLoot); pendingLoot = 0; World.SetLootRequest(0); Status = "Wreck open"; }
                     break;
                 case 0x92:
                     if (b.Length == 8 && dock != 0 && dockRequested && Wire.U32(b, 0, true) == 5 && Wire.U32(b, 4, true) == dock)
@@ -1055,6 +1282,8 @@ namespace FortyTwoAndBeyond.Protocol
                     }
                     break;
                 case 0x66:
+                    if (b.Length == 8 && Wire.U32(b, 0) == 1 && pendingLoot != 0)
+                    { pendingLoot = 0; lootRequested = false; World.SetLootRequest(0); Status = "Wreck request closed by server"; break; }
                     Status = World.OpenLootId != 0 ? "Wreck open" :
                         World.ResourceWindowOpen ? "Prospecting window open" :
                         wasLootWindow ? "Wreck closed" : "Prospecting window closed";
@@ -1070,17 +1299,14 @@ namespace FortyTwoAndBeyond.Protocol
             cancel.ThrowIfCancellationRequested();
             try
             {
-                bool receivedSector = ReceiveSectorBatch();
-                // A replayed datagram may carry no new frames. Re-acknowledge the
-                // ordered prefix anyway so a lost ACK cannot stall the sender.
-                if (receivedSector && handoff == null) Send(0x2021, Wire.Body(w => w.Write(stream.Expected)));
+                ReceiveCommsControl();
+                ReceiveSectorBatch();
                 double now = clock.Elapsed.TotalSeconds;
                 if (handoff != null) { Enter(handoff); return; }
                 AdvanceGalaxyTravel(now);
-                if (Ready && World.Station != null && !World.AggregateStation && now >= aggregateStationAt)
-                    RequestStationAggregation();
+                AdvanceStationContacts(now);
                 if (pendingLoot != 0 && now - pendingLootAt > 5)
-                { pendingLoot = 0; Status = "Wreck did not open"; }
+                { pendingLoot = 0; World.SetLootRequest(0); Status = "Wreck did not open; retry or move closer"; }
                 if (pendingResource != 0 && now - pendingResourceAt > 5)
                 { pendingResource = 0; World.SetResourceTarget(0); Status = "Asteroid did not acknowledge selection"; }
                 if (selfJumpstartPending && now - selfJumpstartAt > 5)
@@ -1113,10 +1339,28 @@ namespace FortyTwoAndBeyond.Protocol
                 { Send(0x2017, Wire.Body(w => { w.Write(stream.Expected); w.Write(stream.MissingCount); })); resendAt = now; }
                 if (now - keepaliveAt >= 15)
                 { Send(0x3005, Array.Empty<byte>()); SendUdp(comms, 0x3005, Array.Empty<byte>(), Player, 0); keepaliveAt = now; }
-                if (now - receivedAt > 45 || !Ready && now - enteredAt > 30) throw new TimeoutException("Sector stopped responding.");
+                if (SectorTimedOut(Ready, now, enteredAt, stream.MissingCount,
+                    gapStartedAt, lastStreamProgressAt))
+                    throw new TimeoutException("Sector stopped responding.");
             }
             catch (OperationCanceledException) { throw; }
             catch { failed = true; throw; }
+        }
+
+        /// <summary>Honor the native MVAS report frequency sent on the comms socket.</summary>
+        private void ReceiveCommsControl()
+        {
+            if (comms == null) return;
+            for (int count = 0; count < 8 && comms.Available > 0; count++)
+            {
+                IPEndPoint remote = null;
+                byte[] packet = comms.Receive(ref remote);
+                if (packet.Length != 16 || Wire.U16(packet, 0) != 16 ||
+                    Wire.U16(packet, 2) != 0x1007 || Wire.U32(packet, 4) != Player) continue;
+                uint frequency = Wire.U32(packet, 12);
+                if (frequency == 1 || frequency == 2)
+                    motionReportInterval = frequency == 1 ? .5 : 1.0;
+            }
         }
 
         /// <summary>Drain queued datagrams without making commands or snapshot publication wait for an unbounded burst.</summary>
@@ -1130,23 +1374,42 @@ namespace FortyTwoAndBeyond.Protocol
                 cancel.ThrowIfCancellationRequested();
                 if (count > 0 && sector.Available == 0) return received;
                 byte[] packet;
-                try { IPEndPoint endpoint = null; packet = sector.Receive(ref endpoint); }
+                bool currentPeer;
+                try { currentPeer = ReceiveCurrentPeer(sector, out packet, expectedPeer: sectorPeer); }
                 catch (SocketException error) when (error.SocketErrorCode == SocketError.TimedOut ||
                     error.SocketErrorCode == SocketError.WouldBlock) { return received; }
                 double now = clock.Elapsed.TotalSeconds;
                 if (count == 0) deadline = now + ReceiveBatchSeconds;
+                if (!currentPeer)
+                {
+                    if (clock.Elapsed.TotalSeconds >= deadline) return received;
+                    continue;
+                }
                 ushort opcode = Wire.Datagram(packet, Player);
+                RecordTransport("receive", opcode, packet.Length, Wire.U32(packet, 8));
                 if (opcode == 0x2016 || opcode == 0x201a)
                 {
                     received = true;
+                    uint before = stream.Expected;
                     foreach (Frame frame in stream.Feed(packet))
                     { Apply(frame); if (handoff != null) return received; }
-                    receivedAt = now;
+                    bool progressed = stream.Expected != before;
+                    if (progressed) lastStreamProgressAt = now;
+                    if (stream.MissingCount == 0) gapStartedAt = 0;
+                    else if (gapStartedAt == 0 || progressed) gapStartedAt = now;
                 }
                 if (clock.Elapsed.TotalSeconds >= deadline) return received;
             }
             return received;
         }
+
+        /// Returns:
+        ///     bool: Whether startup or a known missing reliable range has stopped progressing.
+        private static bool SectorTimedOut(bool ready, double now, double entered,
+            uint missingCount, double gapStarted, double lastProgress) =>
+            !ready && now - entered > 30 ||
+            ready && missingCount > 0 && gapStarted > 0 &&
+            now - Math.Max(gapStarted, lastProgress) > 45;
 
         /// <summary>Log out on deliberate closure and release worker-owned sockets.</summary>
         public void Dispose()
@@ -1158,7 +1421,11 @@ namespace FortyTwoAndBeyond.Protocol
                     SendUdp(comms, 0x1008, Wire.Body(w => w.Write(Player)), Player, 0);
             }
             catch (SocketException) { }
-            finally { sector?.Dispose(); comms?.Dispose(); }
+            finally
+            {
+                sector?.Dispose(); comms?.Dispose(); packetJournal?.Dispose(); packetJournal = null;
+                transportJournal?.Dispose(); transportJournal = null;
+            }
         }
     }
 }

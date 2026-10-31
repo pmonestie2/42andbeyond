@@ -356,8 +356,49 @@ fn accept_connections(
     }
 }
 
+/// Returns:
+///     io::Error: Socket failure with a recovery hint for missing host interfaces.
+fn bind_error(error: io::Error, transport: &str, address: Ipv4Addr, port: u16) -> io::Error {
+    let hint = if error.kind() == io::ErrorKind::AddrNotAvailable {
+        "; this IP is not assigned to this machine. Restore its LAN/VM network, or use --bind with an existing local address (127.0.0.1 for local-only play). Clients must connect to that address; no fallback address was selected"
+    } else {
+        ""
+    };
+    io::Error::new(
+        error.kind(),
+        format!("cannot bind {transport} {address}:{port}: {error}{hint}"),
+    )
+}
+
+/// Run the configured endpoints after checking network availability before account changes.
+/// Raises:
+///     io::Error: An endpoint, state lock or server operation fails.
 pub fn run(config: Config, stop: Arc<AtomicBool>) -> io::Result<()> {
+    // A stale VM/LAN address must not trigger device migrations or consume a stop request.
+    drop(
+        UdpSocket::bind((config.bind, 0))
+            .map_err(|e| bind_error(e, "UDP probe", config.bind, 0))?,
+    );
     let _state_lock = lock_state_directory(&config.state_dir)?;
+    // Bind every endpoint before starting threads: partial startup never leaves
+    // some server ports running after another port reports an error.
+    let mut tcp = Vec::new();
+    // Installed Net7Proxy 2.46 opens its account bridge on TCP 3807, while
+    // the archived proxy opens it on 3809. UDP 3807 is a separate socket.
+    // Keep both bridge endpoints for compatibility with either proxy version.
+    for (port, bridge) in [(3805, false), (3807, true), (3809, true), (3810, true)] {
+        let listener = TcpListener::bind((config.bind, port))
+            .map_err(|e| bind_error(e, "TCP", config.bind, port))?;
+        listener.set_nonblocking(true)?;
+        tcp.push((listener, bridge));
+    }
+    let mut udp = HashMap::new();
+    for port in [3806, 3807, 3808, SECTOR_PORT] {
+        let socket = UdpSocket::bind((config.bind, port))
+            .map_err(|e| bind_error(e, "UDP", config.bind, port))?;
+        socket.set_nonblocking(true)?;
+        udp.insert(port, socket);
+    }
     let upgraded = crate::demo_accounts::upgrade_published_devices(&config.state_dir)?;
     if !upgraded.is_empty() {
         crate::server_log!(
@@ -367,37 +408,9 @@ pub fn run(config: Config, stop: Arc<AtomicBool>) -> io::Result<()> {
     }
     let stop_request = config.state_dir.join("stop.request");
     let status_path = config.state_dir.join("server.local.json");
-    // A request belongs to one process lifetime; a previous stop must not stop
-    // the replacement immediately.
+    // A request belongs to one process lifetime; only a network-ready replacement consumes it.
     if stop_request.exists() {
         std::fs::remove_file(&stop_request)?;
-    }
-    // Bind every endpoint before starting threads: partial startup never leaves
-    // some server ports running after another port reports an error.
-    let mut tcp = Vec::new();
-    // Installed Net7Proxy 2.46 opens its account bridge on TCP 3807, while
-    // the archived proxy opens it on 3809. UDP 3807 is a separate socket.
-    // Keep both bridge endpoints for compatibility with either proxy version.
-    for (port, bridge) in [(3805, false), (3807, true), (3809, true), (3810, true)] {
-        let listener = TcpListener::bind((config.bind, port)).map_err(|e| {
-            io::Error::new(
-                e.kind(),
-                format!("cannot bind TCP {}:{port}: {e}", config.bind),
-            )
-        })?;
-        listener.set_nonblocking(true)?;
-        tcp.push((listener, bridge));
-    }
-    let mut udp = HashMap::new();
-    for port in [3806, 3807, 3808, SECTOR_PORT] {
-        let socket = UdpSocket::bind((config.bind, port)).map_err(|e| {
-            io::Error::new(
-                e.kind(),
-                format!("cannot bind UDP {}:{port}: {e}", config.bind),
-            )
-        })?;
-        socket.set_nonblocking(true)?;
-        udp.insert(port, socket);
     }
     let mut game_state = GameState::new(config.sector, config.bind, config.state_dir)?;
     game_state.set_developer_mode(config.developer_commands);
@@ -527,6 +540,29 @@ pub fn run(config: Config, stop: Arc<AtomicBool>) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// An absent interface is distinguished from a busy port without choosing a new address.
+    #[test]
+    fn bind_failure_reports_missing_interface_without_masking_busy_ports() {
+        let address = Ipv4Addr::new(192, 168, 47, 1);
+        let missing = bind_error(
+            io::Error::from(io::ErrorKind::AddrNotAvailable),
+            "TCP",
+            address,
+            3805,
+        );
+        assert_eq!(missing.kind(), io::ErrorKind::AddrNotAvailable);
+        assert!(missing.to_string().contains("Restore its LAN/VM network"));
+        assert!(missing.to_string().contains("192.168.47.1:3805"));
+        let busy = bind_error(
+            io::Error::from(io::ErrorKind::AddrInUse),
+            "TCP",
+            address,
+            3805,
+        );
+        assert_eq!(busy.kind(), io::ErrorKind::AddrInUse);
+        assert!(!busy.to_string().contains("not assigned"));
+    }
 
     /// A second server cannot publish state through a different bind address.
     #[test]

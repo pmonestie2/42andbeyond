@@ -8,7 +8,7 @@ const QUEUED_LIMIT: usize = 8192;
 const ACK_GROUP_BYTES: usize = 16 * MTU_PAYLOAD;
 
 /// Returns:
-///     Vec<Datagram>: Whole native frames with unsupported custom opcodes isolated from native UI messages.
+///     Vec<Datagram>: Native frames and continuations, with custom opcodes isolated from UI messages.
 /// Raises:
 ///     io::Error: A native frame exceeds its protocol length bound.
 fn native_packets(player: u32, sequence: &mut u32, frames: &[Frame]) -> io::Result<Vec<Datagram>> {
@@ -16,11 +16,10 @@ fn native_packets(player: u32, sequence: &mut u32, frames: &[Frame]) -> io::Resu
     let mut body = Vec::new();
     for frame in frames {
         let encoded = frame.encode()?;
-        if encoded.len() > 4096 {
-            // Preserve the existing continuation contract for unusually large
-            // non-production records instead of overflowing an old proxy's
-            // 4 KiB TCP queue. Native formula diffs are explicitly chunked and
-            // never reach this fallback.
+        if encoded.len() > MTU_PAYLOAD {
+            // Net7Proxy 2.46 treats a larger declared frame as the beginning
+            // of a 1400-byte fragment stream, even if the UDP packet contains
+            // the whole frame. Supply its native 0x201a continuations.
             if !body.is_empty() {
                 packets.push(Datagram {
                     opcode: 0x2016,
@@ -167,7 +166,10 @@ impl PlayerSession {
                 data: packet.encode()?,
             });
             self.replay.push_back(packet);
-            if self.replay.len() > 128 {
+            if self.replay.len() > QUEUED_LIMIT {
+                return Err(invalid("Native startup replay limit exceeded."));
+            }
+            if self.replay.len() > 128 && !self.awaiting_start_ack {
                 self.replay.pop_front();
             }
             transmitted += 1;
@@ -187,7 +189,10 @@ impl PlayerSession {
     fn retry_reliable_output(&mut self) -> io::Result<()> {
         if self.replay.is_empty()
             || self.transition_pending.is_some()
-            || !(self.aggregate_station || self.ack_capable || self.handoff.is_some())
+            || !(self.aggregate_station
+                || self.ack_capable
+                || self.handoff.is_some()
+                || self.awaiting_start_ack)
         {
             return Ok(());
         }
@@ -198,7 +203,21 @@ impl PlayerSession {
             if self.last_handoff_replay.elapsed() < Duration::from_secs(1) {
                 return Ok(());
             }
-            self.replay_retry_cursor = self.replay.front().map(|packet| packet.sequence);
+            // Native proxies treat sequence zero as a destructive stream reset. Only an
+            // explicit missing-packet request may replay it; blind retries must not rewind login.
+            self.replay_retry_cursor = self
+                .replay
+                .iter()
+                .find(|packet| {
+                    !(self.awaiting_start_ack
+                        && !self.aggregate_station
+                        && !self.ack_capable
+                        && packet.sequence == 0)
+                })
+                .map(|packet| packet.sequence);
+            if self.replay_retry_cursor.is_none() {
+                return Ok(());
+            }
         }
         let cursor = self.replay_retry_cursor.unwrap();
         let mut next = cursor;
@@ -231,8 +250,75 @@ impl PlayerSession {
 
 #[cfg(test)]
 mod tests {
+    /// Match the installed proxy's 1400-byte implicit native fragment contract.
+    #[test]
+    fn native_large_aux_uses_continuations_before_following_frames() {
+        let aux = Frame::new(0x1b, vec![7; 2357]);
+        let extension = Frame::new(0x2030, vec![1; 8]);
+        let mut sequence = 0;
+        let output = native_packets(42, &mut sequence, &[aux.clone(), extension.clone()]).unwrap();
+        assert_eq!(output.len(), 3);
+        assert_eq!((output[0].opcode, output[1].opcode), (0x2016, 0x201a));
+        assert_eq!(output[0].body.len(), MTU_PAYLOAD);
+        assert_eq!(
+            [output[0].body.as_slice(), output[1].body.as_slice()].concat(),
+            aux.encode().unwrap()
+        );
+        assert_eq!(output[2].body, extension.encode().unwrap());
+        assert_eq!(
+            output.iter().map(|packet| packet.sequence).collect::<Vec<_>>(),
+            [0, 1, 2]
+        );
+        assert!(output.iter().all(|packet| packet.body.len() <= MTU_PAYLOAD));
+    }
+
     use super::*;
     use std::collections::BTreeMap;
+
+    /// A legacy startup repairs lost early packets without ACK extensions, retaining bootstraps above 128 packets.
+    #[test]
+    fn reliable_transport_legacy_startup_retries_and_preserves_the_complete_bootstrap() {
+        let mut ship = super::super::tests::journal_ship();
+        ship.awaiting_start_ack = true;
+        ship.ack_capable = false;
+        ship.aggregate_station = false;
+        ship.pending = (0..180)
+            .map(|index| Frame::new(0x2018, vec![index as u8; 40]))
+            .collect();
+        ship.pending.push(Frame::new(5, vec![2, 0, 0, 0]));
+        let mut original = Vec::new();
+        for _ in 0..30 {
+            ship.flush().unwrap();
+            original.extend(ship.take_outgoing());
+            if ship.queued_output.is_empty() {
+                break;
+            }
+        }
+        assert_eq!(original.len(), 181);
+        assert_eq!(ship.replay.len(), 181);
+        ship.checkpoint_session(true).unwrap();
+        let restored =
+            PlayerSession::new(ship.sector.clone(), ship.bind, ship.state_dir.clone()).unwrap();
+        assert!(restored.awaiting_start_ack);
+        assert_eq!(restored.replay.len(), 181);
+        let first = original[1].data.clone();
+        ship.last_handoff_replay = Instant::now() - Duration::from_secs(2);
+        ship.flush().unwrap();
+        let retried = ship.take_outgoing();
+        assert_eq!(retried.len(), TRANSMIT_BATCH);
+        assert_eq!(retried[0].data, first);
+        assert!(retried
+            .iter()
+            .all(|packet| Datagram::decode(&packet.data).unwrap().sequence != 0));
+        ship.handle_input(6, &[]).unwrap();
+        assert!(!ship.awaiting_start_ack);
+        assert_eq!(ship.replay.len(), 128);
+        ship.pending.clear();
+        ship.last_handoff_replay = Instant::now() - Duration::from_secs(2);
+        ship.flush().unwrap();
+        assert!(ship.take_outgoing().is_empty());
+        std::fs::remove_dir_all(&ship.state_dir).unwrap();
+    }
 
     /// Large native fragments retain complete-frame ACK boundaries and each ACK group fits inside the send window.
     #[test]
@@ -365,6 +451,80 @@ mod tests {
 mod native_tests {
     use super::*;
 
+    /// Space and station output progress when the client echoes only server challenges.
+    #[test]
+    fn reliable_transport_challenge_only_ack_survives_space_station_roundtrip() {
+        let mut ship = super::super::tests::journal_ship();
+        ship.logged_in = true;
+        ship.pending = (0..300)
+            .map(|index| Frame::new(0x1d, vec![index as u8; 1200]))
+            .collect();
+        let mut space_packets = 0;
+        while !ship.queued_output.is_empty() || !ship.pending.is_empty() {
+            ship.flush().unwrap();
+            for output in ship.take_outgoing() {
+                let packet = Datagram::decode(&output.data).unwrap();
+                assert!(!packet
+                    .body
+                    .windows(4)
+                    .any(|bytes| bytes == [8, 0, 0x20, 0x20]));
+                space_packets += 1;
+            }
+        }
+        assert!(space_packets > INFLIGHT_LIMIT);
+        assert!(!ship.ack_capable);
+        assert!(ship.replay.len() <= 128);
+
+        ship.aggregate_station = true;
+        ship.pending = (0..200)
+            .map(|index| Frame::new(0x1d, vec![index as u8; 1200]))
+            .collect();
+        let mut challenges = 0;
+        for _ in 0..100 {
+            ship.flush().unwrap();
+            for output in ship.take_outgoing() {
+                let packet = Datagram::decode(&output.data).unwrap();
+                let mut body = packet.body.as_slice();
+                while !body.is_empty() {
+                    let size = u16::from_le_bytes(body[..2].try_into().unwrap()) as usize;
+                    let frame = Frame::decode(&body[..size]).unwrap();
+                    body = &body[size..];
+                    if frame.opcode == 0x2020 {
+                        ship.handle_input(0x2021, &frame.body).unwrap();
+                        challenges += 1;
+                    }
+                }
+            }
+            if ship.queued_output.is_empty() && ship.replay.is_empty() {
+                break;
+            }
+        }
+        assert!(challenges > 1);
+        assert!(ship.ack_capable);
+        assert!(ship.queued_output.is_empty() && ship.replay.is_empty());
+
+        ship.aggregate_station = false;
+        ship.pending.push(Frame::new(0x1d, vec![7; 1200]));
+        ship.flush().unwrap();
+        let mut saw_return_challenge = false;
+        for output in ship.take_outgoing() {
+            let packet = Datagram::decode(&output.data).unwrap();
+            let mut body = packet.body.as_slice();
+            while !body.is_empty() {
+                let size = u16::from_le_bytes(body[..2].try_into().unwrap()) as usize;
+                let frame = Frame::decode(&body[..size]).unwrap();
+                body = &body[size..];
+                if frame.opcode == 0x2020 {
+                    ship.handle_input(0x2021, &frame.body).unwrap();
+                    saw_return_challenge = true;
+                }
+            }
+        }
+        assert!(saw_return_challenge);
+        assert!(ship.replay.is_empty());
+        std::fs::remove_dir_all(&ship.state_dir).unwrap();
+    }
+
     /// Native TE manufacturing binds the real lab and delivers all 500 formula slots without requiring ACK extensions.
     #[test]
     fn reliable_transport_native_te_formulas_deliver_without_ack_support() {
@@ -416,21 +576,12 @@ mod native_tests {
             assert!(output.len() <= TRANSMIT_BATCH);
             for output in output {
                 let packet = Datagram::decode(&output.data).unwrap();
-                assert_eq!(packet.opcode, 0x2016);
+                assert!(matches!(packet.opcode, 0x2016 | 0x201a));
                 assert!(
-                    packet.body.len() <= 4096,
+                    packet.body.len() <= MTU_PAYLOAD,
                     "native queued packet too large: {}",
                     packet.body.len()
                 );
-                let mut native = packet.body.as_slice();
-                while !native.is_empty() {
-                    let size = u16::from_le_bytes(native[..2].try_into().unwrap()) as usize;
-                    let frame = Frame::decode(&native[..size]).unwrap();
-                    if frame.opcode >= 0x1000 {
-                        assert_eq!(size, packet.body.len());
-                    }
-                    native = &native[size..];
-                }
                 bytes.extend(packet.body);
                 count += 1;
             }

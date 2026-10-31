@@ -7,6 +7,7 @@ using FortyTwoAndBeyond.Protocol;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
+using UnityEngine.UIElements;
 
 namespace FortyTwoAndBeyond.Editor
 {
@@ -17,7 +18,10 @@ namespace FortyTwoAndBeyond.Editor
         private static double deadline, captureAt;
         private static bool connected;
         private static int stage;
-        private static bool uiSmoke;
+        private static bool uiSmoke, cloakSmoke, itemsSmoke;
+        private static ulong inspectionCredits;
+        private static uint inspectedTemplate;
+        private static long inspectionOwned;
         private static bool smallUiSmoke;
         private static bool productionSmoke;
         private static bool artOnlySmoke;
@@ -36,6 +40,8 @@ namespace FortyTwoAndBeyond.Editor
                 Array.IndexOf(Environment.GetCommandLineArgs(), "--42andbeyond-follow-smoke") < 0 &&
                 Array.IndexOf(Environment.GetCommandLineArgs(), "--42andbeyond-rally-art-smoke") < 0 &&
                 Array.IndexOf(Environment.GetCommandLineArgs(), "--42andbeyond-production-smoke") < 0) return;
+            itemsSmoke = Array.IndexOf(Environment.GetCommandLineArgs(), "--42andbeyond-items-smoke") >= 0;
+            cloakSmoke = Array.IndexOf(Environment.GetCommandLineArgs(), "--42andbeyond-cloak-smoke") >= 0;
             uiSmoke = Array.IndexOf(Environment.GetCommandLineArgs(), "--42andbeyond-ui-smoke") >= 0;
             smallUiSmoke = Array.IndexOf(Environment.GetCommandLineArgs(), "--42andbeyond-small-ui-smoke") >= 0;
             productionSmoke = Array.IndexOf(Environment.GetCommandLineArgs(), "--42andbeyond-production-smoke") >= 0;
@@ -90,7 +96,9 @@ namespace FortyTwoAndBeyond.Editor
             if (client.ChoosingCharacter) client.ChooseCharacter(client.Characters[0].Slot);
             if (client.ConnectionError != null) { Fail(client.ConnectionError); return; }
             if (productionSmoke) { TickProduction(client); return; }
+            if (itemsSmoke) { TickItems(client); return; }
             if (client.CurrentSnapshot == null || !client.CurrentSnapshot.Ready || !client.CurrentSnapshot.HasPosition || client.CurrentSnapshot.Objects.Length == 0) return;
+            if (cloakSmoke) { TickCloak(client); return; }
             if (uiSmoke) { TickUi(client); return; }
             if (followSmoke) { TickFollow(client); return; }
             if (rallySmoke) { TickRallyArt(client); return; }
@@ -207,6 +215,18 @@ namespace FortyTwoAndBeyond.Editor
             }
             if (stage == 12)
             {
+                VisualElement root = SelectionRoot();
+                int expected = client.CurrentSnapshot.Players.Count(actor => actor.HasPosition);
+                int actual = root.Query<VisualElement>(className: "contact").ToList()
+                    .Count(row => row.name.StartsWith("actor-", StringComparison.Ordinal));
+                if (actual != Math.Min(24, expected))
+                { Fail("Players filter retained unrelated contacts, including an empty result."); return; }
+                root.Q<DropdownField>("contact-selection-filter").value = "All contacts";
+                captureAt = EditorApplication.timeSinceStartup + .3; stage = 13;
+                return;
+            }
+            if (stage == 13)
+            {
                 ScreenCapture.CaptureScreenshot("Builds/verification/gate.png");
                 captureAt = EditorApplication.timeSinceStartup + 2; stage = 13; return;
             }
@@ -218,6 +238,113 @@ namespace FortyTwoAndBeyond.Editor
             ClosePeer();
             EditorApplication.update -= Tick;
             EditorApplication.Exit(0);
+        }
+
+        /// <summary>Inspect actual station offers without buying, then verify the local galaxy catalog.</summary>
+        private static void TickItems(SpaceClient client)
+        {
+            Snapshot snapshot = client.CurrentSnapshot;
+            if (snapshot?.Ready != true || snapshot.Station == null) return;
+            var browser = (ItemBrowserHud)typeof(SpaceClient).GetField("itemBrowserHud", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(client);
+            if (stage == 0)
+            {
+                if (snapshot.Station.CurrentRoom == uint.MaxValue) return;
+                client.OpenNpc(16); stage = 1; return;
+            }
+            if (stage == 1)
+            {
+                if (snapshot.Dialogue == null) return;
+                client.ChooseNpc(2); stage = 2; return;
+            }
+            if (stage == 2)
+            {
+                ItemView offer = snapshot.Vendor.FirstOrDefault(item => item != null && item.Price > 0);
+                if (snapshot.Dialogue?.VendorOpen != true || offer == null) return;
+                inspectedTemplate = offer.Template; inspectionCredits = snapshot.Credits;
+                inspectionOwned = ItemBrowserHud.CargoCount(snapshot, inspectedTemplate);
+                client.InspectVendorItem(offer, false);
+                captureAt = EditorApplication.timeSinceStartup + .7; stage = 3; return;
+            }
+            if (EditorApplication.timeSinceStartup < captureAt) return;
+            if (stage == 3)
+            {
+                if (!browser.IsOpen || snapshot.Credits != inspectionCredits || ItemBrowserHud.CargoCount(snapshot, inspectedTemplate) != inspectionOwned)
+                { Fail("Vendor inspection unexpectedly bought an item."); return; }
+                ScreenCapture.CaptureScreenshot("Builds/verification/vendor-inspect.png");
+                captureAt = EditorApplication.timeSinceStartup + .6; stage = 4; return;
+            }
+            if (stage == 4)
+            {
+                browser.Close(); client.OpenItemBrowser();
+                typeof(ItemBrowserHud).GetField("search", BindingFlags.Instance | BindingFlags.NonPublic).SetValue(browser, "Sting");
+                captureAt = EditorApplication.timeSinceStartup + .7; stage = 5; return;
+            }
+            if (stage == 5)
+            {
+                Array matches = (Array)typeof(ItemBrowserHud).GetField("matches", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(browser);
+                if (browser.CatalogCount < 4000 || matches == null || matches.Length == 0 || matches.Length >= browser.CatalogCount)
+                { Fail("Client-only item database search failed to filter the bundled catalog."); return; }
+                ScreenCapture.CaptureScreenshot("Builds/verification/item-search.png");
+                captureAt = EditorApplication.timeSinceStartup + .7; stage = 6; return;
+            }
+            if (stage == 6)
+            {
+                Debug.Log("PASS: explicit vendor item inspection preserves credits and cargo; local galaxy item search filters the bundled catalog.");
+                EditorApplication.update -= Tick; EditorApplication.Exit(0);
+            }
+        }
+
+        /// <summary>Exercise real JE cloak activation, its nonzero ghost floor, and material restoration.</summary>
+        private static void TickCloak(SpaceClient client)
+        {
+            ShipCloakVisual visual = typeof(SpaceClient).GetField("cloakVisual",
+                BindingFlags.Instance | BindingFlags.NonPublic)?.GetValue(client) as ShipCloakVisual;
+            if (visual == null) { Fail("Cloak visual is missing."); return; }
+            if (stage == 0)
+            {
+                if (!client.CurrentSnapshot.AvailableAbilities.Contains(0u)) return;
+                Transform hull = client.ShipForPreview.Cast<Transform>().FirstOrDefault(child =>
+                    child.name.StartsWith("Original Earth and Beyond hull ", StringComparison.Ordinal));
+                if (hull == null || Quaternion.Angle(hull.localRotation, Quaternion.Euler(0, 90, 0)) > .1f)
+                { Fail("JE hull is facing backwards."); return; }
+                Directory.CreateDirectory("Builds/verification");
+                captureAt = EditorApplication.timeSinceStartup + 2; stage = 1; return;
+            }
+            if (EditorApplication.timeSinceStartup < captureAt) return;
+            if (stage == 1)
+            {
+                ScreenCapture.CaptureScreenshot("Builds/verification/cloak-before.png");
+                client.ActivateAbility(0u); stage = 2; return;
+            }
+            if (stage == 2)
+            {
+                if (!client.CurrentSnapshot.ActiveBuffs.Any(buff => buff.Slot == 6) || visual.Amount < 1) return;
+                Renderer[] surfaces = client.ShipForPreview.GetComponentsInChildren<Renderer>();
+                if (!surfaces.Any(renderer => renderer.sharedMaterials.Any(material => material != null &&
+                    material.shader.name == "42 and Beyond/ShipCloak")) || ShipCloakVisual.GhostOpacity < .15f ||
+                    surfaces.Any(renderer => !renderer.enabled))
+                { Fail("Cloak lost its visible ghost or did not shade the hull."); return; }
+                ScreenCapture.CaptureScreenshot("Builds/verification/cloak-active.png");
+                captureAt = EditorApplication.timeSinceStartup + 1; stage = 3; return;
+            }
+            if (stage == 3)
+            {
+                client.ActivateAbility(0u); stage = 4; return;
+            }
+            if (stage == 4)
+            {
+                if (client.CurrentSnapshot.ActiveBuffs.Any(buff => buff.Slot == 6) || visual.Amount > 0) return;
+                if (client.ShipForPreview.GetComponentsInChildren<Renderer>().Any(renderer =>
+                    renderer.sharedMaterials.Any(material => material != null && material.shader.name == "42 and Beyond/ShipCloak")))
+                { Fail("Uncloaking did not restore the original hull materials."); return; }
+                ScreenCapture.CaptureScreenshot("Builds/verification/cloak-restored.png");
+                captureAt = EditorApplication.timeSinceStartup + 1; stage = 5; return;
+            }
+            if (stage == 5)
+            {
+                Debug.Log("PASS: authoritative JE cloak, visible ghost floor and restored opaque hull.");
+                EditorApplication.update -= Tick; EditorApplication.Exit(0);
+            }
         }
 
         /// <summary>Capture the imported Rally rigs against a disposable flight scene.</summary>
@@ -321,7 +448,24 @@ namespace FortyTwoAndBeyond.Editor
             {
                 if (EditorApplication.timeSinceStartup < captureAt ||
                     !File.Exists("Builds/verification/follow-object.png")) return;
-                Debug.Log("PASS: Space turns toward ships and world objects, then closes to under 1 km.");
+                typeof(SpaceClient).GetField("orbitYaw", BindingFlags.Instance | BindingFlags.NonPublic).SetValue(client, 137f);
+                typeof(SpaceClient).GetField("orbitPitch", BindingFlags.Instance | BindingFlags.NonPublic).SetValue(client, -22f);
+                client.FollowSelected();
+                captureAt = EditorApplication.timeSinceStartup + 1;
+                stage = 5; return;
+            }
+            if (stage == 5)
+            {
+                if (EditorApplication.timeSinceStartup < captureAt) return;
+                MapObject beacon = snapshot.Objects.First(item => item.Name == "Follow Test Beacon");
+                Vector3 heading = SpaceClient.Convert(beacon.Position) - SpaceClient.Convert(snapshot.Position);
+                float orbit = (float)typeof(SpaceClient).GetField("orbitYaw", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(client);
+                Vector3 projected = client.Project(beacon.Position);
+                if (Mathf.Abs(orbit) > .01f || Vector3.Angle(ship.forward, heading) > 8 ||
+                    projected.z <= 0 || projected.x < 0 || projected.x > Screen.width)
+                { Fail("Close-range Follow did not face and reveal the target after an arbitrary camera orbit."); return; }
+                ScreenCapture.CaptureScreenshot("Builds/verification/follow-close-target.png");
+                Debug.Log("PASS: Space turns toward ships and world objects, closes to under 1 km, and faces close targets from an arbitrary camera orbit.");
                 EditorApplication.update -= Tick;
                 EditorApplication.Exit(0);
                 return;
@@ -415,6 +559,46 @@ namespace FortyTwoAndBeyond.Editor
             Directory.CreateDirectory("Builds/verification");
             if (stage == 1)
             {
+                SelectionRoot().Q<DropdownField>("object-selection-filter").value = "Gates";
+                captureAt = EditorApplication.timeSinceStartup + .3;
+                stage = 10;
+                return;
+            }
+            if (stage == 10 || stage == 11)
+            {
+                VisualElement root = SelectionRoot();
+                byte kind = stage == 10 ? (byte)11 : (byte)12;
+                MapObject[] expected = client.CurrentSnapshot.Objects.Where(item => item.Kind == kind).ToArray();
+                VisualElement[] rows = root.Query<VisualElement>(className: "contact").ToList()
+                    .Where(row => row.name.StartsWith("destination-", StringComparison.Ordinal)).ToArray();
+                if (rows.Length != expected.Length || expected.Any(item => root.Q("destination-" + item.Id) == null))
+                { Fail("Object selection filter omitted known destinations or included other types."); return; }
+                if (stage == 10 && !expected.Any(item => item.Name.Contains("Saturn")))
+                { Fail("ABA selection did not receive the Saturn gate."); return; }
+                root.Q<DropdownField>("object-selection-filter").value = stage == 10 ? "Stations" : "All navigation";
+                captureAt = EditorApplication.timeSinceStartup + .3;
+                if (stage == 11) root.Q<DropdownField>("contact-selection-filter").value = "Players";
+                stage = stage == 10 ? 11 : 12;
+                return;
+            }
+            if (stage == 12)
+            {
+                VisualElement root = SelectionRoot();
+                int expected = client.CurrentSnapshot.Players.Count(actor => actor.HasPosition);
+                int actual = root.Query<VisualElement>(className: "contact").ToList()
+                    .Count(row => row.name.StartsWith("actor-", StringComparison.Ordinal));
+                if (actual != Math.Min(24, expected))
+                { Fail("Players filter retained unrelated contacts, including an empty result."); return; }
+                root.Q<DropdownField>("contact-selection-filter").value = "All contacts";
+                captureAt = EditorApplication.timeSinceStartup + .3; stage = 13;
+                return;
+            }
+            if (stage == 13)
+            {
+                ShipActor mob = client.TargetActor;
+                if (mob?.CombatLevel == null || !SelectionRoot().Q("panel-target").Query<Label>().ToList()
+                    .Any(label => label.text.Contains("CL " + mob.CombatLevel.Value)))
+                { Fail("Selected mob HUD does not show its server-provided combat level."); return; }
                 ScreenCapture.CaptureScreenshot(UiCaptureName("mob-target"));
                 captureAt = EditorApplication.timeSinceStartup + 1;
                 stage = 2;
@@ -479,9 +663,23 @@ namespace FortyTwoAndBeyond.Editor
                 return;
             }
             if (!File.Exists(UiCaptureName("ui-chart"))) { Fail("Missing chart capture."); return; }
-            Debug.Log("PASS: tactical target, equipment and chart panels captured.");
+            FlightHud finalHud = typeof(SpaceClient).GetField("hud", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(client) as FlightHud;
+            TacticalSectorMap finalMap = typeof(FlightHud).GetField("tacticalMap", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(finalHud) as TacticalSectorMap;
+            var labelHits = (System.Collections.IList)typeof(TacticalSectorMap).GetField("labelHits", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(finalMap);
+            if (labelHits.Count > 2 || SelectionRoot().Q("panel-browse").resolvedStyle.visibility != Visibility.Visible)
+            { Fail("Default floating map has excessive labels or hides the flight cards."); return; }
+            Debug.Log("PASS: tactical target, equipment and uncluttered legacy-style chart panels captured.");
             EditorApplication.update -= Tick;
             EditorApplication.Exit(0);
+        }
+
+        /// Returns:
+        ///     VisualElement: The retained flight deck used by the actual selection controls.
+        private static VisualElement SelectionRoot()
+        {
+            return UnityEngine.Object.FindObjectsByType<UIDocument>(FindObjectsSortMode.None)
+                .Select(document => document.rootVisualElement)
+                .First(root => root.Q<DropdownField>("object-selection-filter") != null);
         }
 
         /// <returns>string: The standard or small Game View capture path for one HUD view.</returns>

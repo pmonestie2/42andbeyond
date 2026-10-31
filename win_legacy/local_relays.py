@@ -8,6 +8,8 @@ from __future__ import annotations
 import ctypes
 from ctypes import wintypes
 import ipaddress
+from datetime import datetime, timezone
+from pathlib import Path
 import socket
 import threading
 import time
@@ -46,9 +48,10 @@ def proxy_listener_ports(pid: int, address: str) -> list[int]:
 
 
 class RelayConnection:
-    def __init__(self, client: socket.socket, target: socket.socket) -> None:
+    def __init__(self, client: socket.socket, target: socket.socket, *, log_path: Path | None = None) -> None:
         """Own the two sockets and their bounded forwarding workers."""
         self.sockets = (client,target)
+        self.log_path = log_path
         self.stopped = threading.Event()
         self.lock = threading.Lock()
         self.remaining = 2
@@ -60,23 +63,44 @@ class RelayConnection:
         for channel in self.sockets: channel.settimeout(.5)
         for thread in self.threads: thread.start()
 
+    def report(self, direction: int, event: str, forwarded: int) -> None:
+        """Append transport metadata only; login and gameplay payloads are never logged."""
+        if self.log_path is None:return
+        stamp=datetime.now(timezone.utc).isoformat(timespec='milliseconds')
+        try:
+            with self.log_path.open('a',encoding='utf-8') as output:
+                output.write(f'[{stamp}] RELAY direction={direction} {event}; forwarded={forwarded}\n')
+        except OSError:pass
+
     def pump(self, source: socket.socket, target: socket.socket) -> None:
-        """Forward one direction, preserving half-close until the other completes."""
+        """Preserve every byte across loading pauses and half-close in either direction."""
+        direction=self.sockets.index(source);forwarded=0;reported_backpressure=False
         try:
             while not self.stopped.is_set():
-                try: data = source.recv(65536)
-                except socket.timeout: continue
-                if not data: break
-                target.sendall(data)
-        except OSError:
+                try:data=source.recv(65536)
+                except socket.timeout:continue
+                if not data:
+                    self.report(direction,'peer EOF',forwarded);break
+                remaining=memoryview(data)
+                while remaining and not self.stopped.is_set():
+                    try:sent=target.send(remaining)
+                    except socket.timeout:
+                        if not reported_backpressure:
+                            self.report(direction,'receiver paused; preserving pending bytes',forwarded)
+                            reported_backpressure=True
+                        continue
+                    if sent==0:raise ConnectionResetError('Relay peer stopped accepting bytes')
+                    forwarded+=sent;remaining=remaining[sent:]
+        except OSError as error:
+            if not self.stopped.is_set():self.report(direction,f'transport error {type(error).__name__}: {error}',forwarded)
             self.stopped.set()
         finally:
-            try: target.shutdown(socket.SHUT_WR)
-            except OSError: pass
+            try:target.shutdown(socket.SHUT_WR)
+            except OSError:pass
             with self.lock:
-                self.remaining -= 1
-                if self.remaining == 0:
-                    for channel in self.sockets: channel.close()
+                self.remaining-=1
+                if self.remaining==0:
+                    for channel in self.sockets:channel.close()
 
     def alive(self) -> bool:
         """Inspect whether either forwarding worker remains active.
@@ -98,7 +122,7 @@ class RelayConnection:
 
 
 class LoopbackRelay:
-    def __init__(self, address: str, port: int, *, target_port: int | None = None) -> None:
+    def __init__(self, address: str, port: int, *, target_port: int | None = None, log_path: Path | None = None) -> None:
         """Create a relay targeting only a validated local IPv4 address.
 
         Raises:
@@ -109,6 +133,7 @@ class LoopbackRelay:
         self.address = address
         self.port = port
         self.target_port = port if target_port is None else target_port
+        self.log_path = log_path
         self.listener = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
         self.stopped = threading.Event()
         self.thread = threading.Thread(target=self.accept,daemon=True)
@@ -142,7 +167,7 @@ class LoopbackRelay:
                         client.close()
                         continue
                 target = socket.create_connection((self.address,self.target_port),timeout=2)
-                connection = RelayConnection(client,target)
+                connection = RelayConnection(client,target,log_path=self.log_path)
                 with self.lock:
                     if self.stopped.is_set():
                         client.close()
@@ -163,10 +188,11 @@ class LoopbackRelay:
 
 
 class ProfileRelays:
-    def __init__(self, pid: int, address: str) -> None:
+    def __init__(self, pid: int, address: str, *, log_path: Path | None = None) -> None:
         """Track fallback relays for one owned proxy and private interface."""
         self.pid = pid
         self.address = address
+        self.log_path = log_path
         self.relays: list[LoopbackRelay] = []
 
     def start(self) -> None:
@@ -184,7 +210,7 @@ class ProfileRelays:
         else: raise TimeoutError('Private proxy master/sector listeners did not appear')
         try:
             for port in ports:
-                relay = LoopbackRelay(self.address,port)
+                relay = LoopbackRelay(self.address,port,log_path=self.log_path)
                 self.relays.append(relay)
                 relay.start()
         except BaseException:

@@ -79,9 +79,11 @@ The default map is Asteroid Belt Alpha. For the four-object test map, also add
 
 To keep the server in the Windows VM, start it bound to its private LAN IPv4
 address and enter that address in the connection panel. The existing TCP/UDP
-ports must be reachable from the Mac. No server changes are required. This client
-uses the local plaintext account bridge, so it accepts only explicit private or
-loopback IPv4 addresses; it does not connect to the public game service.
+ports must be reachable from the Mac. No server changes are required. The login
+server field accepts a hostname or IPv4 address, including public addresses, and
+defaults to the local development server at `192.168.47.1`. DNS resolution runs
+on network workers with cancellation and a five-second timeout. The selected
+server must support this client's account bridge and game protocol.
 
 ## Flight HUD and fitting
 
@@ -109,22 +111,23 @@ connect to the live server.
 
 | Input | Action |
 | --- | --- |
-| W / S | Set forward / reverse thrust |
-| Space | Brake, or cancel warp |
-| A / D | Turn while held |
+| W / S | Forward / reverse thrust; opposite direction stops, then release and press again to reverse |
+| X | Brake or cancel warp |
+| Left / Right arrows | Turn while held |
 | Up / Down | Pitch while held |
 | RMB / wheel / C | Orbit / zoom / reset camera |
-| Tab | Open the navigation-only sector chart |
+| Tab | Toggle the navigation-only sector chart |
 | M | Open client-side galaxy travel |
-| E | Open ship loadout |
+| I | Expand or collapse Systems: ship, mounts and cargo |
 | F | Fire on the selected MOB, or stop active weapons |
 | B | Activate an equipped Turbo Weapons device |
 | Enter | Open chat and server command line |
 | Click a target-list entry or world label | Select a destination |
 | Click a ship in space or Contacts | Select that ship |
-| T | Select the next visible hostile ship |
-| R / Follow target | Follow the selected visible ship or MOB; manual flight cancels follow |
-| Click a wreck in space or Wrecks | Select it, then open or tractor its loot |
+| E | Select the nearest selectable ship, wreck, resource or navigation object |
+| D | Cycle through selectable objects in distance order |
+| Space / Follow target | Follow the selected visible ship or MOB; manual flight cancels follow |
+| Click a wreck in space or Wrecks | Open its loot inventory and choose stacks to collect |
 | Q / Warp to target | Ask the server to warp to the target |
 | G / Activate gate | Activate a nearby selected gate |
 | O / Dock at station | Enter a selected station within 5 km |
@@ -183,8 +186,13 @@ them while docked; the server publishes both container revisions after a move.
 around the pointer, use **My ship** to recenter, or **Fit sector** to include all
 known navpoints. Click markers or their labels to select a target; the detail
 strip shows its name and range and offers **Center target / Warp here**.
-Known navigation points remain on the map and in Destinations regardless of
-distance. Stations are grouped first in the destination list.
+Known navigation points remain on the map and in **Object selection** regardless
+of distance. Its filter offers **All navigation**, **Gates**, **Stations**, and
+**Navpoints**; stations are grouped first in the full list. The Overview filter
+can show all contacts, players, hostiles, or neutral mobs. Filters affect the
+lists without clearing the selected target or hiding markers from the chart.
+Saved discoveries are replayed by the server on login and sector entry, and live
+navigation updates appear without reconnecting.
 
 ## Players, groups and mobs
 
@@ -248,10 +256,10 @@ server's native loot verb. The radar shows nearby
 contacts and navigation targets.
 The loadout shows each weapon's server firing state and loaded ammunition.
 Select an installed weapon to toggle that hardpoint alone during space combat.
-The Turbo Weapons button and B key activate a matching equipped device. The
+Assign an equipped Turbo Weapons device to Systems, or use the B key. The
 server decides energy cost, firing-rate bonus, and duration; the HUD reflects
 the server's activation and expiry messages.
-Select a supported installed device in Ship Loadout to activate Scan Boost,
+Select a supported installed device in expanded Systems to activate Scan Boost,
 Increase Speed, Reactor Boost, Turbo Weapons, Turbo Warp, Improved Beam Handling,
 Improved Projectile Handling, Shunt to Reactor, Recharge Reactor, Recharge Shields,
 Maximize Shields, or a typed Deflect device. Supported core items can also activate Impulse Turbo,
@@ -515,3 +523,202 @@ weapon magazines.
 The Tab sector map and navigation directory show navigation points, gates and
 stations. Decorative asteroids, border demarcation markers, resource fields,
 wrecks and ship contacts do not clutter the navigation chart.
+
+Cloak fades the ship hull into a faint, continuously visible blue ghost and
+restores its original materials when the server clears the status. Visible peers
+use the server's cloak effect identity too. Combat Cloak's post-cloak damage
+bonus does not hide the hull. Sustained effects display without a countdown.
+
+**Systems** replaces both the old shortcut bar and the separate Ship Loadout widget.
+Use **Expand / I** for the ship preview, mounts, equipment and cargo; the same
+Systems bar docks inside that window, with a scrollable fitting area on smaller
+screens. Drag fitted equipment onto Systems; use **+ / −** to add/remove slots.
+Right-click any slot for a searchable, scrollable selector grouped by skill,
+effect and level. All server-advertised wormhole destinations remain selectable
+across transient loading snapshots. Assigning an effect never casts it.
+Assigned skills show their level, charging/recovery timer and a draining gray
+recovery mask; server-confirmed active effects remain bright. Equipped systems
+show their actual icons, magazine counts and active/cooldown state.
+
+Right-click a launcher on the compact Systems bar to choose compatible cargo
+ammunition and enable Auto Reload. Inventory does not need to be open.
+Use **Menu → Interface Zoom** to enlarge text and buttons from 85% to 200%;
+the effective scale is capped to keep the interface inside the window.
+
+Nearby's compact **All / Fight / Loot / Mine / Nav** filters also apply to the
+screen-edge contact rim and E/D selection. Click a rim marker to select its
+contact; repeated clicks cycle contacts grouped under the same marker.
+Manufacturing combines level, item type, text and ownership filters locally.
+**Aboard** includes cargo and loaded ammunition; **Vault** uses known vault
+contents. **Load all recipes** caches the existing server pages and restores
+the original page when finished or cancelled.
+
+The flight background now uses the standalone SpaceEnvironment demo: Solar
+System Scope Earth/day/night/cloud maps and orbiting Moon, Jupiter, Saturn with
+textured rings and a planetary shadow, an imported procedural Sun/corona, distant
+procedural asteroids, and tantaneity's raymarched black-hole prefab and matching
+procedural sky. The source geometry, textures and prefab are imported; shader
+algorithms use a small built-in-renderer compatibility adapter, so the game does
+not require URP or change its gameplay camera. A quarter-resolution HDR Bloom
+pass supplies solar/accretion glow and is disabled while docked or on the map.
+The shared sky combines NASA's 4K HDR Deep Star Maps 2020 (NASA/Goddard SVS,
+Ernie Wright; Gaia DR2: ESA/Gaia/DPAC) with independently advected blue/violet
+nebula layers and denser, derivative-filtered procedural stars. The same sky
+inputs are sampled by the black-hole lens. Catalog attribution and checksum are
+in `Art/SpaceEnvironment/NASADeepStars-SOURCE.json` and ship in StreamingAssets.
+Clouds and gas bands flow at different latitudes; axial rotation, Moon orbit,
+ring precession, subtle body drift, solar convection and accretion brightness
+are intentionally exaggerated for a visibly active space backdrop. The
+`SpaceEnvironmentBackground.motionSpeed` control scales transform animation.
+
+The Sun now uses a Unity port of the free MIT
+[Cosmos Museum procedural Sun](https://github.com/CosmosMuseum/cosmos-museum-sun):
+multiscale 4D convection and noise-driven coronal rays, with an opaque 3D core
+and a separate additive volume. Its source, pinned commit, license and repeatable
+importer are in `Art/SpaceEnvironment/StellarSun/` and
+`Tools/import_stellar_sun.py`. The original WebGL UI is not imported. Source
+notices ship with the app. Re-import from an explicit checkout with
+`python3 client/Tools/import_stellar_sun.py --source /path/to/cosmos-museum-sun`.
+
+The skybox explicitly writes far-plane clip depth, keeping stars behind opaque
+celestial bodies. A renderer regression check switches the sky between black
+and bright and verifies that Earth, Saturn and Sun interiors remain unchanged
+at the flight camera's actual near/far range. Saturn's ring shader also rejects
+fragments geometrically hidden by the planet, avoiding distant depth ties.
+
+The native wormhole uses a 256-by-64 rim/throat mesh, full-precision plasma,
+multiscale flow noise and derivative-filtered filaments instead of aliased,
+thin bands. Portal geometry remains independent of authoritative transfer state.
+
+Background meshes have no gameplay colliders or target markers; server-owned
+resource asteroids, navigation and combat are unaffected. The imported black
+hole lenses its procedural sky, not scene geometry. It uses 160 raymarch steps
+with four rotated samples to smooth the bright accretion filaments.
+
+Re-import the completed standalone demo with
+`python3 client/Tools/import_space_environment.py --source /path/to/Assets/SpaceEnvironmentDemo`.
+Source notices, pinned commits, original shaders and import hashes are kept in
+`client/Art/SpaceEnvironment/` (MIT for URP Black Hole and Procedural Planets;
+CC BY 4.0, Solar System Scope / INOVE, for maps). The default source is
+`~/Documents/42unity/Unity42AndBeyond/Assets/SpaceEnvironmentDemo`. Only the
+explicit re-import command requires that project; the game and its builds use
+self-contained assets under Resources/SpaceEnvironment.
+
+An isolated GPU and Play-mode check can run without any server or account:
+`Unity -batchmode -projectPath client -executeMethod FortyTwoAndBeyond.Editor.ImportedEnvironmentSmoke.Run -logFile /tmp/environment-smoke.log`.
+It checks source-material support, Earth spin and Moon orbit, shader animation,
+HDR/Bloom and the absence of scenery cameras/colliders, then saves views under
+`client/Builds/verification/dynamic-*.png`.
+
+**Items** on the flight toolbar, or **Search galaxy items** in the station
+directory, opens the client-only database of 4,568 public item definitions. Search
+by name, ID or manufacturer and filter by equipment category. Vendor
+item rows open a stats overlay with an explicit Buy/Sell button and live owned
+counts across cargo, mounts, ammunition and the vault.
+
+Developer travel: `/d_travel Saturn`, `/d_travel ABA`, `/d_travel ragnar`, or
+`/d_travel 1076`. Names ignore case, spaces and punctuation; abbreviations and
+unique partial names work. Ambiguous queries list choices. `/d_jump` remains an alias.
+
+In-sector warp now deforms the rendered 3D scene toward the travel heading,
+including planets, gates and ships. Existing starlight stretches at the edges
+with a mild refractive ripple; the former blue foreground ribbons are removed.
+The HUD stays sharp, nearby silhouettes use depth-aware short trails, and the
+extra camera pass and depth request are disabled when warp presentation ends.
+
+Sector transfer presentation uses native gate render state (`0x31`), gate camera
+approval (`0x92`) and the JE Create Wormhole cast descriptor (`689`). The approved
+gate rotates its armored assembly and induction collar, sequences cyan channels,
+and contracts to 76% of its resting size. Wormholes use an animated plasma rim
+and a recessed spiral throat. Both have departure/arrival hull clipping and a
+short cinematic camera; these change only the rendered hull, never network pose.
+The worker retains the transfer cause across the sector handshake, including
+same-batch cast-effect removal. Logout, cancellation and station entry clear it.
+
+Verify both actual native transfers on an owned loopback server with:
+`python3 client/Tools/verify_unity.py --skip-build --transit-only`.
+Captures are written to `Builds/verification/{wormhole,gate}-{departure,arrival}.png`.
+
+Wormhole arrivals are keyed to a monotonically increasing sector-entry generation,
+including same-sector transfers. Native cooldown deadlines survive handoffs.
+Completion is correlated through ordered removal/cooldown packets rather than a
+one-second wall-time guess, so delayed reliable delivery retains the animation.
+The transit smoke repeats three same-sector casts while deliberately skipping every
+cast frame and checks cleanup while the map is open.
+
+
+UI regression matrix (Mac Unity Editor with rendering enabled):
+
+```sh
+python3 client/Tests/run_loadout_visual.py --unity /Applications/Unity/Hub/Editor/6000.3.13f1/Unity.app/Contents/MacOS/Unity --batchmode --shortcuts-only
+```
+
+Build `server/target/debug/beyond-server` first. This starts and stops only an
+owned loopback fixture with temporary accounts and inventory. It checks equipped
+weapon/device/passive shortcut dragging, exact-mount firing and ammo consumption,
+selector levels/destinations, active/recovery display, and persisted assignments.
+It then renders 960×640, 1366×768, 1920×1080, 2560×1440 and 3840×2160 viewports,
+including larger interface scaling: panel bounds, collapse/expand, full Systems
+fitting, destination/target persistence when inventory opens, header dragging, and chat input/Send visibility and font size. The Talk button
+must pass a real panel hit test so overlapping widgets cannot hide it.
+The actual login submit bounds are checked at the smallest and largest sizes.
+Fresh fitting/login screenshots and `loadout-ui.log` go to `Builds/verification/`.
+Saved collapse/shortcut settings and owned Editor resolution presets are restored;
+the live server and installed client are never driven by these tests.
+
+Sector scenery now uses stable sector-ID seeds with six to nine photographic
+worlds, variable atmosphere/clouds, rings, orbiting moons, axial rotation and
+sky orientation. Returning to a sector restores its recipe. Known Solar System
+sector names retain their matching primary planet. Additional Solar System
+Scope maps and NASA Eros/Itokawa shape models have source hashes and notices in
+`Art/SpaceEnvironment/` and bundled StreamingAssets. Re-bake the NASA meshes with:
+`Blender -b --factory-startup --python client/Tools/bake_nasa_asteroids.py`.
+The isolated environment check verifies 100 distinct deterministic recipes,
+return identity, a bounded reusable scene-object pool, and representative renders.
+
+Wormhole completion intent survives unrelated packet bursts until sector entry
+or an explicit replacement action. Protocol checks cover 512 packets on either
+side of completion; the owned transit smoke performs four wormholes, including
+three repeated same-sector arrivals with deliberately skipped cast frames, plus
+gate departure/arrival and map cleanup.
+
+
+The resource instruments use segmented luminous tracks, percentage badges and
+explicit shield/reactor/hull values. Target shields use the native AUX capacity
+instead of inventing a 100-point maximum; unknown capacities remain unknown.
+Chat has a bright caret and contrasting selection. Its expanded default panel
+centers between the side instruments and lifts the unmoved Systems bar.
+Dragged Systems coordinates are suspended while the bar docks inside inventory.
+The UI matrix also exercises a moved bar through resizing, all 24 embedded slots,
+chat focus/caret styling, authoritative MOB shield values, and a reset default
+layout. Captures include `ui-fitting-expanded-24.png`, `ui-chat-*.png`,
+`ui-polished-flight.png` and `ui-polished-flight-clear.png`.
+
+
+The self ship-integrity panel now uses the approved armored circular instruments:
+a separate amber reactor alongside a combined blue shield/red hull dial. Their fills and numerical values
+come from the same immutable authoritative resource snapshot. The GPU faces
+update at at most 24 Hz while visible, pause behind inventory or collapsed panels,
+and are disposed with the client. Compact label/core spacing keeps percentages
+clear of the animated imagery; hover shows the complete current/max values.
+The overview retains a scrollable contact list and shortens when needed to leave
+room for the instruments. Target and fitting capacity readouts remain numerical.
+
+
+Shield and hull now share one armored instrument: blue outer shield segments and
+red inner hull segments, with independent current/max values. Self retains its
+separate amber reactor. The same defense dial appears on selected contacts and
+in the movable/collapsible five-other-pilot group strip; clicking an available
+pilot targets that ship. Zero native hull capacity produces a shield-only MOB
+instrument. Missing group telemetry shows unknown readings rather than full bars.
+A runtime hover card displays full current/max values and percentages for self,
+crew, and targets, including the reactor; no Editor-only tooltip behavior is needed.
+Native peer AUX snapshots now decode the avatar-name prefix before capacities.
+The UI checks include five-member fixture rendering, a missing-telemetry slot,
+a shield-only contact, and full-value hover cards.
+
+Flight presentation: left/right arrows turn the ship (saved A/D defaults migrate; custom keys remain). Server heading samples drive continuous visual rotation between updates. Defense dials share one full circle: blue shield occupies two thirds, red hull one third, with opposing fill directions that meet at their shared boundary; percentages sit inside and full values appear on hover. Organic contacts use the whole circle for shields. Mob defense is shown in the contact hover tooltip.
+
+Normal-flight visuals buffer authoritative server-timestamped poses (normally 200 ms apart) with a 40 ms jitter margin. Position uses velocity-continuous Hermite interpolation; heading blends rate-projected endpoints. Late packets predict for at most 150 ms, and sector/warp transitions clear the buffer. `/fps` toggles frame FPS, worst frame time, pose cadence, interpolation delay and pose age; `/fps on` and `/fps off` are explicit variants.
+
+Expanded Systems fitting has no outer scroll container. Its full mount assembly scales to the available window area; cargo retains its independent scrollbar. The viewport regression verifies the complete assembly remains visible without scrolling.

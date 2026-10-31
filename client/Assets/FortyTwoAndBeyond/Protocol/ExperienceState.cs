@@ -34,17 +34,13 @@ namespace FortyTwoAndBeyond.Protocol
         {
             var reader = new AuxState(body);
             Flags global = reader.Mask(18);
-            if (!global.Present[6]) return null;
-            for (int field = 0; field < 6; field++)
+            if (!global.Present[6] && !global.Default[6]) return null;
+            reader.SkipPlayerPrefix(global, 6);
+            Wire.Require(body, reader.offset, 1);
+            if (global.Default[6] || body[reader.offset] == 5)
             {
-                if (global.Present[field])
-                {
-                    if (field == 0) { reader.UInt(); reader.UInt(); }
-                    else if (field == 2) reader.SkipSlots(96, 10);
-                    else return null;
-                }
-                else if (global.Default[field] && field >= 2 && reader.Byte() != 5)
-                    throw new InvalidDataException("Invalid global AUX reset before RPG progress.");
+                if (reader.Byte() != 5) throw new InvalidDataException("Invalid RPG progress reset.");
+                return new ExperienceState(0, 0, 0, 0, 0, 0, 0, 0);
             }
             Flags rpg = reader.Mask(16);
             uint points = previous?.AvailableSkillPoints ?? 0;
@@ -77,8 +73,24 @@ namespace FortyTwoAndBeyond.Protocol
                         case 12: hullStage = reader.UInt(); progressUpdated = true; break;
                     }
                 }
-                else if (rpg.Default[field] && (field == 2 || field == 3) && reader.Byte() != 5)
-                    throw new InvalidDataException("Invalid RPG collection reset.");
+                else if (rpg.Default[field])
+                {
+                    if ((field == 2 || field == 3) && reader.Byte() != 5)
+                        throw new InvalidDataException("Invalid RPG collection reset.");
+                    switch (field)
+                    {
+                        case 4: points = 0; break;
+                        case 5: earned = 0; break;
+                        case 6: combatFraction = 0; break;
+                        case 7: combatLevel = 0; break;
+                        case 8: tradeFraction = 0; break;
+                        case 9: tradeLevel = 0; break;
+                        case 10: exploreFraction = 0; break;
+                        case 11: exploreLevel = 0; break;
+                        case 12: hullStage = 0; break;
+                    }
+                    if (field >= 4) progressUpdated = true;
+                }
             }
             if (!progressUpdated) return null;
             if (combatFraction < 0 || combatFraction > 1 || tradeFraction < 0 ||

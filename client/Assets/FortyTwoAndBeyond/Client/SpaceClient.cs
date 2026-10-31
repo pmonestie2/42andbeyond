@@ -20,7 +20,9 @@ namespace FortyTwoAndBeyond.Client
         private Snapshot snapshot;
         private MapObject[] renderedObjects = System.Array.Empty<MapObject>();
         private Camera view;
+        private WarpLens warpLens;
         private SpaceArt art;
+        private SpaceBloom spaceBloom;
         private RemoteShips remoteShips;
         private CombatEffects combatEffects;
         private FlightHud hud;
@@ -33,21 +35,27 @@ namespace FortyTwoAndBeyond.Client
         private VaultHud vaultHud;
         private ProductionHud productionHud;
         private ComponentMarketHud componentMarketHud;
+        private ItemBrowserHud itemBrowserHud;
         private GalaxyTravelHud galaxyTravelHud;
         private MissionHud missionHud;
         private DefenseHud defenseHud;
+        private TradeHud tradeHud;
         private readonly FlightThrottle flightThrottle = new FlightThrottle();
         private readonly StationWalkState stationWalk = new StationWalkState();
         private readonly LootSweep lootSweep = new LootSweep();
         public bool AbilitiesOpen => abilityHud != null && abilityHud.IsOpen;
         public bool Incapacitated => snapshot != null && snapshot.Station == null &&
             snapshot.MaxHull > 0 && snapshot.Hull <= 0;
+        private ShipCloakVisual cloakVisual;
         private Transform ship, worldRoot, environment, systemSun, hangar, concourse, ownStationAvatar;
         private Light sunLight;
+        private SectorTravelVisual sectorTravelVisual;
         private readonly Dictionary<uint, Transform> bodies = new Dictionary<uint, Transform>();
         private readonly Dictionary<uint, Transform> stationBodies = new Dictionary<uint, Transform>();
         private StationCharacters stationCharacters;
-        private string host = "192.168.47.1", username = "", password = "", status = "Ready to connect", sector = "";
+        private string host = ServerEndpoint.DefaultHost, username = "", password = "", status = "Ready to connect", sector = "";
+        private ServerHistory serverHistory;
+        public IReadOnlyList<string> RecentServers => serverHistory.Entries;
         private readonly NavigationSelection navigationSelection = new NavigationSelection();
         private uint pendingNavigationTarget;
         private bool chart, positioned;
@@ -60,10 +68,27 @@ namespace FortyTwoAndBeyond.Client
         private long guiTicks;
         private float sampledSeconds, slowestFrameMs, displayFrameMs, nextPerformanceLog, lastSnapshotAt;
         private float previousYaw, previousPitch, orbitYaw, orbitPitch = 8, zoom = 2.8f, mapZoom = 1400;
+        private Vector3 motionReportPosition;
+        private Quaternion motionReportRotation;
+        private Vector3 motionReportServerPosition;
+        private Quaternion motionReportServerRotation;
+        private float motionReportSpeed;
+        private long motionReportPoseSequence = -1;
+        private long motionReportMotionSequence = -1;
+        private byte motionThrottleCommand;
+        private bool motionReportReady;
+        private double nextMotionReportAt;
         private int selectedShipClass = -1;
         private uint selectedHullStage = uint.MaxValue;
+        private readonly FlightPoseBuffer flightPoses=new FlightPoseBuffer();
+        private long observedPoseSequence=-1;
+        private bool normalFlightSampling;
+        public bool ShowPerformance { get; private set; }
+        /// <summary>Frame pacing and authoritative movement delivery, measured independently.</summary>
+        public string PerformanceText => $"{Fps} FPS · max {FrameMs:0.0} ms · poses {flightPoses.Interval*1000:0} ms · buffer {flightPoses.Delay*1000:0} ms · age {flightPoses.Age(MonotonicNow)*1000:0} ms";
+        private static double MonotonicNow => System.Diagnostics.Stopwatch.GetTimestamp()/(double)System.Diagnostics.Stopwatch.Frequency;
         private Vector3 renderedPosition;
-        private float authoritativePoseAt;
+        private float authoritativePoseAt, authoritativeHeadingAt;
         private uint visualFollowTarget;
         private float visualFollowUntil;
         private Quaternion chaseHeading;
@@ -79,11 +104,18 @@ namespace FortyTwoAndBeyond.Client
         public bool ChoosingCharacter => picker != null && Characters != null;
         public bool PickingCharacter => picker != null;
         public CharacterRecord[] Characters => picker?.Characters ?? characters;
+        public string PilotName { get; private set; } = "Pilot";
         public string LoginError => picker?.Error ?? worker?.Error;
         public DemoAccount[] DemoAccounts => demoRoster?.Accounts;
         public string DemoRosterError => demoRoster?.Error;
         public string DemoRosterHost { get; private set; }
         public bool Ready => worker != null && worker.Running && snapshot != null && snapshot.Ready;
+        /// <summary>Returns:
+        ///     float: The current displayed impulse speed, or server speed outside native flight prediction.
+        /// </summary>
+        public float DisplayedSpeed => Ready && motionReportReady && snapshot.Station == null &&
+            snapshot.WarpPhase == WarpPhase.Idle && !snapshot.SpeedLocked
+            ? motionReportSpeed : snapshot?.Speed ?? 0;
         public bool LootAllActive => lootSweep.Active;
         public string LootAllStatus => lootSweep.Status;
         public int LootAllCollectedStacks => lootSweep.CollectedStacks;
@@ -105,6 +137,7 @@ namespace FortyTwoAndBeyond.Client
         {
             if (System.Array.IndexOf(System.Environment.GetCommandLineArgs(),
                 "--42andbeyond-animation-probe") >= 0) return;
+            if (FindFirstObjectByType<ResourceGaugePreview>() != null) return;
             if (FindFirstObjectByType<SpaceClient>() == null)
                 new GameObject("42 and Beyond").AddComponent<SpaceClient>();
         }
@@ -112,6 +145,8 @@ namespace FortyTwoAndBeyond.Client
         /// <summary>Create lighting, reusable models, the camera and the flight HUD.</summary>
         private void Awake()
         {
+            serverHistory = new ServerHistory(Enumerable.Range(0, ServerHistory.Capacity)
+                .Select(index => PlayerPrefs.GetString("42andbeyond.recent-server." + index, "")));
             bindings = new KeyBindings();
             Application.runInBackground = true;
             QualitySettings.vSyncCount = 0;
@@ -123,12 +158,15 @@ namespace FortyTwoAndBeyond.Client
             vaultHud = new VaultHud(this, hud);
             productionHud = new ProductionHud(this, hud);
             componentMarketHud = new ComponentMarketHud(this, hud);
+            itemBrowserHud = new ItemBrowserHud(this, hud);
             galaxyTravelHud = new GalaxyTravelHud(this, hud);
             missionHud = new MissionHud(this, hud);
             defenseHud = new DefenseHud(hud);
+            tradeHud = new TradeHud(this, hud);
             worldRoot = new GameObject("Server world").transform; worldRoot.SetParent(transform, false);
             remoteShips = new RemoteShips(art, worldRoot);
             ship = art.Ship(transform);
+            cloakVisual = new ShipCloakVisual(ship);
             combatEffects = new CombatEffects(transform, ship, worldRoot, remoteShips);
             ship.localScale = Vector3.one * .25f;
             environment = art.Environment(transform);
@@ -150,6 +188,9 @@ namespace FortyTwoAndBeyond.Client
             rimLight.color = new Color(.48f, .68f, 1f); rimLight.intensity = .55f;
             view = Camera.main;
             if (view == null) view = new GameObject("Flight camera", typeof(Camera)).GetComponent<Camera>();
+            warpLens = view.GetComponent<WarpLens>() ?? view.gameObject.AddComponent<WarpLens>();
+            spaceBloom = view.GetComponent<SpaceBloom>() ?? view.gameObject.AddComponent<SpaceBloom>();
+            sectorTravelVisual = new SectorTravelVisual(transform, ship, view);
             flightCameraMask = view.cullingMask;
             view.clearFlags = CameraClearFlags.Skybox; view.nearClipPlane = .015f; view.farClipPlane = 35000; view.fieldOfView = 60;
             view.transform.position = new Vector3(0, 1, -zoom); view.transform.LookAt(Vector3.zero);
@@ -157,16 +198,17 @@ namespace FortyTwoAndBeyond.Client
         }
 
         /// <summary>Give each sector a stable visible sun and matching light direction.</summary>
-        private void ConfigureSectorSun(string sectorName)
+        private void ConfigureSectorSun(string sectorName, uint sectorId = 0)
         {
             uint hash = 2166136261;
             foreach (char letter in sectorName)
                 hash = (hash ^ letter) * 16777619;
-            art.Sky.SetFloat("_Yaw", ((hash >> 12) & 255) / 255f);
+            if (art.Sky.HasProperty("_Yaw")) art.Sky.SetFloat("_Yaw", ((hash >> 12) & 255) / 255f);
             float east = 13200 + ((hash & 15) - 7.5f) * 140;
             float altitude = 1700 + (((hash >> 4) & 15) - 7.5f) * 90;
             Vector3 position = new Vector3(east, altitude, 22000);
             systemSun.localPosition = position;
+            art.ConfigureSector(sectorId,sectorName);
             sunLight.transform.rotation = Quaternion.LookRotation(-position.normalized, Vector3.up);
             Color color = Color.Lerp(new Color(1f, .75f, .48f),
                 new Color(.8f, .89f, 1f), ((hash >> 8) & 15) / 15f);
@@ -184,23 +226,36 @@ namespace FortyTwoAndBeyond.Client
                 StartLocalSession("192.168.47.128", "toon", "pass");
             if (System.Array.IndexOf(args, "--42andbeyond-local") < 0 &&
                 System.Array.IndexOf(args, "--42andbeyond-vm") < 0)
-                DiscoverDemoAccounts(host);
+                DiscoverDemoAccounts(host, remember: false);
         }
 
         /// <summary>Query only the server's published sandbox class roster.</summary>
-        public void DiscoverDemoAccounts(string address)
+        public void DiscoverDemoAccounts(string address, bool remember = true)
         {
             demoRoster?.Dispose(); demoRoster = null;
             DemoRosterHost = null;
-            try { demoRoster = new DemoRosterWorker(address); DemoRosterHost = address; }
+            try { address = remember ? RememberServer(address) : ServerEndpoint.NormalizeHost(address); demoRoster = new DemoRosterWorker(address); DemoRosterHost = address; }
             catch (System.ArgumentException error) { status = error.Message; }
+        }
+
+        /// Returns:
+        ///     string: Validated server name saved in the five-entry recent-server history.
+        private string RememberServer(string address)
+        {
+            string normalized = ServerEndpoint.NormalizeHost(address);
+            serverHistory.Remember(normalized);
+            for (int index = 0; index < ServerHistory.Capacity; index++)
+                PlayerPrefs.SetString("42andbeyond.recent-server." + index,
+                    index < serverHistory.Entries.Count ? serverHistory.Entries[index] : "");
+            PlayerPrefs.Save();
+            return normalized;
         }
 
         /// <summary>Join the previous worker before replacing the connection.</summary>
         public void StartLocalSession(string address, string account, string secret)
         {
             Disconnect(); host = address; username = account; password = secret;
-            try { LocalSession.LocalAddress(host); picker = new CharacterPickerWorker(host, username, password); status = "Checking account…"; }
+            try { host = RememberServer(host); picker = new CharacterPickerWorker(host, username, password); status = "Checking account…"; }
             catch (System.ArgumentException error) { status = error.Message; }
         }
 
@@ -210,12 +265,15 @@ namespace FortyTwoAndBeyond.Client
             CharacterRecord character = Characters?.FirstOrDefault(item => item.Slot == slot);
             if (!ChoosingCharacter || character == null) return;
             string name = character.Name;
+            PilotName = name;
             selectedShipClass = character.ClassIndex;
             selectedHullStage = 0;
+            cloakVisual?.ResetHull();
             art.SetShipClass(ship, character.ClassIndex);
             picker.Dispose(); picker = null;
             worker = new ClientWorker(host, username, password, slot,
-                navigationData: Resources.Load<TextAsset>("GalaxyNavigation")?.bytes); password = "";
+                navigationData: Resources.Load<TextAsset>("GalaxyNavigation")?.bytes,
+                fallbackItems: ItemBrowserHud.LoadTemplateFallbacks()); password = "";
             status = "Entering " + name + "…";
         }
 
@@ -283,15 +341,7 @@ namespace FortyTwoAndBeyond.Client
         /// <returns>The current visual heading projected from native steering rates.</returns>
         private static Quaternion ProjectRotation(Snapshot state, float age)
         {
-            Quaternion source = new Quaternion(state.Orientation[0], state.Orientation[1],
-                state.Orientation[2], state.Orientation[3]).normalized;
-            float yaw = state.AngularZ * 420f * age;
-            float pitch = state.AngularY * 420f * age;
-            source = (source * new Quaternion(0, 0, yaw, 1).normalized *
-                new Quaternion(0, pitch, 0, 1).normalized).normalized;
-            Vector3 forward = source * Vector3.right, up = source * Vector3.forward;
-            return Quaternion.LookRotation(new Vector3(forward.y, forward.z, forward.x),
-                new Vector3(up.y, up.z, up.x));
+            return HeadingPresentation.Project(state.Orientation,state.AngularY,state.AngularZ,age);
         }
 
         /// <summary>Consume snapshots and route keyboard and mouse actions.</summary>
@@ -321,15 +371,20 @@ namespace FortyTwoAndBeyond.Client
                      snapshot.Speed > 1000f && next.Speed < 100f);
                 bool positionChanged = next.HasPosition && snapshot?.HasPosition == true &&
                     next.Position.Distance(snapshot.Position) > 1f;
+                bool headingChanged=next.HasPosition&&(snapshot==null||!snapshot.HasPosition||
+                    next.AngularY!=snapshot.AngularY||next.AngularZ!=snapshot.AngularZ||
+                    !next.Orientation.SequenceEqual(snapshot.Orientation));
                 bool poseChanged = next.HasPosition && (snapshot == null || !snapshot.HasPosition ||
                     next.Position.Distance(snapshot.Position) > .001f || next.Speed != snapshot.Speed ||
                     next.AngularY != snapshot.AngularY || next.AngularZ != snapshot.AngularZ ||
                     !next.Orientation.SequenceEqual(snapshot.Orientation));
+                bool newEntry = snapshot != null && next.EntryGeneration != snapshot.EntryGeneration;
                 snapshot = next; if (worker.Error == null) status = next.Status;
                 if (selectedShipClass >= 0 && next.Experience != null &&
                     selectedHullStage != next.Experience.HullStage)
                 {
                     selectedHullStage = next.Experience.HullStage;
+                    cloakVisual?.ResetHull();
                     art.SetShipClass(ship, selectedShipClass, selectedHullStage);
                 }
                 if (lootSweep.Active)
@@ -342,42 +397,59 @@ namespace FortyTwoAndBeyond.Client
                     if (slot.HasValue) TakeLoot(lootSweep.CorpseId, slot.Value);
                 }
                 lastSnapshotAt = Time.unscaledTime;
-                if (sector != next.Sector)
-                { ClearWorld(); sector = next.Sector; positioned = false; ConfigureSectorSun(sector); }
-                hud?.ObserveAuthoritativeTarget(next);
+                if (newEntry || sector != next.Sector)
+                { ClearWorld(); sector = next.Sector; positioned = false; ConfigureSectorSun(sector,next.SectorId); }
+                ContactSelectionChange targetChange = hud?.ObserveAuthoritativeTarget(next) ?? ContactSelectionChange.None;
                 ApplyWorld(next);
-                RefreshNavigationSelection(next);
+                sectorTravelVisual.Observe(next, bodies);
+                RefreshNavigationSelection(next, targetChange);
                 if (Ready && pendingNavigationTarget != 0 &&
                     navigationSelection.TargetId == pendingNavigationTarget)
                 { SelectWorldObject(pendingNavigationTarget); pendingNavigationTarget = 0; }
                 ApplyStationAvatars(next);
                 stationCharacters.Apply(next.Station);
                 remoteShips.Apply(next.Players.Concat(next.Mobs).ToArray(), next.Group,
-                    next.SelectedTargetId, next.Position);
+                    next.SelectedTargetId, next.Position, next.ObjectEffects);
                 combatEffects.Apply(next);
+                bool normalFlight=next.Station==null && !(next.Formation!=null&&next.Group.Formed) &&
+                    next.WarpPhase!=WarpPhase.Charging && next.WarpPhase!=WarpPhase.Traveling && next.Speed<=1000f;
+                if(newEntry||!normalFlight||normalFlight!=normalFlightSampling)flightPoses.Clear();
+                normalFlightSampling=normalFlight;
+                if(normalFlight&&next.HasPosition&&next.OwnPoseSequence!=observedPoseSequence)
+                    flightPoses.Add(next.OwnPoseTick,next.OwnPoseReceivedAt,Convert(next.Position),ConvertRotation(next.Orientation),
+                        next.Speed*MetersToWorld,next.AngularY,next.AngularZ);
+                observedPoseSequence=next.OwnPoseSequence;
                 if (poseChanged) authoritativePoseAt = Time.unscaledTime;
+                if (headingChanged || newEntry) authoritativeHeadingAt = Time.unscaledTime;
                 if (!positioned && next.HasPosition) { renderedPosition = Convert(next.Position); positioned = true; }
                 else if (travelEnded && positionChanged) renderedPosition = Convert(next.Position);
             }
             if (!Ready || !Application.isFocused)
             { flightThrottle.Reset(); StopStationWalk(); return; }
-            if (bindings.Pressed(ControlAction.Galaxy) && !chatOpen && !hud.InputFocused && !hud.SettingsOpen &&
-                !hud.GroupInviteOpen && !GalaxyTravelOpen) OpenGalaxyTravel();
-            if (bindings.Pressed(ControlAction.OpenChat) && !chatOpen && !hud.InputFocused &&
-                !hud.SettingsOpen && !hud.GroupInviteOpen && !ComponentMarketOpen && !GalaxyTravelOpen)
+            if (bindings.Pressed(ControlAction.Galaxy) && !chatOpen && !hud.InputFocused && !hud.SystemPickerOpen && productionHud?.InputFocused != true && !hud.SettingsOpen &&
+                !hud.GroupInviteOpen && !GalaxyTravelOpen && !ItemBrowserOpen) OpenGalaxyTravel();
+            if (bindings.Pressed(ControlAction.OpenChat) && !chatOpen && !hud.InputFocused && !hud.SystemPickerOpen && productionHud?.InputFocused != true &&
+                !hud.SettingsOpen && !hud.GroupInviteOpen && !ComponentMarketOpen && !GalaxyTravelOpen && !ItemBrowserOpen)
             {
                 OpenChatEntry();
             }
             if (Input.GetKeyDown(KeyCode.Escape))
             {
-                if (hud.GroupInviteOpen) AnswerConfirmation(false);
+                if (snapshot?.Trade?.Open == true) CancelTrade();
+                else if (hud.GroupInviteOpen) AnswerConfirmation(false);
+                else if (ItemBrowserOpen) itemBrowserHud.Close();
                 else if (GalaxyTravelOpen) galaxyTravelHud.Close();
                 else if (ComponentMarketOpen) componentMarketHud.Close();
+                else if (missionHud.IsOpen) missionHud.Close();
                 else { chatOpen = false; hud.ReleaseInputFocus(); }
             }
             if (hud.InputFocused && Input.GetMouseButtonDown(0) && !hud.ContainsPointer())
                 hud.ReleaseInputFocus();
-            if (chatOpen || hud.InputFocused || hud.SettingsOpen || hud.GroupInviteOpen || ComponentMarketOpen || GalaxyTravelOpen)
+            bool foregroundInputBlocked = snapshot?.Trade?.Open == true || chatOpen || hud.InputFocused || productionHud?.InputFocused == true ||
+                hud.SystemPickerOpen || hud.SettingsOpen || hud.GroupInviteOpen || ComponentMarketOpen || GalaxyTravelOpen || ItemBrowserOpen;
+            HandleChartShortcut(bindings.Pressed(ControlAction.Chart),
+                foregroundInputBlocked || snapshot.Station != null || Incapacitated);
+            if (foregroundInputBlocked)
             {
                 flightThrottle.Reset();
                 StopStationWalk();
@@ -391,7 +463,7 @@ namespace FortyTwoAndBeyond.Client
                 flightThrottle.Reset();
                 if (bindings.Pressed(ControlAction.Equipment)) hud.ToggleEquipment();
                 if (bindings.Pressed(ControlAction.Launch)) Launch();
-                if (snapshot.Dialogue != null || hud.EquipmentOpen) StopStationWalk();
+                if (snapshot.Dialogue != null || hud.EquipmentOpen || tradeHud.ContainsPointer()) StopStationWalk();
                 else UpdateStationWalk(snapshot.Station.CurrentRoom);
                 return;
             }
@@ -403,7 +475,6 @@ namespace FortyTwoAndBeyond.Client
                 previousYaw = previousPitch = 0;
                 return;
             }
-            if (bindings.Pressed(ControlAction.Chart)) SetChart(!chart);
             if (bindings.Pressed(ControlAction.Equipment)) hud.ToggleEquipment();
             if (bindings.Pressed(ControlAction.Fire))
             {
@@ -411,16 +482,21 @@ namespace FortyTwoAndBeyond.Client
                 else ToggleWeapons(hud.SelectedContactId);
             }
             if (bindings.Pressed(ControlAction.TurboWeapons)) ActivateTurboWeapons();
-            if (bindings.Pressed(ControlAction.NextHostile)) TargetNextHostile();
+            if (bindings.Pressed(ControlAction.NearestHostile)) TargetNearestEnemy();
+            if (bindings.Pressed(ControlAction.TargetSelf)) SelectAbilitySelf();
+            if (bindings.Pressed(ControlAction.NearestNonEnemy)) TargetNearestNonEnemy();
+            if (bindings.Pressed(ControlAction.NextHostile)) TargetNextSelectable();
             if (bindings.Pressed(ControlAction.NextAttacker)) TargetNextAttacker();
-            for (int abilitySlot = 0; abilitySlot < 6; abilitySlot++)
-                if (bindings.Pressed((ControlAction)((int)ControlAction.AbilityOne + abilitySlot)))
+            for (int abilitySlot = 0; abilitySlot < abilityHud.ShortcutCount(snapshot); abilitySlot++)
+                if (bindings.Pressed(KeyBindings.ShortcutAction(abilitySlot)))
                     abilityHud.ActivateSlot(abilitySlot, snapshot);
             if (bindings.Pressed(ControlAction.Warp)) WarpSelected();
             if (bindings.Pressed(ControlAction.Gate)) GateSelected();
             if (bindings.Pressed(ControlAction.Dock)) DockSelected();
             if (bindings.Pressed(ControlAction.Follow)) FollowSelected();
             if (bindings.Pressed(ControlAction.ResetCamera)) { orbitYaw = 0; orbitPitch = 8; }
+            if (sectorTravelVisual?.Active == true)
+            { previousYaw = previousPitch = 0; flightThrottle.Reset(); return; }
             if (!FollowingFormation)
             {
                 float yaw = (bindings.Held(ControlAction.TurnLeft) ? 1 : 0) -
@@ -429,23 +505,34 @@ namespace FortyTwoAndBeyond.Client
                     (bindings.Held(ControlAction.PitchDown) ? 1 : 0);
                 if (yaw != previousYaw || pitch != previousPitch)
                 {
+                    if (yaw != 0 || pitch != 0) visualFollowTarget = 0;
                     worker.Submit(new ClientCommand(CommandKind.Steer, yaw: yaw, pitch: pitch));
                     previousYaw = yaw; previousPitch = pitch;
                     flightThrottle.Reset();
                 }
-                byte? thrust = flightThrottle.Sample(true, bindings.Held(ControlAction.Forward),
-                    bindings.Held(ControlAction.Reverse), bindings.Held(ControlAction.Brake));
+                bool flightReady = snapshot.MaxImpulseSpeed.HasValue &&
+                    snapshot.MinImpulseSpeed.HasValue && snapshot.ImpulseAcceleration.HasValue &&
+                    snapshot.MaxImpulseSpeed.Value > 0 && snapshot.MinImpulseSpeed.Value <= 0 &&
+                    snapshot.ImpulseAcceleration.Value > 0 && !snapshot.SpeedLocked;
+                if (!flightReady) flightThrottle.Reset();
+                float inputSpeed = motionReportReady ? motionReportSpeed : snapshot.Speed;
+                float inputTarget = flightReady ? NativeMotionReport.ControlTarget(
+                    motionThrottleCommand, snapshot.TargetSpeed,
+                    snapshot.MaxImpulseSpeed.Value, snapshot.MinImpulseSpeed.Value) : snapshot.TargetSpeed;
+                byte? thrust = flightReady ? flightThrottle.Sample(true, bindings.Held(ControlAction.Forward),
+                    bindings.Held(ControlAction.Reverse), bindings.Held(ControlAction.Brake),
+                    currentSpeed: inputSpeed, targetSpeed: inputTarget) : null;
                 if (thrust.HasValue) Thrust(thrust.Value);
             }
             else { previousYaw = previousPitch = 0; flightThrottle.Reset(); }
-            if (!hud.ContainsPointer() && !defenseHud.ContainsPointer(snapshot) && !miningHud.ContainsPointer() &&
+            if (!tradeHud.ContainsPointer() && !hud.ContainsPointer() && !defenseHud.ContainsPointer(snapshot) && !miningHud.ContainsPointer() &&
                 !abilityHud.ContainsPointer() && !missionHud.ContainsPointer())
             {
-                if (Input.GetMouseButton(1) && !chart)
+                if (Input.GetMouseButton(1))
                 { orbitYaw += Input.GetAxis("Mouse X") * 3; orbitPitch = Mathf.Clamp(orbitPitch - Input.GetAxis("Mouse Y") * 3, -65, 65); }
                 float wheel = Input.mouseScrollDelta.y;
-                if (!chart) zoom = Mathf.Clamp(zoom * Mathf.Exp(-wheel * .1f), 1.5f, 14);
-                if (!chart && Input.GetMouseButtonDown(0)) SelectAtPointer();
+                zoom = Mathf.Clamp(zoom * Mathf.Exp(-wheel * .1f), 1.5f, 14);
+                if (Input.GetMouseButtonDown(0)) SelectAtPointer();
             }
         }
 
@@ -497,7 +584,7 @@ namespace FortyTwoAndBeyond.Client
         }
 
         /// <summary>Keep explicit object and actor targets while retaining a default nav route.</summary>
-        private void RefreshNavigationSelection(Snapshot next)
+        private void RefreshNavigationSelection(Snapshot next, ContactSelectionChange targetChange)
         {
             uint nearest = next.Objects.Where(item => item.Navigable)
                 .OrderBy(item => item.Position.Distance(next.Position)).FirstOrDefault()?.Id ?? 0;
@@ -505,8 +592,20 @@ namespace FortyTwoAndBeyond.Client
             var visible = new HashSet<uint>(next.Objects.Where(WarpTargets.WorldObject).Select(item => item.Id));
             foreach (ShipActor actor in next.Players.Concat(next.Mobs).Where(actor => actor.HasPosition))
                 visible.Add(actor.Id);
+            if (hud.SelectedContactId == next.PlayerId ||
+                targetChange == ContactSelectionChange.ServerSelected && next.SelectedTargetId == next.PlayerId)
+            {
+                navigationSelection.ChooseFreeFlight();
+                pendingNavigationTarget = 0;
+            }
+            else if (targetChange == ContactSelectionChange.ServerSelected && visible.Contains(next.SelectedTargetId))
+            {
+                navigationSelection.ChooseTarget(next.SelectedTargetId);
+                pendingNavigationTarget = 0;
+            }
             uint selected = navigationSelection.Resolve(visible, nearest);
-            if (selected != previous) pendingNavigationTarget = selected;
+            if (selected != previous && targetChange != ContactSelectionChange.ServerSelected)
+                pendingNavigationTarget = selected;
         }
 
         /// <summary>Combine server-advertised station pilots into the Unity concourse.</summary>
@@ -585,12 +684,13 @@ namespace FortyTwoAndBeyond.Client
                 float horizon = fastTravel ? .7f : .35f;
                 float poseAge = Mathf.Max(0, Time.unscaledTime - authoritativePoseAt);
                 float age = Mathf.Min(poseAge, horizon);
+                float headingAge=Mathf.Max(0,Time.unscaledTime-authoritativeHeadingAt);
                 Quaternion projectedRotation = formed ? ConvertRotation(snapshot.Orientation) :
-                    ProjectRotation(snapshot, age);
+                    ProjectRotation(snapshot,fastTravel?age:Mathf.Min(headingAge,horizon));
                 Quaternion displayedRotation = projectedRotation;
                 if (visualFollowTarget != 0)
                 {
-                    if (Time.unscaledTime >= visualFollowUntil || formed)
+                    if (Time.unscaledTime >= visualFollowUntil || formed || fastTravel)
                         visualFollowTarget = 0;
                     else
                     {
@@ -606,13 +706,14 @@ namespace FortyTwoAndBeyond.Client
                         if (toward.sqrMagnitude > .0001f)
                         {
                             Quaternion facing = Quaternion.LookRotation(toward, projectedRotation * Vector3.up);
-                            if (Quaternion.Angle(projectedRotation, facing) < 8f) visualFollowTarget = 0;
-                            else displayedRotation = facing;
+                            displayedRotation = facing;
                         }
                         else visualFollowTarget = 0;
                     }
                 }
-                ship.rotation = Quaternion.Slerp(ship.rotation, displayedRotation, blend);
+                ship.rotation = fastTravel || formed || visualFollowTarget!=0
+                    ? Quaternion.Slerp(ship.rotation,displayedRotation,blend)
+                    : HeadingPresentation.Advance(ship.rotation,displayedRotation,snapshot.AngularY,snapshot.AngularZ,delta,headingAge<=horizon);
                 float ramp = snapshot.Acceleration > .001f
                     ? Mathf.Min(age, Mathf.Abs(snapshot.TargetSpeed - snapshot.Speed) / snapshot.Acceleration) : 0;
                 float direction = Mathf.Sign(snapshot.TargetSpeed - snapshot.Speed);
@@ -630,10 +731,17 @@ namespace FortyTwoAndBeyond.Client
                             1 - Mathf.Exp(-(fastTravel ? 6f : 10f) * delta)),
                         (fastTravel ? 14f : 30f) * delta);
             }
+            if(snapshot!=null&&!docked&&normalFlightSampling&&flightPoses.Evaluate(MonotonicNow,out Vector3 bufferedPosition,out Quaternion bufferedRotation))
+            {
+                renderedPosition=bufferedPosition;
+                if(visualFollowTarget==0)ship.rotation=bufferedRotation;
+            }
+            UpdateNativeMotionReport(delta, docked);
             worldRoot.position = -renderedPosition;
             float warpTarget = snapshot?.WarpPhase == WarpPhase.Traveling ? 1f :
-                snapshot?.WarpPhase == WarpPhase.Charging ? .28f :
-                snapshot?.WarpPhase == WarpPhase.Recovering ? .36f : 0f;
+                snapshot?.WarpPhase == WarpPhase.Charging ? .15f : 0f;
+            cloakVisual?.Tick(snapshot?.Station == null && snapshot?.ActiveBuffs.Any(buff =>
+                buff.Slot == 6 && buff.Name == "Cloak") == true, delta);
             if (ship != null)
             {
                 PwWarpArms arms = ship.GetComponentInChildren<PwWarpArms>();
@@ -644,8 +752,8 @@ namespace FortyTwoAndBeyond.Client
                     snapshot?.WarpPhase == WarpPhase.Traveling, delta);
             }
             skyWarp = Mathf.Lerp(skyWarp, warpTarget, 1 - Mathf.Exp(-4f * delta));
-            art.Sky.SetFloat("_WarpStrength", skyWarp);
-            art.Sky.SetVector("_Parallax", new Vector4(
+            warpLens?.SetState(docked ? 0 : skyWarp, ship.forward);
+            if (art.Sky.HasProperty("_Parallax")) art.Sky.SetVector("_Parallax", new Vector4(
                 renderedPosition.x * .000012f,
                 renderedPosition.z * .000008f, 0, 0));
             worldRoot.gameObject.SetActive(!docked);
@@ -666,7 +774,8 @@ namespace FortyTwoAndBeyond.Client
             if (docked) stationCharacters?.Tick(avatarPosition,
                 snapshot.Dialogue?.NpcId ?? 0, delta);
             ship.gameObject.SetActive(!docked || dockingBay);
-            environment.gameObject.SetActive(!chart && !docked);
+            environment.gameObject.SetActive(!docked);
+            spaceBloom.enabled = !docked;
             if (docked)
             {
                 chaseHeadingReady = false;
@@ -692,29 +801,96 @@ namespace FortyTwoAndBeyond.Client
                 return;
             }
             ship.localPosition = Vector3.zero;
-            if (chart)
+            view.cullingMask = flightCameraMask;
+            view.orthographic = false; view.clearFlags = CameraClearFlags.Skybox; ship.localScale = Vector3.one * .55f;
+            if (!chaseHeadingReady) { chaseHeading = ship.rotation; chaseHeadingReady = true; }
+            else if (Time.unscaledTime >= chaseHoldUntil)
+                chaseHeading = Quaternion.Slerp(chaseHeading, ship.rotation,
+                    1 - Mathf.Exp(-2.4f * delta));
+            Quaternion orbit = chaseHeading * Quaternion.Euler(orbitPitch, orbitYaw, 0);
+            view.transform.position = orbit * new Vector3(0, zoom * .24f, -zoom);
+            view.transform.LookAt(ship.position + chaseHeading * Vector3.forward * .3f,
+                orbit * Vector3.up);
+            sectorTravelVisual?.Tick(renderedPosition, false);
+
+        }
+
+        /// <summary>Advance native flight prediction and report its pose without mutating World.</summary>
+        private void UpdateNativeMotionReport(float delta, bool docked)
+        {
+            if (!Ready || snapshot == null || docked || !snapshot.HasPosition ||
+                snapshot.WarpPhase != WarpPhase.Idle || FollowingFormation ||
+                sectorTravelVisual?.Active == true || Incapacitated || visualFollowTarget != 0)
             {
-                chaseHeadingReady = false;
-                view.cullingMask = 0;
-                view.orthographic = true; view.orthographicSize = mapZoom;
-                view.clearFlags = CameraClearFlags.SolidColor; view.backgroundColor = new Color(.008f, .018f, .032f);
-                view.transform.position = new Vector3(0, 5000, 0); view.transform.rotation = Quaternion.Euler(90, 0, 0);
-                ship.localScale = Vector3.one * .55f;
+                motionReportReady = false; motionReportPoseSequence = -1;
+                motionReportMotionSequence = -1; motionThrottleCommand = 0;
+                return;
+            }
+            if (!snapshot.MaxImpulseSpeed.HasValue || !snapshot.MinImpulseSpeed.HasValue ||
+                !snapshot.ImpulseAcceleration.HasValue || snapshot.MaxImpulseSpeed.Value <= 0 ||
+                snapshot.MinImpulseSpeed.Value > 0 || snapshot.ImpulseAcceleration.Value <= 0 ||
+                snapshot.SpeedLocked)
+            { motionReportReady = false; motionThrottleCommand = 0; return; }
+            float maximumSpeed = snapshot.MaxImpulseSpeed.Value;
+            float minimumSpeed = snapshot.MinImpulseSpeed.Value;
+            float impulseAcceleration = snapshot.ImpulseAcceleration.Value;
+            if (!motionReportReady)
+            {
+                motionReportPosition = Convert(snapshot.Position);
+                motionReportRotation = ConvertRotation(snapshot.Orientation);
+                motionReportServerPosition = motionReportPosition;
+                motionReportServerRotation = motionReportRotation;
+                motionReportSpeed = Mathf.Clamp(snapshot.Speed, minimumSpeed, maximumSpeed);
+                motionReportPoseSequence = snapshot.OwnPoseSequence;
+                motionReportMotionSequence = snapshot.OwnMotionSequence;
+                motionReportReady = true;
             }
             else
             {
-                view.cullingMask = flightCameraMask;
-                view.orthographic = false; view.clearFlags = CameraClearFlags.Skybox; ship.localScale = Vector3.one * .55f;
-                if (!chaseHeadingReady) { chaseHeading = ship.rotation; chaseHeadingReady = true; }
-                else if (Time.unscaledTime >= chaseHoldUntil)
-                    chaseHeading = Quaternion.Slerp(chaseHeading, ship.rotation,
-                        1 - Mathf.Exp(-2.4f * delta));
-                Quaternion orbit = chaseHeading * Quaternion.Euler(orbitPitch, orbitYaw, 0);
-                view.transform.position = orbit * new Vector3(0, zoom * .24f, -zoom);
-                view.transform.LookAt(ship.position + chaseHeading * Vector3.forward * .3f,
-                    orbit * Vector3.up);
+                if (motionReportPoseSequence != snapshot.OwnPoseSequence)
+                {
+                    Vector3 serverPosition = Convert(snapshot.Position);
+                    Quaternion serverRotation = ConvertRotation(snapshot.Orientation);
+                    if (Vector3.Distance(serverPosition, motionReportServerPosition) > .0005f)
+                        motionReportPosition = serverPosition;
+                    if (Quaternion.Angle(serverRotation, motionReportServerRotation) > .5f)
+                        motionReportRotation = serverRotation;
+                    motionReportServerPosition = serverPosition;
+                    motionReportServerRotation = serverRotation;
+                    motionReportPoseSequence = snapshot.OwnPoseSequence;
+                }
+                if (motionReportMotionSequence != snapshot.OwnMotionSequence)
+                {
+                    motionReportSpeed = Mathf.Clamp(snapshot.Speed, minimumSpeed, maximumSpeed);
+                    motionReportMotionSequence = snapshot.OwnMotionSequence;
+                }
+                // The original MVAS client supplies heading while turning at rest.
+                // Its quaternion increment is 0.42/883*1000 per second at full input.
+                const float turnDegreesPerSecond = 54.5f;
+                if (!snapshot.OrientationLocked)
+                    motionReportRotation *= Quaternion.AngleAxis(-previousYaw * turnDegreesPerSecond * delta,
+                        Vector3.up) * Quaternion.AngleAxis(-previousPitch * turnDegreesPerSecond * delta,
+                        Vector3.right);
+                float oldSpeed = motionReportSpeed;
+                float targetSpeed = NativeMotionReport.ControlTarget(motionThrottleCommand,
+                    snapshot.TargetSpeed, maximumSpeed, minimumSpeed);
+                motionReportSpeed = NativeMotionReport.AdvanceSpeed(motionReportSpeed,
+                    targetSpeed, impulseAcceleration, delta);
+                motionReportPosition += motionReportRotation * Vector3.forward *
+                    ((oldSpeed + motionReportSpeed) * .5f * MetersToWorld * delta);
             }
-            systemSun.rotation = view.transform.rotation;
+            if (motionThrottleCommand != 0 || previousYaw != 0 || previousPitch != 0 ||
+                MonotonicNow - snapshot.OwnPoseReceivedAt > .5)
+            { ship.rotation = motionReportRotation; renderedPosition = motionReportPosition; }
+            if (MonotonicNow < nextMotionReportAt) return;
+            Vector3 heading = motionReportRotation * Vector3.forward;
+            worker.Submit(new ClientCommand(CommandKind.MotionReport,
+                motionPosition: new Position(motionReportPosition.z / MetersToWorld,
+                    motionReportPosition.x / MetersToWorld, motionReportPosition.y / MetersToWorld),
+                motionHeading: new Position(heading.z, heading.x, heading.y),
+                motionSpeed: motionReportSpeed,
+                motionGeneration: snapshot.EntryGeneration));
+            nextMotionReportAt = MonotonicNow + .5;
         }
 
         /// <summary>Route the actual mouse click through world target selection.</summary>
@@ -725,6 +901,7 @@ namespace FortyTwoAndBeyond.Client
         public void SelectAtPointer(Vector2 pointer)
         {
             if (snapshot == null) return;
+            if (hud.SelectRimAtPointer(pointer)) return;
             float best = 58, bestDepth = float.PositiveInfinity;
             uint selected = 0; byte kind = 0;
             foreach (ShipActor actor in snapshot.Players.Concat(snapshot.Mobs).Where(item => item.HasPosition))
@@ -754,13 +931,13 @@ namespace FortyTwoAndBeyond.Client
 
         /// <returns>A projected position in GUI coordinates with signed camera depth.</returns>
         public Vector3 Project(Position position)
-        { Vector3 point = view.WorldToScreenPoint(Convert(position) - renderedPosition); point.y = Screen.height - point.y; return point; }
+        { Vector3 point = warpLens.ProjectWorld(Convert(position) - renderedPosition); point.y = Screen.height - point.y; return point; }
 
         /// <returns>A remote ship's interpolated GUI position, or a negative depth when absent.</returns>
         public Vector3 ProjectPlayer(uint id)
         {
             if (!remoteShips.TryPosition(id, out Vector3 position)) return new Vector3(0, 0, -1);
-            Vector3 point = view.WorldToScreenPoint(position);
+            Vector3 point = warpLens.ProjectWorld(position);
             point.y = Screen.height - point.y;
             return point;
         }
@@ -877,6 +1054,14 @@ namespace FortyTwoAndBeyond.Client
                     inventoryMove: move));
         }
 
+        /// <summary>Ask the server to change one launcher's persistent automatic reload preference.</summary>
+        public void SetLauncherAutoReload(int mountSlot, bool enabled)
+        {
+            if (Ready && mountSlot >= 3 && mountSlot <= 8)
+                worker.Submit(new ClientCommand(CommandKind.SetLauncherAutoReload,
+                    target: enabled ? 1u : 0u, slot: mountSlot));
+        }
+
         /// <summary>Store one cargo stack in the server-owned station vault.</summary>
         public void StoreCargo(int slot)
         {
@@ -909,6 +1094,14 @@ namespace FortyTwoAndBeyond.Client
         /// Returns:
         ///     bool: Whether the component trading overlay currently owns input.
         /// </summary>
+        public bool ItemBrowserOpen => itemBrowserHud?.IsOpen == true;
+
+        /// <summary>Open the bundled galaxy item database without sending a server query.</summary>
+        public void OpenItemBrowser() { if (Ready) itemBrowserHud.Open(); }
+
+        /// <summary>Inspect a vendor quote before explicitly buying or selling it.</summary>
+        public void InspectVendorItem(ItemView item, bool selling) { itemBrowserHud.Inspect(item, selling); }
+
         public bool ComponentMarketOpen => componentMarketHud?.IsOpen == true;
 
         /// <summary>Show suppliers and buyers for an owned item or manufacturing requirement.</summary>
@@ -1109,9 +1302,9 @@ namespace FortyTwoAndBeyond.Client
         /// <summary>Open a visible wreck through the server's loot protocol.</summary>
         public void OpenLoot(uint id)
         {
-            if (Ready && snapshot.Verbs.Available(id, 3) == true &&
-                snapshot.Objects.Any(item => item.Id == id && item.Kind == 25))
-                worker.Submit(new ClientCommand(CommandKind.OpenLoot, id));
+            if (!Ready || snapshot == null || !snapshot.Objects.Any(item => item.Id == id && item.Kind == 25)) return;
+            navigationSelection.ChooseTarget(id); pendingNavigationTarget = 0;
+            worker.Submit(new ClientCommand(CommandKind.OpenLoot, id));
         }
 
         /// <summary>Close the current wreck window through its native server action.</summary>
@@ -1216,12 +1409,30 @@ namespace FortyTwoAndBeyond.Client
                 worker.Submit(new ClientCommand(CommandKind.AnswerConfirmation, accept ? 1u : 0u));
         }
 
+        /// <summary>Request a native peer trade after target and verb authorization.</summary>
+        public void OpenTrade(uint peerId)
+        { if (Ready && peerId != 0) worker.Submit(new ClientCommand(CommandKind.OpenTrade, target: peerId)); }
+
+        /// <summary>Confirm the current server-owned offer.</summary>
+        public void ConfirmTrade()
+        { if (Ready && snapshot?.Trade?.Open == true) worker.Submit(new ClientCommand(CommandKind.ConfirmTrade)); }
+
+        /// <summary>Cancel the current server-owned offer.</summary>
+        public void CancelTrade()
+        { if (Ready && snapshot?.Trade?.Open == true) worker.Submit(new ClientCommand(CommandKind.CancelTrade)); }
+
+        /// <summary>Request a new offered credit amount.</summary>
+        public void SetTradeCredits(uint amount)
+        { if (Ready && snapshot?.Trade?.Open == true) worker.Submit(new ClientCommand(CommandKind.SetTradeCredits, tradeCredits: amount)); }
+
         /// <summary>Set the authoritative target of a visible contact.</summary>
         public void SelectContact(uint id)
         {
-            if (Ready && snapshot.Players.Concat(snapshot.Mobs).Any(actor => actor.Id == id))
+            if (Ready && (id == snapshot.PlayerId || snapshot.Players.Concat(snapshot.Mobs).Any(actor => actor.Id == id) ||
+                snapshot.StationAvatars.Any(avatar => avatar.Id == id)))
             {
-                navigationSelection.ChooseTarget(id);
+                if (id == snapshot.PlayerId) navigationSelection.ChooseFreeFlight();
+                else navigationSelection.ChooseTarget(id);
                 pendingNavigationTarget = 0;
                 worker.Submit(new ClientCommand(CommandKind.SelectTarget, id));
             }
@@ -1230,8 +1441,7 @@ namespace FortyTwoAndBeyond.Client
         /// <summary>Select the own ship for a self-directed class support ability.</summary>
         public void SelectAbilitySelf()
         {
-            if (Ready && snapshot.Station == null)
-                worker.Submit(new ClientCommand(CommandKind.SelectTarget, snapshot.PlayerId));
+            if (Ready && snapshot.Station == null) hud.SelectContact(snapshot.PlayerId);
         }
 
         /// <summary>Follow the currently selected visible ship through native flight control.</summary>
@@ -1253,8 +1463,9 @@ namespace FortyTwoAndBeyond.Client
                 WarpTargets.WorldObject(item));
             if (!shipTarget && !objectTarget) return;
             visualFollowTarget = id;
-            visualFollowUntil = Time.unscaledTime + 1.2f;
-            chaseHoldUntil = Time.unscaledTime + .65f;
+            visualFollowUntil = Time.unscaledTime + 2f;
+            orbitYaw = 0; orbitPitch = 8;
+            chaseHoldUntil = 0;
             navigationSelection.ChooseTarget(id);
             pendingNavigationTarget = 0;
             worker.Submit(new ClientCommand(CommandKind.FollowTarget, id));
@@ -1267,14 +1478,47 @@ namespace FortyTwoAndBeyond.Client
                 worker.Submit(new ClientCommand(CommandKind.InvitePlayer, id));
         }
 
-        /// <summary>Cycle through server-visible hostile ships in distance order.</summary>
-        private void TargetNextHostile()
+        /// <summary>Cycle through selectable ships, loot, resources and navigation in distance order.</summary>
+        private void TargetNextSelectable()
         {
-            ShipActor[] hostiles = snapshot.Mobs.Where(actor => actor.Hostile && actor.HasPosition)
-                .OrderBy(actor => actor.Position.Distance(snapshot.Position)).ToArray();
-            if (hostiles.Length == 0) { status = "No hostile ships in sensor range"; return; }
-            int current = System.Array.FindIndex(hostiles, actor => actor.Id == hud.SelectedContactId);
-            hud.SelectContact(hostiles[(current + 1) % hostiles.Length].Id);
+            if (!Ready || snapshot.Station != null) return;
+            uint next = ThreatSelection.NextSelectable(snapshot, navigationSelection.TargetId != 0 ? navigationSelection.TargetId : hud.SelectedContactId, hud.SelectedContactFilter);
+            if (next == 0) { status = "No selectable objects available"; return; }
+            SelectAdvertisedObject(next);
+        }
+
+        /// <summary>Choose the nearest enemy and make subsequent D presses cycle enemies.</summary>
+        public void TargetNearestEnemy()
+        {
+            if (!Ready || snapshot.Station != null) return;
+            hud.SelectedContactFilter = ContactCategoryFilter.Combat;
+            uint nearest = ThreatSelection.NearestHostile(snapshot);
+            if (nearest == 0) { status = "No selectable objects available"; return; }
+            SelectAdvertisedObject(nearest);
+        }
+
+        /// <summary>Choose the nearest non-enemy and keep D within that selection category.</summary>
+        public void TargetNearestNonEnemy()
+        {
+            if (!Ready || snapshot.Station != null) return;
+            hud.SelectedContactFilter = ContactCategoryFilter.NonEnemy;
+            uint nearest = ThreatSelection.NearestSelectable(snapshot, ContactCategoryFilter.NonEnemy);
+            if (nearest == 0) { status = "No selectable non-enemies available"; return; }
+            SelectAdvertisedObject(nearest);
+        }
+
+        /// <summary>Route keyboard selection through the same actor, corpse and resource actions as a mouse click.</summary>
+        internal void SelectAdvertisedObject(uint id)
+        {
+            if (snapshot.Players.Concat(snapshot.Mobs).Any(actor => actor.Id == id && actor.HasPosition))
+                hud.SelectContact(id);
+            else
+            {
+                MapObject item = snapshot.Objects.FirstOrDefault(candidate => candidate.Id == id);
+                if (item?.Kind == 25) hud.SelectWreck(id);
+                else if (item?.Kind == 38) miningHud.SelectResource(id);
+                else if (item != null) Select(id);
+            }
         }
 
         /// <summary>Select the next visible MOB confirmed by the server as attacking this pilot.</summary>
@@ -1298,14 +1542,48 @@ namespace FortyTwoAndBeyond.Client
         }
 
         /// <summary>Submit one explicit throttle or brake command.</summary>
-        public void Thrust(byte command) { if (Ready && snapshot.Station == null) worker.Submit(new ClientCommand(CommandKind.Thrust, command)); }
+        public void Thrust(byte command)
+        {
+            if (!Ready || snapshot.Station != null) return;
+            if (!snapshot.MaxImpulseSpeed.HasValue || !snapshot.MinImpulseSpeed.HasValue ||
+                !snapshot.ImpulseAcceleration.HasValue)
+            { status = "Waiting for server flight limits"; return; }
+            if (snapshot.SpeedLocked) { status = "Ship speed is locked"; return; }
+            visualFollowTarget = 0;
+            if (command == 2 || command == 3 || command == 4)
+                motionThrottleCommand = command;
+            worker.Submit(new ClientCommand(CommandKind.Thrust, command));
+        }
 
         /// <summary>Send one chat line or local developer command to the server.</summary>
         public void SendChat(string text, bool group = false)
         {
             if (!Ready) return;
             hud.ChatHistory.Remember(text);
+            string command=(text??"").Trim();
+            if(command.Equals("/fps",System.StringComparison.OrdinalIgnoreCase) ||
+                command.Equals("/fps on",System.StringComparison.OrdinalIgnoreCase) ||
+                command.Equals("/fps off",System.StringComparison.OrdinalIgnoreCase))
+            {
+                ShowPerformance=command.EndsWith(" on",System.StringComparison.OrdinalIgnoreCase)||
+                    (!command.EndsWith(" off",System.StringComparison.OrdinalIgnoreCase)&&!ShowPerformance);
+                return;
+            }
             worker.Submit(new ClientCommand(CommandKind.Chat, target: group ? 1u : 4u, text: text));
+        }
+
+        /// <summary>Send a named channel line through the owning network worker.</summary>
+        public void SendNamedChat(string text, string channel)
+        {
+            if (!Ready) return;
+            hud.ChatHistory.Remember(text);
+            worker.Submit(new ClientCommand(CommandKind.ChatNamed, text: text, channel: channel));
+        }
+
+        /// <summary>Subscribe to a selected public chat channel without touching Unity network state.</summary>
+        public void SubscribeChatChannel(string channel)
+        {
+            if (Ready) worker.Submit(new ClientCommand(CommandKind.SubscribeChatChannel, channel: channel));
         }
 
         /// <summary>Whether the local chat entry is open.</summary>
@@ -1320,7 +1598,13 @@ namespace FortyTwoAndBeyond.Client
         }
         public void CloseChatEntry() { chatOpen = false; }
 
-        /// <summary>Switch between the flight camera and sector chart.</summary>
+        /// <summary>Always allow the map key to dismiss its own overlay, even when another control owns input.</summary>
+        internal void HandleChartShortcut(bool pressed, bool inputBlocked)
+        {
+            if (pressed && (chart || !inputBlocked)) SetChart(!chart);
+        }
+
+        /// <summary>Toggle the independent sector-map window while keeping the flight camera active.</summary>
         public void SetChart(bool enabled)
         { chart = enabled; if (!enabled) hud?.EndChartInteraction(); }
 
@@ -1328,6 +1612,8 @@ namespace FortyTwoAndBeyond.Client
         private void OnGUI()
         {
             long guiStartedAt = System.Diagnostics.Stopwatch.GetTimestamp();
+            GUI.skin.settings.cursorColor = new Color(.92f,1f,1f);
+            GUI.skin.settings.selectionColor = new Color(.17f,.54f,.72f,.7f);
             Matrix4x4 previous = GUI.matrix;
             bool previousEnabled = GUI.enabled;
             float scale = hud.Scale;
@@ -1335,6 +1621,8 @@ namespace FortyTwoAndBeyond.Client
             try
             {
                 bool groupInvite = hud.GroupInviteOpen;
+                if (ItemBrowserOpen && !groupInvite)
+                { itemBrowserHud.Draw(snapshot); return; }
                 if (GalaxyTravelOpen && !groupInvite)
                 { galaxyTravelHud.Draw(snapshot); return; }
                 if (ComponentMarketOpen && !groupInvite)
@@ -1367,6 +1655,7 @@ namespace FortyTwoAndBeyond.Client
                 componentMarketHud.Draw(snapshot);
                 GUI.enabled = previousEnabled;
                 if (groupInvite && !hud.RetainedVisible) hud.DrawGroupInvitePopup(snapshot);
+                if (!groupInvite) tradeHud.Draw(snapshot);
             }
             finally
             {
@@ -1392,24 +1681,31 @@ namespace FortyTwoAndBeyond.Client
         /// <summary>Join the worker before removing the connected world's resources.</summary>
         public void Disconnect()
         {
+            abilityHud?.ResetKnowledge();
+            cloakVisual?.ResetHull();
             worker?.Dispose(); worker = null; snapshot = null; sector = ""; navigationSelection.Reset(); pendingNavigationTarget = 0; positioned = false;
-            authoritativePoseAt = lastSnapshotAt = 0;
+            authoritativeHeadingAt = authoritativePoseAt = lastSnapshotAt = 0;
+            flightPoses.Clear();observedPoseSequence=-1;normalFlightSampling=false;
+            motionReportReady = false; motionReportPoseSequence = -1;
+            motionReportMotionSequence = -1; motionThrottleCommand = 0; nextMotionReportAt = 0;
             visualFollowTarget = 0;
             chaseHeadingReady = false;
             chaseHoldUntil = 0;
-            skyWarp = 0;
-            art.Sky.SetFloat("_WarpStrength", 0);
+            skyWarp = 0; warpLens?.SetState(0, Vector3.forward);
             picker?.Dispose(); picker = null; characters = null;
             selectedShipClass = -1; selectedHullStage = uint.MaxValue;
             defenseHud?.Close();
             componentMarketHud?.Close();
+            itemBrowserHud?.Close();
             galaxyTravelHud?.Close();
-            previousYaw = previousPitch = 0; flightThrottle.Reset(); ClearWorld(); status = "Disconnected";
+            previousYaw = previousPitch = 0; flightThrottle.Reset(); sectorTravelVisual?.Clear(); ClearWorld(); status = "Disconnected";
         }
 
         /// <summary>Release scene instances belonging to the departed sector.</summary>
         private void ClearWorld()
         {
+            motionReportReady = false; motionReportPoseSequence = -1;
+            motionReportMotionSequence = -1; motionThrottleCommand = 0;
             lootSweep.Cancel("");
             navigationSelection.Reset();
             pendingNavigationTarget = 0;
@@ -1434,7 +1730,10 @@ namespace FortyTwoAndBeyond.Client
             bool formationTravel = snapshot?.Group.Joined == true &&
                 snapshot.Group.Formation.Length > 0;
             if (!warping && !formationTravel)
+            {
+                motionThrottleCommand = 4;
                 worker.Submit(new ClientCommand(CommandKind.Thrust, 4));
+            }
             if (!FollowingFormation && !warping &&
                 (previousYaw != 0 || previousPitch != 0))
                 worker.Submit(new ClientCommand(CommandKind.Steer));
@@ -1442,6 +1741,6 @@ namespace FortyTwoAndBeyond.Client
         }
 
         /// <summary>Stop networking before releasing shared rendering assets.</summary>
-        private void OnDestroy() { worker?.Dispose(); worker = null; picker?.Dispose(); picker = null; demoRoster?.Dispose(); demoRoster = null; combatEffects?.Dispose(); art?.Dispose(); hud?.Dispose(); }
+        private void OnDestroy() { sectorTravelVisual?.Dispose(); cloakVisual?.Dispose(); worker?.Dispose(); worker = null; picker?.Dispose(); picker = null; demoRoster?.Dispose(); demoRoster = null; combatEffects?.Dispose(); art?.Dispose(); hud?.Dispose(); }
     }
 }

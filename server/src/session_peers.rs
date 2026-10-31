@@ -403,12 +403,16 @@ impl PlayerSession {
                     self.stop_cloak();
                 }
             }
-            SupportAction::Wormhole { destination, .. } => {
-                self.transfer_sector(destination, false)?
-            }
+            SupportAction::Wormhole { destination, .. } => self.transfer_wormhole(destination)?,
         }
         Ok(())
     }
+    /// Returns:
+    ///     bool: Whether this pilot is currently visible as a space or station peer.
+    pub(crate) fn has_visible_pilot(&self, pilot: u32) -> bool {
+        self.peer_ids.contains(&pilot) || self.station_peers.contains_key(&pilot)
+    }
+
     pub(crate) fn current_target(&self) -> u32 {
         self.target
     }

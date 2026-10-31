@@ -1,6 +1,8 @@
 Shader "42 and Beyond/EveShip"
 {
     Properties {
+        [HideInInspector] _TravelClip ("Travel clip", Float) = 0
+        [HideInInspector] _TravelPlane ("Travel plane", Vector) = (0,0,1,0)
         _MainTex ("Baked hull", 2D) = "white" {}
         _GlowTex ("Glow mask", 2D) = "black" {}
         _NormalTex ("Packed tangent normals", 2D) = "gray" {}
@@ -13,13 +15,15 @@ Shader "42 and Beyond/EveShip"
     SubShader {
         Tags { "RenderType"="Opaque" }
         CGPROGRAM
+        float _TravelClip; float4 _TravelPlane;
         #pragma surface surf Standard fullforwardshadows
         #pragma target 3.0
         sampler2D _MainTex, _GlowTex, _NormalTex, _RoughnessTex;
         fixed4 _Tint, _GlowColor;
         half _Lift, _HasDetail;
-        struct Input { float2 uv_MainTex; };
+        struct Input { float3 worldPos; float2 uv_MainTex; };
         void surf(Input i, inout SurfaceOutputStandard o) {
+            if (_TravelClip > .5) clip(dot(float4(i.worldPos,1), _TravelPlane));
             half3 pigment = tex2D(_MainTex, i.uv_MainTex).rgb;
             // The supplied Blender palette is deliberately dark; reveal its
             // panel detail under the game's sparse space lighting.

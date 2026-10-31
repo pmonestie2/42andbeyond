@@ -14,6 +14,8 @@
     <None Include="Fixtures/*.hex" CopyToOutputDirectory="PreserveNewest" />
     <None Include="Fixtures/*.bin" CopyToOutputDirectory="PreserveNewest" />
     <Compile Include="../Assets/FortyTwoAndBeyond/Client/FlightThrottle.cs" Link="FlightThrottle.cs" />
+    <Compile Include="../Assets/FortyTwoAndBeyond/Client/RemotePoseTiming.cs" Link="RemotePoseTiming.cs" />
+    <Compile Include="../Assets/FortyTwoAndBeyond/Client/ServerHistory.cs" Link="ServerHistory.cs" />
     <Compile Include="../Assets/FortyTwoAndBeyond/Client/StationWalkState.cs" Link="StationWalkState.cs" />
     <Compile Include="../Assets/FortyTwoAndBeyond/Client/ThreatSelection.cs" Link="ThreatSelection.cs" />
     <ProjectReference Include="FortyTwoAndBeyond.Protocol.csproj" />

@@ -60,11 +60,41 @@ impl SectorCatalog {
         let _ = CATALOG.set(Arc::new(catalog));
         Ok(Self(Arc::clone(CATALOG.get().unwrap())))
     }
+    /// Returns:
+    ///     ResourceNode: A real imported asteroid and ore table at the requested level.
+    /// Raises:
+    ///     io::Error: No matching asteroid exists in hosted content.
+    pub fn asteroid(&self, level: u16) -> io::Result<crate::content::ResourceNode> {
+        self.0
+            .values()
+            .flat_map(|sector| &sector.resources)
+            .filter(|node| {
+                node.resource_type == 1 && node.level == level && !node.ore_items.is_empty()
+            })
+            .min_by_key(|node| node.object.id)
+            .cloned()
+            .ok_or_else(|| invalid("No asteroid at that level."))
+    }
+
     pub fn sector(&self, id: u32) -> io::Result<Sector> {
         self.0
             .get(&id)
             .cloned()
             .ok_or_else(|| invalid("Destination is not a hosted sector."))
+    }
+
+    /// Returns:
+    ///     [f32; 3]: The destination's native weft position for a wormhole arrival.
+    /// Raises:
+    ///     io::Error: The sector is unavailable or has no wormhole weft.
+    pub(crate) fn wormhole_arrival(&self, destination: u32) -> io::Result<[f32; 3]> {
+        let sector = self.sector(destination)?;
+        sector
+            .navpoints
+            .iter()
+            .find(|nav| nav.asset == 1946)
+            .map(|nav| nav.position)
+            .ok_or_else(|| invalid("Wormhole destination has no weft."))
     }
 
     /// Returns:
@@ -227,10 +257,44 @@ mod tests {
         }
     }
 
+    /// Every advertised dock destination must resolve to a station with its own launch exterior.
+    #[test]
+    fn every_public_station_exterior_has_a_hosted_interior() {
+        let catalog = SectorCatalog::load().unwrap();
+        for parent in catalog.0.values().filter(|sector| sector.station.is_none()) {
+            for exterior in parent.navpoints.iter().filter(|nav| nav.object_type == 12) {
+                let Some(destination) = exterior.gate_destination else {
+                    continue;
+                };
+                let interior = catalog.sector(destination).unwrap_or_else(|_| {
+                    panic!("Missing interior for {} in {}", exterior.name, parent.name)
+                });
+                let station = interior
+                    .station
+                    .as_ref()
+                    .expect("Dock destination must be a station");
+                assert_eq!(station.parent, parent.id);
+                assert_eq!(station.exterior, exterior.id);
+                interior.validate().unwrap();
+            }
+        }
+        let somerled = catalog.sector(40151).unwrap().station.unwrap();
+        assert_eq!((somerled.parent, somerled.exterior), (4015, 100649));
+        assert!(!somerled.rooms.is_empty());
+        assert!(!somerled.terminals.is_empty());
+    }
+
     #[test]
     fn all_wormhole_destinations_and_adjacent_gates_have_valid_maps() {
         let catalog = SectorCatalog::load().unwrap();
-        assert_eq!(catalog.0.len(), 172);
+        let maps: Vec<Sector> =
+            serde_json::from_str(include_str!("../data/universe.json")).unwrap();
+        let stations: Vec<Station> =
+            serde_json::from_str(include_str!("../data/stations.json")).unwrap();
+        assert_eq!(catalog.0.len(), maps.len() + stations.len());
+        for id in [1910, 1070, 4120, 1705, 1077, 4520, 2210] {
+            assert_ne!(catalog.wormhole_arrival(id).unwrap(), [0.; 3]);
+        }
         for id in [1910, 1070, 4120, 1705, 1077, 4520, 2210, 1060, 1071] {
             assert!(!catalog.sector(id).unwrap().navpoints.is_empty());
         }
@@ -250,6 +314,8 @@ mod tests {
     fn developer_lookup_accepts_ids_punctuation_abbreviations_and_rejects_ambiguity() {
         let catalog = SectorCatalog::load().unwrap();
         assert_eq!(catalog.resolve_sector("bbw").unwrap().id, 3605);
+        assert_eq!(catalog.resolve_sector("ABA").unwrap().id, 1076);
+        assert_eq!(catalog.resolve_sector("  SaTuRn  ").unwrap().id, 1071);
         assert_eq!(
             catalog.resolve_sector("BLACKBEARD'S WAKE").unwrap().id,
             3605

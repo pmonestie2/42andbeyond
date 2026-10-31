@@ -34,6 +34,8 @@ use std::sync::{Arc, Mutex};
 mod ability_actions;
 #[path = "attacker_feedback.rs"]
 mod attacker_feedback;
+#[path = "ammo_options.rs"]
+mod ammo_options;
 #[path = "befriend_service.rs"]
 mod befriend_service;
 #[path = "biorepression_service.rs"]
@@ -153,6 +155,8 @@ mod summon_service;
 mod takeover_tests;
 #[path = "target_verbs.rs"]
 mod target_verbs;
+#[path = "trade_session.rs"]
+mod trade_session;
 #[path = "weapon_launch.rs"]
 mod weapon_launch;
 use std::time::{Duration, Instant};
@@ -240,6 +244,8 @@ pub struct PlayerSession {
     warp_effects: Vec<u32>,
     next_effect: u32,
     last_motion_report: Option<Instant>,
+    last_motion_report_position: [f32; 3],
+    motion_report_credit: f32,
     teleport_report_guard: Option<Instant>,
     last_launch: u64,
     mob_damage_receipts: Vec<mob_damage::MobDamageReceipt>,
@@ -258,6 +264,8 @@ pub struct PlayerSession {
     station_pose: Option<StationPose>,
     aggregate_station: bool,
     ack_capable: bool,
+    ammo_options: bool,
+    last_ammo_snapshot: Option<Vec<u8>>,
     station_peers: HashMap<u32, StationPose>,
     station_view_dirty: bool,
     last_station_broadcast: Instant,
@@ -466,6 +474,8 @@ impl PlayerSession {
             warp_effects: Vec::new(),
             next_effect,
             last_motion_report: None,
+            last_motion_report_position: [0.; 3],
+            motion_report_credit: 0.,
             teleport_report_guard: None,
             last_launch: 0,
             mob_damage_receipts: Vec::new(),
@@ -484,6 +494,8 @@ impl PlayerSession {
             station_pose: None,
             aggregate_station: false,
             ack_capable: false,
+            ammo_options: false,
+            last_ammo_snapshot: None,
             station_peers: HashMap::new(),
             station_view_dirty: false,
             last_station_broadcast: now,
@@ -688,6 +700,8 @@ impl PlayerSession {
         self.selected_peer = Some(peer);
         self.aggregate_station = false;
         self.ack_capable = false;
+        self.ammo_options = false;
+        self.last_ammo_snapshot = None;
         self.session_epoch = rand::random::<u64>().max(1);
         self.gate_transit = None;
         self.endpoint = None;
@@ -884,7 +898,10 @@ impl PlayerSession {
                 self.warp.reset(&mut self.motion);
                 self.warp_effects.clear();
                 self.last_motion_report = None;
-                self.stop_weapons();
+                // Initialize silently: native clients need ClientType, player
+                // data and Create before any ship AUX can be interpreted.
+                self.player_firing = false;
+                self.weapon_firing.fill(false);
                 self.motion.stop();
                 let time = u32::from_le_bytes(
                     body[64..68]
@@ -907,7 +924,36 @@ impl PlayerSession {
                         resources: self.ship_resources(),
                     },
                 ));
+                // Native UI diffs must follow START_ACK: its skill and map widgets are not ready during bootstrap.
+                let tick = self.tick_ms();
+                let cooldowns: Vec<Frame> = self
+                    .skill_catalog
+                    .skills
+                    .iter()
+                    // The full player snapshot already resets ready timers.
+                    // Only restore genuinely recovering skills afterward.
+                    .filter(|skill| {
+                        self.skills
+                            .cooldowns
+                            .get(&skill.id)
+                            .is_some_and(|seconds| *seconds > 0.)
+                    })
+                    .map(|skill| {
+                        let seconds = self.skills.cooldowns.get(&skill.id).copied().unwrap_or(0.);
+                        packets::skill_cooldown(
+                            skill.id,
+                            tick,
+                            (seconds.max(0.) * 1000.).ceil() as u32,
+                        )
+                    })
+                    .collect();
                 let start_boundary = self.pending.len();
+                self.pending.extend(cooldowns);
+                for nav in &self.sector.navpoints {
+                    if self.inventory.explored_navs.contains(&nav.id) {
+                        self.pending.extend(packets::static_navigation_refresh(&nav.discovered_navigation()));
+                    }
+                }
                 self.publish_reputation();
                 self.publish_active_device_resume();
                 let shared = Arc::clone(&self.combat);
@@ -938,10 +984,14 @@ impl PlayerSession {
                 self.awaiting_start_ack = true;
                 self.mob_login_refresh_at = None;
                 self.peer_login_refresh_at = None;
+                self.last_ammo_snapshot = None;
+                self.publish_ammo_options(false);
             }
             6 => {
                 if self.awaiting_start_ack {
+                    crate::server_log!("Sector START acknowledged: {}; deferred_frames={}",self.account.character.name,self.deferred_start_frames.len());
                     self.awaiting_start_ack = false;
+                    while self.replay.len()>128 {self.replay.pop_front();}
                     self.pending.append(&mut self.deferred_start_frames);
                     if self.sector.station.is_none() {
                         let refresh_at = Instant::now() + Duration::from_secs(2);
@@ -955,6 +1005,12 @@ impl PlayerSession {
             0x2033 => {
                 if let Err(error) = self.workbench_page_input(body) {
                     self.pending.push(packets::message(&error.to_string()));
+                }
+            }
+            0x203d => {
+                if let Err(error) = self.ammo_options_input(body) {
+                    self.message(&format!("Launcher options rejected: {error}"));
+                    self.publish_ammo_options(true);
                 }
             }
             0x203a => {
@@ -1131,6 +1187,7 @@ impl PlayerSession {
                     || self.visible_corpses.contains_key(&target)
                     || target == self.player_id()
                     || self.peer_ids.contains(&target)
+                    || self.station_peers.contains_key(&target)
                     || self.mob_target_in_scan(target)?
                 {
                     if self.target != target {
@@ -1272,6 +1329,12 @@ impl PlayerSession {
                 let action = reader.u32()?;
                 let target = reader.u32()?;
                 let optional = reader.u32()?;
+                if matches!(action, 20..=24) {
+                    // Native buttons can leave OptionalVar populated. The
+                    // original protocol uses it only for the credit offer (24).
+                    self.client_events.push(ClientEvent::TradeAction { action, target, optional });
+                    return Ok(());
+                }
                 if optional != 0 {
                     return Err(invalid("unsupported action option"));
                 }
@@ -1311,6 +1374,22 @@ impl PlayerSession {
                     _ => {}
                 }
             }
+            0xa3 => {
+                let owner = reader.u32()?;
+                if owner != self.player_id() && owner != self.player_id() & 0x00ff_ffff {
+                    return Err(invalid("chat owner mismatch"));
+                }
+                let kind = reader.u32()?;
+                if !matches!(kind, 0 | 1 | 6 | 7 | 29 | 30) { return Err(invalid("Unsupported chat request.")); }
+                let recipient = crate::game::native_chat::read_text(&mut reader, 64)?;
+                let channel = crate::game::native_chat::read_text(&mut reader, 64)?;
+                let text = crate::game::native_chat::read_text(&mut reader, 1024)?;
+                crate::game::native_chat::read_trailer(&mut reader)?;
+                // The original client sends auxiliary startup requests that the archived server ignores.
+                if !matches!(kind, 29 | 30) {
+                    self.client_events.push(ClientEvent::NamedChat { kind, recipient, channel, text });
+                }
+            }
             0x33 => {
                 if reader.u32()? != self.player_id() {
                     return Err(invalid("chat owner mismatch"));
@@ -1348,7 +1427,7 @@ impl PlayerSession {
                 self.forget_session()?;
                 self.skills = SkillState::default();
             }
-            0x98 | 0xa3 | 0x1a | 0x2025 | 0x3005 => {}
+            0x98 | 0x1a | 0x2025 | 0x3005 => {}
             _ => {
                 crate::server_error!(
                     "Unimplemented client opcode {opcode:#06x}, bytes={}",
@@ -1379,6 +1458,10 @@ impl PlayerSession {
             destination_slot: reader.be_u32()? as usize,
             quantity: reader.be_u32()?,
         };
+        if transfer.source == 16 || transfer.destination == 16 {
+            self.client_events.push(ClientEvent::TradeMove { transfer });
+            return Ok(());
+        }
         if (transfer.source == 6 || transfer.source == 18)
             && self.visible_corpses.contains_key(&self.target)
         {
@@ -1665,6 +1748,7 @@ impl PlayerSession {
         if let Some(active) = self.npc_interaction.as_ref().filter(|active| active.vendor) {
             crate::server_log!("Vendor inventory committed: {}; npc={}; credits_before={previous_credits}; credits_after={}", self.account.character.name, active.npc, self.inventory.credits);
         }
+        self.publish_ammo_options(false);
         Ok(())
     }
 
@@ -1744,7 +1828,31 @@ impl PlayerSession {
             return Err(invalid("invalid proxy motion report length"));
         }
         let mut reader = Reader::new(body);
-        let position = [reader.f32()?, reader.f32()?, reader.f32()?];
+        let position = [
+            f32::from_bits(reader.u32()?),
+            f32::from_bits(reader.u32()?),
+            f32::from_bits(reader.u32()?),
+        ];
+        let heading = if body.len() >= 24 {
+            let heading = [
+                f32::from_bits(reader.u32()?),
+                f32::from_bits(reader.u32()?),
+                f32::from_bits(reader.u32()?),
+            ];
+            if !heading.iter().all(|value| value.is_finite()) {
+                return Ok(());
+            }
+            Some(heading)
+        } else {
+            None
+        };
+        // Native MVAS appends signed current speed in metres per second, not
+        // elapsed milliseconds. It is display metadata, never movement authority.
+        let _reported_speed_mps = if matches!(body.len(), 16 | 28) {
+            Some(i32::from_le_bytes(reader.take(4)?.try_into().unwrap()))
+        } else {
+            None
+        };
         if !self.logged_in
             || self.sector.station.is_some()
             || self
@@ -1758,21 +1866,56 @@ impl PlayerSession {
             return Ok(());
         }
         if !self.sector.bounds.contains(position) {
-            return Err(invalid("motion report outside sector bounds"));
-        }
-        // The proxy samples the graphical client's predicted position. Keep
-        // it in sync, but do not accept a stale report as a teleport after warp.
-        if distance(self.position, position) > 2000. {
             return Ok(());
         }
-        // Proxy 2.46 appends a four-byte timestamp to either legacy report.
-        if body.len() >= 24 {
-            let heading = [reader.f32()?, reader.f32()?, reader.f32()?];
-            if heading.iter().map(|v| v * v).sum::<f32>() > 0.0001 {
+        // The server already simulates impulse motion. Bound each client path
+        // segment by elapsed wall time and the equipped impulse cap, with a
+        // small, non-refilling-per-packet correction reserve for prediction drift.
+        let moving = self.motion.speed.abs() >= 1. || self.motion.set_speed.abs() >= 1.;
+        let speed_cap = if moving {
+            self.motion.max_speed.abs()
+        } else {
+            0.
+        };
+        let maximum = if moving {
+            (speed_cap * 0.2 + 2.).min(100.)
+        } else {
+            2.
+        };
+        let elapsed = self
+            .last_motion_report
+            .map_or(0., |at| at.elapsed().as_secs_f32());
+        let credit = if self.last_motion_report.is_some() {
+            (self.motion_report_credit + speed_cap * 0.05 * elapsed).min(maximum)
+        } else {
+            maximum
+        };
+        let correction = distance(self.position, position);
+        let travel = if self.last_motion_report.is_some() {
+            distance(self.last_motion_report_position, position)
+        } else {
+            correction
+        };
+        let excess = (travel - speed_cap * elapsed).max(0.);
+        if !correction.is_finite()
+            || !travel.is_finite()
+            || excess > credit
+            || correction > maximum + speed_cap * elapsed.min(1.) * 0.2
+        {
+            return Ok(());
+        }
+        if let Some(heading) = heading {
+            let squared_length = heading.iter().map(|v| v * v).sum::<f32>();
+            if !squared_length.is_finite() {
+                return Ok(());
+            }
+            if squared_length > 0.0001 {
                 self.motion.face(heading)?;
             }
         }
         self.position = position;
+        self.last_motion_report_position = position;
+        self.motion_report_credit = credit - excess;
         self.last_motion_report = Some(Instant::now());
         self.dirty = true;
         Ok(())
@@ -1945,6 +2088,57 @@ impl PlayerSession {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Native ship AUX must follow creation and the player schema initialization.
+    #[test]
+    fn sector_login_does_not_publish_weapon_state_before_player_initialization() {
+        let mut ship = session();
+        ship.player_firing = true;
+        ship.weapon_firing.fill(true);
+        let ticket = packets::character_ticket(ship.sector.id, &ship.nonce, ship.player_id());
+        let mut login = vec![0; 137];
+        login[..64].copy_from_slice(&ticket.body[4..]);
+        ship.handle_input(2, &login).unwrap();
+        assert!(!ship.player_firing);
+        assert!(ship.weapon_firing.iter().all(|firing| !*firing));
+        let client_type = ship.pending.iter().position(|frame| frame.opcode == 0x3c).unwrap();
+        let player_aux = ship.pending.iter().position(|frame| {
+            frame.opcode == 0x1b && frame.body[..4] == 0u32.to_le_bytes()
+        }).unwrap();
+        let create = ship.pending.iter().position(|frame| frame.opcode == 4).unwrap();
+        let ship_aux = ship.pending.iter().position(|frame| {
+            frame.opcode == 0x1b && frame.body[..4] == ship.player_id().to_le_bytes()
+        }).unwrap();
+        assert!(client_type < player_aux && player_aux < create && create < ship_aux);
+    }
+
+    /// Restore active recovery after START_ACK; the full snapshot resets ready timers.
+    #[test]
+    fn sector_login_defers_authoritative_skill_cooldowns_until_start_ack() {
+        let mut ship = session();
+        ship.skill_catalog = SkillCatalog::load().unwrap();
+        ship.skills.cooldowns.insert(15, 6.25);
+        let ticket = packets::character_ticket(ship.sector.id, &ship.nonce, ship.player_id());
+        let mut login = vec![0; 137];
+        login[..64].copy_from_slice(&ticket.body[4..]);
+        ship.handle_input(2, &login).unwrap();
+        let start = ship
+            .pending
+            .iter()
+            .position(|frame| frame.opcode == 5)
+            .unwrap();
+        for (skill, duration, restored) in [(15, 6250, true), (12, 0, false)] {
+            let expected = packets::skill_cooldown(skill, 0, duration);
+            let prefix = &expected.body[..expected.body.len() - 4];
+            let matches=|frame: &Frame| frame.opcode==expected.opcode && frame.body.len()==expected.body.len() && frame.body.starts_with(prefix);
+            assert!(!ship.pending[..start].iter().any(matches));
+            assert_eq!(ship.deferred_start_frames.iter().any(matches), restored);
+        }
+        let delayed=ship.deferred_start_frames.clone();
+        ship.handle_input(6,&[]).unwrap();
+        assert!(ship.pending.ends_with(&delayed));
+        assert_eq!(ship.skills.cooldowns[&15], 6.25);
+    }
 
     /// Hold post-login extensions until the native client acknowledges START.
     #[test]
@@ -3058,6 +3252,9 @@ mod tests {
         let credits = ship.inventory.credits;
         ship.open_loot().unwrap();
         assert!(ship.inventory.credits >= credits + 20);
+        assert!(ship
+            .pending
+            .contains(&packets::vault_update(&ship.inventory, &ship.items)));
         let after_open = ship.inventory.clone();
         ship.open_loot().unwrap();
         assert_eq!(ship.inventory, after_open);
@@ -3077,6 +3274,34 @@ mod tests {
         assert!(!ship.visible_corpses.contains_key(&corpse));
         assert_eq!(ship.loot_window, None);
         assert!(ship.begin_looting(0).is_err());
+    }
+
+    /// A native corpse selection and Loot request retain permission framing.
+    #[test]
+    fn native_corpse_select_then_loot_request_grants_permission() {
+        let mut ship = looting_ship();
+        let corpse = ship.target;
+        let owner = ship.player_id();
+        ship.target = u32::MAX;
+        ship.pending.clear();
+        ship.handle_input(0x17, &[owner.to_le_bytes(), corpse.to_le_bytes()].concat())
+            .unwrap();
+        assert!(ship
+            .pending
+            .iter()
+            .any(|frame| { frame.opcode == 0x19 && frame.body[..4] == corpse.to_le_bytes() }));
+        assert!(ship.pending.iter().any(|frame| frame.opcode == 0x5c));
+        ship.handle_input(0x51, &[owner.to_le_bytes(), 0u32.to_le_bytes()].concat())
+            .unwrap();
+        assert!(ship.client_events.iter().any(|event| matches!(
+            event,
+            ClientEvent::LootOpen { target, toggle: false } if *target == corpse
+        )));
+        ship.request_loot_open(corpse, false).unwrap();
+        assert!(ship
+            .pending
+            .iter()
+            .any(|frame| { frame.opcode == 0x8c && frame.body == corpse.to_be_bytes() }));
     }
 
     #[test]
@@ -4014,6 +4239,30 @@ mod tests {
         assert!(!ship
             .pending
             .contains(&packets::ship_active_buff_slot(id, 5, "", 0)));
+    }
+
+    /// Wiki upkeep rates apply continuously and depletion removes the authoritative status.
+    #[test]
+    fn cloak_upkeep_matches_wiki_and_stops_at_empty_reactor() {
+        for (rank, drain) in [(1, 0.5), (3, 1.5), (5, 3.), (6, 6.), (7, 10.)] {
+            let mut ship = session();
+            ship.skills.cloak_rank = rank;
+            ship.skills.cloak_source = None;
+            ship.energy = 100.;
+            ship.advance_abilities(2.).unwrap();
+            assert_eq!(ship.energy, 100. - drain * 2.);
+            assert_eq!(ship.skills.cloak_rank, rank);
+            ship.energy = drain * 0.5;
+            ship.advance_abilities(1.).unwrap();
+            assert_eq!(ship.energy, 0.);
+            assert_eq!(ship.skills.cloak_rank, 0);
+            assert!(ship.pending.contains(&packets::ship_active_buff_slot(
+                ship.player_id(),
+                6,
+                "",
+                0,
+            )));
+        }
     }
 
     /// Cloak gear strengthens detection and freezes a longer strike window.
@@ -7328,6 +7577,8 @@ mod tests {
             session.advance_abilities(0.1).unwrap();
         }
         assert_eq!(session.sector.id, 1910);
+        let weft = session.sectors.wormhole_arrival(1910).unwrap();
+        assert_eq!(session.position, weft);
         assert!(!session.logged_in);
         assert!(session.pending.iter().any(|frame| frame.opcode == 0x3a));
         let restored = PlayerSession::new(
@@ -7337,6 +7588,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(restored.sector.id, 1910);
+        assert_eq!(restored.position, weft);
     }
 
     /// Low Fold tiers keep equipped travel distance when gear changes mid-cast.
@@ -7592,6 +7844,77 @@ mod tests {
             session.advance(0.1).unwrap();
         }
         assert_eq!(session.motion.speed, 0.);
+    }
+
+    /// Native speed metadata never authorizes a position jump or rapid correction ramp.
+    #[test]
+    fn native_motion_reports_respect_authoritative_impulse_budget() {
+        let mut ship = session();
+        ship.logged_in = true;
+        ship.motion.max_speed = 250.;
+        ship.motion.speed = 180.;
+        ship.motion.set_speed = 250.;
+        let initial = ship.position;
+        let report = |x: f32, heading: [f32; 3], speed: i32| {
+            [
+                x.to_le_bytes().as_slice(),
+                initial[1].to_le_bytes().as_slice(),
+                initial[2].to_le_bytes().as_slice(),
+                heading[0].to_le_bytes().as_slice(),
+                heading[1].to_le_bytes().as_slice(),
+                heading[2].to_le_bytes().as_slice(),
+                speed.to_le_bytes().as_slice(),
+            ]
+            .concat()
+        };
+        ship.apply_motion_report(&report(initial[0] + 20., [0., 1., 0.], 2230))
+            .unwrap();
+        assert!((ship.position[0] - initial[0] - 20.).abs() < 0.01);
+        assert_eq!(ship.motion.speed, 180.);
+        assert!(ship.motion.heading()[1] > 0.99);
+
+        let accepted = ship.position;
+        let heading = ship.motion.heading();
+        ship.apply_motion_report(&report(initial[0] + 2000., [1., 0., 0.], i32::MAX))
+            .unwrap();
+        assert_eq!(ship.position, accepted);
+        assert_eq!(ship.motion.heading(), heading);
+        for step in 1..=500 {
+            ship.apply_motion_report(&report(accepted[0] + step as f32, [1., 0., 0.], 4700))
+                .unwrap();
+        }
+        assert!(ship.position[0] - initial[0] < 60.);
+        assert_eq!(ship.motion.speed, 180.);
+
+        // A normal one-second report follows the server's own movement and
+        // spends only the small difference between predicted and actual pose.
+        let previous_report = ship.last_motion_report_position[0];
+        ship.position[0] = previous_report + 175.;
+        ship.last_motion_report = Some(Instant::now() - Duration::from_secs(1));
+        ship.apply_motion_report(&report(previous_report + 180., [1., 0., 0.], 180))
+            .unwrap();
+        assert!((ship.position[0] - previous_report - 180.).abs() < 0.01);
+
+        let before = ship.position;
+        ship.apply_motion_report(&report(f32::NAN, [1., 0., 0.], 0))
+            .unwrap();
+        ship.apply_motion_report(&report(before[0], [f32::NAN, 0., 0.], 0))
+            .unwrap();
+        assert_eq!(ship.position, before);
+        ship.motion.stop();
+        ship.apply_motion_report(&report(before[0] + 10., [1., 0., 0.], -100))
+            .unwrap();
+        assert_eq!(ship.position, before);
+        let legacy = [
+            before[0].to_le_bytes().as_slice(),
+            before[1].to_le_bytes().as_slice(),
+            before[2].to_le_bytes().as_slice(),
+            (-100i32).to_le_bytes().as_slice(),
+        ]
+        .concat();
+        ship.apply_motion_report(&legacy).unwrap();
+        assert_eq!(ship.position, before);
+        assert_eq!(ship.motion.speed, 0.);
     }
     pub(super) fn session() -> PlayerSession {
         PlayerSession::new(

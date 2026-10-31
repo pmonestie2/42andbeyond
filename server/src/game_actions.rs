@@ -304,6 +304,8 @@ impl GameState {
             return Err(invalid("Enter the game before using social commands."));
         }
         match event {
+            ClientEvent::TradeAction { action, target, optional } => self.player_trade_action(source, action, target, optional),
+            ClientEvent::TradeMove { transfer } => self.player_trade_move(source, transfer),
             ClientEvent::ComponentMarketQuery { template } => self
                 .sessions
                 .get_mut(&source)
@@ -327,6 +329,7 @@ impl GameState {
             }
             ClientEvent::LootOpen { target, toggle } => {
                 self.update_views();
+                self.update_loot_groups()?;
                 self.sessions
                     .get_mut(&source)
                     .unwrap()
@@ -334,6 +337,7 @@ impl GameState {
             }
             ClientEvent::LootBegin { target, slot } => {
                 self.update_views();
+                self.update_loot_groups()?;
                 self.sessions
                     .get_mut(&source)
                     .unwrap()
@@ -353,6 +357,7 @@ impl GameState {
                 epoch,
                 sequence,
             } => self.cast_peer_device_buff(source, target, slot, epoch, sequence),
+            ClientEvent::NamedChat { kind, recipient, channel, text } => self.named_chat(source, kind, &recipient, &channel, &text),
             ClientEvent::Chat { channel, text } => self.chat(source, channel, &text),
             ClientEvent::Formation { action, target } => {
                 match action {
@@ -1010,7 +1015,7 @@ impl GameState {
             .ok_or_else(|| invalid("That character is not online."))
     }
 
-    fn chat(&mut self, source: u32, channel: u8, text: &str) -> io::Result<()> {
+    pub(super) fn chat(&mut self, source: u32, channel: u8, text: &str) -> io::Result<()> {
         let text = text.trim();
         if text.is_empty() {
             return Ok(());
@@ -1022,10 +1027,12 @@ impl GameState {
                 return Err(invalid("Developer commands are disabled on this server."));
             }
             match command.to_ascii_lowercase().as_str() {
+                "d_aspawn" => return self.developer_asteroid_spawn(source, argument),
                 "d_spawn" => return self.developer_spawn(source, argument),
                 "d_mob_cl" => return self.developer_mob_level(source, argument),
                 "d_warp" => return self.developer_warp(source, argument),
-                "d_jump" => return self.developer_jump(source, argument),
+                "d_wh" | "d_jump" | "d_travel" => return self.developer_jump(source, argument),
+                "d_help" => return self.developer_help(source),
                 "d_clear" => return self.developer_clear(source, argument),
                 "launch" => return self.sessions.get_mut(&source).unwrap().launch_from_station(),
                 "tow" => return self.sessions.get_mut(&source).unwrap().tow_to_station(),
@@ -1035,6 +1042,12 @@ impl GameState {
                 "declinecall" => return self.answer_call_forward(source, false),
                 "equip" => return self.sessions.get_mut(&source).unwrap().equip_cargo(argument),
                 "unequip" => return self.sessions.get_mut(&source).unwrap().unequip(argument),
+                "tell" | "t" | "whisper" | "w" => {
+                    let (name, message) = argument.split_once(' ').ok_or_else(|| invalid("Use /tell NAME MESSAGE."))?;
+                    return self.private_chat(source, name, message);
+                }
+                "reply" | "r" => return self.reply_chat(source, argument),
+                "assist" => return self.assist_target(source, argument),
                 "invite" => return self.group_action(source, 10, self.find_online(argument)?),
                 "accept" => return self.group_action(source, 11, 0),
                 "decline" => return self.group_action(source, 12, 0),
@@ -1056,13 +1069,12 @@ impl GameState {
                     let message = format!("{}: {:.0}, {:.0}, {:.0}", session.sector.name, session.position[0], session.position[1], session.position[2]);
                     self.sessions.get_mut(&source).unwrap().message(&message);
                 }
-                "help" => self.sessions.get_mut(&source).unwrap().message("Commands: /who, /where, /invite NAME, /accept, /decline, /leave, /kick NAME, /disband, /ability NUMBER, /call SKILL NAME, /acceptcall, /declinecall, /jumpstart, /tow, /launch, /equip CARGO_SLOT MOUNT_SLOT, /unequip MOUNT_SLOT. Dev: /d_spawn [MOB_NAME_OR_ID] [COUNT] [level=1..66], /d_jump SECTOR_NAME_OR_ID, /d_warp [OBJECT_ID] (selected target), /d_mob_cl LEVEL (living MOBs within 20 km), /d_clear. Slots are zero-based."),
+                "help" => self.sessions.get_mut(&source).unwrap().message("Commands: /who, /where, /tell NAME MESSAGE, /reply MESSAGE, /assist NAME, /invite NAME, /accept, /decline, /leave, /kick NAME, /disband, /ability NUMBER, /call SKILL NAME, /acceptcall, /declinecall, /jumpstart, /tow, /launch, /equip CARGO_SLOT MOUNT_SLOT, /unequip MOUNT_SLOT. Dev: /d_help lists all developer commands; /d_wh SECTOR_NAME_OR_ID travels instantly. Slots are zero-based."),
                 _ => return Err(invalid("Unknown local command. Use /help.")),
             }
             return Ok(());
         }
         let session = &self.sessions[&source];
-        let name = session.account.character.name.clone();
         let sector = session.sector.id;
         let position = session.position;
         let recipients: Vec<u32> = match channel {
@@ -1097,19 +1109,13 @@ impl GameState {
                 .map(|(id, _)| *id)
                 .collect(),
         };
-        let prefix = if channel == 0 {
-            "[PM] "
-        } else if channel == 1 {
-            "[Group] "
-        } else {
-            ""
-        };
-        for id in recipients {
-            self.sessions
-                .get_mut(&id)
-                .unwrap()
-                .message(&format!("{prefix}{name}: {text}"));
+        if channel == 0 {
+            let target = recipients[1];
+            self.chat_replies.insert(source, target);
+            self.chat_replies.insert(target, source);
         }
+        let channel_name = match channel { 0 => "Private", 1 => "Group", 3 => "Local", _ => "Sector" };
+        self.deliver_chat(source, recipients, channel_name, text);
         Ok(())
     }
 

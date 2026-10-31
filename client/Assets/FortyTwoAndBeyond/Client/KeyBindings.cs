@@ -9,7 +9,11 @@ namespace FortyTwoAndBeyond.Client
         OpenChat, Forward, Reverse, TurnLeft, TurnRight, PitchUp, PitchDown, Brake,
         Warp, Fire, NextHostile, Follow, Gate, Dock, Launch, Chart, Equipment, ResetCamera,
         AbilityOne, AbilityTwo, AbilityThree, AbilityFour, AbilityFive, AbilitySix, TurboWeapons,
-        NextAttacker, Galaxy
+        NextAttacker, Galaxy,
+        AbilitySeven, AbilityEight, AbilityNine, AbilityTen, AbilityEleven, AbilityTwelve,
+        AbilityThirteen, AbilityFourteen, AbilityFifteen, AbilitySixteen, AbilitySeventeen, AbilityEighteen,
+        AbilityNineteen, AbilityTwenty, AbilityTwentyOne, AbilityTwentyTwo, AbilityTwentyThree, AbilityTwentyFour,
+        NearestHostile, NearestNonEnemy, TargetSelf
     }
 
     /// <summary>Persist one unique keyboard key for each flight action.</summary>
@@ -18,12 +22,15 @@ namespace FortyTwoAndBeyond.Client
         private const string PreferencePrefix = "42andBeyond.key.";
         private static readonly KeyCode[] Defaults =
         {
-            KeyCode.Return, KeyCode.W, KeyCode.S, KeyCode.A, KeyCode.D,
-            KeyCode.UpArrow, KeyCode.DownArrow, KeyCode.Space, KeyCode.Q, KeyCode.F,
-            KeyCode.T, KeyCode.R, KeyCode.G, KeyCode.O, KeyCode.L,
+            KeyCode.Return, KeyCode.W, KeyCode.S, KeyCode.LeftArrow, KeyCode.RightArrow,
+            KeyCode.UpArrow, KeyCode.DownArrow, KeyCode.Backspace, KeyCode.Q, KeyCode.F,
+            KeyCode.D, KeyCode.Space, KeyCode.G, KeyCode.O, KeyCode.L,
             KeyCode.Tab, KeyCode.I, KeyCode.C,
             KeyCode.Alpha1, KeyCode.Alpha2, KeyCode.Alpha3,
-            KeyCode.Alpha4, KeyCode.Alpha5, KeyCode.Alpha6, KeyCode.B, KeyCode.Y, KeyCode.M
+            KeyCode.Alpha4, KeyCode.Alpha5, KeyCode.Alpha6, KeyCode.B, KeyCode.Y, KeyCode.M,
+            KeyCode.Alpha7, KeyCode.Alpha8, KeyCode.Alpha9, KeyCode.Alpha0, KeyCode.Minus, KeyCode.Equals,
+            KeyCode.F1, KeyCode.F2, KeyCode.F3, KeyCode.F4, KeyCode.F5, KeyCode.F6,
+            KeyCode.F7, KeyCode.F8, KeyCode.F9, KeyCode.F10, KeyCode.F11, KeyCode.F12, KeyCode.E, KeyCode.X, KeyCode.BackQuote
         };
         public static readonly ControlAction[] Actions = (ControlAction[])Enum.GetValues(typeof(ControlAction));
         private readonly KeyCode[] keys = (KeyCode[])Defaults.Clone();
@@ -34,13 +41,29 @@ namespace FortyTwoAndBeyond.Client
             foreach (ControlAction action in Actions)
             {
                 int index = (int)action;
-                int fallback = action == ControlAction.Galaxy ? (int)keys[index] : (int)Defaults[index];
+                int fallback = (action == ControlAction.Galaxy || action >= ControlAction.AbilitySeven) ? (int)keys[index] : (int)Defaults[index];
                 int stored = PlayerPrefs.GetInt(PreferencePrefix + action, fallback);
+                if (action == ControlAction.Follow && stored == (int)KeyCode.R ||
+                    action == ControlAction.Brake && (stored == (int)KeyCode.Space || stored == (int)KeyCode.X))
+                {
+                    stored = (int)Defaults[index];
+                    PlayerPrefs.SetInt(PreferencePrefix + action, stored); PlayerPrefs.Save();
+                }
                 if (action == ControlAction.Equipment && stored == (int)KeyCode.E)
                 {
                     stored = (int)KeyCode.I;
                     PlayerPrefs.SetInt(PreferencePrefix + action, stored);
                     PlayerPrefs.Save();
+                }
+                if(action==ControlAction.TurnLeft&&stored==(int)KeyCode.A || action==ControlAction.TurnRight&&stored==(int)KeyCode.D)
+                {
+                    stored=(int)(action==ControlAction.TurnLeft?KeyCode.LeftArrow:KeyCode.RightArrow);
+                    PlayerPrefs.SetInt(PreferencePrefix+action,stored);PlayerPrefs.Save();
+                }
+                if (action == ControlAction.NextHostile && stored == (int)KeyCode.T)
+                {
+                    stored = (int)KeyCode.D;
+                    PlayerPrefs.SetInt(PreferencePrefix + action, stored); PlayerPrefs.Save();
                 }
                 KeyCode key = (KeyCode)stored;
                 if (!Enum.IsDefined(typeof(KeyCode), key) || key == KeyCode.None || key == KeyCode.Escape)
@@ -66,6 +89,8 @@ namespace FortyTwoAndBeyond.Client
             KeyCode key = Get(action);
             if (key == KeyCode.Return) return "Enter";
             if (key == KeyCode.Space) return "Space";
+            if (key == KeyCode.LeftArrow) return "←";
+            if (key == KeyCode.RightArrow) return "→";
             if (key == KeyCode.UpArrow) return "↑";
             if (key == KeyCode.DownArrow) return "↓";
             if (key >= KeyCode.Alpha0 && key <= KeyCode.Alpha9)
@@ -76,6 +101,8 @@ namespace FortyTwoAndBeyond.Client
         /// <returns>string: The readable action name shown in the controls panel.</returns>
         public static string Label(ControlAction action)
         {
+            if (action >= ControlAction.AbilitySeven && action <= ControlAction.AbilityTwentyFour)
+                return "Shortcut slot " + ((int)action - (int)ControlAction.AbilitySeven + 7);
             switch (action)
             {
                 case ControlAction.OpenChat: return "Open chat";
@@ -89,7 +116,10 @@ namespace FortyTwoAndBeyond.Client
                 case ControlAction.Warp: return "Warp to destination";
                 case ControlAction.Fire: return "Fire / stop weapons";
                 case ControlAction.TurboWeapons: return "Turbo Weapons device";
-                case ControlAction.NextHostile: return "Next hostile target";
+                case ControlAction.NextHostile: return "Next selectable object";
+                case ControlAction.NearestHostile: return "Nearest enemy";
+                case ControlAction.NearestNonEnemy: return "Nearest non-enemy";
+                case ControlAction.TargetSelf: return "Target your ship";
                 case ControlAction.NextAttacker: return "Next attacking MOB";
                 case ControlAction.Follow: return "Follow target";
                 case ControlAction.Gate: return "Activate gate";
@@ -99,14 +129,23 @@ namespace FortyTwoAndBeyond.Client
                 case ControlAction.Galaxy: return "Galaxy travel";
                 case ControlAction.Equipment: return "Inventory";
                 case ControlAction.ResetCamera: return "Reset camera";
-                case ControlAction.AbilityOne: return "Ability slot 1";
-                case ControlAction.AbilityTwo: return "Ability slot 2";
-                case ControlAction.AbilityThree: return "Ability slot 3";
-                case ControlAction.AbilityFour: return "Ability slot 4";
-                case ControlAction.AbilityFive: return "Ability slot 5";
-                case ControlAction.AbilitySix: return "Ability slot 6";
+                case ControlAction.AbilityOne: return "Shortcut slot 1";
+                case ControlAction.AbilityTwo: return "Shortcut slot 2";
+                case ControlAction.AbilityThree: return "Shortcut slot 3";
+                case ControlAction.AbilityFour: return "Shortcut slot 4";
+                case ControlAction.AbilityFive: return "Shortcut slot 5";
+                case ControlAction.AbilitySix: return "Shortcut slot 6";
                 default: throw new ArgumentOutOfRangeException(nameof(action));
             }
+        }
+
+        /// <returns>ControlAction: The rebindable action for one of the 24 shortcut slots.</returns>
+        /// <exception cref="ArgumentOutOfRangeException">The slot is outside the supported bar.</exception>
+        public static ControlAction ShortcutAction(int index)
+        {
+            if (index < 0 || index >= 24) throw new ArgumentOutOfRangeException(nameof(index));
+            return index < 6 ? (ControlAction)((int)ControlAction.AbilityOne + index) :
+                (ControlAction)((int)ControlAction.AbilitySeven + index - 6);
         }
 
         /// <summary>Assign a key, swapping with its previous action to avoid conflicts.</summary>

@@ -58,8 +58,20 @@ impl PlayerSession {
         if let Some(cast) = &self.mining {
             lock_resources(&self.resource_field)?.release(cast.node, self.player_id());
         }
+        self.sector.resources = lock_resources(&field)?.definitions();
         self.resource_field = field;
         self.restore_mining_claim()
+    }
+
+    /// Refresh newly spawned resources immediately without resetting another miner's claim.
+    pub(crate) fn developer_refresh_resources(
+        &mut self,
+        field: Arc<Mutex<ResourceField>>,
+    ) -> io::Result<()> {
+        self.sector.resources = lock_resources(&field)?.definitions();
+        self.attach_resource_field(field)?;
+        self.last_resource_visibility = None;
+        self.publish_resources()
     }
 
     fn already_harvested(&self, node: u32, generation: u64, slot: usize) -> u32 {

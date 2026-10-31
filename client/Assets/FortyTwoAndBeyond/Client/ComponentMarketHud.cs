@@ -64,7 +64,8 @@ namespace FortyTwoAndBeyond.Client
             Fill(window, new Color(.014f, .025f, .036f, .99f));
             Fill(new Rect(window.x, window.y, width, 3), Cyan);
             Fill(new Rect(window.x + 1, window.y + 3, width - 2, 77), new Color(.022f, .043f, .058f));
-            GUI.Label(new Rect(window.x + 22, window.y + 15, width - 190, 18), "STATION NETWORK  /  COMPONENT EXCHANGE", eyebrow);
+            HudWindowDrag.DrawGrip(window);
+            GUI.Label(new Rect(window.x + 36, window.y + 15, width - 190, 18), "STATION NETWORK  /  COMPONENT EXCHANGE", eyebrow);
             GUI.Label(new Rect(window.x + 22, window.y + 37, width - 190, 30), "Source & trade components", title);
             if (GUI.Button(new Rect(window.xMax - 104, window.y + 23, 82, 32), "Close", hud.ButtonStyle))
             { Close(); return; }

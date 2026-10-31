@@ -10,6 +10,8 @@ namespace FortyTwoAndBeyond.Client
         private sealed class View
         {
             public readonly Transform Model;
+            public readonly ShipCloakVisual Cloak;
+            public bool Cloaked;
             public Transform Marker;
             public LineRenderer Trail;
             public readonly Vector3[] TrailPoints = new Vector3[12];
@@ -22,11 +24,15 @@ namespace FortyTwoAndBeyond.Client
             public Vector3 Velocity;
             public Quaternion Orientation;
             public float PoseAt;
+            public Vector3 SampleStart;
+            public Quaternion SampleRotation;
+            public float SampleDuration = .5f;
 
             /// <summary>Place a new ship immediately at its first authoritative pose.</summary>
             public View(Transform model, ShipActor state)
             {
                 Model = model;
+                Cloak = new ShipCloakVisual(model);
                 Apply(state);
                 Model.localPosition = Destination;
                 Model.localRotation = Orientation;
@@ -36,6 +42,37 @@ namespace FortyTwoAndBeyond.Client
             public void Apply(ShipActor state)
             {
                 Vector3 next = SpaceClient.Convert(state.Position);
+                Quaternion nextOrientation = SpaceClient.ConvertRotation(state.Orientation);
+                if (!state.IsPlayer)
+                {
+                    float now = Time.unscaledTime;
+                    bool changed = State == null || Vector3.Distance(next, Destination) > .0001f ||
+                        Quaternion.Angle(nextOrientation, Orientation) > .01f;
+                    if (changed)
+                    {
+                        float interval = State == null ? .5f : Mathf.Max(.001f, now - PoseAt);
+                        if (State == null || RemotePoseTiming.Teleport(
+                            Vector3.Distance(next, Model.localPosition), interval))
+                        {
+                            Model.localPosition = next; Model.localRotation = nextOrientation;
+                            SampleStart = next; SampleRotation = nextOrientation;
+                            TrailCount = 0;
+                            if (Trail != null) Trail.enabled = false;
+                            Velocity = Vector3.zero;
+                        }
+                        else
+                        {
+                            SampleStart = Model.localPosition;
+                            SampleRotation = Model.localRotation;
+                            SampleDuration = RemotePoseTiming.Duration(interval);
+                            Vector3 estimate = (next - Destination) / interval;
+                            Velocity = Vector3.ClampMagnitude(estimate, 20f);
+                        }
+                        PoseAt = now;
+                    }
+                    State = state; Destination = next; Orientation = nextOrientation;
+                    return;
+                }
                 if (State != null && Vector3.Distance(next, Destination) > .0001f)
                 {
                     float elapsed = Mathf.Max(.04f, Time.unscaledTime - PoseAt);
@@ -46,7 +83,7 @@ namespace FortyTwoAndBeyond.Client
                 else if (State == null) PoseAt = Time.unscaledTime;
                 State = state;
                 Destination = next;
-                Orientation = SpaceClient.ConvertRotation(state.Orientation);
+                Orientation = nextOrientation;
             }
         }
 
@@ -66,7 +103,7 @@ namespace FortyTwoAndBeyond.Client
 
         /// <summary>Reconcile server visibility without recreating ships on movement packets.</summary>
         public void Apply(ShipActor[] players, GroupState group, uint selectedTargetId,
-            Position ownPosition)
+            Position ownPosition, NativeObjectEffect[] effects = null)
         {
             visible.Clear();
             crewIds.Clear();
@@ -114,6 +151,11 @@ namespace FortyTwoAndBeyond.Client
                     view.TrailCount = 0;
                     if (view.Trail != null) view.Trail.enabled = false;
                 }
+                view.Cloaked = false;
+                if (effects != null)
+                    foreach (NativeObjectEffect effect in effects)
+                        if (effect.OwnerId == player.Id && effect.Descriptor >= 180 && effect.Descriptor <= 184)
+                        { view.Cloaked = true; break; }
                 view.Model.name = player.Name;
             }
             removed.Clear();
@@ -121,6 +163,7 @@ namespace FortyTwoAndBeyond.Client
             foreach (uint id in removed)
             {
                 if (ships[id].Trail != null) Object.Destroy(ships[id].Trail.gameObject);
+                ships[id].Cloak.Dispose();
                 Object.Destroy(ships[id].Model.gameObject);
                 ships.Remove(id);
             }
@@ -190,14 +233,28 @@ namespace FortyTwoAndBeyond.Client
                 markerCamera = Camera.main != null ? Camera.main : Object.FindFirstObjectByType<Camera>();
             foreach (View view in ships.Values)
             {
+                view.Cloak.Tick(view.Cloaked, deltaTime);
                 Transform model = view.Model;
-                float age = Time.unscaledTime - view.PoseAt;
-                Vector3 predicted = view.Destination +
-                    (age < .35f ? view.Velocity * Mathf.Min(age, .25f) : Vector3.zero);
-                model.localPosition = view.Formed ? -parent.position + view.FormationOffset :
-                    Vector3.Distance(model.localPosition, predicted) > 300 ?
-                    predicted : Vector3.Lerp(model.localPosition, predicted, blend);
-                model.localRotation = Quaternion.Slerp(model.localRotation, view.Orientation, blend);
+                if (!view.State.IsPlayer)
+                {
+                    float fraction = RemotePoseTiming.Fraction(Time.unscaledTime - view.PoseAt,
+                        view.SampleDuration);
+                    float overrun = Mathf.Clamp(Time.unscaledTime - view.PoseAt - view.SampleDuration,
+                        0, .12f);
+                    model.localPosition = Vector3.LerpUnclamped(view.SampleStart, view.Destination,
+                        fraction) + view.Velocity * overrun;
+                    model.localRotation = Quaternion.SlerpUnclamped(view.SampleRotation, view.Orientation, fraction);
+                }
+                else
+                {
+                    float age = Time.unscaledTime - view.PoseAt;
+                    Vector3 predicted = view.Destination +
+                        (age < .35f ? view.Velocity * Mathf.Min(age, .25f) : Vector3.zero);
+                    model.localPosition = view.Formed ? -parent.position + view.FormationOffset :
+                        Vector3.Distance(model.localPosition, predicted) > 300 ?
+                        predicted : Vector3.Lerp(model.localPosition, predicted, blend);
+                    model.localRotation = Quaternion.Slerp(model.localRotation, view.Orientation, blend);
+                }
                 if (view.Marker != null && markerCamera != null)
                 {
                     float distance = Vector3.Distance(markerCamera.transform.position, model.position);
@@ -223,6 +280,7 @@ namespace FortyTwoAndBeyond.Client
             foreach (View view in ships.Values)
             {
                 if (view.Trail != null) Object.Destroy(view.Trail.gameObject);
+                view.Cloak.Dispose();
                 Object.Destroy(view.Model.gameObject);
             }
             ships.Clear(); visible.Clear(); crewIds.Clear(); formedIds.Clear(); removed.Clear();

@@ -10,7 +10,6 @@ Shader "42 and Beyond/SpaceSky"
         _VeilStrength ("Veil glow", Range(0,1)) = 0
         _Yaw ("Sector panorama rotation", Range(0,1)) = 0
         _Parallax ("View parallax", Vector) = (0,0,0,0)
-        _WarpStrength ("Space distortion", Range(0,1)) = 0
     }
     SubShader {
         Tags { "Queue"="Background" "RenderType"="Background" "PreviewType"="Skybox" }
@@ -21,14 +20,12 @@ Shader "42 and Beyond/SpaceSky"
             #pragma fragment frag
             #include "UnityCG.cginc"
             sampler2D _NebulaTex, _AccentTex, _VeilTex;
-            float _Exposure, _AccentExposure, _AccentBlend, _VeilStrength, _Yaw,
-                _WarpStrength;
+            float _Exposure, _AccentExposure, _AccentBlend, _VeilStrength, _Yaw;
             float4 _Parallax;
             struct Input { float4 vertex:POSITION; };
-            struct Output { float4 vertex:SV_POSITION; float3 direction:TEXCOORD0;
-                float4 screen:TEXCOORD1; };
+            struct Output { float4 vertex:SV_POSITION; float3 direction:TEXCOORD0; };
             Output vert(Input v) { Output o; o.vertex=UnityObjectToClipPos(v.vertex);
-                o.direction=v.vertex.xyz; o.screen=ComputeScreenPos(o.vertex); return o; }
+                o.direction=v.vertex.xyz; return o; }
             float starHash(float2 cell) {
                 return frac(sin(dot(cell,float2(127.1,311.7)))*43758.5453);
             }
@@ -36,14 +33,8 @@ Shader "42 and Beyond/SpaceSky"
                 float3 d=normalize(i.direction);
                 float2 uv=float2(atan2(d.z,d.x)/6.2831853+.5,acos(clamp(d.y,-1,1))/3.1415926);
                 uv.x=frac(uv.x+_Yaw);
-                float2 screen=i.screen.xy/max(.001,i.screen.w)-.5;
-                float radius=length(screen);
-                float2 outward=screen/max(.001,radius);
-                float distortion=(pow(saturate(radius*1.65),2)*.065+
-                    sin(radius*34-_Time.y*8)*.0035)*_WarpStrength;
-                uv+=outward*distortion;
                 float seconds=_Time.y;
-                float2 drift=float2(seconds*.000025,sin(seconds*.017)*.0014);
+                float2 drift=float2(seconds*.000065,sin(seconds*.017)*.0014);
                 float3 nebula=tex2D(_NebulaTex,uv+drift).rgb;
                 float3 accent=tex2D(_AccentTex,uv+_Parallax.xy*.22-drift*2).rgb;
                 float3 color=lerp(nebula*_Exposure,accent*_AccentExposure,_AccentBlend);
@@ -81,7 +72,8 @@ Shader "42 and Beyond/SpaceSky"
                 float facing=step(.8,dot(d,galaxyDirection));
                 color+=facing*(float3(.34,.53,.85)*disk*(.8+detail*2)+
                     float3(1,.84,.62)*nucleus);
-                float2 grid=(uv+_Parallax.xy*1.7)*float2(190,95);
+                float2 stellarDrift=float2(seconds*.00011,seconds*.000018);
+                float2 grid=(uv+stellarDrift+_Parallax.xy*1.7)*float2(190,95);
                 float2 cell=floor(grid);
                 float seed=starHash(cell);
                 float2 center=float2(starHash(cell+17.3),starHash(cell+41.7));
@@ -90,12 +82,12 @@ Shader "42 and Beyond/SpaceSky"
                     step(.985,seed)*twinkle;
                 color+=glint*lerp(float3(.36,.61,1),float3(1,.78,.56),
                     starHash(cell+9.2))*1.05;
-                float2 dustGrid=uv*float2(620,310);
+                float2 dustGrid=(uv+stellarDrift*.32)*float2(620,310);
                 float dustSeed=starHash(floor(dustGrid)+83.1);
                 float dustStar=(1-smoothstep(.015,.11,length(frac(dustGrid)-.5)))*
                     step(.988,dustSeed);
                 color+=dustStar*float3(.55,.68,.9)*(.24+band*.6);
-                float2 nearGrid=(uv+_Parallax.xy*2.4)*float2(96,48);
+                float2 nearGrid=(uv+stellarDrift*2.6+_Parallax.xy*2.4)*float2(96,48);
                 float2 nearCell=floor(nearGrid);
                 float nearSeed=starHash(nearCell+117.4);
                 float2 nearCenter=float2(starHash(nearCell+2.3),starHash(nearCell+47.9));
@@ -106,8 +98,6 @@ Shader "42 and Beyond/SpaceSky"
                 float nearPulse=.68+.32*sin(seconds*(.42+nearSeed)+nearSeed*29);
                 color+=(nearCore*.75+nearRays*.11)*step(.992,nearSeed)*nearPulse*
                     float3(.52,.77,1);
-                color+=float3(.13,.28,.42)*_WarpStrength*
-                    exp(-radius*radius*24);
                 return float4(color,1);
             }
             ENDCG

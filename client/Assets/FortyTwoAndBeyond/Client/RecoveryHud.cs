@@ -7,6 +7,7 @@ namespace FortyTwoAndBeyond.Client
     /// <summary>Present the server's rescue choices when the local ship is incapacitated.</summary>
     public sealed class RecoveryHud
     {
+        private readonly HudWindowDrag windowDrag = new HudWindowDrag();
         private readonly SpaceClient client;
         private readonly FlightHud flightHud;
         private float CanvasWidth => Screen.width / flightHud.Scale;
@@ -20,9 +21,9 @@ namespace FortyTwoAndBeyond.Client
         public void Draw(Snapshot snapshot)
         {
             if (snapshot == null || snapshot.Station != null || snapshot.MaxHull <= 0 || snapshot.Hull > 0) return;
-            Rect panel = new Rect((CanvasWidth - 500) * .5f, (CanvasHeight - 320) * .5f, 500, 320);
-            flightHud.Panel(panel);
-            GUI.Label(new Rect(panel.x + 20, panel.y + 15, 450, 27),
+            Rect panel = windowDrag.Handle(new Rect((CanvasWidth - 500) * .5f, (CanvasHeight - 320) * .5f, 500, 320), CanvasWidth, CanvasHeight);
+            flightHud.Panel(panel); HudWindowDrag.DrawGrip(panel);
+            GUI.Label(new Rect(panel.x + 36, panel.y + 15, 434, 27),
                 "SHIP INCAPACITATED", flightHud.BodyStyle);
             if (snapshot.Confirmation?.Kind == ConfirmationKind.Jumpstart)
             {

@@ -5,7 +5,7 @@ using System.Threading;
 
 namespace FortyTwoAndBeyond.Protocol
 {
-    public enum CommandKind { Thrust, Steer, Warp, Gate, Dock, Launch, EnterStationRoom, StationPose, OpenNpc, ChooseNpc, BuyVendor, SellVendor, EquipCargo, UnequipMount, MoveInventory, StoreCargo, RetrieveVault, OpenProduction, CloseProduction, SelectProductionRecipe, SelectProductionCategory, SelectProductionPage, QueryGalaxyDestinations, PreviewGalaxyRoute, StartGalaxyTravel, CancelGalaxyTravel, QueryComponentMarket, QueryComponentStock, TradeComponentMarket, TravelComponentMarket, SetProductionLevels, StartProduction, InsertAnalysisSample, ReturnAnalysisSample, ActivateWeapon, ActivateDevice, ActivateDeviceFor, ActivateTurboWeapons, Chat, ToggleWeapons, Formation, SelectTarget, FollowTarget, InvitePlayer, AnswerConfirmation, StopWeapons, OpenLoot, CloseLoot, TakeLoot, OpenResource, CloseResource, ProspectResource, ActivateAbility, ActivateAbilityFor, TrainSkill, RequestRescue, ChooseRescue, SelfJumpstart }
+    public enum CommandKind { Thrust, Steer, MotionReport, Warp, Gate, Dock, Launch, EnterStationRoom, StationPose, OpenNpc, ChooseNpc, BuyVendor, SellVendor, EquipCargo, UnequipMount, MoveInventory, SetLauncherAutoReload, OpenTrade, ConfirmTrade, CancelTrade, SetTradeCredits, StoreCargo, RetrieveVault, OpenProduction, CloseProduction, SelectProductionRecipe, SelectProductionCategory, SelectProductionPage, QueryGalaxyDestinations, PreviewGalaxyRoute, StartGalaxyTravel, CancelGalaxyTravel, QueryComponentMarket, QueryComponentStock, TradeComponentMarket, TravelComponentMarket, SetProductionLevels, StartProduction, InsertAnalysisSample, ReturnAnalysisSample, ActivateWeapon, ActivateDevice, ActivateDeviceFor, ActivateTurboWeapons, Chat, ChatNamed, SubscribeChatChannel, ToggleWeapons, Formation, SelectTarget, FollowTarget, InvitePlayer, AnswerConfirmation, StopWeapons, OpenLoot, CloseLoot, TakeLoot, OpenResource, CloseResource, ProspectResource, ActivateAbility, ActivateAbilityFor, TrainSkill, RequestRescue, ChooseRescue, SelfJumpstart }
 
     public readonly struct ClientCommand
     {
@@ -13,24 +13,34 @@ namespace FortyTwoAndBeyond.Protocol
         public readonly uint Target;
         public readonly int Slot;
         public readonly float Yaw, Pitch;
+        public readonly Position MotionPosition, MotionHeading;
+        public readonly float MotionSpeed;
+        public readonly int MotionGeneration;
         public readonly string Text;
+        public readonly string Channel;
         public readonly uint StationRoom, StationAction;
         public readonly float StationOrientation, StationX, StationZ;
         public readonly InventoryMove InventoryMove;
         public readonly uint MarketTemplate, MarketQuantity;
         public readonly bool MarketSell;
+        public readonly uint TradeCredits;
 
         /// <summary>Store one immutable main-thread input for the network worker.</summary>
         public ClientCommand(CommandKind kind, uint target = 0, float yaw = 0, float pitch = 0,
-            string text = "", int slot = 0, uint stationRoom = uint.MaxValue, uint stationAction = 0,
+            string text = "", string channel = "", int slot = 0, uint stationRoom = uint.MaxValue, uint stationAction = 0,
             float stationOrientation = 0, float stationX = 0, float stationZ = 0,
-            InventoryMove inventoryMove = default, uint marketTemplate = 0, uint marketQuantity = 1, bool marketSell = false)
+            InventoryMove inventoryMove = default, uint marketTemplate = 0, uint marketQuantity = 1, bool marketSell = false, uint tradeCredits = 0,
+            Position motionPosition = default, Position motionHeading = default,
+            float motionSpeed = 0, int motionGeneration = 0)
         {
-            Kind = kind; Target = target; Yaw = yaw; Pitch = pitch; Text = text; Slot = slot;
+            Kind = kind; Target = target; Yaw = yaw; Pitch = pitch; Text = text; Channel = channel; Slot = slot;
             StationRoom = stationRoom; StationAction = stationAction;
             StationOrientation = stationOrientation; StationX = stationX; StationZ = stationZ;
             InventoryMove = inventoryMove; MarketTemplate = marketTemplate;
-            MarketQuantity = marketQuantity; MarketSell = marketSell;
+            MarketQuantity = marketQuantity; MarketSell = marketSell; TradeCredits = tradeCredits;
+            MotionPosition = motionPosition; MotionHeading = motionHeading;
+            MotionSpeed = motionSpeed;
+            MotionGeneration = motionGeneration;
         }
     }
 
@@ -43,6 +53,7 @@ namespace FortyTwoAndBeyond.Protocol
         private readonly string host, username;
         private readonly int characterSlot;
         private readonly byte[] navigationData;
+        private readonly ItemTemplateInfo[] fallbackItems;
         private string password;
         private Snapshot latest;
         private string error;
@@ -52,11 +63,13 @@ namespace FortyTwoAndBeyond.Protocol
         public bool Running => thread.IsAlive;
 
         /// <summary>Start an isolated connection worker with explicit local credentials.</summary>
-        public ClientWorker(string host, string username, string password, int characterSlot = 0, byte[] navigationData = null)
+        public ClientWorker(string host, string username, string password, int characterSlot = 0, byte[] navigationData = null,
+            ItemTemplateInfo[] fallbackItems = null)
         {
             this.host = host; this.username = username; this.password = password;
             this.characterSlot = characterSlot;
             this.navigationData = navigationData == null ? null : (byte[])navigationData.Clone();
+            this.fallbackItems = fallbackItems == null ? null : (ItemTemplateInfo[])fallbackItems.Clone();
             thread = new Thread(Run) { IsBackground = true, Name = "42 and Beyond local client" }; thread.Start();
         }
 
@@ -91,7 +104,7 @@ namespace FortyTwoAndBeyond.Protocol
         {
             try
             {
-                using (var session = new LocalSession(stop.Token, navigationData))
+                using (var session = new LocalSession(stop.Token, navigationData, fallbackItems))
                 {
                     try { session.Connect(host, username, password, characterSlot); }
                     finally { password = null; }
@@ -110,6 +123,8 @@ namespace FortyTwoAndBeyond.Protocol
                             {
                                 case CommandKind.Thrust: session.Thrust((byte)command.Target); break;
                                 case CommandKind.Steer: session.Steer(command.Yaw, command.Pitch); break;
+                                case CommandKind.MotionReport: session.MotionReport(command.MotionPosition,
+                                    command.MotionHeading, command.MotionSpeed, command.MotionGeneration); break;
                                 case CommandKind.Warp: session.Warp(command.Target); break;
                                 case CommandKind.Gate: session.Gate(command.Target); break;
                                 case CommandKind.Dock: session.Dock(command.Target); break;
@@ -125,6 +140,11 @@ namespace FortyTwoAndBeyond.Protocol
                                 case CommandKind.EquipCargo: session.EquipCargo((int)command.Target, command.Slot); break;
                                 case CommandKind.UnequipMount: session.UnequipMount((int)command.Target); break;
                                 case CommandKind.MoveInventory: session.MoveInventory(command.InventoryMove); break;
+                                case CommandKind.SetLauncherAutoReload: session.SetLauncherAutoReload(command.Slot, command.Target != 0); break;
+                                case CommandKind.OpenTrade: session.OpenTrade(command.Target); break;
+                                case CommandKind.ConfirmTrade: session.ConfirmTrade(); break;
+                                case CommandKind.CancelTrade: session.CancelTrade(); break;
+                                case CommandKind.SetTradeCredits: session.SetTradeCredits(command.TradeCredits); break;
                                 case CommandKind.StoreCargo: session.StoreCargo((int)command.Target); break;
                                 case CommandKind.RetrieveVault: session.RetrieveVault((int)command.Target); break;
                                 case CommandKind.OpenProduction: session.OpenProduction(command.Target); break;
@@ -150,6 +170,8 @@ namespace FortyTwoAndBeyond.Protocol
                                 case CommandKind.ActivateDeviceFor: session.ActivateDeviceFor(command.Slot, command.Target); break;
                                 case CommandKind.ActivateTurboWeapons: session.ActivateTurboWeapons(); break;
                                 case CommandKind.Chat: session.Chat(command.Text, (byte)command.Target); break;
+                                case CommandKind.ChatNamed: session.ChatNamed(command.Text, command.Channel); break;
+                                case CommandKind.SubscribeChatChannel: session.SubscribeChatChannel(command.Channel); break;
                                 case CommandKind.ToggleWeapons: session.ToggleWeapons(command.Target); break;
                                 case CommandKind.Formation: session.Formation(command.Target); break;
                                 case CommandKind.SelectTarget: session.SelectTarget(command.Target); break;

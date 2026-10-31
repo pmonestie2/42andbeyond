@@ -13,7 +13,7 @@ internal static class RechargeAbilityChecks
         var deadline = Stopwatch.StartNew();
         while (!ready())
         {
-            if (deadline.Elapsed.TotalSeconds > 12) throw new TimeoutException(failure);
+            if (deadline.Elapsed.TotalSeconds > 12) throw new TimeoutException(failure + $"; final status: {caster.Status}; ready: {caster.Ready}; hull: {caster.World.Equipment.Hull}; abilities: {string.Join(",", caster.World.AvailableAbilities)}");
             caster.Poll(); recipient.Poll();
         }
     }
@@ -72,5 +72,32 @@ internal static class RechargeAbilityChecks
                 "Self Regenerate Shields did not complete with an ally selected.");
             Console.WriteLine("PASS: native selected-ally and self shield/hull support casts");
         }
+    }
+
+    /// <summary>Cast area ranks directly, replacing a navpoint target without a lower-rank priming cast.</summary>
+    public static void AreaLive(string host)
+    {
+        using var caster = new LocalSession(CancellationToken.None);
+        using var recipient = new LocalSession(CancellationToken.None);
+        caster.Connect(host, "ptt", "ptt"); recipient.Connect(host, "pje", "pje");
+        Wait(caster, recipient, () => caster.Ready && recipient.Ready &&
+            caster.World.AvailableAbilities.Contains(61u) &&
+            caster.World.Players.TryGetValue(recipient.Player, out ShipActor peer) && peer.HasPosition,
+            "Area recharge or nearby recipient was not advertised");
+        foreach (uint area in new uint[] { 61, 14 })
+        {
+            foreach (uint target in new uint[] { caster.Player, recipient.Player })
+            {
+                uint navpoint = caster.World.Objects.Keys.First();
+                caster.SelectTarget(navpoint);
+                Wait(caster, recipient, () => caster.World.Equipment.TargetId == navpoint,
+                    "Disposable navpoint was not selected");
+                caster.ActivateAbilityFor(area, target);
+                Wait(caster, recipient, () => caster.World.Equipment.TargetId == target &&
+                    caster.Status == "Recharge Shields completed.",
+                    "Area rank " + area + " failed for " + target + "; status: " + caster.Status);
+            }
+        }
+        Console.WriteLine("PASS: native area recharge ranks 7/6 directly confirm self and ally from navpoint selections");
     }
 }

@@ -194,6 +194,7 @@ pub struct ResourceField {
     nodes: HashMap<u32, ResourceState>,
     generations: BTreeMap<u32, u64>,
     generation_path: PathBuf,
+    developer_nodes: Vec<ResourceNode>,
     items: ItemCatalog,
     last_respawn_poll: Instant,
 }
@@ -212,8 +213,20 @@ impl ResourceField {
         if generations.len() > 100_000 {
             return Err(invalid("Resource generation file exceeds supported size."));
         }
+        let developer_path = generation_path.with_extension("spawned.json");
+        let developer_nodes: Vec<ResourceNode> = if developer_path.exists() {
+            serde_json::from_slice(&fs::read(&developer_path)?)?
+        } else {
+            Vec::new()
+        };
+        if developer_nodes.len() > 1024 {
+            return Err(invalid("Developer asteroid limit exceeded."));
+        }
+        let mut validated = sector.clone();
+        validated.resources.extend(developer_nodes.clone());
+        validated.validate()?;
         let mut nodes = HashMap::new();
-        for definition in &sector.resources {
+        for definition in &validated.resources {
             let id = definition.object.id;
             nodes.insert(
                 id,
@@ -229,9 +242,67 @@ impl ResourceField {
             nodes,
             generations,
             generation_path,
+            developer_nodes,
             items: items.clone(),
             last_respawn_poll: Instant::now(),
         })
+    }
+
+    /// Returns:
+    ///     Vec<ResourceNode>: Static and durable developer nodes for session discovery and targeting.
+    pub fn definitions(&self) -> Vec<ResourceNode> {
+        let mut nodes: Vec<_> = self
+            .nodes
+            .values()
+            .map(|node| node.definition.clone())
+            .collect();
+        nodes.sort_by_key(|node| node.object.id);
+        nodes
+    }
+
+    /// Persist mineable asteroid definitions before publishing their generated ore.
+    /// Returns:
+    ///     Vec<u32>: Stable spawned resource identities.
+    /// Raises:
+    ///     io::Error: Capacity, invalid ore, or an atomic persistence write fails.
+    pub fn spawn_developer(&mut self, mut definitions: Vec<ResourceNode>) -> io::Result<Vec<u32>> {
+        if definitions.is_empty()
+            || self.developer_nodes.len() + definitions.len() > 1024
+            || self.nodes.len() + definitions.len() > 8192
+        {
+            return Err(invalid("Developer asteroid capacity exceeded."));
+        }
+        let mut states = Vec::new();
+        for (index, definition) in definitions.iter_mut().enumerate() {
+            definition.object.id =
+                0x28000000 + (self.sector << 10) + (self.developer_nodes.len() + index) as u32;
+            if self.nodes.contains_key(&definition.object.id) {
+                return Err(invalid("Asteroid identity collision."));
+            }
+            let state = ResourceState::generate(definition, 0, &self.items)?;
+            if !state.available() {
+                return Err(invalid("Asteroid has no mineable ore."));
+            }
+            states.push(state);
+        }
+        let mut candidate = self.developer_nodes.clone();
+        candidate.extend(definitions);
+        let path = self.generation_path.with_extension("spawned.json");
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        let temporary = path.with_extension("json.tmp");
+        fs::write(&temporary, serde_json::to_vec(&candidate)?)?;
+        fs::rename(temporary, path)?;
+        let ids = states
+            .iter()
+            .map(|state| state.definition.object.id)
+            .collect();
+        for state in states {
+            self.nodes.insert(state.definition.object.id, state);
+        }
+        self.developer_nodes = candidate;
+        Ok(ids)
     }
 
     pub fn get(&self, id: u32) -> io::Result<&ResourceState> {

@@ -222,6 +222,47 @@ impl SectorCombat {
         Ok(indices)
     }
 
+    /// Returns:
+    ///     Vec<usize>: Removed nearby actor slots; stable indices keep unrelated receipts and clients valid.
+    /// Raises:
+    ///     io::Error: The neighborhood is invalid or the durable removal cannot commit.
+    pub(crate) fn clear_nearby_mobs(
+        &mut self,
+        center: [f32; 3],
+        radius: f32,
+    ) -> io::Result<Vec<usize>> {
+        if !radius.is_finite()
+            || radius <= 0.
+            || radius > 200_000.
+            || center.iter().any(|value| !value.is_finite())
+        {
+            return Err(invalid("Invalid developer MOB clear neighborhood."));
+        }
+        let indices: Vec<usize> = self
+            .actors
+            .iter()
+            .enumerate()
+            .filter(|(_, actor)| {
+                actor.state != crate::mob::MobState::Dead
+                    && crate::mob::distance(actor.position, center) <= radius
+            })
+            .map(|(index, _)| index)
+            .collect();
+        let previous = (self.actors.clone(), self.npc_shots.clone());
+        for index in &indices {
+            self.actors[*index].developer_remove();
+        }
+        self.npc_shots
+            .retain(|shot| !indices.contains(&shot.hit.attacker_index));
+        if let Err(error) = self.persist() {
+            (self.actors, self.npc_shots) = previous;
+            return Err(error);
+        }
+        self.npc_visuals
+            .retain(|visual| !indices.contains(&visual.attacker_index));
+        Ok(indices)
+    }
+
     pub fn accepted_sequence(&self, owner: u32) -> u64 {
         self.accepted.get(&owner).copied().unwrap_or(0)
     }
@@ -585,6 +626,34 @@ mod tests {
         let fresh = SectorCombat::from_actors(world.actors.clone());
         let wrong = SectorCombat::persistent(path, 9999, &fresh);
         assert!(wrong.is_err());
+    }
+
+    /// Clearing preserves identity slots, excludes distant actors, rolls back failed writes and survives restart without respawn.
+    #[test]
+    fn developer_clear_neighborhood_is_durable_and_atomic() {
+        let (mut world, path) = world();
+        let initial = SectorCombat::from_actors(world.actors.clone());
+        world.actors[0].position = [1000., 0., 0.];
+        let mut definition = world.actors[0].definition.clone();
+        definition.spawn = [20_001., 0., 0.];
+        definition.spawn_region = None;
+        world.spawn_developer(vec![definition]).unwrap();
+        std::fs::create_dir_all(path.with_extension("json.next")).unwrap();
+        assert!(world.clear_nearby_mobs([0.; 3], 20_000.).is_err());
+        assert!(!world.actors[0].developer_removed);
+        assert!(world.actors[0].health > 0.);
+        std::fs::remove_dir(path.with_extension("json.next")).unwrap();
+        let generation = world.actors[0].death_generation;
+        assert_eq!(world.clear_nearby_mobs([0.; 3], 20_000.).unwrap(), vec![0]);
+        assert_eq!(world.actors.len(), 2);
+        assert_eq!(world.actors[0].death_generation, generation);
+        assert!(world.actors[0].killer.is_none());
+        assert!(!world.actors[1].developer_removed);
+        let mut restored = SectorCombat::persistent(path, 1076, &initial).unwrap();
+        assert!(restored.actors[0].developer_removed);
+        restored.actors[0].tick_without_target(1000.);
+        assert_eq!(restored.actors[0].state, crate::mob::MobState::Dead);
+        assert!(restored.actors[1].health > 0.);
     }
 
     /// Level tuning keeps live damage fractions, excludes distant/dead actors, and survives restart.

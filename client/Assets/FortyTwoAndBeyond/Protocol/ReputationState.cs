@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 
 namespace FortyTwoAndBeyond.Protocol
 {
@@ -40,44 +41,41 @@ namespace FortyTwoAndBeyond.Protocol
 
     internal sealed partial class AuxState
     {
+        /// <summary>Consume a native faction record before later PlayerIndex fields.</summary>
+        private void SkipReputation()
+        {
+            Flags fields = Mask(2);
+            if (fields.Present[0]) ReadFactionSlots(Array.Empty<FactionStanding>());
+            else if (fields.Default[0] && Byte() != 5)
+                throw new InvalidDataException("Invalid faction PDA reset before group.");
+            if (fields.Present[1]) Text();
+        }
+
         /// <summary>
         /// Returns:
         ///     ReputationState: Updated faction PDA, or null for unrelated global AUX.
         /// </summary>
-        public static ReputationState ReadReputation(byte[] body)
+        public static ReputationState ReadReputation(byte[] body, ReputationState previous = null)
         {
             var reader = new AuxState(body);
             Flags global = reader.Mask(18);
             if (!global.Present[10] && !global.Default[10]) return null;
-            for (int field = 0; field < 10; field++)
-            {
-                if (global.Present[field])
-                {
-                    switch (field)
-                    {
-                        case 0: reader.UInt(); reader.UInt(); break;
-                        case 2: reader.SkipSlots(96, 10); break;
-                        case 6: reader.SkipRpgForMissions(); break;
-                        case 8: reader.UInt(); break;
-                        case 9: reader.ReadMissionSlots(new MissionState[12]); break;
-                        default: throw new InvalidDataException("Unknown player field before reputation.");
-                    }
-                }
-                else if (global.Default[field] && (field == 2 || field == 3 || field == 4 ||
-                    field == 5 || field == 6 || field == 9) && reader.Byte() != 5)
-                    throw new InvalidDataException("Invalid player AUX reset before reputation.");
-            }
+            reader.SkipPlayerPrefix(global, 9);
+            if (global.Present[9]) reader.ReadMissionSlots(new MissionState[12]);
+            else if (global.Default[9] && reader.Byte() != 5)
+                throw new InvalidDataException("Invalid mission reset before reputation.");
             if (global.Default[10])
             {
                 if (reader.Byte() != 5) throw new InvalidDataException("Invalid reputation reset.");
                 return new ReputationState("", Array.Empty<FactionStanding>());
             }
             Flags fields = reader.Mask(2);
-            FactionStanding[] standings = Array.Empty<FactionStanding>();
-            string affiliation = "";
-            if (fields.Present[0]) standings = reader.ReadFactionSlots();
+            FactionStanding[] standings = previous?.Standings.ToArray() ?? Array.Empty<FactionStanding>();
+            string affiliation = previous?.Affiliation ?? "";
+            if (fields.Present[0]) standings = reader.ReadFactionSlots(standings);
             else if (fields.Default[0] && reader.Byte() != 5)
                 throw new InvalidDataException("Invalid faction PDA reset.");
+            else if (fields.Default[0]) standings = Array.Empty<FactionStanding>();
             if (fields.Present[1]) affiliation = reader.Text();
             return new ReputationState(affiliation, standings);
         }
@@ -86,23 +84,31 @@ namespace FortyTwoAndBeyond.Protocol
         /// Returns:
         ///     FactionStanding[]: The visible native PDA standings in slot order.
         /// </summary>
-        private FactionStanding[] ReadFactionSlots()
+        private FactionStanding[] ReadFactionSlots(FactionStanding[] previous)
         {
             Flags slots = Mask(32);
             var standings = new List<FactionStanding>(32);
             for (int slot = 0; slot < 32; slot++)
             {
                 if (!slots.Present[slot])
-                    continue; // Primitive PDA slots carry no nested reset marker.
+                {
+                    if (slots.Default[slot] && Byte() != 5)
+                        throw new InvalidDataException("Invalid faction PDA reset.");
+                    if (!slots.Default[slot])
+                    {
+                        FactionStanding retained = previous.FirstOrDefault(row => row.Slot == slot);
+                        if (retained != null) standings.Add(retained);
+                    }
+                    continue;
+                }
                 Flags entry = Mask(3);
-                if (!entry.Present[0] || !entry.Present[1] || !entry.Present[2])
-                    throw new InvalidDataException("Incomplete faction PDA row.");
-                string label = Text();
-                float value = Float();
-                uint index = UInt();
-                if (index != slot || label.Length == 0 || label.Length > 63)
+                FactionStanding prior = previous.FirstOrDefault(row => row.Slot == slot);
+                string label = entry.Present[0] ? Text() : prior?.Label ?? "";
+                float value = entry.Present[1] ? Float() : prior?.Value ?? 0;
+                uint index = entry.Present[2] ? UInt() : (uint)slot;
+                if (index != slot || label.Length > 63)
                     throw new InvalidDataException("Invalid faction PDA row.");
-                standings.Add(new FactionStanding(index, label, value));
+                if (label.Length > 0) standings.Add(new FactionStanding((uint)slot, label, value));
             }
             return standings.ToArray();
         }

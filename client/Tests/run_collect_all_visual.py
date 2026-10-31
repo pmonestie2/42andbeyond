@@ -13,6 +13,8 @@ def main() -> None:
     """Run an isolated server and graphical Editor, then verify a fresh capture."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--unity', required=True, type=Path)
+    parser.add_argument('--selective', action='store_true',
+                        help='Click one native item icon and leave the second wreck stack untouched.')
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[2]
     project = root / 'client'
@@ -20,8 +22,11 @@ def main() -> None:
     executable = server_root / 'target' / 'debug' / 'beyond-server'
     if not executable.is_file() or not args.unity.is_file():
         raise FileNotFoundError('Build the disposable server and provide Unity Editor.')
-    screenshot = project / 'Builds' / 'verification' / 'loot-all-second.png'
+    screenshot = project / 'Builds' / 'verification' / (
+        'loot-selective-after.png' if args.selective else 'loot-all-second.png')
     screenshot.unlink(missing_ok=True)
+    if args.selective:
+        (project / 'Builds' / 'verification' / 'loot-selective-before.png').unlink(missing_ok=True)
     with tempfile.TemporaryDirectory(prefix='client-collect-all-') as temporary:
         state = Path(temporary)
         subprocess.run([str(executable), '--state-dir', str(state), '--create-account',
@@ -67,6 +72,7 @@ def main() -> None:
                     raise RuntimeError('Disposable server ownership mismatch.')
                 editor = subprocess.Popen([str(args.unity), '-projectPath', str(project),
                                            '-logFile', str(state / 'unity.log'),
+                                           '--42andbeyond-selective-loot-smoke' if args.selective else
                                            '--42andbeyond-collect-all-smoke'])
                 finish_by = time.monotonic() + 150
                 completed_at = None
@@ -74,7 +80,9 @@ def main() -> None:
                     while editor.poll() is None and time.monotonic() < finish_by:
                         log = (state / 'unity.log').read_text(errors='replace') if (
                             state / 'unity.log').exists() else ''
-                        if 'PASS: two full wreck stacks collected' in log and screenshot.is_file():
+                        expected = 'PASS: selected native wreck stack claimed' if args.selective else \
+                                   'PASS: two full wreck stacks collected'
+                        if expected in log and screenshot.is_file():
                             if completed_at is None:
                                 completed_at = time.monotonic()
                             elif time.monotonic() - completed_at > 3:
@@ -90,7 +98,8 @@ def main() -> None:
                     if editor.poll() is None:
                         editor.terminate()
                         editor.wait(timeout=5)
-                print('PASS: two native wreck tractors completed; screenshot:', screenshot)
+                print('PASS: selective native loot pickup' if args.selective else
+                      'PASS: two native wreck tractors completed', 'screenshot:', screenshot)
             except BaseException:
                 for name in ['server.log', 'unity.log']:
                     path = state / name

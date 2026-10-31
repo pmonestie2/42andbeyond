@@ -10,6 +10,22 @@ namespace FortyTwoAndBeyond.Protocol
     {
         public readonly WarpPhase Phase;
         public readonly bool Arrived;
+        private uint privateRevision, globalRevision;
+
+        /// Returns:
+        ///     WarpState: A native partial revision merged with the last authoritative warp fields.
+        /// Raises:
+        ///     InvalidDataException: A revision uses an unknown native state.
+        public static WarpState Merge(uint? privateState, uint? globalState, WarpState previous)
+        {
+            uint local = privateState ?? previous?.privateRevision ?? 0;
+            uint shared = globalState ?? previous?.globalRevision ?? 0;
+            if (local > 11 || shared > 3) throw new InvalidDataException("Invalid native warp phase.");
+            WarpPhase phase = shared == 0 ? WarpPhase.Idle : shared == 1 ? WarpPhase.Charging :
+                shared == 2 ? WarpPhase.Traveling : WarpPhase.Recovering;
+            return new WarpState(phase, shared == 3 && local == 8)
+                { privateRevision = local, globalRevision = shared };
+        }
 
         /// <summary>Keep the phase and arrival reason in one snapshot revision.</summary>
         private WarpState(WarpPhase phase, bool arrived)

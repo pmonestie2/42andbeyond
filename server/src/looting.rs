@@ -7,6 +7,9 @@ use crate::resources::unix_ms;
 #[cfg(test)]
 #[path = "loot_geometry_tests.rs"]
 mod geometry_tests;
+#[cfg(test)]
+#[path = "corpse_lifecycle_tests.rs"]
+mod lifecycle_tests;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub(super) struct LootCast {
@@ -103,7 +106,13 @@ impl PlayerSession {
                     .push(packets::message(&format!("Looted {credits} credits.")));
             }
         }
+        let available = world.get(self.target)?.available(unix_ms())?;
         drop(world);
+        if !available {
+            // Credit-only salvage can become empty at the first open. Never
+            // reopen its native loot widget after publishing the retirement.
+            return self.retire_corpse_view(self.target);
+        }
         self.loot_window = Some(self.target);
         self.refresh_loot_target(true)?;
         // Native Loot sends 0x51; permission uses network-order corpse ID.
@@ -297,8 +306,12 @@ impl PlayerSession {
             return Ok(());
         }
         let world = lock_loot(&self.loot_world)?;
-        let Ok(corpse) = world.get(self.target) else {
-            return Ok(());
+        let corpse = match world.get(self.target) {
+            Ok(corpse) if corpse.available(unix_ms())? => corpse,
+            _ => {
+                drop(world);
+                return self.retire_corpse_view(self.target);
+            }
         };
         let stock = corpse.remaining()?;
         let quantities = stock
@@ -317,9 +330,64 @@ impl PlayerSession {
         Ok(())
     }
 
+    /// Retire one local view after durable depletion, closing its UI and clearing stale actions.
+    /// Raises:
+    ///     io::Error: An obsolete tractor claim cannot be released.
+    fn retire_corpse_view(&mut self, id: u32) -> io::Result<()> {
+        if self
+            .loot_cast
+            .as_ref()
+            .is_some_and(|cast| cast.corpse == id)
+        {
+            self.cancel_looting("Corpse is empty or no longer visible.")?;
+        }
+        if self.loot_window == Some(id) || self.target == id {
+            self.loot_window = None;
+            self.pending.push(packets::resource_interface(false));
+        }
+        if self
+            .loot_revision
+            .as_ref()
+            .is_some_and(|(corpse, _)| *corpse == id)
+        {
+            self.loot_revision = None;
+        }
+        if self.target == id {
+            self.stop_following();
+            self.stop_weapons();
+            self.pending.push(packets::target_verbs(id, &[]));
+            self.last_verbs = None;
+            self.target = u32::MAX;
+            self.pending
+                .push(packets::ship_target(self.player_id(), self.target));
+        }
+        if self.visible_corpses.remove(&id).is_some() {
+            self.pending.push(Frame::new(7, id.to_le_bytes().to_vec()));
+        }
+        Ok(())
+    }
+
     pub(crate) fn publish_corpses(&mut self) -> io::Result<()> {
         if !self.logged_in || self.sector.station.is_some() {
             return Ok(());
+        }
+        // Existing corpse retirement is authoritative, not a throttled scan
+        // discovery update. Every viewer removes depleted salvage this tick.
+        let retired = {
+            let world = lock_loot(&self.loot_world)?;
+            let mut retired = Vec::new();
+            for &id in self.visible_corpses.keys() {
+                if match world.get(id) {
+                    Ok(corpse) => !corpse.available(unix_ms())?,
+                    Err(_) => true,
+                } {
+                    retired.push(id);
+                }
+            }
+            retired
+        };
+        for id in retired {
+            self.retire_corpse_view(id)?;
         }
         if self
             .last_loot_publish
@@ -339,19 +407,17 @@ impl PlayerSession {
                 }
             }
         }
-        for id in self
+        let removed: Vec<u32> = self
             .visible_corpses
             .keys()
             .filter(|id| !wanted.contains_key(id))
-        {
-            self.pending.push(Frame::new(7, id.to_le_bytes().to_vec()));
-            if self.loot_window == Some(*id) {
-                self.loot_window = None;
-                self.pending.push(packets::resource_interface(false));
-            }
+            .copied()
+            .collect();
+        drop(world);
+        for id in removed {
+            self.retire_corpse_view(id)?;
         }
         self.visible_corpses = wanted;
-        drop(world);
         self.refresh_loot_target(false)
     }
 }

@@ -64,7 +64,8 @@ namespace FortyTwoAndBeyond.Client
             Fill(window, new Color(.012f, .023f, .034f, 1));
             Fill(new Rect(window.x, window.y, width, 3), Cyan);
             Fill(new Rect(window.x, window.y + 3, width, 83), new Color(.022f, .045f, .061f));
-            GUI.Label(new Rect(window.x + 24, window.y + 16, width - 160, 18), "NAVIGATION NETWORK  /  GALAXY TRAVEL", eyebrow);
+            HudWindowDrag.DrawGrip(window);
+            GUI.Label(new Rect(window.x + 36, window.y + 16, width - 160, 18), "NAVIGATION NETWORK  /  GALAXY TRAVEL", eyebrow);
             GUI.Label(new Rect(window.x + 24, window.y + 38, width - 160, 34), "Choose your next horizon", title);
             if (GUI.Button(new Rect(window.xMax - 102, window.y + 25, 78, 32), "Close", hud.ButtonStyle))
             { Close(); return; }

@@ -313,6 +313,7 @@ impl PlayerSession {
         {
             return Ok(());
         }
+        self.reload_firing_ammunition()?;
         if let Some(candidate) = self.prepare_weapon_launch(&mut roll)? {
             let journal = candidate
                 .pending_launch

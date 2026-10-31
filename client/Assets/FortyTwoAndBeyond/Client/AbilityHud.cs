@@ -31,13 +31,18 @@ namespace FortyTwoAndBeyond.Client
             }
         }
 
+        private readonly HudWindowDrag windowDrag = new HudWindowDrag();
         private readonly SpaceClient client;
         private readonly FlightHud flightHud;
         private readonly AbilityDefinition[] catalog;
         private readonly Dictionary<uint, string> skillNames = new Dictionary<uint, string>();
         private readonly AbilityIcons icons = new AbilityIcons();
+        private readonly HashSet<uint> knownAbilities = new HashSet<uint>();
+        private readonly Dictionary<uint, float> recoveryPeaks = new Dictionary<uint, float>();
         private readonly HashSet<int> expandedSkills = new HashSet<int>();
-        private readonly int[] slots = { -1, -1, -1, -1, -1, -1 };
+        public const int MaximumShortcuts = 24;
+        private readonly int[] slots = Enumerable.Repeat(-1, MaximumShortcuts).ToArray();
+        private int slotCount = 6, assignmentPage;
         private GUIStyle quickbarName, abilityName, abilityMeta;
         private Vector2 scroll;
         private bool open;
@@ -100,13 +105,14 @@ namespace FortyTwoAndBeyond.Client
         private Rect PanelRect()
         {
             float height = Mathf.Min(600, CanvasHeight - 220);
-            return new Rect((CanvasWidth - 520) * .5f, 82, 520, height);
+            return windowDrag.Bounds(new Rect((CanvasWidth - 520) * .5f, 82, 520, height), CanvasWidth, CanvasHeight);
         }
 
         /// <returns>Rect: Bounds of the six flight ability slots.</returns>
         private Rect QuickbarRect()
-        { return flightHud.RetainedVisible && flightHud.RetainedQuickbarRect.width > 0 ?
-            flightHud.RetainedQuickbarRect : new Rect((CanvasWidth - 720) * .5f, CanvasHeight - 117, 720, 68); }
+        { return flightHud.RetainedVisible && !open && variantSlot < 0 && flightHud.RetainedQuickbarRect.width > 0 ?
+            flightHud.RetainedQuickbarRect : new Rect((CanvasWidth - 720) * .5f, CanvasHeight - 49 - (38 + ((slotCount + 5) / 6) * 60),
+                720, 38 + ((slotCount + 5) / 6) * 60); }
 
         /// <returns>Vector2: Pointer in the HUD's scaled, top-left canvas coordinates.</returns>
         private Vector2 CanvasPointer()
@@ -117,15 +123,15 @@ namespace FortyTwoAndBeyond.Client
         private int QuickbarSlotAt(Vector2 point)
         {
             Rect bar = QuickbarRect();
-            for (int i = 0; i < slots.Length; i++)
-                if (new Rect(bar.x + 9 + i * 118, bar.y + 8, 110, 52).Contains(point)) return i;
+            for (int i = 0; i < slotCount; i++)
+                if (SlotRect(bar, i).Contains(point)) return i;
             return -1;
         }
 
         /// <returns>Rect: Bounds of the active quickbar variant picker, if one is open.</returns>
         private Rect VariantPickerRect(Snapshot snapshot)
         {
-            if (variantSlot < 0 || variantSlot >= slots.Length || snapshot == null)
+            if (variantSlot < 0 || variantSlot >= slotCount || snapshot == null)
                 return Rect.zero;
             AbilityDefinition bound = catalog.FirstOrDefault(item => item.id == slots[variantSlot]);
             if (bound == null) return Rect.zero;
@@ -134,16 +140,194 @@ namespace FortyTwoAndBeyond.Client
             if (count == 0) return Rect.zero;
             Rect bar = QuickbarRect();
             float height = 47 + count * 36;
-            float x = Mathf.Clamp(bar.x + variantSlot * 118, 8, CanvasWidth - 310);
+            float x = Mathf.Clamp(bar.x + (variantSlot % 6) * 118, 8, CanvasWidth - 310);
             return new Rect(x, bar.y - height - 5, 302, height);
         }
 
         /// <summary>Save one per-character ability or equipped device assignment.</summary>
         private void BindSlot(int slot, int binding)
         {
+            if (slot < 0 || slot >= slotCount) return;
             slots[slot] = binding;
             PlayerPrefs.SetInt($"42andBeyond.ability.{slotOwner}.{slot}", binding);
             PlayerPrefs.Save(); assigningSlot = -1; variantSlot = -1;
+        }
+
+        /// <returns>Rect: A slot in the six-column shortcut grid.</returns>
+        private static Rect SlotRect(Rect bar, int index)
+        { return new Rect(bar.x + 9 + index % 6 * 118, bar.y + 32 + index / 6 * 60, 110, 52); }
+
+        /// <returns>int: The character's persisted number of visible shortcuts.</returns>
+        internal int ShortcutCount(Snapshot snapshot)
+        { if (snapshot != null) ObserveKnowledge(snapshot); return slotCount; }
+
+        /// <summary>Add an empty, independently rebindable shortcut without replacing existing actions.</summary>
+        internal void AddShortcut(Snapshot snapshot)
+        {
+            if (snapshot == null) return;
+            LoadSlots(snapshot.PlayerId);
+            if (slotCount >= MaximumShortcuts) return;
+            slotCount++; BindSlot(slotCount - 1, -1); SaveShortcutCount();
+        }
+
+        /// <summary>Persist the visible layout for the current character.</summary>
+        private void SaveShortcutCount()
+        { PlayerPrefs.SetInt($"42andBeyond.ability.count.{slotOwner}", slotCount); PlayerPrefs.Save(); }
+
+        /// <summary>Remove one shortcut slot and move subsequent assignments left.</summary>
+        internal void RemoveShortcut(int index, Snapshot snapshot)
+        {
+            if (snapshot == null) return;
+            LoadSlots(snapshot.PlayerId);
+            if (slotCount <= 1 || index < 0 || index >= slotCount) return;
+            for (int i = index; i < slotCount - 1; i++) slots[i] = slots[i + 1];
+            slots[slotCount - 1] = -1;
+            for (int i = index; i < slotCount; i++)
+                PlayerPrefs.SetInt($"42andBeyond.ability.{slotOwner}.{i}", slots[i]);
+            assigningSlot = variantSlot = -1; slotCount--; SaveShortcutCount();
+        }
+
+        /// <summary>Clear an assignment while retaining its slot and key.</summary>
+        internal void ClearShortcut(int index, Snapshot snapshot)
+        { if (snapshot != null) { LoadSlots(snapshot.PlayerId); BindSlot(index, -1); } }
+
+        /// <summary>Retain server-advertised abilities across transient sector-loading snapshots.</summary>
+        private void ObserveKnowledge(Snapshot snapshot)
+        {
+            LoadSlots(snapshot.PlayerId);
+            foreach (uint id in snapshot.AvailableAbilities) knownAbilities.Add(id);
+        }
+
+        /// <summary>Discard server-specific knowledge on disconnect without changing saved assignments.</summary>
+        internal void ResetKnowledge() { knownAbilities.Clear(); recoveryPeaks.Clear(); }
+
+        /// <returns>string: A stable effect subgroup beneath its native skill family.</returns>
+        private static string EffectGroup(AbilityDefinition ability)
+        {
+            if (ability.kind == "wormhole") return ability.name.EndsWith(" Gate", StringComparison.Ordinal) ?
+                ability.name.Substring(0, ability.name.Length - 5) : ability.name;
+            if (ability.kind == "rally") return ability.name;
+            if (ability.kind == "shield_charging") return AbilityTargets.Directed((uint)ability.id) ? "Target shield charging" : "Self shield charging";
+            if (ability.kind == "cloak" && ability.name.StartsWith("Group", StringComparison.Ordinal)) return ability.name;
+            if (ability.kind == "cloak" && ability.name.Contains("Combat")) return "Combat Cloak";
+            if (ability.name.Contains("Sphere")) return ability.name.Contains("Group") ? "Group sphere" : "Target sphere";
+            if (ability.name.StartsWith("Group", StringComparison.Ordinal) || ability.name.Contains("Area")) return "Group / area effect";
+            return CultureInfo.InvariantCulture.TextInfo.ToTitleCase(ability.kind.Replace('_', ' '));
+        }
+
+        /// <returns>SystemChoice[]: All advertised effects and sublevels, independent of the currently bound skill.</returns>
+        internal SystemChoice[] SystemChoices(int index, Snapshot snapshot)
+        {
+            if (snapshot == null) return Array.Empty<SystemChoice>();
+            ObserveKnowledge(snapshot);
+            if (index < 0 || index >= slotCount) return Array.Empty<SystemChoice>();
+            return catalog.Where(item => knownAbilities.Contains((uint)item.id))
+                .Select(item => new SystemChoice(item.id, item.skill, item.rank,
+                    skillNames.TryGetValue((uint)item.skill, out string family) ? family : item.kind.Replace('_', ' '),
+                    EffectGroup(item), item.name, item.id == slots[index]))
+                .OrderBy(item => item.Family).ThenBy(item => item.Effect).ThenBy(item => item.Level).ToArray();
+        }
+
+        /// <summary>Assign any advertised system or sublevel without casting it.</summary>
+        internal void SelectSystem(int index, int ability, Snapshot snapshot)
+        { if (SystemChoices(index, snapshot).Any(choice => choice.Id == ability)) BindSlot(index, ability); }
+
+        /// <returns>bool: Whether the server reports a matching sustained effect on the own ship.</returns>
+        private static bool AbilityActive(AbilityDefinition ability, Snapshot snapshot)
+        {
+            int slot = ability.kind == "cloak" ? 6 : ability.kind == "environment" ? 7 :
+                ability.kind == "rally" ? 5 : ability.kind == "equipment_repair" ? 10 :
+                ability.kind == "reactor_optimization" ? 11 : ability.kind == "power_down" ? 12 :
+                ability.kind == "shield_charging" ? 13 : ability.kind == "psionic_shield" ? 14 :
+                ability.kind == "shield_inversion" ? 15 : -1;
+            DeviceBuffView buff = snapshot.ActiveBuffs.FirstOrDefault(item => item.Slot == slot &&
+                (item.Permanent || item.RemainingSeconds > 0));
+            if (buff == null) return false;
+            if (ability.kind != "rally") return true;
+            ushort descriptor = ability.name.Contains("Defense") ? (ushort)675 :
+                ability.name.Contains("Firing") ? (ushort)676 : ability.name.Contains("Stealth") ? (ushort)327 : (ushort)333;
+            return buff.VisualDescriptor == descriptor || buff.Name.Replace('_',' ').IndexOf(
+                ability.name.Split(' ')[0], StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        /// <returns>SystemActivity: Current activity and a draining recovery mask; active leases remain bright.</returns>
+        internal SystemActivity SystemState(int index, Snapshot snapshot)
+        {
+            if (snapshot == null) return new SystemActivity(false, false, 0, 0);
+            ObserveKnowledge(snapshot);
+            if (index < 0 || index >= slotCount) return new SystemActivity(false, false, 0, 0);
+            int binding = slots[index];
+            AbilityDefinition ability = catalog.FirstOrDefault(item => item.id == binding);
+            ItemView item = BoundDevice(snapshot, binding);
+            bool active = ability != null ? AbilityActive(ability, snapshot) : item != null &&
+                (item.Type >= 14 && item.Type <= 16 ? (item.WeaponState & 1) != 0 :
+                snapshot.ActiveDeviceEffects.Any(effect => effect.MountSlot == item.Slot && effect.RemainingSeconds > 0));
+            bool charging = ability != null && snapshot.CastingAbilityId == (uint)ability.id && snapshot.CastRemainingSeconds > 0;
+            float remaining = item?.CooldownSeconds ?? 0;
+            uint key = item == null ? 0 : (uint)(1000 + item.Slot);
+            if (ability != null) { key = (uint)ability.skill; snapshot.AbilityCooldownSeconds.TryGetValue(key, out remaining); }
+            if (remaining > 0)
+            {
+                recoveryPeaks.TryGetValue(key, out float peak);
+                recoveryPeaks[key] = Mathf.Max(remaining, peak);
+            }
+            else recoveryPeaks.Remove(key);
+            float fraction = !active && remaining > 0 ? remaining / Mathf.Max(.01f, recoveryPeaks[key]) : 0;
+            return new SystemActivity(active, charging, charging ? snapshot.CastRemainingSeconds : remaining,
+                charging && !active ? 1 : Mathf.Clamp01(fraction));
+        }
+
+        /// <returns>bool: Whether this slot currently resolves to a skill or fitted item.</returns>
+        internal bool HasAssignedSystem(int index, Snapshot snapshot)
+        {
+            if (snapshot == null) return false;
+            ObserveKnowledge(snapshot);
+            return index >= 0 && index < slotCount && (catalog.Any(item => item.id == slots[index]) ||
+                BoundDevice(snapshot, slots[index]) != null);
+        }
+
+        /// <returns>ValueTuple[]: Available levels in this shortcut's skill family, including the selected rank.</returns>
+        internal (int Id, string Name, int Rank, bool Selected)[] ShortcutRanks(int index, Snapshot snapshot)
+        {
+            if (snapshot == null) return Array.Empty<(int, string, int, bool)>();
+            LoadSlots(snapshot.PlayerId);
+            if (index < 0 || index >= slotCount) return Array.Empty<(int, string, int, bool)>();
+            AbilityDefinition bound = catalog.FirstOrDefault(item => item.id == slots[index]);
+            if (bound == null) return Array.Empty<(int, string, int, bool)>();
+            return catalog.Where(item => item.skill == bound.skill && snapshot.AvailableAbilities.Contains((uint)item.id))
+                .OrderBy(item => item.rank).ThenBy(item => item.name)
+                .Select(item => (item.id, item.name, item.rank, item.id == slots[index])).ToArray();
+        }
+
+        /// <summary>Change a bound skill's level without activating it.</summary>
+        internal void SetShortcutRank(int index, int ability, Snapshot snapshot)
+        {
+            if (ShortcutRanks(index, snapshot).Any(option => option.Id == ability)) BindSlot(index, ability);
+        }
+
+        /// <summary>Open the action picker for an existing shortcut.</summary>
+        internal void AssignShortcut(int index, Snapshot snapshot)
+        {
+            if (snapshot == null) return;
+            LoadSlots(snapshot.PlayerId);
+            if (index < 0 || index >= slotCount) return;
+            if (flightHud.EquipmentOpen) flightHud.ToggleEquipment();
+            assigningSlot = index; assignmentPage = index / 6;
+            open = true; trainingTab = equipmentTab = false;
+        }
+
+        /// <returns>int: Native equipment mount encoded separately from skills and legacy device bindings.</returns>
+        private static int MountedBinding(int mount) { return int.MinValue + 1 + mount; }
+
+        /// <summary>Assign a fitted item without moving or unequipping it.</summary>
+        /// <returns>bool: Whether an existing mounted item was assigned.</returns>
+        internal bool BindEquippedItem(int index, int mount, Snapshot snapshot)
+        {
+            if (snapshot == null) return false;
+            LoadSlots(snapshot.PlayerId);
+            if (index < 0 || index >= slotCount || mount < 0 || mount >= snapshot.Mounted.Length ||
+                snapshot.Mounted[mount] == null) return false;
+            BindSlot(index, MountedBinding(mount)); return true;
         }
 
         /// <returns>int: A device template encoded apart from existing ability IDs and empty slots.</returns>
@@ -154,6 +338,9 @@ namespace FortyTwoAndBeyond.Client
         private static ItemView BoundDevice(Snapshot snapshot, int binding)
         {
             if (snapshot == null || binding >= -1 || binding == int.MinValue) return null;
+            int mount = binding - (int.MinValue + 1);
+            if (binding > int.MinValue && binding < int.MinValue + 64)
+                return mount < snapshot.Mounted.Length ? snapshot.Mounted[mount] : null;
             uint template = (uint)(-binding - 2);
             for (int slot = 0; slot < snapshot.Mounted.Length; slot++)
             {
@@ -164,13 +351,29 @@ namespace FortyTwoAndBeyond.Client
             return null;
         }
 
+        /// Returns:
+        ///     int: The bound projectile or missile launcher mount, or -1 for another shortcut.
+        internal int BoundLauncherMount(int index, Snapshot snapshot)
+        {
+            if (snapshot == null || index < 0 || index >= slotCount) return -1;
+            LoadSlots(snapshot.PlayerId);
+            ItemView item = BoundDevice(snapshot, slots[index]);
+            return item != null && (item.Type == 15 || item.Type == 16) ? item.Slot : -1;
+        }
+
         /// <summary>Activate a saved ability or the matching currently mounted device.</summary>
         private void ActivateBinding(int binding, Snapshot snapshot)
         {
             if (binding < -1)
             {
                 ItemView device = BoundDevice(snapshot, binding);
-                if (device != null) client.ActivateDevice(device.Slot);
+                if (device != null)
+                {
+                    if (device.Type >= 14 && device.Type <= 16) client.ActivateWeapon(device.Slot);
+                    else if (DeviceEffects.MountedSlot(device.ActivationLabel, device.Type, device.Slot,
+                        snapshot.DeviceMounts)) client.ActivateDevice(device.Slot);
+                    else flightHud.InspectEquippedItem(device.Slot);
+                }
                 return;
             }
             if (binding < 0 || !snapshot.AvailableAbilities.Contains((uint)binding)) return;
@@ -229,10 +432,12 @@ namespace FortyTwoAndBeyond.Client
         private void LoadSlots(uint playerId)
         {
             if (slotOwner == playerId) return;
+            ResetKnowledge();
             slotOwner = playerId; assigningSlot = -1; pendingSupportTarget = 0;
             variantSlot = -1; expandedSkills.Clear();
             trainingTab = equipmentTab = false;
             dragBinding = int.MinValue; draggingAbility = false;
+            slotCount = Mathf.Clamp(PlayerPrefs.GetInt($"42andBeyond.ability.count.{playerId}", 6), 1, MaximumShortcuts);
             for (int i = 0; i < slots.Length; i++)
                 slots[i] = PlayerPrefs.GetInt($"42andBeyond.ability.{playerId}.{i}", -1);
         }
@@ -240,8 +445,9 @@ namespace FortyTwoAndBeyond.Client
         /// <summary>Activate a bound slot while leaving target and resource checks to the server.</summary>
         public void ActivateSlot(int index, Snapshot snapshot)
         {
-            if (snapshot == null || index < 0 || index >= slots.Length) return;
+            if (snapshot == null) return;
             LoadSlots(snapshot.PlayerId);
+            if (index < 0 || index >= slotCount) return;
             ActivateBinding(slots[index], snapshot);
         }
 
@@ -287,7 +493,11 @@ namespace FortyTwoAndBeyond.Client
         private void SupportTargetBar(Snapshot snapshot, Rect panel)
         {
             ShipActor selectedCrew = SelectedCrew(snapshot);
-            bool peerSupport = snapshot.AvailableAbilities.Contains(89u) ||
+            bool peerSupport = snapshot.AvailableAbilities.Contains(9u) ||
+                snapshot.AvailableAbilities.Contains(14u) ||
+                snapshot.AvailableAbilities.Contains(60u) ||
+                snapshot.AvailableAbilities.Contains(61u) ||
+                snapshot.AvailableAbilities.Contains(89u) ||
                 snapshot.AvailableAbilities.Contains(95u) ||
                 snapshot.AvailableAbilities.Contains(31u) ||
                 snapshot.AvailableAbilities.Contains(32u) ||
@@ -330,28 +540,68 @@ namespace FortyTwoAndBeyond.Client
 
         /// Returns:
         ///     ValueTuple: The bound action's display name, key, and optional skill icon.
-        internal (string Name, string Key, Texture2D Icon) QuickSlotDisplay(int index, Snapshot snapshot)
+        internal (string Name, string Key, Texture2D Icon, string Status) QuickSlotDisplay(int index, Snapshot snapshot)
         {
-            LoadSlots(snapshot.PlayerId);
+            ObserveKnowledge(snapshot);
             int id = slots[index];
             AbilityDefinition ability = id >= 0 ? catalog.FirstOrDefault(item => item.id == id) : null;
             ItemView device = BoundDevice(snapshot, id);
-            return (ability?.name ?? device?.ActivationLabel ?? "+ Assign",
-                client.Bindings.Display((ControlAction)((int)ControlAction.AbilityOne + index)),
-                ability != null ? icons.ForSkill(ability.skill) : null);
+            ItemView ammo = device != null && device.Slot < snapshot.Ammo.Length ? snapshot.Ammo[device.Slot] : null;
+            string status = device == null ? "" : device.Cooling ? $"{device.CooldownSeconds:0.0}s" :
+                device.Type == 15 || device.Type == 16 ? $"{ammo?.Quantity ?? 0}/{ammo?.MaxStack ?? 0}" :
+                device.Type == 14 ? ((device.WeaponState & 1) != 0 ? "FIRING" : "READY") :
+                string.IsNullOrEmpty(device.ActivationLabel) ? "DETAILS" : "READY";
+            if (device != null && device.Type < 14 && SystemState(index, snapshot).Active) status = "ACTIVE";
+            if (ability != null)
+            {
+                SystemActivity state = SystemState(index, snapshot);
+                status = "L" + ability.rank + " · " + (state.Active ? "ACTIVE" : state.Charging ? $"CAST {state.Remaining:0.0}s" :
+                    state.Remaining > 0 ? $"{state.Remaining:0.0}s" : "READY");
+            }
+            return (ability?.name ?? device?.Name ?? "+ Assign",
+                client.Bindings.Display(KeyBindings.ShortcutAction(index)),
+                ability != null ? icons.ForSkill(ability.skill) : device != null ? flightHud.ItemIcons.ForItem(device) : null, status);
+        }
+
+        /// Returns:
+        ///     string: Runtime shortcut help including the bound level, description, and current server state.
+        internal string QuickSlotHelp(int index, Snapshot snapshot)
+        {
+            if (snapshot == null || index < 0 || index >= slotCount) return "";
+            var display = QuickSlotDisplay(index, snapshot);
+            AbilityDefinition ability = catalog.FirstOrDefault(item => item.id == slots[index]);
+            ItemView item = BoundDevice(snapshot, slots[index]);
+            string body;
+            if (ability != null)
+                body = ability.description + $"\n\nLevel {ability.rank} · Energy {ability.energy:0}\n" +
+                    $"Charge {ability.charge:0.#} s · Cooldown {ability.cooldown:0.#} s · Range {ability.range:N0} m";
+            else if (item != null)
+            {
+                body = item.Info;
+                if (item.Range > 0) body += $"\nRange {item.Range:N0} m";
+                ItemView ammo = item.Slot < snapshot.Ammo.Length ? snapshot.Ammo[item.Slot] : null;
+                if (item.Type == 15 || item.Type == 16)
+                    body += "\nAmmo: " + (ammo == null ? "Empty" : ammo.Name + $" · {ammo.Quantity}/{ammo.MaxStack}");
+                if (item.Cooling) body += $"\nReload / recovery: {item.CooldownSeconds:0.0} s";
+                if (!string.IsNullOrWhiteSpace(item.ActivationLabel)) body += "\n" + item.ActivationLabel;
+            }
+            else body = "Click to assign a skill or equipped item to this slot.";
+            return display.Name + (string.IsNullOrEmpty(display.Status) ? "" : "  ·  " + display.Status) +
+                "\n\n" + body.Trim() + "\n\nKey: " + display.Key + " · Right-click for levels and options";
         }
 
         /// <summary>Use the existing quickbar activation, assignment, and rank-selection behavior.</summary>
         internal void PressQuickSlot(int index, bool rightClick, Snapshot snapshot)
         {
-            LoadSlots(snapshot.PlayerId);
+            ObserveKnowledge(snapshot);
             int id = slots[index];
             AbilityDefinition ability = id >= 0 ? catalog.FirstOrDefault(item => item.id == id) : null;
             ItemView device = BoundDevice(snapshot, id);
             if (rightClick)
-            { if (ability != null) variantSlot = variantSlot == index ? -1 : index; return; }
+            { if (ability != null) { if (flightHud.EquipmentOpen) flightHud.ToggleEquipment();
+                variantSlot = variantSlot == index ? -1 : index; } return; }
             if (ability == null && device == null)
-            { open = true; equipmentTab = id < -1; trainingTab = false; assigningSlot = index; }
+            { AssignShortcut(index, snapshot); equipmentTab = id < -1; }
             else ActivateSlot(index, snapshot);
         }
 
@@ -362,15 +612,15 @@ namespace FortyTwoAndBeyond.Client
             EnsureStyles();
             Rect bar = QuickbarRect(); flightHud.Panel(bar);
             Event current = Event.current;
-            for (int i = 0; i < slots.Length; i++)
+            for (int i = 0; i < slotCount; i++)
             {
                 int id = slots[i];
                 AbilityDefinition ability = id >= 0 ? catalog.FirstOrDefault(item => item.id == id) : null;
                 ItemView device = BoundDevice(snapshot, id);
-                string key = client.Bindings.Display((ControlAction)((int)ControlAction.AbilityOne + i));
-                string name = ability?.name ?? device?.ActivationLabel ??
-                    (id < -1 ? "Equip device" : "Assign action");
-                Rect slot = new Rect(bar.x + 9 + i * 118, bar.y + 8, 110, 52);
+                string key = client.Bindings.Display(KeyBindings.ShortcutAction(i));
+                string name = ability?.name ?? device?.Name ??
+                    (id < -1 ? "Empty mount" : "Assign action");
+                Rect slot = SlotRect(bar, i);
                 if (ability != null && current.type == EventType.MouseDown &&
                     current.button == 1 && slot.Contains(current.mousePosition))
                 { variantSlot = variantSlot == i ? -1 : i; current.Use(); }
@@ -407,7 +657,7 @@ namespace FortyTwoAndBeyond.Client
         /// <summary>Change one assigned button to another server-available rank or variant.</summary>
         private void DrawVariantPicker(Snapshot snapshot, Rect bar)
         {
-            if (variantSlot < 0 || variantSlot >= slots.Length) return;
+            if (variantSlot < 0 || variantSlot >= slotCount) return;
             AbilityDefinition bound = catalog.FirstOrDefault(item => item.id == slots[variantSlot]);
             if (bound == null) { variantSlot = -1; return; }
             AbilityDefinition[] variants = catalog.Where(item => item.skill == bound.skill &&
@@ -514,8 +764,9 @@ namespace FortyTwoAndBeyond.Client
             if (GUI.Button(ButtonRect(), open ? "Close skills" : "Skills", flightHud.ButtonStyle))
                 open = !open;
             if (!open) return;
-            Rect panel = PanelRect(); flightHud.Panel(panel);
-            GUI.Label(new Rect(panel.x + 18, panel.y + 15, panel.width - 72, 28),
+            Rect panel = windowDrag.Handle(PanelRect(), CanvasWidth, CanvasHeight);
+            flightHud.Panel(panel); HudWindowDrag.DrawGrip(panel);
+            GUI.Label(new Rect(panel.x + 36, panel.y + 15, panel.width - 72, 28),
                 "CLASS SKILLS", flightHud.BodyStyle);
             if (GUI.Button(new Rect(panel.xMax - 48, panel.y + 12, 30, 28), "×", flightHud.ButtonStyle))
             { open = false; return; }
@@ -538,10 +789,9 @@ namespace FortyTwoAndBeyond.Client
             for (int slot = 0; slot < snapshot.Mounted.Length; slot++)
             {
                 ItemView item = snapshot.Mounted[slot];
-                if (item == null || !DeviceEffects.MountedSlot(item.ActivationLabel,
-                    item.Type, slot, snapshot.DeviceMounts)) continue;
+                if (item == null) continue;
                 shown++;
-                int binding = DeviceBinding(item.Template);
+                int binding = MountedBinding(slot);
                 Rect row = GUILayoutUtility.GetRect(0, 56, GUILayout.ExpandWidth(true),
                     GUILayout.Height(56));
                 GUI.Box(row, new GUIContent("", item.Name), flightHud.ButtonStyle);
@@ -553,12 +803,14 @@ namespace FortyTwoAndBeyond.Client
                     Event.current.Use();
                 }
                 GUI.Label(new Rect(row.x + 12, row.y + 5, row.width - 24, 24),
-                    item.ActivationLabel, abilityName);
+                    item.Name, abilityName);
                 GUI.Label(new Rect(row.x + 12, row.y + 31, row.width - 24, 20),
-                    item.Name + "  ·  MOUNT " + (slot + 1), abilityMeta);
+                    (item.Type >= 14 && item.Type <= 16 ? "FIRE WEAPON" :
+                    string.IsNullOrEmpty(item.ActivationLabel) ? "INSPECT EQUIPMENT" : item.ActivationLabel) +
+                    "  ·  MOUNT " + (slot + 1), abilityMeta);
             }
             if (shown == 0)
-                GUILayout.Label("No activatable equipment is mounted on this ship.",
+                GUILayout.Label("No equipment is mounted on this ship.",
                     flightHud.SmallStyle);
             GUILayout.EndScrollView(); GUILayout.EndArea();
         }
@@ -576,8 +828,9 @@ namespace FortyTwoAndBeyond.Client
             if ((!flightHud.RetainedVisible || open) && GUI.Button(ButtonRect(), open ? "Close skills" : "Skills", flightHud.ButtonStyle))
                 open = !open;
             if (!open) { Quickbar(snapshot); return; }
-            Rect panel = PanelRect(); flightHud.Panel(panel);
-            GUI.Label(new Rect(panel.x + 18, panel.y + 15, 380, 28),
+            Rect panel = windowDrag.Handle(PanelRect(), CanvasWidth, CanvasHeight);
+            flightHud.Panel(panel); HudWindowDrag.DrawGrip(panel);
+            GUI.Label(new Rect(panel.x + 36, panel.y + 15, 380, 28),
                 trainingTab ? "CLASS SKILLS" : equipmentTab ? "EQUIPPED DEVICES" :
                 "CLASS ABILITIES", flightHud.BodyStyle);
             if (GUI.Button(new Rect(panel.xMax - 48, panel.y + 12, 30, 28), "×", flightHud.ButtonStyle))
@@ -586,14 +839,21 @@ namespace FortyTwoAndBeyond.Client
                 assigningSlot < 0 ?
                 "Drag to quickbar · click to use · right-click a bound skill for variants." :
                 $"Choose an action for slot {assigningSlot + 1}.", flightHud.SmallStyle);
-            for (int i = 0; i < slots.Length; i++)
+            assignmentPage = Mathf.Clamp(assignmentPage, 0, (slotCount - 1) / 6);
+            if (GUI.Button(new Rect(panel.x + 18, panel.y + 68, 22, 37), "‹", flightHud.ButtonStyle))
+                assignmentPage = (assignmentPage + (slotCount - 1) / 6) % ((slotCount + 5) / 6);
+            if (GUI.Button(new Rect(panel.x + 470, panel.y + 68, 22, 37), "›", flightHud.ButtonStyle))
+                assignmentPage = (assignmentPage + 1) % ((slotCount + 5) / 6);
+            for (int column = 0; column < 6; column++)
             {
+                int i = assignmentPage * 6 + column;
+                if (i >= slotCount) break;
                 int id = slots[i];
                 AbilityDefinition bound = id >= 0 ? catalog.FirstOrDefault(item => item.id == id) : null;
                 ItemView device = BoundDevice(snapshot, id);
-                string label = client.Bindings.Display((ControlAction)((int)ControlAction.AbilityOne + i)) +
+                string label = client.Bindings.Display(KeyBindings.ShortcutAction(i)) +
                     (bound == null && device == null ? "  +" : "  ●");
-                if (GUI.Button(new Rect(panel.x + 18 + i * 81, panel.y + 68, 77, 37),
+                if (GUI.Button(new Rect(panel.x + 44 + column * 70, panel.y + 68, 66, 37),
                     new GUIContent(label, bound?.name ?? device?.ActivationLabel ?? "Empty slot"),
                     flightHud.ButtonStyle))
                     assigningSlot = i;

@@ -186,7 +186,7 @@ impl PlayerSession {
             || self.gate_transit.is_some()
         {
             return Err(invalid(
-                "Use /d_mob_cl in space outside warp and sector transitions.",
+                "Use MOB developer commands in space outside warp and sector transitions.",
             ));
         }
         Ok(self.position)

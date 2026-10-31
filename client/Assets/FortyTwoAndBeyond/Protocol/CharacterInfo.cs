@@ -42,11 +42,10 @@ namespace FortyTwoAndBeyond.Protocol
         {
             if (body == null || body.Length < 1874)
                 throw new InvalidDataException("Character list is incomplete.");
-            uint count = Wire.U32(body, 8, true);
-            if (count > 5 || 133 + count * 374 > body.Length)
-                throw new InvalidDataException("Invalid character list.");
+            // GlobalAvatarList contains five fixed AvatarListItem records.
+            // Offset 8 is the first pilot's galaxy ID, not a roster count.
             var found = new System.Collections.Generic.List<CharacterInfo>();
-            for (int slot = 0; slot < count; slot++)
+            for (int slot = 0; slot < 5; slot++)
             {
                 int record = slot * 374;
                 int avatar = 133 + record;
@@ -90,7 +89,7 @@ namespace FortyTwoAndBeyond.Protocol
         {
             try
             {
-                var address = LocalSession.LocalAddress(host);
+                var address = ServerEndpoint.Resolve(host, stop.Token);
                 using (var registration = new UdpClient(AddressFamily.InterNetwork))
                 {
                     registration.Client.ReceiveTimeout = 100;
@@ -113,7 +112,7 @@ namespace FortyTwoAndBeyond.Protocol
                         }
                     }
                     if (registrationClock.Elapsed.TotalSeconds >= 10)
-                        throw new TimeoutException("The VM did not answer UDP registration on port 3806.");
+                        throw new TimeoutException("The server did not answer UDP registration at " + host + ":3806.");
                 }
                 client = new TcpClient(AddressFamily.InterNetwork);
                 IAsyncResult connecting = client.BeginConnect(address, 3807, null, null);

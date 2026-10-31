@@ -8,6 +8,7 @@ namespace FortyTwoAndBeyond.Client
     {
         private static readonly string[] Channels =
             { "IMPACT", "EXPLOSIVE", "PLASMA", "ENERGY", "EMP", "CHEMICAL", "PSIONIC" };
+        private readonly HudWindowDrag windowDrag = new HudWindowDrag();
         private readonly FlightHud flightHud;
         private bool open;
 
@@ -41,9 +42,9 @@ namespace FortyTwoAndBeyond.Client
             Rect button = ButtonRect(snapshot);
             if (!flightHud.RetainedVisible && GUI.Button(button, "DEFENSE", flightHud.ButtonStyle)) open = !open;
             if (!open) return;
-            Rect panel = PanelRect(button);
-            flightHud.Panel(panel);
-            GUI.Label(new Rect(panel.x + 14, panel.y + 10, 385, 22),
+            Rect panel = windowDrag.Handle(PanelRect(button), Screen.width / flightHud.Scale, Screen.height / flightHud.Scale);
+            flightHud.Panel(panel); HudWindowDrag.DrawGrip(panel);
+            GUI.Label(new Rect(panel.x + 36, panel.y + 10, 365, 22),
                 "DAMAGE DEFLECTION", flightHud.SectionStyle);
             if (!snapshot.Defense.Known)
             {
@@ -86,7 +87,7 @@ namespace FortyTwoAndBeyond.Client
         /// Returns:
         ///     Rect: The open detail panel directly above ship systems.
         /// </summary>
-        private static Rect PanelRect(Rect button)
-        { return new Rect(button.x - 310, button.y + 32, 420, 169); }
+        private Rect PanelRect(Rect button)
+        { return windowDrag.Bounds(new Rect(button.x - 310, button.y + 32, 420, 169), Screen.width / flightHud.Scale, Screen.height / flightHud.Scale); }
     }
 }

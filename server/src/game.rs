@@ -27,6 +27,12 @@ mod actions;
 mod call_forward_game;
 #[path = "dev_commands.rs"]
 mod dev_commands;
+#[path = "native_chat.rs"]
+pub(crate) mod native_chat;
+#[path = "group_assist.rs"]
+mod group_assist;
+#[path = "player_trade.rs"]
+mod player_trade;
 #[path = "energy_leech_game.rs"]
 mod energy_leech_game;
 #[path = "fold_space_high_game.rs"]
@@ -46,6 +52,9 @@ mod summon_game;
 #[cfg(test)]
 #[path = "game_tests.rs"]
 mod tests;
+#[cfg(test)]
+#[path = "group_loot_tests.rs"]
+mod group_loot_tests;
 
 pub struct GameState {
     sessions: BTreeMap<u32, PlayerSession>,
@@ -66,6 +75,10 @@ pub struct GameState {
     last_deferred_error: Option<Instant>,
     player_sectors: HashMap<u32, u32>,
     developer_commands: bool,
+    chat_subscriptions: HashMap<u32, HashMap<String, bool>>,
+    chat_replies: HashMap<u32, u32>,
+    trades: BTreeMap<u32, player_trade::PlayerTrade>,
+    trade_recovery_at: Option<Instant>,
 }
 
 struct JumpstartOffer {
@@ -82,6 +95,7 @@ impl GameState {
     }
 
     pub fn new(sector: Sector, bind: Ipv4Addr, root: PathBuf) -> io::Result<Self> {
+        crate::trade_store::recover(&root)?;
         let mut state = Self {
             sessions: BTreeMap::new(),
             combats: HashMap::new(),
@@ -101,8 +115,15 @@ impl GameState {
             last_deferred_error: None,
             player_sectors: HashMap::new(),
             developer_commands: true,
+            chat_subscriptions: HashMap::new(),
+            chat_replies: HashMap::new(),
+            trades: BTreeMap::new(),
+            trade_recovery_at: None,
         };
         state.load_accounts()?;
+        for session in state.sessions.values_mut().filter(|session| session.connected()) {
+            session.queue([packets::trade_action(0, 1)]);
+        }
         let clock = state
             .sessions
             .values()
@@ -362,6 +383,9 @@ impl GameState {
             self.loot_worlds.insert(sector, Arc::new(Mutex::new(world)));
         }
         let loot = self.loot_worlds.get(&sector).map(Arc::clone);
+        if let Some(world) = &loot {
+            lock_loot(world)?.set_groups(&self.groups);
+        }
         let session = self
             .sessions
             .get_mut(&id)
@@ -695,6 +719,7 @@ impl GameState {
         }
         self.advance_formations();
         self.update_views();
+        self.update_loot_groups()?;
         for id in &ids {
             let recipients = self.explore_group_members(*id);
             let session = self.sessions.get_mut(id).unwrap();
@@ -810,6 +835,7 @@ impl GameState {
         }
         self.connected = connected;
         self.update_views();
+        self.advance_player_trades();
         self.expire_group_cloak()?;
         if self.groups_dirty {
             self.publish_groups();
@@ -978,6 +1004,16 @@ impl GameState {
         }
         Ok(())
     }
+    /// Refresh private corpse permissions before opens, claims and tractor completion.
+    /// Raises:
+    ///     io::Error: A shared loot-world lock is poisoned.
+    fn update_loot_groups(&self) -> io::Result<()> {
+        for world in self.loot_worlds.values() {
+            lock_loot(world)?.set_groups(&self.groups);
+        }
+        Ok(())
+    }
+
     fn update_views(&mut self) {
         let peers = self.snapshots();
         for (id, session) in self.sessions.iter_mut() {

@@ -1,0 +1,3 @@
+Solar System Scope textures by INOVE, based on NASA imagery. CC BY 4.0: https://creativecommons.org/licenses/by/4.0/ — source https://www.solarsystemscope.com/textures/ . Maps retained; render import capped to 4K except rings.
+URP Black Hole by tantaneity and Procedural Planets by Sebastian Lague: MIT, see included license notices. Shaders adapted for the built-in renderer; procedural meshes baked from the generator.
+NASA Deep Star Maps 2020: NASA/Goddard Space Flight Center Scientific Visualization Studio; Ernie Wright (USRA); Gaia DR2: ESA/Gaia/DPAC. https://svs.gsfc.nasa.gov/4851/ . No endorsement implied.

@@ -92,6 +92,35 @@ impl LootCatalog {
         self.0.get(&template)
     }
 
+    /// Preserve authored rare-drop rolls while ensuring every public MOB leaves collectible salvage.
+    /// Returns:
+    ///     CorpseContents: Rolled equipment or a small stack of ordinary mechanical/organic salvage.
+    /// Raises:
+    ///     io::Error: The MOB or salvage item is absent from the validated catalog.
+    pub fn generate_stocked(
+        &self,
+        template: u32,
+        level: u32,
+        seed: u64,
+        items: &ItemCatalog,
+    ) -> io::Result<CorpseContents> {
+        let mut result = self.generate(template, level, seed, items)?;
+        if result.items.iter().all(Option::is_none) {
+            let mechanical = self
+                .get(template)
+                .is_some_and(|mob| matches!(mob.kind, Some(0 | 1)));
+            let item = items.get(if mechanical { 5477 } else { 3818 })?;
+            result.items[0] = Some(ItemInstance {
+                template: item.id,
+                quantity: (1 + level / 10).min(item.max_stack),
+                quality: 1.,
+                structure: 1.,
+                builder_name: String::new(),
+            });
+        }
+        Ok(result)
+    }
+
     pub fn generate(
         &self,
         template: u32,
@@ -181,6 +210,31 @@ mod tests {
             &ItemCatalog::load().unwrap(),
         )
         .unwrap()
+    }
+
+    #[test]
+    fn every_public_mob_has_collectible_salvage_without_rerolling_rare_drops() {
+        let catalog = LootCatalog::load().unwrap();
+        let items = ItemCatalog::load().unwrap();
+        for template in catalog.0.keys() {
+            for seed in 0..3 {
+                let rolled = catalog.generate(*template, 50, seed, &items).unwrap();
+                let stocked = catalog
+                    .generate_stocked(*template, 50, seed, &items)
+                    .unwrap();
+                assert!(stocked.items.iter().any(Option::is_some));
+                assert_eq!(
+                    stocked,
+                    catalog
+                        .generate_stocked(*template, 50, seed, &items)
+                        .unwrap()
+                );
+                if rolled.items.iter().any(Option::is_some) {
+                    assert_eq!(rolled, stocked);
+                }
+                assert_eq!(rolled.credits, stocked.credits);
+            }
+        }
     }
 
     #[test]

@@ -27,6 +27,7 @@ fn run() -> io::Result<()> {
     let mut check = false;
     let mut seed_play_accounts = false;
     let mut grant_build_recipes = false;
+    let mut refill_ammo = false;
     let mut dry_run = false;
     let mut developer_commands = true;
     let mut create_account: Option<String> = None;
@@ -58,6 +59,7 @@ fn run() -> io::Result<()> {
             "--check" => check = true,
             "--seed-demo-accounts" | "--seed-play-accounts" => seed_play_accounts = true,
             "--grant-build-recipes" => grant_build_recipes = true,
+            "--refill-cargo-ammo" => refill_ammo = true,
             "--dry-run" => dry_run = true,
             "--no-dev" => developer_commands = false,
             "--create-account" => create_account = arguments.next(),
@@ -75,11 +77,32 @@ fn run() -> io::Result<()> {
                     .ok_or_else(|| io::Error::other("--character needs a name"))?
             }
             "--help" | "-h" => {
-                beyond_server::server_log!("beyond-server [--bind 127.0.0.1] [--content data/sector.json] [--state-dir state] [--check] [--no-dev] [--create-account NAME --character NAME --class te|tt|ts|jd|js|je|pw|pp|ps [--native-progression]] [--seed-demo-accounts] [--grant-build-recipes [--dry-run]]\nConnect the 42 and Beyond client, or use win_legacy/launch_original_client.cmd on Windows. Demo account: local / local.");
+                beyond_server::server_log!("beyond-server [--bind 127.0.0.1] [--content data/sector.json] [--state-dir state] [--check] [--no-dev] [--create-account NAME --character NAME --class te|tt|ts|jd|js|je|pw|pp|ps [--native-progression]] [--seed-demo-accounts] [--grant-build-recipes [--dry-run]] [--refill-cargo-ammo [--dry-run]]\nConnect the 42 and Beyond client, or use win_legacy/launch_original_client.cmd on Windows. Demo account: local / local.");
                 return Ok(());
             }
             _ => return Err(io::Error::other(format!("unknown option {argument}"))),
         }
+    }
+    if refill_ammo {
+        if check
+            || create_account.is_some()
+            || seed_play_accounts
+            || native_progression
+            || grant_build_recipes
+        {
+            return Err(io::Error::other(
+                "Refill cargo ammunition separately from other maintenance modes.",
+            ));
+        }
+        let reports = beyond_server::ammo_refill::refill_cargo_ammunition(&state_dir, dry_run)?;
+        for report in reports {
+            beyond_server::server_log!(
+                "{} cargo ammo: account={}; character={}; launchers={}; added={}; shortfall={}; deferred_launch={}",
+                if dry_run { "Preview" } else { "Refilled" }, report.username, report.character,
+                report.launchers, report.rounds_added, report.rounds_missing, report.deferred_launch
+            );
+        }
+        return Ok(());
     }
     if grant_build_recipes {
         if check || create_account.is_some() || seed_play_accounts || native_progression {
@@ -108,7 +131,7 @@ fn run() -> io::Result<()> {
     }
     if dry_run {
         return Err(io::Error::other(
-            "--dry-run requires --grant-build-recipes.",
+            "--dry-run requires --grant-build-recipes or --refill-cargo-ammo.",
         ));
     }
     if seed_play_accounts {

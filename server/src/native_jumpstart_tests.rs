@@ -93,7 +93,7 @@ fn range_uses_native_player_surface_and_ui_range_remains_one_step_shorter() {
         ship.last_verbs,
         Some(packets::target_verbs(
             ship.target,
-            &[(4, 2), (13, 2), (12, 0)]
+            &[(4, 2), (6, 2), (13, 2), (12, 0)]
         ))
     );
     peer.position[0] += 1.;
@@ -103,7 +103,7 @@ fn range_uses_native_player_surface_and_ui_range_remains_one_step_shorter() {
         ship.last_verbs,
         Some(packets::target_verbs(
             ship.target,
-            &[(4, 2), (13, 2), (12, 2)]
+            &[(4, 2), (6, 2), (13, 2), (12, 2)]
         ))
     );
     peer.position[0] = 2995.; // catalog2750 plus player245
@@ -146,7 +146,7 @@ fn class_training_energy_and_caster_incapacity_are_authoritative() {
             ship.refresh_target_verbs(true);
             assert_eq!(
                 ship.last_verbs,
-                Some(packets::target_verbs(ship.target, &[(4, 2), (13, 2)]))
+                Some(packets::target_verbs(ship.target, &[(4, 2), (6, 2), (13, 2)]))
             );
         }
     }

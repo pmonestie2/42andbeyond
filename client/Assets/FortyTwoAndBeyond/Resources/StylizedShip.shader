@@ -1,6 +1,8 @@
 Shader "42 and Beyond/StylizedShip"
 {
     Properties {
+        [HideInInspector] _TravelClip ("Travel clip", Float) = 0
+        [HideInInspector] _TravelPlane ("Travel plane", Vector) = (0,0,1,0)
         _Color ("Hull color", Color) = (0.9,0.95,1,1)
         _AccentColor ("Faction accent", Color) = (0.25,0.85,1,1)
         _MainTex ("Diffuse", 2D) = "white" {}
@@ -12,12 +14,14 @@ Shader "42 and Beyond/StylizedShip"
     SubShader {
         Tags { "RenderType"="Opaque" }
         CGPROGRAM
+        float _TravelClip; float4 _TravelPlane;
         #pragma surface surf Standard fullforwardshadows
         #pragma target 3.0
         fixed4 _Color, _AccentColor;
         sampler2D _MainTex, _BumpMap, _MetallicMap, _RoughnessMap, _EmissionMap;
-        struct Input { float2 uv_MainTex; };
+        struct Input { float3 worldPos; float2 uv_MainTex; };
         void surf(Input i, inout SurfaceOutputStandard o) {
+            if (_TravelClip > .5) clip(dot(float4(i.worldPos,1), _TravelPlane));
             fixed3 pigment = tex2D(_MainTex, i.uv_MainTex).rgb;
             half accentMask = saturate((pigment.b - pigment.g - .015) * 2.8);
             half shade = dot(pigment, half3(.299,.587,.114));

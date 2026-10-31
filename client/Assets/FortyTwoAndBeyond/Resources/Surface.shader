@@ -1,6 +1,8 @@
 Shader "42 and Beyond/Surface"
 {
     Properties {
+        [HideInInspector] _TravelClip ("Travel clip", Float) = 0
+        [HideInInspector] _TravelPlane ("Travel plane", Vector) = (0,0,1,0)
         _Color ("Color", Color) = (0.5,0.5,0.5,1)
         _EmissionColor ("Emission", Color) = (0,0,0,1)
         _Metallic ("Metal", Range(0,1)) = 0
@@ -14,16 +16,18 @@ Shader "42 and Beyond/Surface"
     SubShader {
         Tags { "RenderType"="Opaque" }
         CGPROGRAM
+        float _TravelClip; float4 _TravelPlane;
         #pragma surface surf Standard fullforwardshadows vertex:vert
         #pragma target 3.0
         fixed4 _Color, _EmissionColor;
         sampler2D _DetailTex;
         half _Metallic, _Glossiness, _Grain, _Panels, _TextureStrength, _DetailGain;
-        struct Input { float3 localPosition; float3 localNormal; };
+        struct Input { float3 worldPos; float3 localPosition; float3 localNormal; };
         void vert(inout appdata_full v, out Input o) {
             UNITY_INITIALIZE_OUTPUT(Input,o); o.localPosition=v.vertex.xyz; o.localNormal=v.normal;
         }
         void surf(Input i, inout SurfaceOutputStandard o) {
+            if (_TravelClip > .5) clip(dot(float4(i.worldPos,1), _TravelPlane));
             float n=sin(i.localPosition.x*37+sin(i.localPosition.y*29))*sin(i.localPosition.z*31+i.localPosition.y*11);
             float3 grid=abs(frac(i.localPosition*3.1+float3(.13,.37,.71))-.5);
             float seam=1-smoothstep(.015,.055,min(grid.x,min(grid.y,grid.z)));

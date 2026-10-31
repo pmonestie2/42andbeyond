@@ -1,0 +1,18 @@
+{
+  "source": "https://github.com/nasa/NASA-3D-Resources",
+  "credit": "NASA 3D Resources; asteroid shape models from the NASA collection.",
+  "usage": "https://www.nasa.gov/nasa-brand-center/images-and-media/",
+  "adaptations": "Decimated to approximately 5,000 triangles, centered, normalized and UV mapped for real-time decorative scenery.",
+  "files": [
+    {
+      "name": "Eros",
+      "source": "https://raw.githubusercontent.com/nasa/NASA-3D-Resources/master/3D%20Printing/Asteroid%20433%20Eros/Asteroid%20433%20Eros.stl",
+      "sha256": "deeff6a7a82b920ed907483339c4ee32bc8f18e5854dbf71d194039640336be9"
+    },
+    {
+      "name": "Itokawa",
+      "source": "https://raw.githubusercontent.com/nasa/NASA-3D-Resources/master/3D%20Printing/Asteroid%2025143%20Itokawa/Asteroid%2025143%20Itokawa.stl",
+      "sha256": "8232546de5a68a08e8a54cbe6382317db1416860c695e0235ceb8726f99263c3"
+    }
+  ]
+}

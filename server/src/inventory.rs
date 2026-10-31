@@ -16,6 +16,18 @@ fn empty_ammunition() -> Vec<Option<ItemInstance>> {
     vec![None; EQUIPMENT_SLOTS]
 }
 
+/// Returns:
+///     Vec<bool>: Existing launchers retain automatic reload unless explicitly disabled.
+fn default_auto_reload() -> Vec<bool> {
+    vec![true; EQUIPMENT_SLOTS]
+}
+
+/// Returns:
+///     Vec<Option<u32>>: Unknown historical selections until a magazine is loaded or fired.
+fn empty_ammo_selection() -> Vec<Option<u32>> {
+    vec![None; EQUIPMENT_SLOTS]
+}
+
 fn empty_vault() -> Vec<Option<ItemInstance>> {
     vec![None; VAULT_SLOTS]
 }
@@ -96,6 +108,9 @@ impl MiningEscrow {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Inventory {
+    /// Last committed player exchange; retained by all later inventory writes.
+    #[serde(default)]
+    pub trade_revision: u64,
     pub cargo: Vec<Option<ItemInstance>>,
     #[serde(default = "crate::ship_progression::sandbox_hull_upgrade")]
     pub hull_upgrade: u32,
@@ -110,6 +125,10 @@ pub struct Inventory {
     pub applied_equipment_wear: std::collections::BTreeSet<u64>,
     #[serde(default = "empty_ammunition")]
     pub ammunition: Vec<Option<ItemInstance>>,
+    #[serde(default = "default_auto_reload")]
+    pub auto_reload: Vec<bool>,
+    #[serde(default = "empty_ammo_selection")]
+    pub preferred_ammunition: Vec<Option<u32>>,
     #[serde(default = "empty_vault")]
     pub vault: Vec<Option<ItemInstance>>,
     #[serde(default = "starting_credits")]
@@ -342,8 +361,11 @@ impl Inventory {
             cargo_capacity: 32,
             equipped: vec![None; EQUIPMENT_SLOTS],
             equipment_repair_revision: 0,
+            trade_revision: 0,
             applied_equipment_wear: std::collections::BTreeSet::new(),
             ammunition: empty_ammunition(),
+            auto_reload: default_auto_reload(),
+            preferred_ammunition: empty_ammo_selection(),
             vault: empty_vault(),
             credits: starting_credits(),
             sandbox_grant: 0,
@@ -516,6 +538,8 @@ impl Inventory {
         if self.cargo.len() != CARGO_SLOTS
             || self.equipped.len() != EQUIPMENT_SLOTS
             || self.ammunition.len() != EQUIPMENT_SLOTS
+            || self.auto_reload.len() != EQUIPMENT_SLOTS
+            || self.preferred_ammunition.len() != EQUIPMENT_SLOTS
             || self.vault.len() != VAULT_SLOTS
         {
             return Err(invalid("invalid inventory dimensions"));
@@ -570,6 +594,11 @@ impl Inventory {
         for (slot, item) in self.ammunition.iter().enumerate() {
             if let Some(item) = item {
                 self.check_ammunition(slot, item, templates)?;
+            }
+        }
+        for template in self.preferred_ammunition.iter().flatten() {
+            if templates.get(*template)?.item_type != 10 {
+                return Err(invalid("Remembered launcher ammunition must be an ammunition template."));
             }
         }
         for item in self.vault.iter().flatten() {

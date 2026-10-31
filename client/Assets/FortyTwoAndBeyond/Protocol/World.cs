@@ -105,6 +105,49 @@ namespace FortyTwoAndBeyond.Protocol
         public readonly float Scale;
         public readonly float[] Orientation;
 
+        /// <summary>Publish navigation changes without mutating an earlier snapshot's object.</summary>
+        public MapObject(MapObject original, bool navigable)
+        {
+            Id = original.Id; Name = original.Name; Kind = original.Kind; Asset = original.Asset;
+            Position = original.Position; Scale = original.Scale; Orientation = original.Orientation;
+            Navigable = navigable;
+        }
+
+        /// <summary>Copy native static-object identity, pose and presentation without changing an earlier snapshot.</summary>
+        private MapObject(uint id, byte kind, ushort asset, float scale, string name, Position position, float[] orientation, bool navigable)
+        { Id = id; Kind = kind; Asset = asset; Scale = scale; Name = name; Position = position;
+            Orientation = (float[])orientation.Clone(); Navigable = navigable; }
+
+        /// Returns:
+        ///     MapObject: A native hulk creation, pending its constant-pose and AUX name updates.
+        public static MapObject FromNativeWreck(byte[] body)
+        {
+            if (body == null || body.Length != 23 || body[10] != 25 || Wire.U32(body, 0) == 0)
+                throw new InvalidDataException("Invalid native wreck creation.");
+            float scale = Wire.Float(body, 4);
+            if (scale <= 0 || scale > 10000) throw new InvalidDataException("Invalid native wreck scale.");
+            uint id = Wire.U32(body, 0);
+            return new MapObject(id, 25, Wire.U16(body, 8), scale, "Wreck " + id, default,
+                new[] { 0f, 0f, 0f, 1f }, false);
+        }
+
+        /// Returns:
+        ///     MapObject: This static object with its exact native constant position and orientation.
+        public MapObject WithConstantPose(byte[] body)
+        {
+            if (body == null || body.Length != 32 || Wire.U32(body, 0) != Id)
+                throw new InvalidDataException("Invalid native static object pose.");
+            var position = new Position(Wire.Float(body, 4), Wire.Float(body, 8), Wire.Float(body, 12));
+            if (Math.Abs(position.X) >= 1e9 || Math.Abs(position.Y) >= 1e9 || Math.Abs(position.Z) >= 1e9)
+                throw new InvalidDataException("Native static object coordinates exceed limits.");
+            var orientation = new[] { Wire.Float(body, 16), Wire.Float(body, 20), Wire.Float(body, 24), Wire.Float(body, 28) };
+            return new MapObject(Id, Kind, Asset, Scale, Name, position, orientation, Navigable);
+        }
+
+        /// Returns:
+        ///     MapObject: This object with a native AUX name, retaining its identity and pose.
+        public MapObject WithName(string name) => new MapObject(Id, Kind, Asset, Scale, name, Position, Orientation, Navigable);
+
         /// <summary>Decode a validated map-object record.</summary>
         public MapObject(byte[] body)
         {
@@ -321,7 +364,10 @@ namespace FortyTwoAndBeyond.Protocol
                 choices[i] = new DialogueChoice((byte)node, Wire.Text(body, offset, labelEnd - offset));
                 offset = labelEnd + 1;
             }
-            if (offset != body.Length) throw new InvalidDataException("Unexpected NPC dialogue data.");
+            // Native rescue uses sizeof(char[]) with an explicit final string NUL,
+            // so its compiler-added terminator follows the last branch terminator.
+            if (offset != body.Length && !(offset == body.Length - 1 && body[offset] == 0))
+                throw new InvalidDataException("Unexpected NPC dialogue data.");
             return new DialogueState(NpcId, Wire.Text(body, 0, end), choices, VendorOpen,
                 MissionKind, MissionName, MissionStage);
         }
@@ -370,14 +416,15 @@ namespace FortyTwoAndBeyond.Protocol
         public readonly float[] Orientation;
         public readonly bool HasPosition;
         public readonly bool IsPlayer, Hostile;
-        public readonly float Shield, Hull, MaxHull;
+        public readonly uint? CombatLevel;
+        public readonly float Shield, Hull, MaxHull, MaxShield;
 
         /// <summary>Store a server actor and its latest known pose.</summary>
-        public ShipActor(uint id, ushort asset, float scale, string name, Position position, float[] orientation, bool hasPosition, bool isPlayer = true, bool hostile = false, float shield = -1, float hull = -1, float maxHull = -1)
+        public ShipActor(uint id, ushort asset, float scale, string name, Position position, float[] orientation, bool hasPosition, bool isPlayer = true, bool hostile = false, float shield = -1, float hull = -1, float maxHull = -1, float maxShield = -1, uint? combatLevel = null)
         {
             Id = id; Asset = asset; Scale = scale; Name = name; Position = position;
             Orientation = (float[])orientation.Clone(); HasPosition = hasPosition;
-            IsPlayer = isPlayer; Hostile = hostile; Shield = shield; Hull = hull; MaxHull = maxHull;
+            IsPlayer = isPlayer; Hostile = hostile; CombatLevel = combatLevel; Shield = shield; Hull = hull; MaxHull = maxHull; MaxShield = maxShield;
         }
 
         /// <returns>A new actor with an authoritative pose, leaving old snapshots unchanged.</returns>
@@ -387,7 +434,7 @@ namespace FortyTwoAndBeyond.Protocol
             if (Math.Abs(position.X) >= 1e9 || Math.Abs(position.Y) >= 1e9 || Math.Abs(position.Z) >= 1e9)
                 throw new InvalidDataException("Player coordinates exceed limits.");
             var orientation = new[] { Wire.Float(body, 22), Wire.Float(body, 26), Wire.Float(body, 30), Wire.Float(body, 34) };
-            return new ShipActor(Id, Asset, Scale, Name, position, orientation, true, IsPlayer, Hostile, Shield, Hull, MaxHull);
+            return new ShipActor(Id, Asset, Scale, Name, position, orientation, true, IsPlayer, Hostile, Shield, Hull, MaxHull, MaxShield, CombatLevel);
         }
 
         /// <summary>
@@ -395,11 +442,11 @@ namespace FortyTwoAndBeyond.Protocol
         ///     ShipActor: A visual pose derived from the leader's authoritative group slot.
         /// </summary>
         public ShipActor WithFormationPose(Position position, float[] orientation)
-        { return new ShipActor(Id, Asset, Scale, Name, position, orientation, true, IsPlayer, Hostile, Shield, Hull, MaxHull); }
+        { return new ShipActor(Id, Asset, Scale, Name, position, orientation, true, IsPlayer, Hostile, Shield, Hull, MaxHull, MaxShield, CombatLevel); }
 
         /// <returns>A new actor with its public avatar name.</returns>
         public ShipActor WithName(string name)
-        { return new ShipActor(Id, Asset, Scale, name, Position, Orientation, HasPosition, IsPlayer, Hostile, Shield, Hull, MaxHull); }
+        { return new ShipActor(Id, Asset, Scale, name, Position, Orientation, HasPosition, IsPlayer, Hostile, Shield, Hull, MaxHull, MaxShield, CombatLevel); }
     }
 
     /// <summary>A server-published shot between visible ship identities.</summary>
@@ -485,6 +532,12 @@ namespace FortyTwoAndBeyond.Protocol
         public uint[] AttackerIds => attackerIds.OrderBy(id => id).ToArray();
         public Dictionary<uint, ItemState[]> Loot { get; } = new Dictionary<uint, ItemState[]>();
         public uint OpenLootId { get; private set; }
+        public uint PendingLootId { get; private set; }
+        public bool LootPermissionRequested { get; private set; }
+
+        /// <summary>Publish the worker-owned native loot request phase through immutable snapshots.</summary>
+        public void SetLootRequest(uint id, bool permissionRequested = false)
+        { PendingLootId = id; LootPermissionRequested = id != 0 && permissionRequested; }
         /// <summary>Record the server acknowledgement of a wreck window.</summary>
         public void SetOpenLoot(uint id)
         {
@@ -497,6 +550,7 @@ namespace FortyTwoAndBeyond.Protocol
             new Dictionary<ulong, NativeObjectEffect>();
         public readonly HashSet<uint> ShieldChargingPeers = new HashSet<uint>();
         public GroupState Group { get; private set; } = new GroupState(false, Array.Empty<GroupMember>());
+        internal TradeState Trade { get; private set; } = TradeState.Closed;
         public FormationAnchor Formation { get; private set; }
         public TargetVerbs Verbs { get; private set; } = TargetVerbs.Empty;
         private ConfirmationPrompt confirmation;
@@ -517,12 +571,42 @@ namespace FortyTwoAndBeyond.Protocol
         public GalaxyTravelView GalaxyTravel = new GalaxyTravelView(false, false, 0, "Choose a destination.");
 
         /// <summary>Bind a fresh worker world to the authenticated sector handoff identity.</summary>
+        public readonly Dictionary<uint, GateActivity> Gates = new Dictionary<uint, GateActivity>();
+        public uint GateCameraTarget;
+        public int ArrivalKind;
+        public int EntryGeneration;
+        private bool wormholeRemoved, wormholeCompleted;
+
+        /// <summary>Identify only a currently approved transfer, including same-batch cast completion.</summary>
+        /// <returns>int: One for gating, two for wormholes, zero for other handoffs.</returns>
+        public int TransferKind()
+        {
+            if (GateCameraTarget != 0) return 1;
+            // Native completion is removal, progress-clear, cooldown, handoff in reliable order.
+            // Completion belongs to this world until handoff or an explicit new action; unrelated traffic cannot expire it.
+            if (ObjectEffects.Values.Any(effect => effect.OwnerId == PlayerId && effect.Descriptor == 689) ||
+                wormholeCompleted)
+                return 2;
+            return 0;
+        }
+
+        /// <summary>Discard a previous transfer cause when an explicit new activity supersedes it.</summary>
+        public void ClearTransferIntent() { wormholeRemoved = wormholeCompleted = false; }
+
         public World(uint sectorId = 0) { SectorId = sectorId; }
+
+        /// <summary>Retain character-wide missions and experience until the next authoritative revision.</summary>
+        public void InheritCharacterProgress(World previous)
+        {
+            Missions = (MissionState[])previous.Missions.Clone();
+            Experience = previous.Experience;
+        }
 
         public bool AggregateStation { get; private set; }
         public uint[] MarketItemTemplates = Array.Empty<uint>();
         public Dictionary<uint, ComponentMarketView> ComponentMarkets { get; } = new Dictionary<uint, ComponentMarketView>();
         public Dictionary<uint, ItemTemplateInfo> ItemCatalog { get; } = new Dictionary<uint, ItemTemplateInfo>();
+        public LauncherAmmoState LauncherAmmo { get; private set; } = LauncherAmmoState.Unknown;
         public Dictionary<uint, ShipActor> Mobs { get; } = new Dictionary<uint, ShipActor>();
         public string Sector { get; private set; } = "Connecting";
         public StationState Station { get; private set; }
@@ -602,8 +686,12 @@ namespace FortyTwoAndBeyond.Protocol
         public float Speed { get; private set; }
         public float TargetSpeed { get; private set; }
         public float Acceleration { get; private set; }
+        public long OwnMotionSequence { get; private set; }
         public float AngularY { get; private set; }
         public float AngularZ { get; private set; }
+        public long OwnPoseSequence { get; private set; }
+        public uint OwnPoseTick { get; private set; }
+        public double OwnPoseReceivedAt { get; private set; }
         private uint lastServerTick;
         private long lastServerTickAt;
 
@@ -651,6 +739,19 @@ namespace FortyTwoAndBeyond.Protocol
             byte[] b = frame.Body;
             switch (frame.Opcode)
             {
+                case 0x31:
+                    if (b.Length != 8) throw new InvalidDataException("Invalid gate render state.");
+                    uint gateId = Wire.U32(b, 0), gateState = Wire.U32(b, 4);
+                    if (gateState == 1 && !Gates.ContainsKey(gateId) && Gates.Count < 256)
+                        Gates[gateId] = new GateActivity(gateId, System.Diagnostics.Stopwatch.GetTimestamp());
+                    else if (gateState == 3) { Gates.Remove(gateId); if (GateCameraTarget == gateId) GateCameraTarget = 0; }
+                    break;
+                case 0x92:
+                    if (b.Length != 8) throw new InvalidDataException("Invalid gate camera state.");
+                    uint cameraState = Wire.U32(b, 0, true);
+                    if (cameraState == 4) { ClearTransferIntent(); GateCameraTarget = Wire.U32(b, 4, true); }
+                    else if (cameraState == 0) GateCameraTarget = 0;
+                    break;
                 case 0x97:
                     if (b.Length < 15 || Wire.U32(b, 0) != 4 || Wire.U32(b, 4) != b.Length - 8)
                         throw new InvalidDataException("Invalid sector description.");
@@ -658,7 +759,7 @@ namespace FortyTwoAndBeyond.Protocol
                     if (firstEnd < 0 || firstEnd + 1 >= b.Length) throw new InvalidDataException("Missing sector name.");
                     string name = Wire.Text(b, firstEnd + 1, b.Length - firstEnd - 1);
                     if (name.Length == 0) throw new InvalidDataException("Empty sector name.");
-                    if (Sector != name) { Objects.Clear(); Players.Clear(); Mobs.Clear(); ShieldChargingPeers.Clear(); attackerIds.Clear(); StationAvatars.Clear(); Loot.Clear(); Resources.Clear(); ResourceTargetId = 0; ResourceWindowOpen = false; MiningProspect = null; MiningTractor = null; LootActivity = null; Formation = null; Warp = WarpState.Decode(0, 0); lastServerTickAt = 0; OpenLootId = 0; Verbs = TargetVerbs.Empty; Shots.Clear(); Damages.Clear(); ObjectEffects.Clear(); ClearConfirmation(); nextShot = nextDamage = 0; }
+                    if (Sector != name) { Objects.Clear(); Players.Clear(); Mobs.Clear(); ShieldChargingPeers.Clear(); attackerIds.Clear(); StationAvatars.Clear(); Loot.Clear(); Resources.Clear(); ResourceTargetId = 0; ResourceWindowOpen = false; MiningProspect = null; MiningTractor = null; LootActivity = null; Formation = null; Trade = TradeState.Closed; Warp = WarpState.Decode(0, 0); lastServerTickAt = 0; OpenLootId = 0; Verbs = TargetVerbs.Empty; Shots.Clear(); Damages.Clear(); ObjectEffects.Clear(); ClearConfirmation(); nextShot = nextDamage = 0; }
                     Sector = name;
                     ComponentMarkets.Clear();
                     MarketItemTemplates = Array.Empty<uint>();
@@ -666,7 +767,8 @@ namespace FortyTwoAndBeyond.Protocol
                 case 0x4f:
                     if (b.Length != 6) throw new InvalidDataException("Invalid station identity.");
                     Station = b[4] == 0 ? new StationState(Wire.U32(b, 0)) : null;
-                    if (Station != null) { ActiveDeviceLabel = ""; ActiveDeviceEndsAt = 0; for (int slot = 0; slot < buffs.Length; slot++) buffs[slot] = TimedDeviceBuff.Empty; pendingBuffVisuals.Clear(); Formation = null; ObjectEffects.Clear(); ShieldChargingPeers.Clear(); attackerIds.Clear(); }
+                    Trade = TradeState.Closed;
+                    if (Station != null) { ClearTransferIntent(); ActiveDeviceLabel = ""; ActiveDeviceEndsAt = 0; for (int slot = 0; slot < buffs.Length; slot++) buffs[slot] = TimedDeviceBuff.Empty; pendingBuffVisuals.Clear(); Formation = null; ObjectEffects.Clear(); ShieldChargingPeers.Clear(); attackerIds.Clear(); }
                     Production = new ProductionState();
                     StationAvatars.Clear();
                     Dialogue = null; Vendor = Array.Empty<ItemState>();
@@ -731,6 +833,13 @@ namespace FortyTwoAndBeyond.Protocol
                     }
                     else attackerIds.Remove(attackerId);
                     break;
+                case 0x99:
+                    if (b.Length != 14) throw new InvalidDataException("Invalid navigation update.");
+                    uint navigationId = Wire.U32(b, 0);
+                    Wire.Float(b, 4);
+                    if (Objects.TryGetValue(navigationId, out MapObject knownNavigation))
+                        Objects[navigationId] = new MapObject(knownNavigation, Wire.U32(b, 9) > 0);
+                    break;
                 case 0x2018:
                     var item = new MapObject(b);
                     if (!Objects.ContainsKey(item.Id) && Objects.Count >= 10000) throw new InvalidDataException("World object limit exceeded.");
@@ -769,6 +878,9 @@ namespace FortyTwoAndBeyond.Protocol
                         throw new InvalidDataException("Invalid station aggregation acknowledgement.");
                     AggregateStation = Wire.U32(b, 4) == 1;
                     break;
+                case 0x203c:
+                    LauncherAmmo = LauncherAmmoState.Decode(b, player);
+                    break;
                 case 0x2039:
                     Wire.Require(b, 0, 8);
                     uint stockStation = Wire.U32(b, 0), stockCount = Wire.U32(b, 4);
@@ -798,12 +910,14 @@ namespace FortyTwoAndBeyond.Protocol
                     {
                         Production.PageIndex = recipePage; Production.TotalFormulas = recipeTotal;
                         Production.PageSize = recipePageSize;
+                        Production.PageRevision++;
                     }
                     break;
                 case 0x09:
                     NativeObjectEffect objectEffect = NativeObjectEffect.Decode(b);
                     if (objectEffect != null)
                     {
+                        if (objectEffect.OwnerId == player && objectEffect.Descriptor == 689) ClearTransferIntent();
                         if (ObjectEffects.Count >= 256) ObjectEffects.Clear();
                         ObjectEffects[((ulong)objectEffect.OwnerId << 32) | objectEffect.EffectId] = objectEffect;
                     }
@@ -832,6 +946,9 @@ namespace FortyTwoAndBeyond.Protocol
                 case 0x0f:
                     if (b.Length != 4) throw new InvalidDataException("Invalid effect removal.");
                     uint removedEffect = Wire.U32(b, 0);
+                    if (ObjectEffects.Values.Any(effect => effect.EffectId == removedEffect &&
+                        effect.OwnerId == player && effect.Descriptor == 689))
+                    { wormholeRemoved = true; wormholeCompleted = false; }
                     foreach (ulong key in ObjectEffects.Keys.Where(key => (uint)key == removedEffect).ToArray())
                         ObjectEffects.Remove(key);
                     if (MiningProspect?.EffectId == removedEffect) MiningProspect = null;
@@ -845,6 +962,16 @@ namespace FortyTwoAndBeyond.Protocol
                 case 4:
                     Wire.Require(b, 0, 23);
                     uint actorId = Wire.U32(b, 0);
+                    if (b[10] == 25)
+                    {
+                        MapObject nativeWreck = MapObject.FromNativeWreck(b);
+                        if (!Objects.ContainsKey(actorId) && Objects.Count >= 10000) throw new InvalidDataException("World object limit exceeded.");
+                        Objects[actorId] = nativeWreck;
+                        Loot.Remove(actorId);
+                        if (OpenLootId == actorId) { OpenLootId = 0; LootActivity = null; }
+                        if (PendingLootId == actorId) SetLootRequest(0);
+                        break;
+                    }
                     if (actorId == player || b[10] > 1) break;
                     float scale = Wire.Float(b, 4);
                     if (scale <= 0 || scale > 10000) throw new InvalidDataException("Invalid player scale.");
@@ -857,6 +984,16 @@ namespace FortyTwoAndBeyond.Protocol
                 case 0x1e:
                     confirmation = ConfirmationPrompt.Decode(b);
                     confirmationAt = System.Diagnostics.Stopwatch.GetTimestamp();
+                    break;
+                case 0x1f:
+                    byte tradeAction = b.Length == 5 ? b[4] : byte.MaxValue;
+                    bool wasThisTrade = b.Length == 5 && Trade.Open && Trade.PeerId == Wire.U32(b, 0);
+                    Trade = Trade.ApplyControl(b);
+                    if (wasThisTrade && (tradeAction == 1 || tradeAction == 2))
+                    {
+                        Messages.Enqueue(tradeAction == 2 ? "Trade completed." : "Trade cancelled.");
+                        while (Messages.Count > 200) Messages.Dequeue();
+                    }
                     break;
                 case 0x5c:
                     Verbs = TargetVerbs.Decode(b);
@@ -899,7 +1036,20 @@ namespace FortyTwoAndBeyond.Protocol
                         int end = message.IndexOf('.', 15);
                         if (end > 15) { Station = Station.WithName(message.Substring(15, end - 15)); Sector = Station.Name; }
                     }
-                    while (Messages.Count > 6) Messages.Dequeue();
+                    while (Messages.Count > 200) Messages.Dequeue();
+                    break;
+                case 0x20:
+                case 0x22:
+                    Messages.Enqueue(NativePriorityNotice.Decode(b).Message);
+                    while (Messages.Count > 200) Messages.Dequeue();
+                    break;
+                case 0xa5:
+                    NativeChatNotice chatNotice = NativeChatNotice.Decode(b);
+                    if (chatNotice.IsMessage)
+                    {
+                        Messages.Enqueue(chatNotice.DisplayLine());
+                        while (Messages.Count > 200) Messages.Dequeue();
+                    }
                     break;
                 case 0x25:
                     ItemTemplateInfo template = ItemTemplateInfo.Decode(b);
@@ -916,7 +1066,7 @@ namespace FortyTwoAndBeyond.Protocol
                         AuxState.ReadVault(b, Equipment);
                         MissionState[] missions = AuxState.ReadMissions(b, Missions);
                         if (missions != null) Missions = missions;
-                        ReputationState reputation = AuxState.ReadReputation(b);
+                        ReputationState reputation = AuxState.ReadReputation(b, Reputation);
                         if (reputation != null)
                         {
                             ReputationChange change = null;
@@ -932,13 +1082,14 @@ namespace FortyTwoAndBeyond.Protocol
                         }
                         ExperienceState experience = AuxState.ReadExperience(b, Experience);
                         if (experience != null) Experience = experience;
-                        SkillRank[] skills = AuxState.ReadSkillRanks(b);
+                        SkillRank[] skills = AuxState.ReadSkillRanks(b, Skills);
                         if (skills != null) Skills = skills;
                         uint[] abilities = AuxState.ReadAvailableAbilities(b);
                         if (abilities != null) AvailableAbilities = abilities;
                         AbilityProgress progress = AuxState.ReadAbilityProgress(b);
                         if (progress != null)
                         {
+                            if (progress.Id != uint.MaxValue) ClearTransferIntent();
                             CastingAbilityId = progress.Id;
                             CastEndsAt = progress.Id == uint.MaxValue ? 0 :
                                 System.Diagnostics.Stopwatch.GetTimestamp() +
@@ -947,8 +1098,12 @@ namespace FortyTwoAndBeyond.Protocol
                         SkillCooldown[] cooldowns = AuxState.ReadSkillCooldowns(b);
                         if (cooldowns != null)
                             foreach (SkillCooldown cooldown in cooldowns)
+                            {
+                                if (cooldown.SkillId == 15 && cooldown.DurationMs > 0 &&
+                                    wormholeRemoved) wormholeCompleted = true;
                                 AbilityCooldownEnds[cooldown.SkillId] = System.Diagnostics.Stopwatch.GetTimestamp() +
                                     (long)(cooldown.DurationMs * (double)System.Diagnostics.Stopwatch.Frequency / 1000);
+                            }
                         ItemState[] vendor = AuxState.ReadVendor(b);
                         if (vendor != null) Vendor = vendor;
                         GroupState group = AuxState.ReadGroup(b);
@@ -962,9 +1117,20 @@ namespace FortyTwoAndBeyond.Protocol
                     }
                     else if (Wire.U32(b, 0) == player)
                     {
-                        WarpState warp = AuxState.ReadOwn(b, Equipment,
-                            out TimedDeviceBuff[] revisions);
-                        if (warp != null) Warp = warp;
+                        WarpState warp = AuxState.ReadOwn(b, Equipment, Trade.Own,
+                            out TimedDeviceBuff[] revisions, out TradeOfferRevision ownTrade, previousWarp: Warp);
+                        if (warp != null)
+                        {
+                            WarpPhase previousPhase = Warp.Phase;
+                            Warp = warp;
+                            // The last native 0x3e can still advertise warp cruise
+                            // speed after arrival. The phase transition is the
+                            // authoritative stop until a later impulse revision.
+                            if (warp.Phase == WarpPhase.Recovering ||
+                                previousPhase != WarpPhase.Idle && warp.Phase == WarpPhase.Idle)
+                                Speed = TargetSpeed = Acceleration = 0;
+                        }
+                        Trade = Trade.WithOffer(player, player, ownTrade);
                         for (int slot = 0; slot < buffs.Length; slot++)
                         {
                             if (revisions[slot] == null) continue;
@@ -992,9 +1158,18 @@ namespace FortyTwoAndBeyond.Protocol
                     else
                     {
                         uint id = Wire.U32(b, 0);
+                        if (Trade.Open && id == Trade.PeerId)
+                        {
+                            AuxState.ReadOwn(b, new EquipmentState(), Trade.Peer,
+                                out _, out TradeOfferRevision peerTrade);
+                            Trade = Trade.WithOffer(id, player, peerTrade);
+                        }
                         if (Objects.TryGetValue(id, out MapObject corpse) && corpse.Kind == 25)
                         {
-                            ItemState[] contents = AuxState.ReadCorpse(b);
+                            string corpseName = AuxState.ReadCorpseName(b);
+                            if (!string.IsNullOrEmpty(corpseName)) Objects[id] = corpse.WithName(corpseName);
+                            Loot.TryGetValue(id, out ItemState[] previousContents);
+                            ItemState[] contents = AuxState.ReadCorpse(b, previousContents);
                             if (contents != null) Loot[id] = contents;
                             break;
                         }
@@ -1013,7 +1188,7 @@ namespace FortyTwoAndBeyond.Protocol
                     uint relationId = Wire.U32(b, 0, true);
                     if (Mobs.TryGetValue(relationId, out ShipActor related))
                         Mobs[relationId] = new ShipActor(related.Id, related.Asset, related.Scale, related.Name, related.Position,
-                            related.Orientation, related.HasPosition, false, Wire.U32(b, 4) == 0, related.Shield, related.Hull, related.MaxHull);
+                            related.Orientation, related.HasPosition, false, Wire.U32(b, 4) == 0, related.Shield, related.Hull, related.MaxHull, related.MaxShield, related.CombatLevel);
                     break;
                 case 0x61:
                     Wire.Require(b, 0, 24);
@@ -1039,6 +1214,7 @@ namespace FortyTwoAndBeyond.Protocol
                     Loot.Remove(Wire.U32(b, 0));
                     Resources.Remove(Wire.U32(b, 0));
                     if (OpenLootId == Wire.U32(b, 0)) { OpenLootId = 0; LootActivity = null; }
+                    if (PendingLootId == Wire.U32(b, 0)) SetLootRequest(0);
                     if (ResourceTargetId == Wire.U32(b, 0)) SetResourceTarget(0);
                     Players.Remove(Wire.U32(b, 0)); Mobs.Remove(Wire.U32(b, 0));
                     ShieldChargingPeers.Remove(Wire.U32(b, 0));
@@ -1064,8 +1240,13 @@ namespace FortyTwoAndBeyond.Protocol
                     if (Station != null && StationAvatars.TryGetValue(posingId, out StationAvatar posing))
                         StationAvatars[posingId] = posing.WithPose(b);
                     break;
+                case 0x40:
+                    if (b.Length != 32) throw new InvalidDataException("Invalid constant object position.");
+                    if (Objects.TryGetValue(Wire.U32(b, 0), out MapObject staticObject))
+                        Objects[staticObject.Id] = staticObject.WithConstantPose(b);
+                    break;
                 case 0x3e:
-                    Wire.Require(b, 0, 38);
+                    MovementTelemetry movement = MovementTelemetry.Decode(b);
                     uint movingId = Wire.U32(b, 2);
                     if (movingId != player)
                     {
@@ -1075,25 +1256,42 @@ namespace FortyTwoAndBeyond.Protocol
                         if (Group.IsLeader) ApplyFormedPeers();
                         break;
                     }
-                    Position = new Position(Wire.Float(b, 10), Wire.Float(b, 14), Wire.Float(b, 18));
+                    uint poseTick = Wire.U32(b, 6);
+                    Position incomingPose = new Position(Wire.Float(b, 10), Wire.Float(b, 14), Wire.Float(b, 18));
+                    int elapsedPoseMs = unchecked((int)(poseTick - OwnPoseTick));
+                    bool authoritativeStop = HasPosition && OwnPoseSequence > 0 &&
+                        elapsedPoseMs >= 200 && elapsedPoseMs <= 2000 &&
+                        Position.Distance(incomingPose) <= .05f &&
+                        !movement.Speed.HasValue && !movement.TargetSpeed.HasValue &&
+                        !movement.Acceleration.HasValue;
+                    Position = incomingPose;
                     Orientation = new[] { Wire.Float(b, 22), Wire.Float(b, 26), Wire.Float(b, 30), Wire.Float(b, 34) };
                     HasPosition = true;
+                    OwnPoseSequence++;
+                    OwnPoseTick=poseTick;
+                    OwnPoseReceivedAt=System.Diagnostics.Stopwatch.GetTimestamp()/(double)System.Diagnostics.Stopwatch.Frequency;
                     lastServerTick = Wire.U32(b, 6);
                     lastServerTickAt = System.Diagnostics.Stopwatch.GetTimestamp();
-                    if (b.Length >= 70)
-                    {
-                        Speed = Wire.Float(b, 42) * 1000;
-                        TargetSpeed = Wire.Float(b, 46) * 1000;
-                        Acceleration = Wire.Float(b, 50) * 1000;
-                        AngularY = Wire.Float(b, 54);
-                        AngularZ = Wire.Float(b, 62);
-                    }
-                    else if (b.Length >= 46) Speed = Wire.Float(b, 42) * 1000;
+                    if (movement.Speed.HasValue) Speed = movement.Speed.Value * 1000;
+                    if (movement.TargetSpeed.HasValue) TargetSpeed = movement.TargetSpeed.Value * 1000;
+                    else if (movement.Speed.HasValue) TargetSpeed = Speed;
+                    if (movement.Acceleration.HasValue) Acceleration = Math.Abs(movement.Acceleration.Value * 1000);
+                    if (movement.Speed.HasValue || movement.TargetSpeed.HasValue || movement.Acceleration.HasValue)
+                        OwnMotionSequence++;
+                    if (authoritativeStop) Speed = TargetSpeed = Acceleration = 0;
+                    if (movement.AngularY.HasValue) AngularY = movement.AngularY.Value;
+                    if (movement.AngularZ.HasValue) AngularZ = movement.AngularZ.Value;
                     ApplyFormedPeers();
                     break;
                 case 0x41:
-                    Formation = FormationAnchor.Decode(b, player);
-                    ApplyFormationPose();
+                    Wire.Require(b, 0, 20);
+                    uint formationTarget = Wire.U32(b, 0);
+                    FormationAnchor formationUpdate = FormationAnchor.Decode(b, formationTarget);
+                    // Native warp alignment also sends this message for the
+                    // selected navigation target, with our ship as its leader.
+                    // Only a self-targeted update changes our group anchor.
+                    if (formationTarget == player)
+                    { Formation = formationUpdate; ApplyFormationPose(); }
                     break;
                 case 0x66:
                     if (b.Length != 8 || Wire.U32(b, 4) != 0 || Wire.U32(b, 0) > 1)
@@ -1125,10 +1323,22 @@ namespace FortyTwoAndBeyond.Protocol
         }
     }
 
+    /// <summary>Immutable server-approved jump-gate activity, shared with the render thread.</summary>
+    public sealed class GateActivity
+    {
+        public readonly uint Id;
+        public readonly long StartedAt;
+        /// <summary>Capture the gate's monotonic activation time.</summary>
+        public GateActivity(uint id, long startedAt) { Id = id; StartedAt = startedAt; }
+    }
+
     public sealed class Snapshot
     {
         public readonly string Sector, Status;
         public readonly uint SectorId;
+        public readonly GateActivity[] Gates;
+        public readonly int ArrivalKind, EntryGeneration;
+        public readonly uint GateCameraTarget;
         public readonly GalaxyCatalogPage GalaxyCatalog;
         public readonly GalaxyRoutePlan GalaxyRoute;
         public readonly GalaxyTravelView GalaxyTravel;
@@ -1142,6 +1352,7 @@ namespace FortyTwoAndBeyond.Protocol
         public readonly CombatEngagement Engagement;
         public readonly uint PlayerId;
         public readonly GroupState Group;
+        public readonly TradeView Trade;
         public readonly FormationAnchor Formation;
         public readonly TargetVerbs Verbs;
         public readonly StationState Station;
@@ -1187,14 +1398,22 @@ namespace FortyTwoAndBeyond.Protocol
         public readonly string[] Messages;
         public readonly bool Ready, HasPosition, AggregateStation;
         public readonly float Speed, Energy, Shield, Hull, MaxEnergy, MaxShield, MaxHull;
+        public readonly float? MaxImpulseSpeed, MinImpulseSpeed, ImpulseAcceleration;
+        public readonly bool SpeedLocked, OrientationLocked;
         public readonly ShipDefenseState Defense;
+        public readonly long OwnPoseSequence;
+        public readonly long OwnMotionSequence;
+        public readonly uint OwnPoseTick;
+        public readonly double OwnPoseReceivedAt;
         public readonly float TargetSpeed, Acceleration, AngularY, AngularZ;
         public readonly ItemView[] Cargo, Mounted, Ammo, Vault;
+        public readonly LauncherAmmoState LauncherAmmo;
         public readonly ProductionView Production;
         public readonly IReadOnlyDictionary<uint, ComponentMarketView> ComponentMarkets;
         public readonly ItemView[] MarketItems;
         public readonly CorpseLoot[] Loot;
-        public readonly uint OpenLootId;
+        public readonly uint OpenLootId, PendingLootId;
+        public readonly bool LootPermissionRequested;
         public readonly uint WeaponMounts, DeviceMounts, SelectedTargetId, CargoCapacity;
         public readonly bool WeaponsFiring;
 
@@ -1202,6 +1421,8 @@ namespace FortyTwoAndBeyond.Protocol
         public Snapshot(World world, string status, bool ready)
         {
             SectorId = world.SectorId; GalaxyCatalog = world.GalaxyCatalog;
+            Gates = world.Gates.Values.ToArray(); GateCameraTarget = world.GateCameraTarget;
+            ArrivalKind = world.ArrivalKind; EntryGeneration = world.EntryGeneration;
             GalaxyRoute = world.GalaxyRoute; GalaxyTravel = world.GalaxyTravel;
             AggregateStation = world.AggregateStation;
             Sector = world.Sector; Status = status; Position = world.Position;
@@ -1210,12 +1431,19 @@ namespace FortyTwoAndBeyond.Protocol
             ObjectEffects = world.ObjectEffects.Values.ToArray();
             Speed = world.Speed;
             TargetSpeed = world.TargetSpeed; Acceleration = world.Acceleration;
+            OwnMotionSequence = world.OwnMotionSequence;
             AngularY = world.AngularY; AngularZ = world.AngularZ;
+            OwnPoseSequence=world.OwnPoseSequence;OwnPoseTick=world.OwnPoseTick;OwnPoseReceivedAt=world.OwnPoseReceivedAt;
             Players = world.Players.Values.ToArray(); Mobs = world.Mobs.Values.ToArray();
             ShieldChargingPeers = Array.AsReadOnly(world.ShieldChargingPeers.ToArray());
             PlayerId = world.PlayerId; Shots = world.Shots.ToArray(); Damages = world.Damages.ToArray();
             Attackers = Array.AsReadOnly(world.AttackerIds);
             Group = world.Group; Formation = world.Formation; Verbs = world.Verbs;
+            Trade = world.Trade.Open ? new TradeView(world.Trade,
+                world.Players.TryGetValue(world.Trade.PeerId, out ShipActor trader) ? trader.Name :
+                world.StationAvatars.TryGetValue(world.Trade.PeerId, out StationAvatar avatar) ? avatar.Name :
+                "Pilot " + world.Trade.PeerId, world.ItemCatalog) : TradeView.Closed;
+            LauncherAmmo = world.LauncherAmmo;
             Station = world.Station; StationAvatars = world.StationAvatars.Values.ToArray();
             Production = new ProductionView(world.Production, world.ItemCatalog);
             ComponentMarkets = new System.Collections.ObjectModel.ReadOnlyDictionary<uint, ComponentMarketView>(
@@ -1286,10 +1514,17 @@ namespace FortyTwoAndBeyond.Protocol
                 LootActivity.DurationSeconds * (1 - LootProgress);
             WarpPhase = world.Warp.Phase; WarpArrived = world.Warp.Arrived;
             Invitation = world.Invitation; Confirmation = world.Confirmation; Messages = world.Messages.ToArray();
-            OpenLootId = world.OpenLootId;
+            OpenLootId = world.OpenLootId; PendingLootId = world.PendingLootId;
+            LootPermissionRequested = world.LootPermissionRequested;
             Loot = world.Loot.Select(entry => new CorpseLoot(entry.Key, entry.Value, world.ItemCatalog)).ToArray();
             EquipmentState equipment = world.Equipment;
-            Energy = equipment.Energy; Shield = equipment.Shield; Hull = equipment.Hull;
+            MaxImpulseSpeed = equipment.MaxImpulseSpeed;
+            MinImpulseSpeed = equipment.MinImpulseSpeed;
+            ImpulseAcceleration = equipment.ImpulseAcceleration;
+            SpeedLocked = equipment.SpeedLocked; OrientationLocked = equipment.OrientationLocked;
+            Energy = equipment.EnergyPercent.Known ? equipment.EnergyPercent.Value(buffTick, now) : equipment.Energy;
+            Shield = equipment.ShieldPercent.Known ? equipment.ShieldPercent.Value(buffTick, now) : equipment.Shield;
+            Hull = equipment.Hull;
             MaxEnergy = equipment.MaxEnergy; MaxShield = equipment.MaxShield; MaxHull = equipment.MaxHull;
             Defense = equipment.Defense;
             WeaponMounts = equipment.WeaponMounts; DeviceMounts = equipment.DeviceMounts;

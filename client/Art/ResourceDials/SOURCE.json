@@ -1,0 +1,7 @@
+{
+  "source": "Built-in image_gen",
+  "reference": "User supplied ~/Desktop/gauges.png",
+  "asset": "Resources/UI/ResourceDials/ArmoredBezel.png",
+  "prompt": "Use case: stylized-concept. Asset type: production game HUD sprite, one reusable circular gauge housing for Unity. The attached image is a STYLE REFERENCE only. Generate ONE isolated circular sci-fi instrument bezel, front orthographic view, square composition, perfectly centered, no perspective. Match the reference's high quality brushed silver/gunmetal armored segments, dark recessed joints, engraved seams, real metal shading, small bolt heads, chunky black outer rim and four restrained cardinal connector blocks. Outer silhouette fits within 96% of image width/height, central circular aperture occupies 70% of width, both OUTSIDE and entire CENTER APERTURE are genuinely alpha-transparent. The bezel is a continuous circular ring with 16 silver armored plates and precision screws. Small dark unlit rectangular lamp channels at top, bottom, left, right; Unity will add colored light. No text, numbers, icons, screens, colored lights, colored fill bars, energy, ship, background, cables, labels or watermark. Clean premium 3D rendered material texture, sharp readable details at small HUD size. One standalone bezel only; do not recreate the three-gauge assembly. Preserve alpha inside the circular aperture so animated content can render beneath it.",
+  "rendering": "Unity supplies all live values, segmented fill, colors and animated center imagery."
+}

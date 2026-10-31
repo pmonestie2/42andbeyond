@@ -252,6 +252,9 @@ mod tests {
                 .find(|frame| frame.opcode == 0x2018 && frame.body[..4] == id.to_le_bytes())
                 .unwrap();
             assert_eq!(announced.body[57] & 0xb0, 0xb0);
+            assert!(frames
+                .iter()
+                .any(|frame| frame.opcode == 0x99 && frame.body[..4] == id.to_le_bytes()));
         }
     }
 }

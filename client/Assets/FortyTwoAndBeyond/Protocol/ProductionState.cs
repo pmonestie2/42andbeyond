@@ -21,6 +21,7 @@ namespace FortyTwoAndBeyond.Protocol
     {
         public uint LabId, Mode, Validity, Category, Additional, Filter;
         public uint PageIndex, TotalFormulas, PageSize = 500;
+        public ulong PageRevision;
         public ulong Cost, BaseCost;
         public float Chance;
         public string Failure = "";
@@ -34,6 +35,7 @@ namespace FortyTwoAndBeyond.Protocol
     {
         public readonly uint LabId, Mode, Validity, Category, Additional, Filter;
         public readonly uint PageIndex, TotalFormulas, PageSize;
+        public readonly ulong PageRevision;
         public readonly ulong Cost, BaseCost;
         public readonly float Chance;
         public readonly string Failure;
@@ -60,7 +62,7 @@ namespace FortyTwoAndBeyond.Protocol
                 catalog.TryGetValue(formula.Template, out ItemTemplateInfo item) ?
                     new ProductionFormula(formula.Template, formula.Level, formula.Name, item.IconId, item.Type) :
                     formula).ToArray();
-            PageIndex = state.PageIndex; PageSize = state.PageSize;
+            PageIndex = state.PageIndex; PageSize = state.PageSize; PageRevision = state.PageRevision;
             TotalFormulas = state.TotalFormulas > 0 ? state.TotalFormulas : (uint)Formulas.Length;
         }
     }

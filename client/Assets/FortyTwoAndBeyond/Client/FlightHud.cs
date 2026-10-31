@@ -17,12 +17,23 @@ namespace FortyTwoAndBeyond.Client
         private Texture2D fittingRing;
         private Texture2D fittingSocket;
         private Vector2 weaponWidgetOffset, weaponWidgetDragStart, weaponWidgetOffsetStart;
+        private Vector2 ammoContextPoint, ammoContextScroll;
+        private int ammoContextMount = -1;
         private bool draggingWeaponWidget;
         private static readonly Vector2[] LabelOffsets = { new Vector2(12, -48), new Vector2(12, 12),
             new Vector2(-184, -48), new Vector2(-184, 12) };
         private static readonly Vector2[] ContactLabelOffsets = { new Vector2(-290, -68),
             new Vector2(-290, 24), new Vector2(40, -68), new Vector2(40, 24) };
         private float interfaceSize = 1f;
+        public float InterfaceZoom => interfaceSize;
+
+        /// <summary>Save the interface zoom used by both retained widgets and immediate-mode windows.</summary>
+        public void SetInterfaceZoom(float zoom)
+        {
+            if (float.IsNaN(zoom) || float.IsInfinity(zoom)) return;
+            interfaceSize = Mathf.Clamp(zoom, .85f, 2f);
+            PlayerPrefs.SetFloat("42andbeyond.interface-size", interfaceSize); PlayerPrefs.Save();
+        }
         /// <summary>
         /// Returns:
         ///     float: A readable HUD scale that still fits the loadout window on screen.
@@ -31,12 +42,20 @@ namespace FortyTwoAndBeyond.Client
         {
             get
             {
-                float fit = Mathf.Min(Screen.width / 1280f, Screen.height / 760f);
-                float responsive = fit <= 1f ? fit : Mathf.Min(2f, 1f + (fit - 1f) * .55f);
-                float maximum = Mathf.Min(Screen.width / 1200f, Screen.height / 720f);
-                return Mathf.Clamp(responsive * interfaceSize, .01f, Mathf.Max(.01f, maximum));
+                return CalculateScale(Screen.width,Screen.height,interfaceSize);
             }
         }
+        /// Returns:
+        ///     float: The same responsive scale used by both live HUD and viewport regression checks.
+        public static float CalculateScale(float width,float height,float preference)
+        {
+            float fit=Mathf.Min(width/1280f,height/760f);
+            float responsive=fit<=1?fit:Mathf.Min(2f,1f+(fit-1f)*.55f);
+            float maximum=Mathf.Min(width/1200f,height/720f);
+            return Mathf.Clamp(responsive*preference,.01f,Mathf.Max(.01f,maximum));
+        }
+        public Rect LoginSubmitBounds {get;private set;}
+
         private float CanvasWidth => Screen.width / Scale;
         private float CanvasHeight => Screen.height / Scale;
         private readonly Color cyan = new Color(.3f, .85f, 1), white = new Color(.91f, .95f, 1), muted = new Color(.68f, .79f, .86f), gold = new Color(1, .72f, .3f), crewColor = new Color(.39f, 1f, .68f);
@@ -72,11 +91,18 @@ namespace FortyTwoAndBeyond.Client
         internal GUIStyle SectionStyle => section;
         internal GUIStyle ButtonStyle => button;
         private Vector2 scroll;
+        private readonly HudWindowDrag dialogueDrag = new HudWindowDrag();
+        private readonly HudWindowDrag socialDrag = new HudWindowDrag();
+        private readonly HudWindowDrag settingsDrag = new HudWindowDrag();
+        private readonly HudWindowDrag wreckDrag = new HudWindowDrag();
+        private readonly HudWindowDrag inviteDrag = new HudWindowDrag();
+        private Rect wreckBounds;
         private bool navigation = true, equipmentOpen, settingsOpen, crewTab, inspectMount, inspectAmmo, inspectEffects,
             communicationsOpen;
         private bool clearInputFocus;
         private ControlAction? bindingAction;
         private Vector2 settingsScroll, characterScroll, demoScroll;
+        private bool serverHistoryOpen;
         private int selectedCargo = -1, selectedMount = -1, selectedAmmo = -1;
         private uint draggedContainer;
         private int draggedSlot = -1;
@@ -99,6 +125,28 @@ namespace FortyTwoAndBeyond.Client
         private readonly List<Rect> occupiedFlightLabels = new List<Rect>();
         private readonly List<(Rect Bounds, uint Id, byte Kind)> worldLabelHits =
             new List<(Rect Bounds, uint Id, byte Kind)>();
+        /// Returns:
+        ///     ShipActor: The MOB under a world label or projected ship marker, or null.
+        internal ShipActor HoveredMob(Snapshot snapshot,Vector2 screenPointer)
+        {
+            Vector2 point=screenPointer/Scale;
+            foreach(var hit in worldLabelHits)
+                if(hit.Kind==1&&hit.Bounds.Contains(point))
+                {
+                    var actor=snapshot.Mobs.FirstOrDefault(mob=>mob.Id==hit.Id);
+                    if(actor!=null)return actor;
+                }
+            ShipActor nearest=null;float best=58;
+            foreach(var mob in snapshot.Mobs.Where(item=>item.HasPosition))
+            {
+                Vector3 projected=client.ProjectPlayer(mob.Id);
+                if(projected.z<=0)continue;
+                float distance=Vector2.Distance(screenPointer,new Vector2(projected.x,projected.y));
+                if(distance<best){best=distance;nearest=mob;}
+            }
+            return nearest;
+        }
+
         /// <returns>bool: Whether a visible world label selected its linked object.</returns>
         public bool SelectWorldLabelAtPointer(Vector2 screenPointer)
         {
@@ -131,14 +179,15 @@ namespace FortyTwoAndBeyond.Client
         public void ResetTargetSelection()
         { contactSelection.Reset(); wreckId = 0; serverSelectedUntil = 0; worldLabelHits.Clear(); }
         /// <summary>Show a visible actor chosen by the server, including group target shares.</summary>
-        public void ObserveAuthoritativeTarget(Snapshot snapshot)
+        public ContactSelectionChange ObserveAuthoritativeTarget(Snapshot snapshot)
         {
             uint[] visible = snapshot.Players.Concat(snapshot.Mobs).Where(actor => actor.HasPosition)
-                .Select(actor => actor.Id).ToArray();
+                .Select(actor => actor.Id).Append(snapshot.PlayerId).ToArray();
             ContactSelectionChange change = contactSelection.Observe(snapshot.SelectedTargetId, visible,
                 Time.unscaledTime);
             if (change == ContactSelectionChange.ServerSelected && contactId != 0)
             { wreckId = 0; serverSelectedUntil = Time.unscaledTime + 3f; }
+            return change;
         }
         /// <returns>Whether a visible ship was selected at an actual screen point.</returns>
         public bool SelectContactAtPointer(Snapshot snapshot, Vector2 pointer)
@@ -171,9 +220,34 @@ namespace FortyTwoAndBeyond.Client
         }
         /// <summary>Show a chosen corpse without retaining the previous ship lock.</summary>
         public void SelectWreck(uint id)
-        { wreckId = id; contactSelection.ClearLocal(); lootScroll = Vector2.zero; client.SelectWorldObject(id); }
+        {
+            wreckId = id; contactSelection.ClearLocal(); lootScroll = Vector2.zero;
+            RequestWreckOpen(id);
+        }
+
+        /// <summary>Request native loot immediately; selection and permission belong to the network worker.</summary>
+        private void RequestWreckOpen(uint id)
+        {
+            client.OpenLoot(id);
+        }
+
+        /// <summary>Release a removed wreck selection while request progress comes from worker snapshots.</summary>
+        private void RefreshWreckRequest()
+        {
+            Snapshot state = client.CurrentSnapshot;
+            if (wreckId != 0 && state != null && !state.Objects.Any(item => item.Id == wreckId && item.Kind == 25))
+                wreckId = 0;
+        }
+
         /// <summary>Open or close the ship equipment overlay.</summary>
-        public void ToggleEquipment() { equipmentOpen = !equipmentOpen; }
+        public void ToggleEquipment()
+        { if (equipmentOpen) equipmentOpen = false; else { equipmentOpen = true; deck?.OpenFullFitting(); } }
+        /// <summary>Open a fitted item's details when a passive equipment shortcut is used.</summary>
+        internal void InspectEquippedItem(int slot)
+        {
+            selectedMount = slot; inspectMount = true; inspectAmmo = false;
+            equipmentOpen = true; deck?.OpenFullFitting();
+        }
         private string chatText = "";
         private string inviteName = "";
         internal readonly ChatRecall ChatHistory = new ChatRecall();
@@ -222,7 +296,7 @@ namespace FortyTwoAndBeyond.Client
         public FlightHud(SpaceClient client)
         {
             this.client = client; icons = new EquipmentIcons();
-            interfaceSize = Mathf.Clamp(PlayerPrefs.GetFloat("42andbeyond.interface-size", 1f), .85f, 1.3f);
+            interfaceSize = Mathf.Clamp(PlayerPrefs.GetFloat("42andbeyond.interface-size", 1f), .85f, 2f);
         }
 
         /// <summary>Release text-field ownership when the pilot returns to flight.</summary>
@@ -250,9 +324,10 @@ namespace FortyTwoAndBeyond.Client
             Vector2 p = new Vector2(Input.mousePosition.x / Scale, (Screen.height - Input.mousePosition.y) / Scale);
             if (client.Chart && client.CurrentSnapshot?.Station == null &&
                 (tacticalMap == null || tacticalMap.ContainsPointer(p))) return true;
+            if (wreckId != 0 && wreckBounds.Contains(p)) return true;
             if (deck != null && deck.Visible) return deck.ContainsPointer() ||
                 client.CurrentSnapshot?.Station != null ||
-                (crewTab && new Rect(24, 100, 280, SocialHeight(client.CurrentSnapshot)).Contains(p)) ||
+                (crewTab && SocialRect(client.CurrentSnapshot).Contains(p)) ||
                 p.y > CanvasHeight - 115 || p.y < 65;
             return !client.Connected || (settingsOpen && SettingsRect().Contains(p)) ||
                 (equipmentOpen && EquipmentRect().Contains(p)) ||
@@ -260,7 +335,7 @@ namespace FortyTwoAndBeyond.Client
                 (client.CurrentSnapshot?.Station == null && !equipmentOpen &&
                     WeaponWidgetRect(client.CurrentSnapshot).Contains(p)) ||
                 (TargetPanelRect(client.CurrentSnapshot).Contains(p)) ||
-                new Rect(24, 100, 280, SocialHeight(client.CurrentSnapshot)).Contains(p) ||
+                SocialRect(client.CurrentSnapshot).Contains(p) ||
                 (p.x < 354 && p.y > CanvasHeight - (communicationsOpen ? 248 : 162)) ||
                 new Rect(CanvasWidth - 320, 20, 300,
                     navigation ? NavigationListHeight() +
@@ -556,14 +631,72 @@ namespace FortyTwoAndBeyond.Client
                     GUI.Label(new Rect(rect.x + 35, top + 17, 180, 14),
                         "MAG  " + (ammo?.Quantity ?? 0) + "/" + (ammo?.MaxStack ?? 0),
                         equipmentMeta);
+                if (weapon != null && (weapon.Type == 15 || weapon.Type == 16) &&
+                    current.type == EventType.MouseDown && current.button == 1 &&
+                    new Rect(rect.x + 5, top, rect.width - 10, 31).Contains(current.mousePosition))
+                {
+                    ammoContextMount = slot; ammoContextPoint = current.mousePosition;
+                    ammoContextScroll = Vector2.zero; current.Use();
+                }
             }
             GUI.Label(new Rect(rect.x + 9, rect.yMax - 17, rect.width - 18, 15),
                 "DRAG TO MOVE  ·  OPEN INVENTORY", equipmentMeta);
+            DrawWeaponAmmoContext(snapshot);
+        }
+
+        /// <summary>Choose only server-authorized cargo ammunition from a compact launcher row.</summary>
+        private void DrawWeaponAmmoContext(Snapshot snapshot)
+        {
+            if (ammoContextMount < 3) return;
+            ItemView launcher = ammoContextMount < snapshot.Mounted.Length ? snapshot.Mounted[ammoContextMount] : null;
+            if (launcher == null || launcher.Type != 15 && launcher.Type != 16)
+            { ammoContextMount = -1; return; }
+            LauncherAmmoOption option = snapshot.LauncherAmmo?.Launchers.FirstOrDefault(entry => entry.Mount == ammoContextMount);
+            ItemView[] choices = option?.CargoSlots.Where(slot => slot >= 0 && slot < snapshot.Cargo.Length &&
+                snapshot.Cargo[slot] != null).Select(slot => snapshot.Cargo[slot]).ToArray() ?? Array.Empty<ItemView>();
+            float height = Mathf.Min(360, 102 + choices.Length * 35);
+            var menu = new Rect(Mathf.Clamp(ammoContextPoint.x, 8, Mathf.Max(8, CanvasWidth - 328)),
+                Mathf.Clamp(ammoContextPoint.y, 8, Mathf.Max(8, CanvasHeight - height - 8)), 320, height);
+            if (Event.current.type == EventType.MouseDown && !menu.Contains(Event.current.mousePosition))
+            { ammoContextMount = -1; return; }
+            FlightPanel(menu);
+            GUI.Label(new Rect(menu.x + 12, menu.y + 10, 270, 22), "W" + (ammoContextMount - 2) + " AMMUNITION", section);
+            if (GUI.Button(new Rect(menu.xMax - 31, menu.y + 7, 23, 23), "×", button))
+            { ammoContextMount = -1; return; }
+            float listHeight = Mathf.Min(choices.Length * 35 + 4, height - 93);
+            var viewport = new Rect(menu.x + 8, menu.y + 36, menu.width - 16, listHeight);
+            var content = new Rect(0, 0, viewport.width - 17, choices.Length * 35 + 4);
+            ammoContextScroll = GUI.BeginScrollView(viewport, ammoContextScroll, content);
+            for (int index = 0; index < choices.Length; index++)
+            {
+                ItemView item = choices[index];
+                uint total = (uint)choices.Where(candidate => candidate.Template == item.Template)
+                    .Sum(candidate => (long)candidate.Quantity);
+                var row = new Rect(0, index * 35, content.width - 2, 32);
+                if (GUI.Button(row, "", button))
+                { client.EquipCargo(item.Slot, ammoContextMount); ammoContextMount = -1; }
+                Texture2D icon = icons.ForItem(item);
+                if (icon != null) GUI.DrawTexture(new Rect(5, row.y + 3, 25, 25), icon);
+                GUI.Label(new Rect(35, row.y + 3, row.width - 40, 27),
+                    item.Name + " ×" + item.Quantity + (total == item.Quantity ? "" : " / " + total), equipmentMeta);
+            }
+            GUI.EndScrollView();
+            if (ammoContextMount < 0) return;
+            bool auto = option?.AutoReload == true;
+            bool enabledBefore = GUI.enabled;
+            GUI.enabled = enabledBefore && option != null && option.PreviousTemplate != 0;
+            bool next = GUI.Toggle(new Rect(menu.x + 12, menu.yMax - 53, 145, 22), auto, "Auto Reload");
+            GUI.enabled = enabledBefore;
+            if (option != null && option.PreviousTemplate != 0 && next != auto)
+                client.SetLauncherAutoReload(ammoContextMount, next);
+            GUI.Label(new Rect(menu.x + 12, menu.yMax - 30, menu.width - 24, 20),
+                option == null ? "Waiting for server choices" : option.PreviousTemplate == 0 ?
+                "Choose ammunition first" : "Reload uses last selected ammunition", small);
         }
 
         /// <returns>The centered keyboard settings overlay bounds.</returns>
         private Rect SettingsRect()
-        { return new Rect((CanvasWidth - 580) * .5f, 80, 580, Mathf.Min(610, CanvasHeight - 150)); }
+        { return settingsDrag.Bounds(new Rect((CanvasWidth - 580) * .5f, 80, 580, Mathf.Min(610, CanvasHeight - 150)), CanvasWidth, CanvasHeight); }
 
         /// <returns>Rect: A clamped, persistent target action popup for a visible ship.</returns>
         private Rect TargetPanelRect(Snapshot snapshot)
@@ -578,7 +711,7 @@ namespace FortyTwoAndBeyond.Client
             float width = 338;
             float nameExtra = wrappedBody == null ? 0 : Mathf.Max(0,
                 wrappedBody.CalcHeight(new GUIContent(target.Name.ToUpperInvariant()), width - 30) - 25);
-            float height = (jumpstart ? 234 : 190) + nameExtra;
+            float height = target.IsPlayer ? (jumpstart ? 274 : 230) + nameExtra : 230 + nameExtra;
             if (!targetPanelLoaded)
             {
                 targetPanelPosition = new Vector2(
@@ -674,10 +807,10 @@ namespace FortyTwoAndBeyond.Client
             GUI.Label(new Rect(37, speedPanel.y + 7, 185, 18),
                 snapshot.WarpPhase == WarpPhase.Idle ? "FLIGHT VELOCITY" : "WARP VELOCITY", small);
             GUI.Label(new Rect(37, speedPanel.y + 28, 185, 29),
-                $"{Math.Abs(snapshot.Speed):N0} m/s", heading);
+                $"{Math.Abs(client.DisplayedSpeed):N0} m/s", heading);
             KeyBindings keys = client.Bindings;
             if (GUI.Button(new Rect(CanvasWidth - 160, 25, 136, 28),
-                keys.Display(ControlAction.Chart) + (client.Chart ? "  Flight" : "  Chart"), button)) client.SetChart(!client.Chart);
+                keys.Display(ControlAction.Chart) + (client.Chart ? "  Close map" : "  Map"), button)) client.SetChart(!client.Chart);
             if (GUI.Button(InventoryButtonRect(), equipmentOpen ? "CLOSE INVENTORY" :
                 "INVENTORY  ·  " + keys.Display(ControlAction.Equipment),
                 equipmentOpen ? selected : primaryButton)) ToggleEquipment();
@@ -703,16 +836,16 @@ namespace FortyTwoAndBeyond.Client
                 occupiedFlightLabels.Add(ShipVitalsRect(snapshot));
                 occupiedFlightLabels.Add(new Rect((CanvasWidth - 720) * .5f,
                     CanvasHeight - 117, 720, 68));
-                if (!client.Chart)
-                { WorldLabels(snapshot); PlayerLabels(snapshot); WreckLabels(snapshot); DamageLabels(snapshot); }
+                if (client.Chart && tacticalMap != null) occupiedFlightLabels.Add(tacticalMap.WindowBounds);
+                WorldLabels(snapshot); PlayerLabels(snapshot); WreckLabels(snapshot); DamageLabels(snapshot);
             }
             Navigation(snapshot);
             Radar(snapshot);
             Social(snapshot);
             Communications(snapshot);
             if (!client.AbilitiesOpen && !client.Incapacitated)
-            { if (!client.Chart) TargetLock(snapshot); WreckPanel(snapshot); }
-            if (!equipmentOpen && !client.Chart) WeaponWidget(snapshot);
+            { TargetLock(snapshot); WreckPanel(snapshot); }
+            if (!equipmentOpen) WeaponWidget(snapshot);
             if (equipmentOpen) Equipment(snapshot);
             InputFocused = crewTab && GUI.GetNameOfFocusedControl() == "Group invite";
             ChatEntry();
@@ -752,19 +885,18 @@ namespace FortyTwoAndBeyond.Client
                 }
                 Event.current.Use();
             }
-            Rect panel = SettingsRect(); Panel(panel);
-            GUI.Label(new Rect(panel.x + 20, panel.y + 15, 400, 28), "KEYBOARD CONTROLS", heading);
+            Rect panel = settingsDrag.Handle(SettingsRect(), CanvasWidth, CanvasHeight); Panel(panel); HudWindowDrag.DrawGrip(panel);
+            GUI.Label(new Rect(panel.x + 36, panel.y + 15, 384, 28), "KEYBOARD CONTROLS", heading);
             if (GUI.Button(new Rect(panel.xMax - 49, panel.y + 15, 29, 28), "×", button))
             { settingsOpen = false; bindingAction = null; return; }
             GUILayout.BeginArea(new Rect(panel.x + 20, panel.y + 56, panel.width - 40, panel.height - 145));
             settingsScroll = GUILayout.BeginScrollView(settingsScroll);
             GUILayout.Label("INTERFACE SIZE   " + Mathf.RoundToInt(interfaceSize * 100) + "%", body);
-            float adjustedSize = GUILayout.HorizontalSlider(interfaceSize, .85f, 1.3f,
+            float adjustedSize = GUILayout.HorizontalSlider(interfaceSize, .85f, 2f,
                 GUILayout.Width(500), GUILayout.Height(24));
             if (Mathf.Abs(adjustedSize - interfaceSize) > .001f)
             {
-                interfaceSize = adjustedSize;
-                PlayerPrefs.SetFloat("42andbeyond.interface-size", interfaceSize);
+                SetInterfaceZoom(adjustedSize);
             }
             if (Event.current.type == EventType.MouseUp) PlayerPrefs.Save();
             GUILayout.Space(8);
@@ -832,12 +964,14 @@ namespace FortyTwoAndBeyond.Client
                 x = workspace.x; top = workspace.y; width = workspace.width; height = workspace.height;
             }
             bool collapsed = snapshot.Station != null && stationDialogueCollapsed;
-            Panel(new Rect(x, top, width, collapsed ? 54 : height));
+            Rect contactWindow = dialogueDrag.Handle(new Rect(x, top, width, collapsed ? 54 : height), CanvasWidth, CanvasHeight);
+            x = contactWindow.x; top = contactWindow.y;
+            Panel(contactWindow); HudWindowDrag.DrawGrip(contactWindow);
             string title = npcNames.TryGetValue(dialogue.NpcId, out string name) ? name :
                 snapshot.Station == null ? snapshot.Objects.FirstOrDefault(item =>
                     item.Id == snapshot.SelectedTargetId)?.Name ?? "Space contact" : "Station contact";
             Fill(new Rect(x + 1, top + 2, 4, 48), cyan);
-            GUI.Label(new Rect(x + 19, top + 12, width - 130, 27), title.ToUpperInvariant(), body);
+            GUI.Label(new Rect(x + 36, top + 12, width - 147, 27), title.ToUpperInvariant(), body);
             GUI.Label(new Rect(x + 20, top + 38, width - 130, 19),
                 trading ? "STATION CONTACT   /   TRADE" : snapshot.Station == null ?
                 "SPACE CONTACT   /   CONVERSATION" : "STATION CONTACT   /   CONVERSATION", dialogueMeta);
@@ -912,25 +1046,25 @@ namespace FortyTwoAndBeyond.Client
             GUILayout.BeginArea(new Rect(rect.x, rect.y + 55, column, listHeight));
             vendorScroll = GUILayout.BeginScrollView(vendorScroll);
             foreach (ItemView item in offers.Skip(vendorPage * 16).Take(16))
-                if (VendorItemRow(item, $"BUY 1  ·  {item.Price:N0} credits", column, item.Price > 0))
-                    client.BuyVendor(item.Slot);
+                if (ItemActionRow(item, $"{item.Price:N0} cr  ·  Own {ItemBrowserHud.CargoCount(snapshot, item.Template)} in cargo  ·  Details", column, true))
+                    client.InspectVendorItem(item, false);
             GUILayout.EndScrollView(); GUILayout.EndArea();
             GUILayout.BeginArea(new Rect(rect.x + column + 12, rect.y + 55, column, listHeight));
             saleScroll = GUILayout.BeginScrollView(saleScroll);
             foreach (ItemView item in snapshot.Cargo.Where(item => item != null))
             {
                 string quote = item.Price > 0 ? $"{item.Price:N0} credits" : "No buyer quote";
-                if (VendorItemRow(item, $"SELL 1  ·  {quote}  ·  Cargo ×{item.Quantity}", column, item.Price > 0))
-                    client.SellVendor(item.Slot);
+                if (ItemActionRow(item, $"{quote}  ·  Cargo ×{item.Quantity}  ·  Details", column, true))
+                    client.InspectVendorItem(item, true);
             }
             GUILayout.EndScrollView(); GUILayout.EndArea();
         }
 
         /// <summary>
         /// Returns:
-        ///     bool: Whether an available vendor item row was clicked.
+        ///     bool: Whether an available icon-and-text item action row was clicked.
         /// </summary>
-        private bool VendorItemRow(ItemView item, string quote, float columnWidth, bool available)
+        internal bool ItemActionRow(ItemView item, string quote, float columnWidth, bool available)
         {
             float textWidth = Mathf.Max(60, columnWidth - 86);
             float nameHeight = Mathf.Max(22, equipmentText.CalcHeight(new GUIContent(item.Name), textWidth));
@@ -1046,10 +1180,21 @@ namespace FortyTwoAndBeyond.Client
             GUI.Label(new Rect(x, rect.y + 19, 452, 36), "42 AND BEYOND", heading);
             GUI.Label(new Rect(x, rect.y + 55, 452, 22),
                 "CAPTAIN'S TERMINAL  /  LOCAL UNIVERSE", small);
-            GUI.Label(new Rect(x, rect.y + 91, 452, 18), "Server IPv4", small);
-            host = GUI.TextField(new Rect(x, rect.y + 113, 324, 34), host, input);
+            GUI.Label(new Rect(x, rect.y + 91, 452, 18), "Server hostname or IPv4", small);
+            Rect historyArrow = new Rect(x + 290, rect.y + 113, 34, 34);
+            Rect historyMenu = new Rect(x, rect.y + 150, 324, client.RecentServers.Count * 30 + 8);
+            if (serverHistoryOpen && (Event.current.type == EventType.KeyDown && Event.current.keyCode == KeyCode.Escape ||
+                Event.current.type == EventType.MouseDown && !historyMenu.Contains(Event.current.mousePosition) && !historyArrow.Contains(Event.current.mousePosition)))
+                serverHistoryOpen = false;
+            string editedHost = GUI.TextField(new Rect(x, rect.y + 113, 286, 34), host, input);
+            if (editedHost != host) serverHistoryOpen = false;
+            host = editedHost;
+            if (GUI.Button(historyArrow, new GUIContent(serverHistoryOpen ? "▲" : "▼", "Recent servers"), button))
+            { serverHistoryOpen = !serverHistoryOpen; GUI.FocusControl(null); }
             if (GUI.Button(new Rect(x + 332, rect.y + 113, 120, 34), "DISCOVER", button))
                 client.DiscoverDemoAccounts(host);
+            bool formEnabled = GUI.enabled;
+            GUI.enabled = formEnabled && !serverHistoryOpen;
             GUI.Label(new Rect(x, rect.y + 168, 452, 22), "PUBLISHED SANDBOX PILOTS", section);
             GUI.Label(new Rect(x, rect.y + 192, 452, 20),
                 "Choose a class to fill its public demo login.", small);
@@ -1086,11 +1231,25 @@ namespace FortyTwoAndBeyond.Client
             username = GUI.TextField(new Rect(x, rect.y + 497, 452, 34), username, input);
             GUI.Label(new Rect(x, rect.y + 538, 452, 18), "Password", small);
             password = GUI.PasswordField(new Rect(x, rect.y + 558, 452, 34), password, '*', input);
-            if (GUI.Button(new Rect(x, rect.y + 600, 452, 38), "ENTER SPACE", primaryButton))
+            Rect submit=new Rect(x,rect.y+600,452,38);
+            LoginSubmitBounds=new Rect(submit.x*Scale,submit.y*Scale,submit.width*Scale,submit.height*Scale);
+            if (GUI.Button(submit, "ENTER SPACE", primaryButton))
                 client.StartLocalSession(host, username, password);
             string status = client.Status ?? "";
             GUI.Label(new Rect(x, rect.y + 643, 452, 18),
                 new GUIContent(FitCommsPreview(status, 452), status), commsPreview);
+            GUI.enabled = formEnabled;
+            if (serverHistoryOpen)
+            {
+                Panel(historyMenu);
+                for (int index = 0; index < client.RecentServers.Count; index++)
+                {
+                    string recent = client.RecentServers[index];
+                    if (GUI.Button(new Rect(historyMenu.x + 4, historyMenu.y + 4 + index * 30,
+                        historyMenu.width - 8, 28), recent, recent == host ? selected : button))
+                    { host = recent; serverHistoryOpen = false; GUI.FocusControl(null); }
+                }
+            }
         }
 
         /// <summary>Draw distance-sorted destinations and selected-target actions.</summary>
@@ -1218,7 +1377,7 @@ namespace FortyTwoAndBeyond.Client
             string targetName = target.Name.ToUpperInvariant();
             float nameHeight = Mathf.Max(25, wrappedBody.CalcHeight(new GUIContent(targetName), 308));
             float nameExtra = nameHeight - 25;
-            Panel(panel);
+            Panel(panel); HudWindowDrag.DrawGrip(panel);
             Fill(new Rect(x + 1, y + 2, panel.width - 2, panel.height - 4),
                 new Color(.005f, .014f, .027f, .33f));
             Color signal = target.IsPlayer ? cyan : target.Hostile ? new Color(1f, .42f, .32f) : gold;
@@ -1257,6 +1416,11 @@ namespace FortyTwoAndBeyond.Client
                 GUI.enabled = true;
                 if (GUI.Button(new Rect(x + 216, y + 143 + nameExtra, 108, 36), "FOLLOW", button))
                     client.Follow(target.Id);
+                GUI.enabled = client.Ready;
+                if (GUI.Button(new Rect(x + 14, y + 186 + nameExtra, 310, 34),
+                    new GUIContent("ASSIST · ACQUIRE TARGET", "Select this contact's server-confirmed target"), selected))
+                    client.SendChat("/assist #" + target.Id);
+                GUI.enabled = true;
                 return;
             }
             bool member = snapshot.Group.Members.Any(item => item.Id == target.Id);
@@ -1267,18 +1431,27 @@ namespace FortyTwoAndBeyond.Client
             bool sentRecently = invitePendingId == target.Id && Time.unscaledTime - invitePendingAt < 5 &&
                 client.Status == "Group invitation sent.";
             GUI.enabled = leader && !member && !full && !pending && !sentRecently;
-            if (GUI.Button(new Rect(x + 14, y + 143 + nameExtra, 194, 36),
+            if (GUI.Button(new Rect(x + 14, y + 143 + nameExtra, 134, 36),
                 member ? "IN YOUR GROUP" : !leader ? "LEADER INVITES" : full ? "GROUP FULL" :
-                pending ? "WAITING FOR SERVER" : sentRecently ? "INVITATION SENT" : "INVITE TO GROUP", button))
+                pending ? "WAITING" : sentRecently ? "INVITED" : "INVITE", button))
             { client.InvitePlayer(target.Id); invitePendingId = target.Id; invitePendingAt = Time.unscaledTime; }
+            GUI.enabled = client.Ready && snapshot.SelectedTargetId == target.Id &&
+                snapshot.Verbs.Available(target.Id, 6) == true;
+            if (GUI.Button(new Rect(x + 155, y + 143 + nameExtra, 81, 36), "TRADE", button))
+                client.OpenTrade(target.Id);
             GUI.enabled = true;
-            if (GUI.Button(new Rect(x + 216, y + 143 + nameExtra, 108, 36), "FOLLOW", button))
+            if (GUI.Button(new Rect(x + 243, y + 143 + nameExtra, 81, 36), "FOLLOW", button))
                 client.Follow(target.Id);
+            GUI.enabled = client.Ready;
+            if (GUI.Button(new Rect(x + 14, y + 186 + nameExtra, 310, 34),
+                new GUIContent("ASSIST · ACQUIRE PILOT TARGET", "Select this pilot's server-confirmed target"), selected))
+                client.SendChat("/assist #" + target.Id);
+            GUI.enabled = true;
             if (canJumpstart)
             {
                 GUI.enabled = client.Ready && !client.Incapacitated &&
                     snapshot.CastingAbilityId == uint.MaxValue && snapshot.SelectedTargetId == target.Id;
-                if (GUI.Button(new Rect(x + 14, y + 186 + nameExtra, 310, 34),
+                if (GUI.Button(new Rect(x + 14, y + 226 + nameExtra, 310, 34),
                     snapshot.SelectedTargetId == target.Id ? "JUMPSTART PILOT" : "SELECTING JUMPSTART TARGET", selected))
                     client.ActivateAbility(65u);
                 GUI.enabled = true;
@@ -1302,27 +1475,34 @@ namespace FortyTwoAndBeyond.Client
         /// <summary>Keep an opened wreck and its tractorable items beside the flight view.</summary>
         private void WreckPanel(Snapshot snapshot)
         {
+            RefreshWreckRequest();
             if (wreckId == 0) return;
             MapObject wreck = snapshot.Objects.FirstOrDefault(item => item.Id == wreckId && item.Kind == 25);
             if (wreck == null) return;
             bool open = snapshot.OpenLootId == wreckId;
             bool tractoring = snapshot.LootActivity != null && snapshot.LootActivity.CorpseId == wreckId;
             float height = open ? tractoring ? 332 : 306 : 126;
-            float x = CanvasWidth - 740, y = CanvasHeight - height - 122;
-            Panel(new Rect(x, y, 360, height));
-            GUI.Label(new Rect(x + 12, y + 8, open ? 250 : 336, 22), wreck.Name, body);
+            wreckBounds = wreckDrag.Handle(new Rect(CanvasWidth - 740, CanvasHeight - height - 122, 360, height), CanvasWidth, CanvasHeight);
+            float x = wreckBounds.x, y = wreckBounds.y;
+            Panel(wreckBounds); HudWindowDrag.DrawGrip(wreckBounds);
+            GUI.Label(new Rect(x + 36, y + 8, open ? 226 : 312, 22), wreck.Name, body);
             if (open && GUI.Button(new Rect(x + 272, y + 10, 76, 30), "CLOSE", button))
                 client.CloseLoot(wreckId);
             float distance = wreck.Position.Distance(snapshot.Position);
             GUI.Label(new Rect(x + 12, y + 33, 336, 20), $"WRECK RANGE  {distance / 1000:0.00} km", small);
             bool? lootVerb = snapshot.Verbs.Available(wreckId, 3);
-            GUI.enabled = client.Ready && lootVerb == true && !open;
-            if (GUI.Button(new Rect(x + 12, y + 57, 336, 30), open ? "WRECK OPEN" :
-                lootVerb == false || snapshot.Verbs.TargetId == wreckId ? "SERVER: LOOT UNAVAILABLE" :
-                lootVerb == null ? "WAITING FOR LOOT VERB" : "OPEN WRECK", button))
-                client.OpenLoot(wreckId);
+            bool opening = snapshot.PendingLootId == wreckId;
+            GUI.enabled = client.Ready && !opening && !open;
+            if (GUI.Button(new Rect(x + 12, y + 57, 336, 30), open ? "WRECK OPEN" : opening ? "OPENING WRECK…" :
+                lootVerb == false ? "SERVER: UNAVAILABLE · RETRY" : "OPEN WRECK", button))
+                RequestWreckOpen(wreckId);
             GUI.enabled = true;
-            if (!open) return;
+            if (!open)
+            {
+                GUI.Label(new Rect(x + 12, y + 94, 336, 24), opening ? (snapshot.PendingLootId == wreckId && snapshot.LootPermissionRequested ? "Awaiting server loot permission" : "Selecting wreck · awaiting acknowledgement") :
+                    lootVerb == false ? "The server checks range and the loot lock." : "Open selects this wreck and requests its loot.", small);
+                return;
+            }
             CorpseLoot contents = snapshot.Loot.FirstOrDefault(item => item.Id == wreckId);
             bool collecting = client.LootAllActive;
             bool hasStock = contents?.Items.Any(item => item != null) == true;
@@ -1441,7 +1621,6 @@ namespace FortyTwoAndBeyond.Client
                 Fill(new Rect(point.x - radius, point.y + radius - 7, 2, 9), color);
                 Fill(new Rect(point.x + radius - 9, point.y + radius, 9, 2), color);
                 Fill(new Rect(point.x + radius - 1, point.y + radius - 7, 2, 9), color);
-                if (client.Chart && !active) continue;
                 Rect label = default;
                 const float labelWidth = 260;
                 float nameHeight = Mathf.Max(21,
@@ -1536,21 +1715,36 @@ namespace FortyTwoAndBeyond.Client
             }
         }
 
+        /// <returns>Rect: Reachable bounds of the draggable scanner and crew controls.</returns>
+        private Rect SocialRect(Snapshot snapshot) => socialDrag.Bounds(
+            RetainedVisible ? new Rect(Mathf.Min(430, CanvasWidth - 300),
+                Mathf.Clamp(CanvasHeight * .29f, 180, 220), 280, SocialHeight(snapshot)) :
+                new Rect(24, 100, 280, SocialHeight(snapshot)), CanvasWidth, CanvasHeight);
+
         /// <summary>Show threats first, with a separate crew management tab.</summary>
         private void Social(Snapshot snapshot)
         {
             float height = SocialHeight(snapshot);
-            Rect panel = new Rect(24, 100, 280, height);
-            FlightPanel(panel);
-            GUI.Label(new Rect(37, 113, 240, 22), "TACTICAL SCANNER", section);
+            Rect panel = socialDrag.Handle(SocialRect(snapshot), CanvasWidth, CanvasHeight);
+            FlightPanel(panel); HudWindowDrag.DrawGrip(panel);
+            GUI.BeginGroup(new Rect(panel.x - 24, panel.y - 100, CanvasWidth, CanvasHeight));
+            GUI.Label(new Rect(60, 113, 217, 22), RetainedVisible ? "GROUP MANAGEMENT" : "TACTICAL SCANNER", section);
             int hostileCount = socialContacts.Count(actor => actor.Hostile);
             GUI.Label(new Rect(37, 137, 245, 18),
                 $"{hostileCount} THREATS   ·   {socialContacts.Length} CONTACTS", small);
-            if (GUI.Button(new Rect(37, 165, 124, 31), "CONTACTS", crewTab ? button : selected))
-            { crewTab = false; ReleaseInputFocus(); }
-            if (GUI.Button(new Rect(166, 165, 124, 31),
-                snapshot.Confirmation != null && snapshot.Confirmation.Kind != ConfirmationKind.Jumpstart ? "CREW  !" : "CREW",
-                crewTab ? selected : button)) crewTab = true;
+            if (RetainedVisible)
+            {
+                if (GUI.Button(new Rect(197, 165, 93, 31), "CLOSE", button))
+                { crewTab = false; ReleaseInputFocus(); }
+            }
+            else
+            {
+                if (GUI.Button(new Rect(37, 165, 124, 31), "CONTACTS", crewTab ? button : selected))
+                { crewTab = false; ReleaseInputFocus(); }
+                if (GUI.Button(new Rect(166, 165, 124, 31),
+                    snapshot.Confirmation != null && snapshot.Confirmation.Kind != ConfirmationKind.Jumpstart ? "CREW  !" : "CREW",
+                    crewTab ? selected : button)) crewTab = true;
+            }
             GUILayout.BeginArea(new Rect(35, 205, 256, height - 119));
             contactsScroll = GUILayout.BeginScrollView(contactsScroll);
             if (crewTab) CrewRoster(snapshot);
@@ -1572,9 +1766,10 @@ namespace FortyTwoAndBeyond.Client
                     float distance = selectedWreck.Position.Distance(snapshot.Position);
                     bool? lootVerb = snapshot.Verbs.Available(wreckId, 3);
                     bool tractoring = snapshot.LootActivity != null && snapshot.LootActivity.CorpseId == wreckId;
-                    GUI.enabled = lootVerb == true && snapshot.OpenLootId != wreckId;
-                    if (GUILayout.Button(snapshot.OpenLootId == wreckId ? "WRECK OPEN" :
-                        lootVerb == true ? "OPEN WRECK" : "LOOT UNAVAILABLE", button)) client.OpenLoot(wreckId);
+                    bool opening = snapshot.PendingLootId == wreckId;
+                    GUI.enabled = client.Ready && !opening && snapshot.OpenLootId != wreckId;
+                    if (GUILayout.Button(snapshot.OpenLootId == wreckId ? "WRECK OPEN" : opening ? "OPENING WRECK…" :
+                        lootVerb == false ? "SERVER: UNAVAILABLE · RETRY" : "OPEN WRECK", button)) RequestWreckOpen(wreckId);
                     GUI.enabled = true;
                     if (lootVerb == false) GUILayout.Label("Move closer or leave warp to open", small);
                     if (tractoring) GUILayout.Label($"TRACTORING  {snapshot.LootProgress * 100:0}%  ·  {snapshot.LootRemainingSeconds:0.0}s", small);
@@ -1592,7 +1787,7 @@ namespace FortyTwoAndBeyond.Client
                         }
                 }
             }
-            GUILayout.EndScrollView(); GUILayout.EndArea();
+            GUILayout.EndScrollView(); GUILayout.EndArea(); GUI.EndGroup();
         }
 
         /// <summary>Keep the newest server message visible and retain the full recent log on demand.</summary>
@@ -1823,7 +2018,7 @@ namespace FortyTwoAndBeyond.Client
         /// <summary>Manage invitations and formation separately from tactical contacts.</summary>
         private void CrewRoster(Snapshot snapshot)
         {
-            GUILayout.Label(snapshot.Group.Joined ? "CREW" + (snapshot.Group.IsLeader ? "  /  LEADER" : "") : "CREW  /  SOLO", section);
+            GUILayout.Label(snapshot.Group.Joined ? "GROUP" + (snapshot.Group.IsLeader ? "  /  LEADER" : "") : "GROUP  /  SOLO", section);
             GUILayout.Label("Invite any online toon by name", small);
             GUI.SetNextControlName("Group invite");
             inviteName = GUILayout.TextField(inviteName, 20);
@@ -1850,6 +2045,9 @@ namespace FortyTwoAndBeyond.Client
                 GUILayout.BeginHorizontal();
                 GUI.enabled = visible;
                 if (GUILayout.Button("TARGET", button, GUILayout.Width(77))) SelectContact(member.Id);
+                GUI.enabled = client.Ready && member.Id != snapshot.PlayerId;
+                if (GUILayout.Button(new GUIContent("ASSIST", "Acquire this member's selected target"),
+                    button, GUILayout.Width(73))) client.SendChat("/assist " + member.Name);
                 GUI.enabled = visible && !snapshot.Group.Formed;
                 if (GUILayout.Button(snapshot.Group.Formed ? "FORMED" : "FOLLOW", button, GUILayout.Width(78)))
                 { SelectContact(member.Id); client.FollowSelected(); }
@@ -1869,8 +2067,9 @@ namespace FortyTwoAndBeyond.Client
                 if (snapshot.Group.IsLeader)
                 {
                     GUILayout.BeginHorizontal();
-                    foreach (var choice in new[] { (4u, "Slot Back"), (5u, "Block"), (6u, "Pipe") })
-                        if (GUILayout.Button(choice.Item2, snapshot.Group.Formation == choice.Item2 ? selected : button))
+                    foreach (var choice in new[] { (4u, "BACK", "Slot Back"), (5u, "BLOCK", "Block"), (6u, "PIPE", "Pipe") })
+                        if (GUILayout.Button(choice.Item2, snapshot.Group.Formation == choice.Item3 ? selected : button,
+                            GUILayout.Width(68)))
                             client.Formation(choice.Item1);
                     GUILayout.EndHorizontal();
                     if (snapshot.Group.Formation.Length > 0 && GUILayout.Button("Release formation", button)) client.Formation(9);
@@ -1895,9 +2094,9 @@ namespace FortyTwoAndBeyond.Client
             if (snapshot?.Confirmation?.Kind != ConfirmationKind.Group) return;
             EnsureStyles();
             Fill(new Rect(0, 0, CanvasWidth, CanvasHeight), new Color(.005f, .012f, .025f, .77f));
-            Rect card = new Rect((CanvasWidth - 520) * .5f, (CanvasHeight - 252) * .5f, 520, 252);
-            Panel(card);
-            Fill(new Rect(card.x + 22, card.y + 25, 4, 78), crewColor);
+            Rect card = inviteDrag.Bounds(new Rect((CanvasWidth - 520) * .5f, (CanvasHeight - 252) * .5f, 520, 252), CanvasWidth, CanvasHeight);
+            Panel(card); HudWindowDrag.DrawGrip(card);
+            Fill(new Rect(card.x + 22, card.y + 37, 4, 66), crewColor);
             GUI.Label(new Rect(card.x + 42, card.y + 22, 440, 30), "CREW INVITATION", heading);
             GUI.Label(new Rect(card.x + 42, card.y + 55, 440, 22),
                 "A PILOT HAS INVITED YOU TO JOIN THEIR GROUP", section);
@@ -1915,9 +2114,10 @@ namespace FortyTwoAndBeyond.Client
         public void HandleGroupInviteInput(Event currentEvent)
         {
             if (!GroupInviteOpen || currentEvent == null) return;
+            inviteDrag.Handle(new Rect((CanvasWidth - 520) * .5f, (CanvasHeight - 252) * .5f, 520, 252), CanvasWidth, CanvasHeight);
             if (currentEvent.type == EventType.MouseDown && currentEvent.button == 0)
             {
-                Rect card = new Rect((CanvasWidth - 520) * .5f, (CanvasHeight - 252) * .5f, 520, 252);
+                Rect card = inviteDrag.Bounds(new Rect((CanvasWidth - 520) * .5f, (CanvasHeight - 252) * .5f, 520, 252), CanvasWidth, CanvasHeight);
                 Vector2 point = currentEvent.mousePosition;
                 if (new Rect(card.x + 42, card.y + 198, 202, 38).Contains(point))
                     client.AnswerConfirmation(false);
@@ -1934,9 +2134,9 @@ namespace FortyTwoAndBeyond.Client
             Rect rect = EquipmentRect();
             HandleInventoryWindowDrag(rect);
             Fill(rect, new Color(.002f, .008f, .016f, .98f));
-            Panel(rect);
+            Panel(rect); HudWindowDrag.DrawGrip(rect);
             float left = rect.x + 20, top = rect.y + 15;
-            GUI.Label(new Rect(left, top, 570, 32), "INVENTORY  /  SHIP LOADOUT", heading);
+            GUI.Label(new Rect(left, top, 570, 32), "SYSTEMS  /  SHIP FITTING", heading);
             GUI.Label(new Rect(rect.xMax - 284, top + 4, 126, 19), "↔  DRAG WINDOW", small);
             if (GUI.Button(new Rect(rect.xMax - 48, top, 28, 28), "×", button)) equipmentOpen = false;
             if (GUI.Button(new Rect(rect.xMax - 143, top, 80, 28), "RESET", button))
@@ -2289,7 +2489,7 @@ namespace FortyTwoAndBeyond.Client
                 new Color(.77f, .63f, .32f));
             GUI.Label(new Rect(x, rect.y + 142, width, 17), "SPEED", equipmentMeta);
             GUI.Label(new Rect(x, rect.y + 158, width, 17),
-                $"{snapshot.Speed:0} m/s  ·  TARGET {snapshot.TargetSpeed:0} m/s",
+                $"{client.DisplayedSpeed:0} m/s  ·  TARGET {snapshot.TargetSpeed:0} m/s",
                 equipmentText);
             GUI.Label(new Rect(x, rect.y + 175, width, 17),
                 $"ACCEL {snapshot.Acceleration:0} m/s²", equipmentMeta);

@@ -100,7 +100,7 @@ internal static class SectorTransportChecks
                 "Manufacture payload changed during loss/reorder recovery.");
     }
 
-    /// <summary>Verify a queued UDP burst is drained and a native acknowledgement body is echoed unchanged.</summary>
+    /// <summary>Verify a queued burst is drained and only native challenges receive acknowledgements.</summary>
     private static void CheckSocketBurst()
     {
         const uint player = 44;
@@ -132,28 +132,20 @@ internal static class SectorTransportChecks
             Stopwatch deadline = Stopwatch.StartNew();
             while (stream.Expected < 96 && deadline.Elapsed.TotalSeconds < 3) session.Poll();
             Require(stream.Expected == 96, "A queued UDP burst lost datagrams before the worker could drain it.");
-            IPEndPoint from = null;
-            uint acknowledged = 0;
-            do
-            {
-                byte[] prefix = sender.Receive(ref from);
-                Require(Wire.Datagram(prefix, player) == 0x2021, "Unexpected loopback transport response.");
-                acknowledged = Math.Max(acknowledged, Wire.U32(prefix, 12));
-            } while (sender.Available > 0);
-            Require(acknowledged == 96, "No cumulative acknowledgement covered the received burst.");
-            // Discarded ACKs simulate their loss. A byte-identical replay must provoke
-            // another cumulative ACK even though SectorStream delivers no new frame.
+            Require(sender.Available == 0, "A sector batch produced an unsolicited acknowledgement.");
+            // Replaying a data packet does not fabricate a challenge response.
             sender.Send(lastPacket, lastPacket.Length, endpoint); session.Poll();
-            byte[] repeatedAck = sender.Receive(ref from);
-            Require(Wire.Datagram(repeatedAck, player) == 0x2021 && Wire.U32(repeatedAck, 12) == 96 &&
-                stream.Expected == 96 && session.World.Messages.Count(message => message == sentinel) == 1,
-                "A duplicate failed to repair a lost ACK or applied its message twice.");
+            Require(sender.Available == 0 && stream.Expected == 96 &&
+                session.World.Messages.Count(message => message == sentinel) == 1,
+                "A duplicate produced an unsolicited ACK or applied its message twice.");
             byte[] acknowledgement = BitConverter.GetBytes(97u);
             byte[] ping = Wire.Encode(0x2016, Wire.Encode(0x2020, acknowledgement), player, 96);
             sender.Send(ping, ping.Length, endpoint); session.Poll();
+            IPEndPoint from = null;
             byte[] echo = sender.Receive(ref from);
             Require(Wire.Datagram(echo, player) == 0x2021 && Wire.Slice(echo, 12, echo.Length - 12).SequenceEqual(acknowledgement),
                 "The native batch acknowledgement body was changed.");
+            Require(sender.Available == 0, "A native challenge produced an extra acknowledgement.");
         }
     }
 

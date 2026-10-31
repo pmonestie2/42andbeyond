@@ -4,7 +4,8 @@
 .deck Button:hover { background-color: rgb(52,61,67); border-color: rgb(173,157,113); color: white; }
 .deck Button:active { background-color: rgb(92,77,47); }
 .deck Button:disabled { opacity: 0.35; }
-.deck .primary { background-color: rgb(171,137,71); border-color: rgb(210,178,108); color: rgb(15,19,23); -unity-font-style: bold; }
+.deck .primary { background-color: rgb(24,64,87); border-color: rgb(78,166,201); color: rgb(222,243,250); -unity-font-style: bold; }
+.deck .primary.danger { background-color: rgb(92,35,43); border-color: rgb(196,79,88); color: rgb(255,235,233); }
 .deck .panel { background-color: rgba(13,18,24,0.93); border-width: 1px; border-color: rgba(135,157,173,0.24); border-radius: 5px; padding: 15px; }
 .deck .eyebrow { color: rgb(160,173,182); font-size: 11px; letter-spacing: 2px; margin-bottom: 8px; }
 .deck .title { font-size: 25px; color: rgb(236,239,238); -unity-font-style: bold; }
@@ -19,6 +20,12 @@
 .deck .track { height: 4px; background-color: rgb(39,48,57); border-radius: 2px; margin-top: 6px; overflow: hidden; }
 .deck .fill { height: 100%; background-color: rgb(120,188,213); border-radius: 2px; }
 .deck .cargo-row { flex-direction: row; align-items: center; padding: 10px 6px; border-bottom-width: 1px; border-bottom-color: rgba(130,151,168,0.12); min-height: 62px; }
+.deck .cargo-row .grow { min-width: 0; flex-shrink: 1; }
+.deck .cargo-row .item-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.deck .item-hover { background-color: rgba(8,18,27,0.98); border-color: rgb(103,170,186); max-height: 340px; overflow: hidden; }
+.deck .item-hover .title { white-space: normal; font-size: 17px; }
+.deck .window-drag-grip { width: 22px; height: 26px; color: rgb(151,205,221); background-color: rgba(42,91,105,0.58); border-radius: 3px; -unity-text-align: middle-center; font-size: 18px; }
+.deck .window-drag-grip:hover { background-color: rgba(75,143,158,0.9); color: white; }
 .deck .cargo-row:hover { background-color: rgba(130,155,170,0.10); }
 .deck .cargo-row.chosen { background-color: rgba(191,157,88,0.15); border-left-width: 2px; border-left-color: rgb(206,176,108); }
 .deck .item-name { white-space: normal; font-size: 14px; color: rgb(218,225,230); margin-bottom: 4px; }
@@ -35,7 +42,7 @@
 .deck .contact-name { font-size: 14px; white-space: normal; flex-grow: 1; }
 .deck .range { width: 60px; -unity-text-align: middle-right; color: rgb(159,174,187); font-size: 11px; }
 .deck .symbol { width: 24px; font-size: 18px; color: rgb(204,171,106); }
-.deck .weapon { width: 64px; height: 69px; margin-right: 5px; border-width: 1px; border-color: rgb(58,69,80); border-radius: 4px; align-items: center; padding: 4px 2px; background-color: rgba(24,32,41,0.92); }
+.deck .weapon { width: 64px; height: 69px; margin-right: 4px; border-width: 1px; border-color: rgb(58,69,80); border-radius: 4px; align-items: center; padding: 4px 2px; background-color: rgba(24,32,41,0.92); }
 .deck .weapon:hover { border-color: rgb(211,177,108); }
 .deck .weapon.armed { border-bottom-width: 3px; border-bottom-color: rgb(220,154,87); }
 .deck .window { position: absolute; background-color: rgb(14,19,25); border-width: 1px; border-color: rgb(83,95,104); border-radius: 7px; }
@@ -56,7 +63,8 @@
 .deck .quick-slot { position: relative; width: 110px; height: 52px; margin-right: 8px; border-radius: 3px; background-color: rgb(24,32,41); border-width: 1px; border-color: rgb(49,62,73); }
 .deck .quick-slot:hover { border-color: rgb(208,174,107); background-color: rgb(42,47,50); }
 .deck .quick-key { position: absolute; left: 8px; top: 3px; font-size: 11px; color: rgb(208,174,107); }
-.deck .quick-name { position: absolute; left: 40px; top: 18px; right: 5px; bottom: 2px; white-space: normal; font-size: 12px; }
+.deck .quick-name { position: absolute; left: 40px; top: 18px; right: 5px; height: 17px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 11px; }
+.deck .quick-state { position: absolute; left: 40px; top: 35px; right: 4px; height: 14px; white-space: nowrap; font-size: 10px; color: rgb(208,174,107); }
 .deck .quick-icon { position: absolute; left: 6px; top: 19px; width: 28px; height: 28px; }
 
 .deck Label { margin: 0; padding: 0; min-height: 0; flex-shrink: 0; }
@@ -89,3 +97,89 @@
 .deck .socket.drop-hover, .deck .cargo-row.drop-hover { border-width: 3px; border-color: rgb(139,244,213); background-color: rgba(61,130,113,0.65); }
 .deck .socket.drop-invalid { border-color: rgb(224,117,92); background-color: rgba(124,48,39,0.44); }
 .deck .socket.drop-confirmed, .deck .cargo-row.drop-confirmed { border-width: 3px; border-color: rgb(220,240,172); background-color: rgba(124,159,85,0.65); }
+
+.deck .selection-filter { margin: 0 0 8px 0; min-height: 28px; flex-shrink: 0; }
+.deck .selection-filter .unity-base-field__input { background-color: rgb(25,34,43); border-width: 1px; border-color: rgb(64,85,100); border-radius: 3px; padding: 4px 8px; }
+.deck .selection-filter .unity-base-popup-field__text { color: rgb(218,231,239); font-size: 14px; }
+.deck .selection-filter .unity-base-popup-field__arrow { -unity-background-image-tint-color: rgb(130,190,215); }
+.deck .selection-filter:hover .unity-base-field__input { border-color: rgb(130,190,215); }
+
+.deck .system-recovery { position: absolute; left: 0; right: 0; bottom: 0; background-color: rgba(4,8,13,0.76); border-top-width: 1px; border-top-color: rgba(160,177,188,0.5); }
+.deck .quick-slot.system-active { border-color: rgb(113,225,195); background-color: rgb(27,63,59); }
+.deck .quick-slot.system-charging { border-color: rgb(225,191,108); }
+.deck .systems-picker { background-color: rgba(9,17,26,0.99); border-color: rgb(95,148,167); padding: 12px; }
+.deck .system-family { margin-top: 6px; margin-bottom: 6px; font-size: 15px; color: rgb(205,222,230); }
+.deck .system-choice { min-height: 34px; white-space: normal; margin-top: 3px; font-size: 13px; -unity-text-align: middle-left; }
+
+.deck .systems-picker .unity-text-field__input, .deck .systems-picker .unity-base-text-field__input { background-color: rgb(20,31,43); color: rgb(232,240,246); font-size: 15px; padding: 6px 8px; border-width: 1px; border-color: rgb(68,103,125); }
+
+/* Compact flight command layout: one browser, one target card, one lower strip. */
+.deck .browse-panel, .deck .flight-strip { background-color: rgba(8,21,35,0.95); border-color: rgba(92,143,173,0.42); border-radius: 9px; }
+.deck .browse-panel { padding: 11px; }
+.deck .browse-tabs { height: 35px; flex-shrink: 0; border-bottom-width: 1px; border-bottom-color: rgba(78,125,158,0.43); margin-bottom: 9px; padding-left: 18px; }
+.deck .browse-tabs Button { flex-grow: 1; min-height: 32px; height: 32px; background-color: rgba(0,0,0,0); border-width: 0; border-radius: 0; color: rgb(158,188,209); font-size: 13px; padding: 3px 8px; }
+.deck .browse-tabs Button:hover { color: rgb(230,244,252); background-color: rgba(53,112,150,0.22); }
+.deck .browse-tabs Button.active { color: white; border-bottom-width: 3px; border-bottom-color: rgb(65,199,247); -unity-font-style: bold; }
+.deck .browse-pane { flex-grow: 1; min-height: 0; min-width: 0; }
+.deck .browse-pane .selection-filter { margin-bottom: 6px; }
+.deck .browse-pane .contact { min-height: 38px; padding-top: 4px; padding-bottom: 4px; }
+.deck .group-member-row { position: relative; height: 68px; margin-bottom: 6px; border-width: 1px; border-color: rgba(93,145,179,0.45); border-radius: 5px; background-color: rgba(20,40,59,0.7); }
+.deck .group-member-row:hover { border-color: rgb(76,185,228); }
+.deck .group-member-row .subtle { font-size: 11px; }
+.deck .group-manage { margin-top: 7px; min-height: 27px; background-color: rgba(0,0,0,0); border-width: 0; color: rgb(89,202,246); -unity-text-align: middle-left; font-size: 13px; }
+.deck .loot-window { background-color: rgba(8,21,35,0.97); border-color: rgba(92,143,173,0.55); border-radius: 9px; padding: 11px; }
+.deck .loot-window .row { flex-shrink: 0; }
+.deck .loot-item-row { flex-direction: row; align-items: center; height: 54px; min-height: 54px; margin-top: 5px; padding-left: 8px; padding-right: 8px; border-width: 1px; border-color: rgba(83,140,172,0.4); border-radius: 5px; background-color: rgba(17,37,55,0.86); }
+.deck .loot-item-row:hover { border-color: rgb(79,189,223); background-color: rgba(28,61,80,0.95); }
+.deck .loot-item-row.unavailable { opacity: 0.58; }
+.deck .loot-item-icon { width: 38px; height: 38px; margin-right: 9px; flex-shrink: 0; }
+.deck .loot-item-labels { flex-grow: 1; min-width: 0; }
+.deck .loot-item-labels .item-name { font-size: 14px; }
+.deck .loot-claim { width: 51px; min-width: 51px; font-size: 10px; color: rgb(99,204,237); -unity-text-align: middle-right; }
+.deck .flight-strip { flex-direction: row; align-items: center; padding: 8px 11px 8px 24px; }
+.deck .strip-section { flex-shrink: 0; padding-right: 9px; border-right-width: 1px; border-right-color: rgba(100,148,179,0.35); }
+.deck .flight-strip .title { font-size: 20px; }
+.deck .flight-strip #flight-menu { min-width: 68px; min-height: 32px; background-color: rgba(28,51,70,0.9); border-color: rgba(112,176,205,0.65); }
+.deck .flight-strip #shortcut-viewport { flex-grow: 1; min-width: 0; }
+.deck .flight-strip .shortcut-compact { background-color: rgba(0,0,0,0); border-width: 0; border-radius: 0; padding: 0; }
+.deck .flight-strip .shortcut-compact .quick-slot { background-color: rgba(24,46,65,0.87); border-color: rgba(78,138,177,0.54); }
+.deck .flight-strip .shortcut-compact .quick-icon { width: 40px; height: 40px; left: 12px; top: 15px; }
+.deck .flight-strip .shortcut-compact .quick-key { top: 1px; left: 4px; background-color: rgb(13,28,41); border-radius: 3px; padding: 0 3px; }
+.deck .flight-strip .shortcut-compact .quick-name { display: none; }
+.deck .flight-strip .shortcut-compact .quick-slot.unassigned .quick-name { display: flex; top: 18px; right: 0; left: 0; font-size: 22px; color: rgb(105,177,207); -unity-text-align: middle-center; }
+.deck .flight-strip .shortcut-compact .quick-state { left: 27px; top: 44px; right: 2px; }
+.deck .flight-strip .shortcut-compact #shortcut-bar-header { height: 22px; }
+.deck .flight-strip .shortcut-compact #expand-systems, .deck .flight-strip .shortcut-compact #add-shortcut, .deck .flight-strip .shortcut-compact #remove-shortcut { display: none; }
+
+/* Resource instruments: restrained casing, bright numerals and a calibrated luminous rail. */
+.deck .vital-gauge { margin-bottom: 8px; padding: 6px 8px 7px 8px; background-color: rgba(20,35,47,0.8); border-left-width: 2px; border-left-color: rgba(116,188,211,0.5); border-radius: 3px; }
+.deck .vital-caption { font-size: 10px; letter-spacing: 1px; -unity-font-style: bold; }
+.deck .vital-percent { font-size: 11px; -unity-font-style: bold; }
+.deck .vital-value { font-size: 16px; color: rgb(240,247,252); -unity-font-style: bold; margin-top: 1px; margin-bottom: 5px; white-space: nowrap; }
+.deck .vital-track { position: relative; height: 10px; background-color: rgb(6,13,21); border-radius: 2px; overflow: hidden; }
+.deck .vital-fill { height: 100%; border-radius: 2px; transition-property: width; transition-duration: 180ms; }
+.deck .vital-sheen { position: absolute; left: 0; right: 0; top: 0; height: 3px; background-color: rgba(255,255,255,0.35); }
+.deck .vital-ticks { position: absolute; left: 0; top: 0; right: 0; bottom: 0; flex-direction: row; }
+.deck .vital-tick { flex-grow: 1; border-right-width: 2px; border-right-color: rgba(6,13,21,0.55); }
+.deck .experience-track { height: 16px; margin-bottom: 2px; flex-direction: row; align-items: center; background-color: rgba(17,36,51,0.65); border-radius: 3px; }
+.deck .experience-caption { width: 74px; padding-left: 4px; font-size: 10px; -unity-font-style: bold; letter-spacing: 0.3px; }
+.deck .experience-rail { flex-grow: 1; height: 5px; margin-left: 4px; background-color: rgb(4,12,20); border-radius: 3px; overflow: hidden; }
+.deck .experience-fill { height: 100%; border-radius: 3px; transition-property: width; transition-duration: 180ms; }
+.deck .experience-sheen { position: absolute; left: 0; right: 0; top: 0; height: 1px; background-color: rgba(255,255,255,0.5); }
+.deck .experience-divisions { position: absolute; left: 0; top: 0; right: 0; bottom: 0; flex-direction: row; }
+.deck .experience-division { flex-grow: 1; border-right-width: 1px; border-right-color: rgba(4,12,20,0.7); }
+.deck .experience-percent { width: 39px; font-size: 10px; -unity-text-align: middle-right; color: rgb(221,235,242); padding-right: 3px; }
+.deck #chat-entry, .deck #chat-entry .unity-base-text-field__input { --unity-cursor-color: rgb(235,254,255); --unity-selection-color: rgba(43,138,184,0.7); }
+.deck .chat-composer-input.composer-focused .unity-base-text-field__input { border-bottom-color: rgb(140,239,255); border-bottom-width: 2px; background-color: rgb(12,30,43); }
+
+.deck .strip-section { border-right-width: 0; }
+.deck .strip-divider { width: 10px; min-width: 10px; flex-shrink: 0; height: 96px; align-items: center; justify-content: center; border-left-width: 1px; border-left-color: rgba(100,148,179,0.35); border-radius: 3px; }
+.deck .strip-divider:hover, .deck .strip-divider.dragging { background-color: rgba(66,170,211,0.35); border-left-color: rgb(106,217,249); }
+.deck .strip-divider Label { color: rgb(107,166,191); font-size: 18px; }
+
+.deck .effects-badge { min-height: 19px; height: 19px; font-size: 11px; padding: 1px 7px; color: rgb(139,156,169); border-radius: 8px; background-color: rgba(20,38,50,0.8); }
+.deck .effects-badge.has-effects { color: rgb(129,217,237); border-color: rgba(75,167,201,0.65); }
+.deck .effects-badge.active { background-color: rgba(38,103,129,0.85); border-color: rgb(123,221,241); }
+
+.deck .contact-category-filters { flex-wrap: nowrap; margin-bottom: 3px; }
+.deck .contact-category-filters Button.active { color: rgb(219,247,255); background-color: rgb(23,90,118); border-color: rgb(74,182,218); }

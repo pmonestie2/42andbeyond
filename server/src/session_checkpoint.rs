@@ -130,6 +130,8 @@ pub(super) struct Checkpoint {
     #[serde(default)]
     ack_capable: bool,
     #[serde(default)]
+    ammo_options: bool,
+    #[serde(default)]
     station_peers: HashMap<u32, StationPose>,
     #[serde(default)]
     mining: Option<mining::MiningCast>,
@@ -223,7 +225,7 @@ impl PlayerSession {
             || !self.sector.bounds.contains(saved.position)
             || saved.mobs.len() > 256
             || saved.mob_visible.len() > 256
-            || saved.replay.len() > 128
+            || saved.replay.len() > if saved.awaiting_start_ack { 8192 } else { 128 }
             || saved.queued_output.len() > 8192
             || saved
                 .replay
@@ -549,6 +551,8 @@ impl PlayerSession {
         self.station_pose = saved.station_pose;
         self.aggregate_station = saved.aggregate_station;
         self.ack_capable = saved.ack_capable;
+        self.ammo_options = saved.ammo_options;
+        self.last_ammo_snapshot = None;
         self.station_peers = saved.station_peers;
         self.mining = saved.mining;
         self.tractor_mining = saved.tractor_mining;
@@ -707,6 +711,7 @@ impl PlayerSession {
         self.resume_loot_visuals()?;
         self.resume_mining_visuals()?;
         self.refresh_resource_target(true)?;
+        self.publish_ammo_options(false);
         Ok(true)
     }
 
@@ -796,6 +801,7 @@ impl PlayerSession {
             station_pose: self.station_pose.clone(),
             aggregate_station: self.aggregate_station,
             ack_capable: self.ack_capable,
+            ammo_options: self.ammo_options,
             station_peers: self.station_peers.clone(),
             mining: self.mining.clone(),
             tractor_mining: self.tractor_mining.clone(),

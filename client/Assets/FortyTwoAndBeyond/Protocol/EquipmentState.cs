@@ -6,6 +6,67 @@ using System.Text.RegularExpressions;
 
 namespace FortyTwoAndBeyond.Protocol
 {
+    /// <summary>Immutable native resource curve retained across partial AUX updates.</summary>
+    public readonly struct TimedPercentState
+    {
+        public readonly bool Known;
+        public readonly uint EndTick;
+        public readonly float ChangePerMillisecond;
+        public readonly float StartValue;
+        public readonly long ReceivedAt;
+        public readonly bool AnchorToEndTick;
+
+        /// <summary>Retain one complete or partial native percent revision.</summary>
+        public TimedPercentState(bool known, uint endTick, float changePerMillisecond,
+            float startValue, long receivedAt, bool anchorToEndTick = true)
+        { Known = known; EndTick = endTick; ChangePerMillisecond = changePerMillisecond;
+            StartValue = startValue; ReceivedAt = receivedAt; AnchorToEndTick = anchorToEndTick; }
+
+        /// <summary>
+        /// Returns:
+        ///     float: The server curve evaluated at a known server tick, or elapsed receipt time while idle.
+        /// </summary>
+        public float Value(uint? serverTick, long now)
+        {
+            if (!Known) return -1;
+            if (ChangePerMillisecond == 0 || float.IsNaN(ChangePerMillisecond) ||
+                float.IsInfinity(ChangePerMillisecond)) return Clamp(StartValue);
+            if (serverTick.HasValue && EndTick != 0 && AnchorToEndTick)
+            {
+                int remaining = unchecked((int)(EndTick - serverTick.Value));
+                if (remaining <= 0) return ChangePerMillisecond > 0 ? 1 : 0;
+                float endpoint = ChangePerMillisecond > 0 ? 1 : 0;
+                return Clamp(endpoint - remaining * ChangePerMillisecond);
+            }
+            double milliseconds = Math.Max(0, (now - ReceivedAt) * 1000d /
+                System.Diagnostics.Stopwatch.Frequency);
+            return Clamp(StartValue + (float)(milliseconds * ChangePerMillisecond));
+        }
+
+        /// <summary>
+        /// Returns:
+        ///     TimedPercentState: A new curve with omitted native fields preserved.
+        /// </summary>
+        public TimedPercentState Merge(bool hasEndTick, uint endTick, bool hasRate, float rate,
+            bool hasStartValue, float startValue, uint? serverTick, long now)
+        {
+            if (!hasEndTick && !hasRate && !hasStartValue) return this;
+            float anchor = hasStartValue ? startValue : Value(serverTick, now);
+            // A StartValue-only damage/regen revision supersedes the old end-tick
+            // curve. Reanchor at receipt until the server supplies timing again.
+            bool anchorToEndTick = hasEndTick || hasRate || !hasStartValue && AnchorToEndTick;
+            return new TimedPercentState(Known || hasStartValue, hasEndTick ? endTick : EndTick,
+                hasRate ? rate : ChangePerMillisecond, anchor,
+                hasStartValue || hasEndTick || hasRate ? now : ReceivedAt, anchorToEndTick);
+        }
+
+        /// <summary>
+        /// Returns:
+        ///     float: A finite resource fraction between zero and one.
+        /// </summary>
+        private static float Clamp(float value) => float.IsNaN(value) ? 0 : Math.Max(0, Math.Min(1, value));
+    }
+
     /// <summary>Immutable server-published typed damage deflection percentages.</summary>
     public sealed class ShipDefenseState
     {
@@ -158,7 +219,43 @@ namespace FortyTwoAndBeyond.Protocol
         public uint CargoCapacity;
         public ShipDefenseState Defense = ShipDefenseState.Unknown;
         public float Energy = -1, Shield = -1, Hull = -1, MaxEnergy = -1, MaxShield = -1, MaxHull = -1;
-        public uint WeaponMounts, DeviceMounts, TargetId;
+        public float? MaxImpulseSpeed, MinImpulseSpeed, ImpulseAcceleration;
+        public bool SpeedLocked, OrientationLocked;
+        public TimedPercentState EnergyPercent, ShieldPercent;
+        private uint futureWeaponMounts, futureDeviceMounts;
+        public readonly uint[] MountMasks = new uint[20];
+        public bool HasMountLayout;
+        public uint TargetId;
+        /// <summary>
+        /// Returns:
+        ///     uint: The currently unlocked consecutive weapon sockets from native mount masks.
+        /// </summary>
+        public uint WeaponMounts
+        {
+            get => HasMountLayout ? Math.Min(futureWeaponMounts, CountMounts(3)) : futureWeaponMounts;
+            set => futureWeaponMounts = value;
+        }
+        /// <summary>
+        /// Returns:
+        ///     uint: The currently unlocked consecutive device sockets from native mount masks.
+        /// </summary>
+        public uint DeviceMounts
+        {
+            get => HasMountLayout ? Math.Min(futureDeviceMounts, CountMounts(9)) : futureDeviceMounts;
+            set => futureDeviceMounts = value;
+        }
+
+        /// <summary>
+        /// Returns:
+        ///     uint: The consecutive nonempty native mount entries beginning at a hardpoint.
+        /// </summary>
+        private uint CountMounts(int first)
+        {
+            uint count = 0;
+            for (int slot = first; slot < first + 6 && slot < MountMasks.Length && MountMasks[slot] != 0; slot++)
+                count++;
+            return count;
+        }
         public bool Firing;
 
         /// <summary>

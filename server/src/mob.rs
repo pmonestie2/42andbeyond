@@ -161,6 +161,9 @@ pub struct Mob {
     /// An explicit developer override survives world reloads without replacing public content.
     #[serde(default)]
     pub developer_level: Option<u32>,
+    /// A cleared actor retains its identity slot but cannot respawn or award a kill.
+    #[serde(default)]
+    pub developer_removed: bool,
     pub state: MobState,
     pub position: [f32; 3],
     #[serde(default)]
@@ -269,6 +272,7 @@ impl Mob {
             u64::from(definition.source_id) ^ (u64::from(definition.template_id) << 32);
         Self {
             developer_level: None,
+            developer_removed: false,
             position: definition.spawn,
             speed: 0.,
             motion: Motion::default(),
@@ -467,6 +471,20 @@ impl Mob {
         }
         self.apply_damage(damage);
     }
+    /// Despawn without a kill generation or credit, retaining the identity slot for durable receipts.
+    pub(crate) fn developer_remove(&mut self) {
+        self.developer_removed = true;
+        self.state = MobState::Dead;
+        self.health = 0.;
+        self.shield = 0.;
+        self.killer = None;
+        self.respawn_remaining = 0.;
+        self.stop_motion();
+        self.aggro.clear();
+        self.sensors.clear();
+        self.warnings.clear_contacts();
+    }
+
     fn apply_damage(&mut self, damage: f32) {
         if self.state == MobState::Dead || !damage.is_finite() || damage <= 0. {
             return;
@@ -911,6 +929,9 @@ impl Mob {
         visible: bool,
         mode: TargetingMode,
     ) -> f32 {
+        if self.developer_removed {
+            return 0.;
+        }
         if self.state == MobState::Dead {
             self.respawn_remaining = (self.respawn_remaining - dt).max(0.);
             if self.respawn_remaining <= 0. {

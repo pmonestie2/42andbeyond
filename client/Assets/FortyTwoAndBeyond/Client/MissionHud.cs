@@ -8,6 +8,7 @@ namespace FortyTwoAndBeyond.Client
     /// <summary>Show native mission journal entries and server-owned objectives.</summary>
     public sealed class MissionHud
     {
+        private readonly HudWindowDrag windowDrag = new HudWindowDrag();
         private readonly SpaceClient client;
         private readonly FlightHud flightHud;
         private Vector2 missionScroll, historyScroll, factionScroll;
@@ -27,6 +28,9 @@ namespace FortyTwoAndBeyond.Client
         /// <summary>Dismiss this panel when its owning flight context closes.</summary>
         public void Close() { open = false; }
 
+        /// <returns>bool: Whether the mission panel is open.</returns>
+        public bool IsOpen => open;
+
         /// <summary>
         /// Returns:
         ///     Rect: The toolbar button's scaled canvas bounds.
@@ -44,7 +48,7 @@ namespace FortyTwoAndBeyond.Client
         ///     Rect: The journal panel's scaled canvas bounds.
         /// </summary>
         private Rect PanelRect()
-        { return new Rect((CanvasWidth - 720) * .5f, 86, 720, Mathf.Min(490, CanvasHeight - 115)); }
+        { return windowDrag.Bounds(new Rect((CanvasWidth - 720) * .5f, 86, 720, Mathf.Min(490, CanvasHeight - 115)), CanvasWidth, CanvasHeight); }
 
         /// <summary>Draw a translucent accent without changing later GUI colors.</summary>
         private static void Tint(Rect rect, Color color)
@@ -72,7 +76,7 @@ namespace FortyTwoAndBeyond.Client
         public void Draw(Snapshot snapshot)
         {
             if (snapshot?.Ready != true || snapshot.Dialogue != null) { open = false; return; }
-            MissionState[] visible = snapshot.Missions.Where(mission => mission?.Visible == true).ToArray();
+            MissionState[] visible = snapshot.Missions.Where(mission => mission != null).ToArray();
             if (!flightHud.RetainedVisible && GUI.Button(ButtonRect(snapshot), "MISSIONS  " + visible.Length, flightHud.ButtonStyle))
                 open = !open;
             if (!open) return;
@@ -92,8 +96,8 @@ namespace FortyTwoAndBeyond.Client
                     fontStyle = FontStyle.Bold };
                 standingValue.normal.textColor = new Color(.81f, .94f, 1f);
             }
-            Rect panel = PanelRect();
-            flightHud.Panel(panel);
+            Rect panel = windowDrag.Handle(PanelRect(), CanvasWidth, CanvasHeight);
+            flightHud.Panel(panel); HudWindowDrag.DrawGrip(panel);
             if (!factionsTab)
             {
                 Tint(new Rect(panel.x + 8, panel.y + 68, 277, panel.height - 77),
@@ -101,14 +105,16 @@ namespace FortyTwoAndBeyond.Client
                 Tint(new Rect(panel.x + 285, panel.y + 69, 1, panel.height - 80),
                     new Color(.34f, .68f, .8f, .28f));
             }
-            GUI.Label(new Rect(panel.x + 19, panel.y + 15, 315, 27),
+            GUI.Label(new Rect(panel.x + 36, panel.y + 15, 298, 27),
                 factionsTab ? "FACTION STANDINGS" : "MISSION JOURNAL", flightHud.BodyStyle);
-            if (GUI.Button(new Rect(panel.x + 438, panel.y + 14, 124, 31), "MISSIONS", flightHud.ButtonStyle))
+            if (GUI.Button(new Rect(panel.x + 410, panel.y + 14, 112, 31), "MISSIONS", flightHud.ButtonStyle))
                 factionsTab = false;
-            if (GUI.Button(new Rect(panel.x + 570, panel.y + 14, 130, 31), "FACTIONS", flightHud.ButtonStyle))
+            if (GUI.Button(new Rect(panel.x + 530, panel.y + 14, 116, 31), "FACTIONS", flightHud.ButtonStyle))
                 factionsTab = true;
-            Tint(new Rect(panel.x + (factionsTab ? 570 : 438), panel.y + 47,
-                factionsTab ? 130 : 124, 2), new Color(.36f, .83f, 1f, .9f));
+            if (GUI.Button(new Rect(panel.x + 654, panel.y + 14, 45, 31), "×", flightHud.ButtonStyle))
+            { Close(); return; }
+            Tint(new Rect(panel.x + (factionsTab ? 530 : 410), panel.y + 47,
+                factionsTab ? 116 : 112, 2), new Color(.36f, .83f, 1f, .9f));
             if (factionsTab) { DrawFactions(snapshot, panel); return; }
             GUI.Label(new Rect(panel.x + 19, panel.y + 43, panel.width - 38, 21),
                 "SERVER JOURNAL   /   OBJECTIVES UPDATE AS YOU PLAY", eyebrowText);

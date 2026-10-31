@@ -24,15 +24,25 @@ internal static class Program
         }
         CheckReassembly(); SectorTransportChecks.Check(exerciseLoopback: false);
         CheckWorld(); CheckMissionJournal(); CheckMissionDialogue();
-        CheckExperience(); CheckHullProgression(); CheckReputation(); CheckMiningPhases(); CheckLootTractor(); CheckLootSweep(); CheckWarpPhases(); CheckNavigationSelection(); CheckWarpTargets(); CheckWeaponReady();
-        CheckDamageResults(); CheckCombatEngagement(); CheckAttackerSelection(); CheckShotPresentation(); CheckContactSelection(); CheckTargetVerbs(); CheckDeviceEffects();
+        CheckExperience(); NativeExperienceProgressChecks.Check(); CheckHullProgression(); CheckReputation(); CheckMiningPhases(); CheckLootTractor(); CheckLootSweep(); CheckWarpPhases(); CheckNavigationSelection(); CheckWarpTargets(); CheckWeaponReady();
+        CheckContactCapacities(); CheckDamageResults(); CheckCombatEngagement(); CheckAttackerSelection(); CheckHostileSelection(); CheckSelectableObjects(); CheckShotPresentation(); CheckContactSelection(); CheckTargetVerbs(); CheckDeviceEffects();
         CheckNativeDeviceBuff(); CheckPeerScanBuff(); CheckConcurrentRecipientBuffs();
-        CheckAllNativeBuffSlots(); CheckFullActiveDeviceSnapshot(); CheckSupportObjectEffects(); CheckShipDefense();
-        CheckAmmunitionTransfer(); CheckVaultStackPlacement(); CheckEquippedEffects(); CheckFlightThrottle(); CheckFormationAnchor();
+        CheckAllNativeBuffSlots(); CheckFullActiveDeviceSnapshot(); CheckSupportObjectEffects(); CheckSectorTransit(); CheckShipDefense();
+        CheckAmmunitionTransfer(); CheckLauncherAmmo(); CheckVaultStackPlacement(); CheckEquippedEffects(); CheckFlightThrottle(); CheckFormationAnchor(); SectorLivenessChecks.Check();
+        CheckNativeChat();
         CheckAbilityTargets(); CheckSkillTraining(); CheckCharacterRoster();
-        CheckStationLayout(); CheckStationWalk(); CheckDemoRoster(); CheckAddress(); PeerChecks.Decode();
-        Console.WriteLine("PASS: framing, ordering, fragmentation, duplicates, bounds, world decoding, private addresses");
+        TradeChecks.Check(); GlobalAuxPrefixChecks.Check(); NativeChatCompatibilityChecks.Check(); NativeShipCompatibilityChecks.Check(); StationContactCompatibilityChecks.Check();
+        NativeDialogueCompatibilityChecks.Check(); RemotePoseTimingChecks.Check(); MovementTelemetryChecks.Check(); TimedPercentChecks.Check(); NativeMotionReportChecks.Check();
+        NativeWreckCompatibilityChecks.Check();
+        NativeLootHandshakeChecks.Check();
+        NativePriorityNoticeChecks.Check();
+        SectorHandoffPeerChecks.Check(); NativeMountCapacityChecks.Check();
+        NativeSkillRankCompatibilityChecks.Check();
+        CheckStationLayout(); CheckStationWalk(); CheckDemoRoster(); CheckAddress(); ServerHistoryChecks.Check(); PeerChecks.Decode();
+        Console.WriteLine("PASS: framing, ordering, fragmentation, duplicates, bounds, world decoding, server hostnames and IPv4 addresses");
         if (args.Length == 2 && args[0] == "--server") { PeerChecks.Live(args[1]); CheckServer(args[1]); }
+        else if (args.Length == 2 && args[0] == "--handoff-server") SectorHandoffPeerChecks.Live(args[1]);
+        else if (args.Length == 2 && args[0] == "--area-recharge-server") RechargeAbilityChecks.AreaLive(args[1]);
         else if (args.Length == 2 && args[0] == "--recharge-server") RechargeAbilityChecks.Live(args[1]);
         else if (args.Length == 2 && args[0] == "--support-server") SupportAbilityChecks.Live(args[1]);
         else if (args.Length == 2 && args[0] == "--enemy-ability-server") EnemyAbilityChecks.Live(args[1]);
@@ -44,17 +54,20 @@ internal static class Program
         else if (args.Length == 2 && args[0] == "--cleaner-turnin-server") SpaceMissionChecks.CleanerTurnIn(args[1]);
         else if (args.Length == 2 && args[0] == "--te-message-accept-server") SpaceMissionChecks.TeMessageAccept(args[1]);
         else if (args.Length == 2 && args[0] == "--te-message-complete-server") SpaceMissionChecks.TeMessageComplete(args[1]);
-        else if (args.Length != 0) throw new ArgumentException("Usage: ProtocolChecks [--server PRIVATE_IP|--recharge-server PRIVATE_IP|--support-server PRIVATE_IP|--enemy-ability-server PRIVATE_IP|--skill-server PRIVATE_IP|--skill-resume-server PRIVATE_IP]");
+        else if (args.Length == 2 && args[0] == "--native-wreck-capture")
+            Console.WriteLine("PASS: captured native corpse inventories=" + NativeWreckCompatibilityChecks.CheckCapturedWrecks(args[1]));
+        else if (args.Length != 0) throw new ArgumentException("Usage: ProtocolChecks [--server PRIVATE_IP|--area-recharge-server PRIVATE_IP|--recharge-server PRIVATE_IP|--support-server PRIVATE_IP|--enemy-ability-server PRIVATE_IP|--skill-server PRIVATE_IP|--skill-resume-server PRIVATE_IP]");
     }
 
     /// <summary>Keep server-selected support abilities distinct from self and combat casts.</summary>
     private static void CheckAbilityTargets()
     {
-        foreach (uint id in new uint[] { 31, 32, 44, 45, 48, 68, 89, 95, 125, 128,
+        foreach (uint id in new uint[] { 9, 14, 60, 61, 31, 32, 44, 45, 48, 68, 89, 95, 125, 128,
             122, 130, 74 })
             Assert(AbilityTargets.Directed(id), "Directed support ability lost target acknowledgment.");
         Assert(AbilityTargets.CrewOnly(44) && AbilityTargets.CrewOnly(125) &&
             !AbilityTargets.CrewOnly(89) && !AbilityTargets.CrewOnly(95) &&
+            !AbilityTargets.CrewOnly(14) && !AbilityTargets.CrewOnly(61) &&
             !AbilityTargets.CrewOnly(122) &&
             AbilityTargets.RequiresPeer(125) && !AbilityTargets.RequiresPeer(44) &&
             !AbilityTargets.Directed(77) && !AbilityTargets.Directed(91) &&
@@ -101,6 +114,43 @@ internal static class Program
         byte[] invalidClass = (byte[])body.Clone(); invalidClass[179] = 3;
         Reject(() => CharacterInfo.DecodeRoster(invalidClass));
         Reject(() => CharacterInfo.DecodeRoster(new byte[20]));
+        byte[] multiple = (byte[])body.Clone();
+        Buffer.BlockCopy(body, 0, multiple, 4 * 374, 374);
+        byte[] secondName = Encoding.ASCII.GetBytes("SecondPilot\0");
+        Buffer.BlockCopy(secondName, 0, multiple, 4 * 374 + 133, secondName.Length);
+        CharacterInfo[] sparse = CharacterInfo.DecodeRoster(multiple);
+        Assert(sparse.Length == 2 && sparse[0].Slot == 0 && sparse[1].Slot == 4 && sparse[1].Name == "SecondPilot",
+            "Roster treated the first pilot's galaxy ID as a count or lost a pilot after empty slots.");
+        Array.Clear(multiple, 0, 374);
+        CharacterInfo[] lastOnly = CharacterInfo.DecodeRoster(multiple);
+        Assert(lastOnly.Length == 1 && lastOnly[0].Slot == 4,
+            "An empty first slot hid a later pilot or changed its selection slot.");
+        byte[] allSlots = (byte[])body.Clone();
+        for (int slot = 1; slot < 5; slot++) Buffer.BlockCopy(body, 0, allSlots, slot * 374, 374);
+        Assert(CharacterInfo.DecodeRoster(allSlots).Select(pilot => pilot.Slot).SequenceEqual(new[] { 0, 1, 2, 3, 4 }),
+            "A full five-pilot roster was truncated.");
+    }
+
+    /// <summary>Keep native contact capacities through partial AUX updates and immutable pose/name revisions.</summary>
+    private static void CheckContactCapacities()
+    {
+        var actor=new ShipActor(77,1,1,"Mob",default,new float[]{0,0,0,1},false,isPlayer:false);
+        var mask=new byte[8];mask[0]=2;
+        foreach(int field in new[]{0,1,6,7,8,9,26})mask[(field+4)/8]|=(byte)(1<<((field+4)%8));
+        byte[] percent=new byte[]{0x42,0x00,0x00,0x00,0x3f}; // nested field 2 = 0.5f
+        // AUX percent mask has seven bits (four header, three fields).
+        byte[] peerName=new byte[]{4,0,(byte)'P',(byte)'e',(byte)'e',(byte)'r'};
+        byte[] record=mask.Concat(peerName).Concat(peerName).Concat(percent).Concat(BitConverter.GetBytes(100000f))
+            .Concat(BitConverter.GetBytes(80000f)).Concat(BitConverter.GetBytes(120000f)).Concat(BitConverter.GetBytes(50u)).ToArray();
+        byte[] body=BitConverter.GetBytes(77u).Concat(BitConverter.GetBytes((ushort)(record.Length+1)))
+            .Concat(new byte[]{1}).Concat(record).ToArray();
+        var world=new World();world.Mobs[77]=actor;world.Apply(new Frame(0x1b,body),1);
+        ShipActor decoded=world.Mobs[77];
+        Assert(decoded.Name=="Peer" && decoded.MaxShield==100000 && decoded.Shield==.5f && decoded.MaxHull==120000 && decoded.CombatLevel==50,
+            "Contact shield capacity or fraction was lost.");
+        var moved=decoded.WithFormationPose(new Position(1,2,3),new float[]{0,0,0,1}).WithName("Renamed");
+        Assert(moved.MaxShield==100000 && moved.Shield*moved.MaxShield==50000 && actor.MaxShield==-1 && moved.CombatLevel==50 && actor.CombatLevel==null,
+            "Pose/name revisions lost capacity or mutated an earlier snapshot.");
     }
 
     /// <summary>Fail with a useful behavior description.</summary>
@@ -145,6 +195,17 @@ internal static class Program
         var world = new World(); world.Apply(new Frame(0x2018, body), 1);
         var snapshot = new Snapshot(world, "test", true);
         Assert(snapshot.Objects[0].Scale == 2 && snapshot.Objects[0].Orientation[3] == 1, "Object transform was not decoded.");
+        byte[] navigation = new byte[14]; navigation[0] = 77;
+        world.Apply(new Frame(0x99, navigation), 1);
+        Assert(!world.Objects[77].Navigable && snapshot.Objects[0].Navigable,
+            "Navigation update mutated an earlier snapshot.");
+        navigation[9] = 2;
+        world.Apply(new Frame(0x99, navigation), 1);
+        Assert(world.Objects[77].Navigable, "Discovered navigation was not restored.");
+        navigation[0] = 78;
+        world.Apply(new Frame(0x99, navigation), 1);
+        Assert(world.Objects.Count == 1, "Navigation update invented an unknown object.");
+        Reject(() => world.Apply(new Frame(0x99, new byte[13]), 1));
         world.Apply(new Frame(7, new byte[] { 77, 0, 0, 0 }), 1);
         Assert(snapshot.Objects.Length == 1 && snapshot.Objects[0].Kind == 11 && world.Objects.Count == 0, "Snapshot retained mutable world storage.");
         body[58] = 5; Reject(() => new MapObject(body));
@@ -153,6 +214,10 @@ internal static class Program
         Assert(!world.HasPosition, "Accepted a different player's movement.");
         movement[2] = 1; world.Apply(new Frame(0x3e, movement), 1);
         Assert(world.HasPosition, "Ignored matching player movement.");
+        var poseSnapshot=new Snapshot(world,"pose",true);
+        Assert(poseSnapshot.OwnPoseSequence==1&&poseSnapshot.OwnPoseReceivedAt>0,"Own pose has no receipt identity/time.");
+        world.Apply(new Frame(0x3e,movement),1);
+        Assert(world.OwnPoseSequence==2&&poseSnapshot.OwnPoseSequence==1,"Identical movement packets lost identity or mutated an earlier snapshot.");
         byte[] turboStart = Wire.Body(w => { w.Write((ushort)37); w.Write((byte)0);
             w.Write(System.Text.Encoding.ASCII.GetBytes("Turbo Weapons active for 10 seconds.\0")); });
         world.Apply(new Frame(0x1d, turboStart), 1);
@@ -204,6 +269,61 @@ internal static class Program
             "Native mission journal did not decode its first active stage.");
         Assert(first.Missions.Skip(1).All(mission => mission == null),
             "Native mission reset slots remained populated.");
+        byte[] marker = System.Text.Encoding.ASCII.GetBytes("Learn about combat");
+        int summaryAt = -1;
+        for (int index = 2; index <= missions.Length - marker.Length; index++)
+            if (missions.Skip(index).Take(marker.Length).SequenceEqual(marker))
+            { summaryAt = index; break; }
+        Assert(summaryAt > 2, "Native mission summary fixture was not found.");
+        int oldSummaryLength = Wire.U16(missions, summaryAt - 2);
+        byte[] longSummary = Enumerable.Repeat((byte)'S', 144).ToArray();
+        byte[] expandedMissions = missions.Take(summaryAt - 2)
+            .Concat(BitConverter.GetBytes((ushort)longSummary.Length)).Concat(longSummary)
+            .Concat(missions.Skip(summaryAt + oldSummaryLength)).ToArray();
+        expandedMissions[summaryAt + longSummary.Length] = 0; // Native IsFullyVisible, not acceptance.
+        byte[] expandedAux = Wire.Body(writer =>
+        {
+            writer.Write(0u); writer.Write((ushort)(expandedMissions.Length + 4)); writer.Write((byte)1);
+            writer.Write(new byte[] { 2, 0x20, 0 }); writer.Write(expandedMissions);
+        });
+        var expandedWorld = new World(); expandedWorld.Apply(new Frame(0x1b, expandedAux), 1);
+        Assert(expandedWorld.Missions[0]?.Summary.Length == 144 &&
+            !expandedWorld.Missions[0].FullyVisible,
+            "A production-length, partially revealed accepted mission was rejected.");
+        var migratedWorld = new World(2); migratedWorld.InheritCharacterProgress(world);
+        Assert(migratedWorld.Missions[0]?.Name == first.Missions[0].Name &&
+            !ReferenceEquals(migratedWorld.Missions, world.Missions),
+            "A sector handoff lost or shared the accepted mission array.");
+        byte[] stageTwoRecord = Wire.Body(writer =>
+        {
+            writer.Write(new byte[] { 0x12, 0 }); // Mission slot zero only.
+            writer.Write(new byte[] { 2, 0, 0x18 }); // Stage number and reached-stage record.
+            writer.Write(2u);
+            writer.Write(new byte[] { 0x22, 0, 0 }); // Reached stage one only.
+            writer.Write((byte)0x12); // Stage description.
+            byte[] description = System.Text.Encoding.ASCII.GetBytes("Return to station");
+            writer.Write((ushort)description.Length); writer.Write(description);
+        });
+        byte[] stageTwo = Wire.Body(writer =>
+        {
+            writer.Write(0u); writer.Write((ushort)(stageTwoRecord.Length + 4)); writer.Write((byte)1);
+            writer.Write(new byte[] { 2, 0x20, 0 }); writer.Write(stageTwoRecord);
+        });
+        migratedWorld.Apply(new Frame(0x1b, stageTwo), 1);
+        Assert(migratedWorld.Missions[0]?.Stage == 2 &&
+            migratedWorld.Missions[0].Objective == "Return to station" &&
+            first.Missions[0].Stage == 1,
+            "A partial mission objective update lost prior stages or changed an earlier snapshot.");
+        byte[] nativeMissions = (byte[])missions.Clone();
+        nativeMissions[2] |= 1; // Populated mission slot retains its nested type bit.
+        byte[] typedAux = Wire.Body(writer =>
+        {
+            writer.Write(0u); writer.Write((ushort)(nativeMissions.Length + 6)); writer.Write((byte)1);
+            writer.Write(new byte[] { 6, 0x20, 0, 0x80, 0 }); writer.Write(nativeMissions);
+        });
+        var nativeWorld = new World(); nativeWorld.Apply(new Frame(0x1b, typedAux), 1);
+        Assert(nativeWorld.Missions[0]?.Name == first.Missions[0].Name,
+            "Populated native container type bits were mistaken for mission resets.");
         world.Apply(new Frame(0x1b, Wire.Body(writer =>
         {
             writer.Write(0u); writer.Write((ushort)7); writer.Write((byte)1);
@@ -606,7 +726,20 @@ internal static class Program
         world.Apply(new Frame(0x1b, phase(3, 3)), 1);
         Assert(world.Warp.Phase == WarpPhase.Recovering && !world.Warp.Arrived,
             "Cancelled warp recovery was mistaken for arrival.");
-        Reject(() => world.Apply(new Frame(0x1b, phase(2, 3)), 1));
+        world.Apply(new Frame(0x1b, phase(2, 3)), 1);
+        Assert(world.Warp.Phase == WarpPhase.Recovering, "A valid transitional native warp pair disconnected the session.");
+        byte[] partial(bool local, uint value) => Wire.Body(writer =>
+        {
+            writer.Write(1u); writer.Write((ushort)13); writer.Write((byte)1);
+            writer.Write(new byte[] { 2, 0, 0, 0, (byte)(local ? 8 : 16), 0, 0, 0 }); writer.Write(value);
+        });
+        world.Apply(new Frame(0x1b, partial(false, 1)), 1);
+        world.Apply(new Frame(0x1b, partial(true, 2)), 1);
+        Assert(world.Warp.Phase == WarpPhase.Charging, "Private-only revision erased the retained global warp phase.");
+        world.Apply(new Frame(0x1b, partial(false, 2)), 1);
+        Assert(world.Warp.Phase == WarpPhase.Traveling, "Global-only warp revision did not advance the phase.");
+        Reject(() => world.Apply(new Frame(0x1b, phase(12, 3)), 1));
+        Reject(() => world.Apply(new Frame(0x1b, phase(2, 4)), 1));
         byte[] ahead = WarpState.RouteRequest(0x12345678, 0);
         Assert(ahead.Length == 6 && Wire.U32(ahead, 0) == 0x345678 && Wire.U16(ahead, 4) == 0,
             "Free-flight and cancel warp did not encode a zero-waypoint native route.");
@@ -628,6 +761,7 @@ internal static class Program
         world.ItemCatalog[123] = new ItemTemplateInfo(123, 15, "Test projectile", "");
         world.Equipment.Mounted[3] = new ItemState { Template = 123, Quantity = 1 };
         byte[] movement = new byte[46];
+        movement[0] = 1; // The trailing speed word is present in this native fixture.
         Array.Copy(BitConverter.GetBytes(1u), 0, movement, 2, 4);
         Array.Copy(BitConverter.GetBytes(4500u), 0, movement, 6, 4);
         world.Apply(new Frame(0x3e, movement), 1);
@@ -716,6 +850,63 @@ internal static class Program
         Assert(departed.Attackers.Count == 0 && ThreatSelection.Next(departed, 0) == 0,
             "A departed attacker remained in the threat list or target cycle.");
         Reject(() => world.Apply(new Frame(0x8b, new byte[] { 1, 0, 0, 0, 2, 1, 0, 0, 16 }), 1));
+    }
+
+    /// <summary>Separate nearest-hostile selection from stable next-hostile cycling and ignore neutral or unplaced actors.</summary>
+    private static void CheckHostileSelection()
+    {
+        var world = new World();
+        byte[] movement = new byte[38];
+        Array.Copy(BitConverter.GetBytes(1u), 0, movement, 2, 4);
+        world.Apply(new Frame(0x3e, movement), 1);
+        foreach (var pair in new[] { (Id: 30u, Range: 1500f), (Id: 20u, Range: 400f), (Id: 10u, Range: 400f) })
+            world.Mobs[pair.Id] = new ShipActor(pair.Id, 0, 1, "Enemy", new Position(pair.Range, 0, 0),
+                new[] { 0f, 0f, 0f, 1f }, true, false, true);
+        world.Mobs[40] = new ShipActor(40, 0, 1, "Neutral", new Position(10, 0, 0), new[] { 0f, 0f, 0f, 1f }, true, false, false);
+        world.Mobs[50] = new ShipActor(50, 0, 1, "Unplaced", default, new[] { 0f, 0f, 0f, 1f }, false, false, true);
+        var snapshot = new Snapshot(world, "ready", true);
+        Assert(ThreatSelection.NearestHostile(snapshot) == 10 && ThreatSelection.NearestHostile(snapshot) == 10,
+            "Nearest-hostile selection cycled or targeted a neutral/unplaced actor.");
+        Assert(ThreatSelection.NextHostile(snapshot, 10) == 20 && ThreatSelection.NextHostile(snapshot, 20) == 30 &&
+            ThreatSelection.NextHostile(snapshot, 30) == 10 && ThreatSelection.NextHostile(snapshot, 99) == 10,
+            "Next-hostile selection did not use stable distance order and wrap.");
+        world.Mobs.Clear();
+        Assert(ThreatSelection.NearestHostile(new Snapshot(world, "ready", true)) == 0 &&
+            ThreatSelection.NextHostile(null, 10) == 0 && ThreatSelection.NearestHostile(snapshot) == 10,
+            "Empty target lists or immutable snapshots changed hostile selection.");
+    }
+
+    /// <summary>Include corpses, resources, players and navigation in nearest/next selection without targeting self or scenery.</summary>
+    private static void CheckSelectableObjects()
+    {
+        var world = new World();
+        byte[] movement = new byte[38]; Array.Copy(BitConverter.GetBytes(1u), 0, movement, 2, 4);
+        world.Apply(new Frame(0x3e, movement), 1);
+        foreach (var item in new[] { (Id: 100u, Kind: (byte)25, Range: 100f),
+            (Id: 150u, Kind: (byte)38, Range: 150f), (Id: 400u, Kind: (byte)11, Range: 400f),
+            (Id: 50u, Kind: (byte)1, Range: 1f) })
+        {
+            byte[] body = new byte[64]; Array.Copy(BitConverter.GetBytes(item.Id), body, 4);
+            body[4] = item.Kind; Array.Copy(BitConverter.GetBytes(1f), 0, body, 7, 4);
+            Array.Copy(BitConverter.GetBytes(item.Range), 0, body, 25, 4);
+            Array.Copy(BitConverter.GetBytes(1f), 0, body, 49, 4); body[58] = 4;
+            Array.Copy(Encoding.UTF8.GetBytes("Test"), 0, body, 60, 4);
+            world.Objects[item.Id] = new MapObject(body);
+        }
+        world.Players[200] = new ShipActor(200, 0, 1, "Pilot", new Position(200, 0, 0), new[] {0f,0f,0f,1f}, true);
+        world.Mobs[300] = new ShipActor(300, 0, 1, "Enemy", new Position(300, 0, 0), new[] {0f,0f,0f,1f}, true, false, true);
+        var snapshot = new Snapshot(world, "ready", true);
+        Assert(ThreatSelection.NearestSelectable(snapshot) == 100, "Nearest selection excluded a corpse or included scenery.");
+        uint[] order = { 100, 150, 200, 300, 400, 100 };
+        for (int i = 0; i < order.Length - 1; i++)
+            Assert(ThreatSelection.NextSelectable(snapshot, order[i]) == order[i+1], "All-object cycling skipped a selectable category or failed to wrap.");
+        Assert(ThreatSelection.NearestSelectable(snapshot, ContactCategoryFilter.NonEnemy) == 100 &&
+            ThreatSelection.NextSelectable(snapshot, 200, ContactCategoryFilter.NonEnemy) == 400 &&
+            ThreatSelection.NextSelectable(snapshot, 400, ContactCategoryFilter.NonEnemy) == 100,
+            "Non-enemy cycling selected a hostile, skipped a navpoint or failed to wrap.");
+        world.Objects.Remove(100);
+        Assert(ThreatSelection.NearestSelectable(new Snapshot(world, "ready", true)) == 150 &&
+            ThreatSelection.NearestSelectable(snapshot) == 100, "Corpse removal changed an old selection snapshot.");
     }
 
     /// <summary>Separate armed intent and approximate guidance from actual server shots.</summary>
@@ -1142,6 +1333,55 @@ internal static class Program
             "Effect removal mutated an earlier immutable support snapshot.");
     }
 
+    /// <summary>Retain native gate approval and same-batch wormhole completion through handoff.</summary>
+    private static void CheckSectorTransit()
+    {
+        var world = new World(1015);
+        byte[] gate = Wire.Body(writer => { writer.Write(123u); writer.Write(1u); });
+        world.Apply(new Frame(0x31, gate), 1);
+        var active = new Snapshot(world, "gate", true);
+        long started = active.Gates.Single().StartedAt;
+        world.Apply(new Frame(0x31, gate), 1);
+        Assert(world.Gates[123].StartedAt == started, "Repeated gate approval restarted the animation.");
+        world.Apply(new Frame(0x92, new byte[] { 0,0,0,4, 0,0,0,123 }), 1);
+        Assert(world.TransferKind() == 1 && new Snapshot(world, "gate", true).GateCameraTarget == 123,
+            "Native big-endian gate camera did not identify a gate transfer.");
+        gate[4] = 3; world.Apply(new Frame(0x31, gate), 1);
+        Assert(world.TransferKind() == 0 && world.Gates.Count == 0 && active.Gates.Length == 1,
+            "Gate cancellation leaked state or mutated the previous render snapshot.");
+        Reject(() => world.Apply(new Frame(0x31, new byte[7]), 1));
+        Reject(() => world.Apply(new Frame(0x92, new byte[9]), 1));
+        world.Apply(new Frame(0x09, Wire.Body(writer => {
+            writer.Write((byte)3); writer.Write(1u); writer.Write((ushort)689); writer.Write(99u); writer.Write(1u);
+        })), 1);
+        Assert(world.TransferKind() == 2, "Wormhole startup was not recognized.");
+        world.Apply(new Frame(0x0f, Wire.Body(writer => writer.Write(99u))), 1);
+        Assert(world.TransferKind() == 0, "Canceled casts must not masquerade as completed wormholes.");
+        byte[] Aux(int count, params (int Index, byte[] Value)[] fields)
+        {
+            var record = new byte[(4 + count + 7) / 8]; record[0] = 2;
+            foreach (var field in fields)
+                record[(field.Index + 4) / 8] |= (byte)(1 << ((field.Index + 4) % 8));
+            return record.Concat(fields.OrderBy(field => field.Index).SelectMany(field => field.Value)).ToArray();
+        }
+        for (int busy = 0; busy < 512; busy++) world.Apply(new Frame(0xffff, Array.Empty<byte>()), 1);
+        byte[] cooldown = Aux(18, (6, Aux(16, (2, Aux(64, (15, Aux(7,
+            (1, BitConverter.GetBytes(10000u)), (2, BitConverter.GetBytes(500u)))))))));
+        world.Apply(new Frame(0x1b, BitConverter.GetBytes(0u)
+            .Concat(BitConverter.GetBytes((ushort)(cooldown.Length + 1)))
+            .Concat(new byte[] { 1 }).Concat(cooldown).ToArray()), 1);
+        Assert(world.TransferKind() == 2, "Confirmed completion lost its handoff cause.");
+        Thread.Sleep(1100);
+        Assert(world.TransferKind() == 2, "Reliable handoff retransmission expired by wall time.");
+        for (int index = 0; index < 512; index++) world.Apply(new Frame(0xffff, Array.Empty<byte>()), 1);
+        Assert(world.TransferKind() == 2, "Busy sector traffic erased a confirmed wormhole before handoff.");
+        world.ClearTransferIntent();
+        Assert(world.TransferKind() == 0, "An explicit replacement action retained stale completion.");
+        var reentered = new Snapshot(new World(1015) { EntryGeneration = 2, ArrivalKind = 2 }, "ready", true);
+        Assert(reentered.EntryGeneration == 2 && reentered.SectorId == world.SectorId && reentered.ArrivalKind == 2,
+            "Same-sector handoffs lost their distinct entry identity.");
+    }
+
     /// <summary>Recognize catalog-backed active devices and their server notices.</summary>
     private static void CheckDeviceEffects()
     {
@@ -1253,6 +1493,71 @@ internal static class Program
         string hex = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", name)).Trim();
         return Enumerable.Range(0, hex.Length / 2)
             .Select(index => Convert.ToByte(hex.Substring(index * 2, 2), 16)).ToArray();
+    }
+
+    /// <summary>Reject malformed launcher snapshots and preserve authoritative cargo choices across revisions.</summary>
+    private static void CheckLauncherAmmo()
+    {
+        const uint owner = 0x40000001;
+        byte[] body = Wire.Body(writer =>
+        {
+            writer.Write(owner); writer.Write(1u);
+            writer.Write(3u); writer.Write(1u); writer.Write(507u);
+            writer.Write(2u); writer.Write(0u); writer.Write(7u);
+        });
+        var world = new World();
+        world.Apply(new Frame(0x203c, body), owner);
+        LauncherAmmoState view = new Snapshot(world, "", true).LauncherAmmo;
+        Assert(view.Known && view.Launchers.Count == 1 && view.Launchers[0].Mount == 3 &&
+            view.Launchers[0].AutoReload && view.Launchers[0].PreviousTemplate == 507 &&
+            view.Launchers[0].CargoSlots.SequenceEqual(new[] { 0, 7 }),
+            "Authoritative compatible ammunition or reload choice was lost.");
+        body[body.Length - 4] = 9;
+        Assert(view.Launchers[0].CargoSlots[1] == 7,
+            "A published launcher choice changed with its input buffer.");
+        byte[] reset = Wire.Body(writer =>
+        {
+            writer.Write(owner); writer.Write(1u);
+            writer.Write(3u); writer.Write(0u); writer.Write(507u); writer.Write(0u);
+        });
+        world.Apply(new Frame(0x203c, reset), owner);
+        Assert(!world.LauncherAmmo.Launchers[0].AutoReload &&
+            world.LauncherAmmo.Launchers[0].CargoSlots.Count == 0 && view.Launchers[0].AutoReload,
+            "A preference revision mutated the earlier immutable view.");
+        Reject(() => LauncherAmmoState.Decode(reset, owner + 1));
+        Reject(() => LauncherAmmoState.Decode(Wire.Body(writer =>
+        { writer.Write(owner); writer.Write(1u); writer.Write(9u); writer.Write(1u); writer.Write(0u); writer.Write(0u); }), owner));
+        Reject(() => LauncherAmmoState.Decode(Wire.Body(writer =>
+        { writer.Write(owner); writer.Write(1u); writer.Write(3u); writer.Write(1u); writer.Write(0u); writer.Write(1u); writer.Write(40u); }), owner));
+    }
+
+    /// <summary>Decode the Rust-authored chat fixture and keep bounded scrollback revisions immutable.</summary>
+    private static void CheckNativeChat()
+    {
+        byte[] body = FixtureBytes("native_chat_event.hex");
+        NativeChatNotice notice = NativeChatNotice.Decode(body);
+        Assert(notice.DisplayLine() == "[General Chat] Alice: Hello", "Native chat display lost its channel or sender.");
+        var world = new World();
+        world.Apply(new Frame(0xa5, body), 1);
+        string[] before = new Snapshot(world, "", true).Messages;
+        for (int index = 0; index < 205; index++) world.Apply(new Frame(0xa5, body), 1);
+        Assert(world.Messages.Count == 200 && before.Length == 1 &&
+            before[0] == "[General Chat] Alice: Hello", "Chat scrollback was unbounded or mutated a published snapshot.");
+        Reject(() => NativeChatNotice.Decode(body.Take(body.Length - 1).ToArray()));
+        byte[] oversized = (byte[])body.Clone(); oversized[8] = 65;
+        Reject(() => NativeChatNotice.Decode(oversized));
+        byte[] unicode = Wire.Body(writer =>
+        {
+            writer.Write(3u); writer.Write(0u);
+            writer.Write((ushort)5); writer.Write(Encoding.UTF8.GetBytes("Alice"));
+            writer.Write((ushort)5); writer.Write(Encoding.UTF8.GetBytes("Alice"));
+            writer.Write((ushort)0);
+            writer.Write((ushort)5); writer.Write(Encoding.UTF8.GetBytes("Local"));
+            writer.Write((ushort)6); writer.Write(Encoding.UTF8.GetBytes("Ça va"));
+            writer.Write(0u); writer.Write((ushort)0);
+        });
+        Assert(NativeChatNotice.Decode(unicode).DisplayLine() == "[Local] Alice: Ça va",
+            "Native chat lost UTF-8 text.");
     }
 
     /// <summary>Move a full ammunition stack while installing single equipment items.</summary>
@@ -1380,6 +1685,17 @@ internal static class Program
         world.Apply(new Frame(0x41, changed), 2);
         Assert(world.Formation.Offset.X == 50 && first.Formation.Offset.X == 100,
             "Formation update changed an older immutable snapshot.");
+        byte[] warpAlignment = Wire.Body(writer =>
+        {
+            writer.Write(100004u); writer.Write(2u);
+            writer.Write(100f); writer.Write(100f); writer.Write(100f);
+        });
+        world.Apply(new Frame(0x41, warpAlignment), 2);
+        Assert(world.Formation.LeaderId == 1 && world.Formation.Offset.X == 50,
+            "Warp alignment for a navigation target replaced our own formation anchor.");
+        byte[] truncatedAlignment = new byte[19];
+        Buffer.BlockCopy(warpAlignment, 0, truncatedAlignment, 0, truncatedAlignment.Length);
+        Reject(() => world.Apply(new Frame(0x41, truncatedAlignment), 2));
         byte[] invalid = (byte[])body.Clone();
         Array.Copy(BitConverter.GetBytes(float.NaN), 0, invalid, 8, 4);
         Reject(() => FormationAnchor.Decode(invalid, 2));
@@ -1407,9 +1723,29 @@ internal static class Program
             "Focus restoration did not resubmit a still-held reverse key.");
         Assert(throttle.Sample(true, false, true, false) == null,
             "Unchanged reverse key repeated a request before steering.");
+        throttle.Sample(true, false, false, false);
+        Assert(throttle.Sample(true, false, true, false, currentSpeed: 100) == 4,
+            "S did not brake forward motion before reversing.");
+        Assert(throttle.Sample(true, false, true, false, currentSpeed: 0) == null,
+            "Holding S accelerated backward after braking to rest.");
+        throttle.Sample(true, false, false, false);
+        Assert(throttle.Sample(true, false, true, false, currentSpeed: 0) == 3,
+            "A fresh S press did not reverse from rest.");
+        Assert(throttle.Sample(true, true, false, false, currentSpeed: -50) == 4,
+            "W did not brake backward motion before accelerating forward.");
+        Assert(throttle.Sample(true, true, false, false, currentSpeed: 0) == null,
+            "Holding W accelerated forward after braking to rest.");
+        throttle.Sample(true, false, false, false);
+        Assert(throttle.Sample(true, true, false, false, currentSpeed: 0) == 2,
+            "A fresh W press did not accelerate forward from rest.");
+        Assert(throttle.Sample(true, true, true, false, currentSpeed: 0) == 4,
+            "Opposing keys together should hold the brake.");
         throttle.Reset();
         Assert(throttle.Sample(true, false, true, false) == 3,
             "Steering away from follow did not resubmit held thrust after the steer command.");
+        throttle.Sample(true, false, false, false);
+        Assert(throttle.Sample(true, false, true, false, currentSpeed: 0, targetSpeed: 200) == 4,
+            "S ignored the authoritative forward target before the next speed update.");
     }
 
     /// <summary>Check packed station room and NPC placement before interior navigation.</summary>
@@ -1497,15 +1833,26 @@ internal static class Program
         Reject(() => DemoRoster.Decode(new byte[] { 1, 10 }));
     }
 
-    /// <summary>Ensure development credentials cannot be submitted to public endpoints.</summary>
+    /// <summary>Check public addresses, hostnames, invalid endpoints and cancelled worker resolution.</summary>
     private static void CheckAddress()
     {
-        foreach (string address in new[] { "127.0.0.1", "10.1.2.3", "172.16.0.1", "192.168.47.128" }) LocalSession.LocalAddress(address);
-        foreach (string address in new[] { "8.8.8.8", "0.0.0.0", "172.32.0.1", "example.com", "::1" })
+        foreach (string address in new[] { "127.0.0.1", "10.1.2.3", "172.16.0.1", "192.168.47.128", "216.219.87.147", "172.32.0.1" })
+            Assert(ServerEndpoint.Resolve(address).ToString() == address, "Rejected or changed a valid IPv4 endpoint.");
+        Assert(ServerEndpoint.NormalizeHost("  game.example.com  ") == "game.example.com", "Hostname was not trimmed.");
+        Assert(ServerEndpoint.DefaultHost == "192.168.47.1", "Local development server default changed.");
+        Assert(System.Net.IPAddress.IsLoopback(ServerEndpoint.Resolve("localhost")), "Local hostname did not resolve on the worker path.");
+        using (var stopped = new System.Threading.CancellationTokenSource())
+        {
+            stopped.Cancel(); bool cancelled = false;
+            try { ServerEndpoint.Resolve("localhost", stopped.Token); }
+            catch (OperationCanceledException) { cancelled = true; }
+            Assert(cancelled, "Cancelled hostname resolution continued.");
+        }
+        foreach (string address in new[] { "", " ", "0.0.0.0", "255.255.255.255", "224.1.2.3", "https://example.com", "example.com:3807", "bad host", "::1" })
         {
             bool rejected = false;
-            try { LocalSession.LocalAddress(address); } catch (ArgumentException) { rejected = true; }
-            Assert(rejected, "Accepted a non-private IPv4 endpoint.");
+            try { ServerEndpoint.NormalizeHost(address); } catch (ArgumentException) { rejected = true; }
+            Assert(rejected, "Accepted an invalid server endpoint: " + address);
         }
     }
 

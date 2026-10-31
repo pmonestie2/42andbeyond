@@ -27,7 +27,10 @@ Shader "42 and Beyond/BlackHolePhoton"
             fixed4 frag(Output i):SV_Target {
                 float angle=atan2(i.radial.y,i.radial.x);
                 float bright=.55+.85*saturate(cos(angle-.65));
-                float flicker=.96+.04*sin(_Time.y*1.8+angle*7);
+                float flicker=.88+.12*sin(_Time.y*1.8+angle*7);
+                float delta=atan2(sin(angle-_Time.y*.48),cos(angle-_Time.y*.48));
+                float eruption=pow(saturate(.5+.5*sin(_Time.y*.62)),10);
+                bright+=exp(-delta*delta*18)*eruption*3.5;
                 return fixed4(_Tint.rgb*_Intensity*bright*flicker,_Tint.a);
             }
             ENDCG

@@ -291,7 +291,8 @@ fn position_update(id: u32, position: [f32; 3], tick: u32, motion: Option<&Motio
     Frame::new(0x3e, data)
 }
 
-/// Two-bit AUX flags have four control bits, N value bits and N default bits.
+/// Two-bit AUX flags have four control bits, N value bits and N default/type bits.
+/// Nested records retain their second bit even when their value bit is set.
 /// A reset nested record additionally carries the C++ empty-record marker 0x05.
 fn aux_record(count: usize, nested: &[usize], values: BTreeMap<usize, Vec<u8>>) -> Vec<u8> {
     let mut flags = vec![0u8; (4 + count * 2).div_ceil(8)];
@@ -305,6 +306,10 @@ fn aux_record(count: usize, nested: &[usize], values: BTreeMap<usize, Vec<u8>>) 
                 count
             };
         flags[bit / 8] |= 1 << (bit % 8);
+        if nested.contains(&field) {
+            let nested_bit = 4 + count + field;
+            flags[nested_bit / 8] |= 1 << (nested_bit % 8);
+        }
     }
     let mut data = flags;
     for field in 0..count {
@@ -416,7 +421,9 @@ pub fn reputation(
         2,
         &[0],
         BTreeMap::from([
-            (0, aux_record(32, &[], entries)),
+            // Native AuxFactions consumes an empty-record marker for every
+            // defaulted faction, before reading the following affiliation.
+            (0, aux_record(32, &(0..32).collect::<Vec<_>>(), entries)),
             (1, text(&reactions.affiliation)),
         ]),
     );
@@ -760,7 +767,8 @@ fn mission_journal(inventory: &Inventory) -> Vec<u8> {
                     .collect(),
             );
             let name = &mission.name[..mission.name.len().min(63)];
-            let summary = &mission.summary[..mission.summary.len().min(127)];
+            // MissionCatalog validates the native u16 text length (at most 1024).
+            let summary = &mission.summary;
             (
                 slot,
                 aux_record(
@@ -959,6 +967,7 @@ fn ship_aux(id: u32, name: &str, shield: f32, hull: f32) -> Frame {
     ship_snapshot(
         id,
         name,
+        crate::classes::CharacterClass::parse("te").unwrap(),
         ShipResources {
             energy: 0.,
             shield,
@@ -1600,6 +1609,21 @@ pub fn vault_update(inventory: &Inventory, catalog: &ItemCatalog) -> Frame {
     )
 }
 
+/// Returns:
+///     Frame: Native peer-trade window state (open, cancel, complete or confirmation).
+pub fn trade_action(peer: u32, action: u8) -> Frame {
+    Frame::new(0x1f, [peer.to_le_bytes().as_slice(), &[action]].concat())
+}
+
+/// Returns:
+///     Frame: Six native trade slots and credit offer, addressed to their actual owner.
+pub fn trade_offer(owner: u32, credits: u64, items: &[Option<ItemInstance>], catalog: &ItemCatalog) -> Frame {
+    ship_diff(owner, BTreeMap::from([
+        (36, aux_diff(11, BTreeMap::from([(10, instance_inventory(items, 6, 10, catalog))]))),
+        (43, credits.to_le_bytes().to_vec()),
+    ]))
+}
+
 /// Vendor slots use AuxItem (10 fields), not equipped-item records. Empty
 /// vendor slots have the original invisible sentinel -2 rather than cargo -1.
 pub fn vendor_inventory(offers: &[crate::npcs::VendorOffer]) -> Frame {
@@ -1727,17 +1751,27 @@ pub fn weapon_state(id: u32, slot: usize, ready: u32, range: f32, state: u32) ->
 
 fn equipment_mounts(weapons: usize, devices: usize) -> Vec<u8> {
     let mut mounts = BTreeMap::new();
-    let slots = [(0, 4u32), (1, 0x80), (2, 0x40)]
-        .into_iter()
-        .chain((3..3 + weapons).map(|slot| (slot, 0x1c002)))
-        .chain((9..9 + devices).map(|slot| (slot, 0x20809)));
-    for (slot, mask) in slots {
+    let mut empty = Vec::new();
+    for slot in 0..20 {
+        let mask = match slot {
+            0 => 4u32,
+            1 => 0x80,
+            2 => 0x40,
+            3..=8 if slot < 3 + weapons => 0x1c002,
+            9..=19 if slot < 9 + devices => 0x20809,
+            _ => 0,
+        };
+        if mask == 0 {
+            empty.push(slot);
+        }
         let mut data = Vec::from(mask.to_le_bytes());
         data.extend_from_slice(&u32::MAX.to_le_bytes());
         data.extend_from_slice(&u32::MAX.to_le_bytes());
         mounts.insert(slot, data);
     }
-    aux_record(20, &[], mounts)
+    // Native extended AUX sends all twenty entries. Empty mounts have both
+    // flag bits set and still carry their zero mask plus two -1 words.
+    aux_record(20, &empty, mounts)
 }
 
 struct InventoryEncoding<'a> {
@@ -1748,6 +1782,7 @@ struct InventoryEncoding<'a> {
 fn ship_snapshot(
     id: u32,
     name: &str,
+    class: crate::classes::CharacterClass,
     resources: ShipResources,
     inventory: Option<InventoryEncoding<'_>>,
     ship: &ShipStats,
@@ -1757,8 +1792,10 @@ fn ship_snapshot(
     let mut inventory_fields = BTreeMap::from([
         (0, (ship.cargo_capacity as u32).to_le_bytes().to_vec()),
         (1, text("tvf01_1")),
-        (4, (ship.weapon_mounts as u32).to_le_bytes().to_vec()),
-        (5, (ship.device_mounts as u32).to_le_bytes().to_vec()),
+        // Native fields 4/5 advertise eventual class capacity. Current hull
+        // capacity is determined by field 2's active mount masks instead.
+        (4, (class.weapons() as u32).to_le_bytes().to_vec()),
+        (5, (class.devices() as u32).to_le_bytes().to_vec()),
         (6, empty_inventory(40)),
         (8, empty_inventory(20)),
         (10, empty_inventory(6)),
@@ -1938,6 +1975,7 @@ pub fn login_world(
             ship_snapshot(
                 profile.game_id,
                 &profile.name,
+                profile.class(),
                 ship.resources,
                 Some(InventoryEncoding {
                     inventory,
@@ -1973,6 +2011,7 @@ pub fn login_world(
         ship_snapshot(
             profile.game_id,
             &profile.name,
+            profile.class(),
             ship.resources,
             Some(InventoryEncoding {
                 inventory,
@@ -2102,6 +2141,7 @@ pub fn peer_spawn(peer: &crate::peers::PeerSnapshot, tick: u32) -> Vec<Frame> {
         ship_snapshot(
             id,
             &peer.profile.name,
+            peer.profile.class(),
             ShipResources {
                 energy: 0.,
                 shield: peer.shield,
@@ -2117,6 +2157,110 @@ pub fn peer_spawn(peer: &crate::peers::PeerSnapshot, tick: u32) -> Vec<Frame> {
 
 #[cfg(test)]
 mod tests {
+    /// The installed client publishes all twenty padded masks, including empty mounts.
+    #[test]
+    fn native_mounts_include_two_padding_words_per_active_slot() {
+        let mounts = equipment_mounts(2, 1);
+        assert_eq!(mounts.len(), 6 + 20 * 12);
+        assert_eq!(&mounts[..6], &[0xf6, 0xff, 0xff, 0xe0, 0xfd, 0x0f]);
+        let masks = [4u32, 0x80, 0x40, 0x1c002, 0x1c002, 0, 0, 0, 0, 0x20809];
+        for (slot, bytes) in mounts[6..].chunks_exact(12).enumerate() {
+            let mask = masks.get(slot).copied().unwrap_or(0);
+            assert_eq!(&bytes[..4], &mask.to_le_bytes());
+            assert_eq!(&bytes[4..], &[0xff; 8]);
+        }
+    }
+
+    /// Future class capacity stays constant while the active hull mounts grow.
+    #[test]
+    fn ship_inventory_future_counts_are_class_maxima() {
+        let te = crate::classes::CharacterClass::parse("te").unwrap();
+        let ts = crate::classes::CharacterClass::parse("ts").unwrap();
+        let frame = |class| {
+            ship_snapshot(
+                0x40000001,
+                "Pilot",
+                class,
+                ShipResources {
+                    energy: 0.,
+                    shield: 1.,
+                    hull: 1.,
+                },
+                None,
+                &ShipStats::default(),
+            )
+            .body
+        };
+        let te_body = frame(te);
+        let ts_body = frame(ts);
+        assert_eq!(te_body.len(), ts_body.len());
+        let differences = te_body
+            .iter()
+            .zip(&ts_body)
+            .enumerate()
+            .filter_map(|(index, (left, right))| (left != right).then_some(index))
+            .collect::<Vec<_>>();
+        assert_eq!(differences.len(), 2);
+        assert_eq!(differences[1], differences[0] + 4);
+        assert_eq!(te_body[differences[0]], 5);
+        assert_eq!(ts_body[differences[0]], 4);
+        assert_eq!(te_body[differences[1]], 4);
+        assert_eq!(ts_body[differences[1]], 5);
+    }
+
+    /// Pin the nested type bits to AuxRPGInfo::Init's archived native header.
+    #[test]
+    fn populated_nested_aux_preserves_native_second_bits() {
+        let rpg = aux_record(
+            16,
+            &[2, 3],
+            BTreeMap::from([
+                (2, vec![5]),
+                (3, vec![5]),
+                (15, u32::MAX.to_le_bytes().to_vec()),
+            ]),
+        );
+        assert_eq!(&rpg[..5], &[0xc6, 0, 0xf8, 0xff, 7]);
+        assert_eq!(
+            aux_record(1, &[0], BTreeMap::from([(0, vec![5])])),
+            [0x36, 5]
+        );
+    }
+
+    /// Follow the archived native faction schema through every empty entry.
+    #[test]
+    fn reputation_defaults_preserve_native_affiliation_boundary() {
+        let catalog = crate::factions::FactionCatalog::load().unwrap();
+        let class = crate::classes::CharacterClass::parse("te").unwrap();
+        let reactions = catalog.reactions(class, &BTreeMap::new()).unwrap();
+        let frame = reputation(&catalog, &reactions);
+        let mut reader = crate::protocol::Reader::new(&frame.body);
+        assert_eq!(reader.u32().unwrap(), 0);
+        assert_eq!(reader.u16().unwrap() as usize, frame.body.len() - 6);
+        assert_eq!(reader.take(1).unwrap(), [1]);
+        assert_eq!(reader.take(3).unwrap(), [2, 0x40, 0]);
+        assert_eq!(reader.take(1).unwrap(), [0x76]);
+        let flags = reader.take(9).unwrap().to_vec();
+        let mut populated = 0;
+        let mut empty = 0;
+        for index in 0..32 {
+            if flags[(index + 4) / 8] & (1 << ((index + 4) % 8)) != 0 {
+                assert_eq!(reader.take(2).unwrap(), [0x76, 0]);
+                reader.string().unwrap();
+                reader.take(8).unwrap();
+                populated += 1;
+            } else {
+                assert_ne!(flags[(index + 36) / 8] & (1 << ((index + 36) % 8)), 0);
+                assert_eq!(reader.take(1).unwrap(), [5]);
+                empty += 1;
+            }
+        }
+        assert_eq!(populated, catalog.visible().count());
+        assert!(empty > 0);
+        assert_eq!(reader.string().unwrap(), reactions.affiliation);
+        assert!(reader.rest().is_empty());
+    }
+
     #[test]
     fn mission_aux_record_contains_first_active_stage_and_resets_empty_slots() {
         let items = ItemCatalog::load().unwrap();
@@ -2128,6 +2272,30 @@ mod tests {
         assert!(record
             .windows(b"Basic Shooting Range".len())
             .any(|window| window == b"Basic Shooting Range"));
+    }
+
+    /// A public 144-byte summary must not truncate or shift subsequent AUX fields.
+    #[test]
+    fn mission_aux_preserves_long_summary_and_following_stage_fields() {
+        let items = ItemCatalog::load().unwrap();
+        let catalog = crate::missions::MissionCatalog::load().unwrap();
+        let mission = catalog.get(109).unwrap();
+        assert_eq!(mission.summary.len(), 144);
+        let mut inventory = Inventory::starter(&items).unwrap();
+        inventory.missions.start(109, 1, &catalog).unwrap();
+        let record = mission_journal(&inventory);
+        let encoded_summary = text(&mission.summary);
+        let offset = record
+            .windows(encoded_summary.len())
+            .position(|window| window == encoded_summary)
+            .expect("full mission summary in journal AUX");
+        let following = &record[offset + encoded_summary.len()..];
+        assert_eq!(following[0], 1); // field 13: active
+        assert_eq!(u32::from_le_bytes(following[1..5].try_into().unwrap()), 2); // field 14: stage count
+        assert_eq!(u32::from_le_bytes(following[5..9].try_into().unwrap()), 1); // field 15: current stage
+        assert!(following[9..]
+            .windows(mission.stages[1].description.len())
+            .any(|window| window == mission.stages[1].description.as_bytes()));
     }
 
     #[test]
@@ -2213,14 +2381,14 @@ mod tests {
         values.extend_from_slice(&17u16.to_le_bytes());
         values.extend_from_slice(b"31:67.00^34:4.57^");
         let catalog = ItemCatalog::load().unwrap();
-        let mut cargo = vec![0x16, 0x36, 0x07, 0xe3];
+        let mut cargo = vec![0x36, 0x36, 0x07, 0xe3];
         cargo.extend_from_slice(&values);
         assert_eq!(
             instance_inventory(&[Some(item.clone())], 1, 10, &catalog),
             cargo
         );
         // AuxEquipItem: fourteen fields, four flag bytes, nested field 13 reset.
-        let mut equipped = vec![0x16, 0x36, 0x07, 0x30, 0xfe];
+        let mut equipped = vec![0x36, 0x36, 0x07, 0x30, 0xfe];
         equipped.extend_from_slice(&values);
         equipped.push(5);
         assert_eq!(
@@ -2229,7 +2397,7 @@ mod tests {
         );
         let mut crafted = item;
         crafted.builder_name = "Third".into();
-        let mut made_cargo = vec![0x16, 0x36, 0x27, 0x63];
+        let mut made_cargo = vec![0x36, 0x36, 0x27, 0x63];
         made_cargo.extend_from_slice(&values);
         made_cargo.extend_from_slice(&5u16.to_le_bytes());
         made_cargo.extend_from_slice(b"Third");
@@ -2237,7 +2405,7 @@ mod tests {
             instance_inventory(&[Some(crafted.clone())], 1, 10, &catalog),
             made_cargo
         );
-        let mut made_equipped = vec![0x16, 0x36, 0x27, 0x30, 0xf6];
+        let mut made_equipped = vec![0x36, 0x36, 0x27, 0x30, 0xf6];
         made_equipped.extend_from_slice(&values);
         made_equipped.extend_from_slice(&5u16.to_le_bytes());
         made_equipped.extend_from_slice(b"Third");

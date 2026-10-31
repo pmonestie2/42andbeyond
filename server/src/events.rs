@@ -1,6 +1,8 @@
 //! Authenticated client requests that affect more than one player. A session
 //! validates its wire owner/endpoint before the shared coordinator handles them.
 pub enum ClientEvent {
+    TradeAction { action: u32, target: u32, optional: u32 },
+    TradeMove { transfer: crate::inventory::ItemTransfer },
     ComponentMarketQuery {
         template: u32,
     },
@@ -22,6 +24,7 @@ pub enum ClientEvent {
     JumpstartOffer {
         target: u32,
     },
+    NamedChat { kind: u32, recipient: String, channel: String, text: String },
     Chat {
         channel: u8,
         text: String,

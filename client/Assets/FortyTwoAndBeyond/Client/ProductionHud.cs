@@ -8,6 +8,7 @@ namespace FortyTwoAndBeyond.Client
     /// <summary>Present server-owned station refining and crafting terminals.</summary>
     public sealed class ProductionHud
     {
+        private readonly HudWindowDrag windowDrag = new HudWindowDrag();
         private readonly SpaceClient client;
         private readonly FlightHud flightHud;
         private readonly HashSet<uint> requestedMarkets = new HashSet<uint>();
@@ -15,7 +16,27 @@ namespace FortyTwoAndBeyond.Client
         private bool open, collapsed;
         private uint selectedMode;
         private float requestAt, choicesWidth;
-        private GUIStyle wrappedBody, wrappedSmall;
+        private GUIStyle wrappedBody, wrappedSmall, searchStyle;
+        private string recipeSearch = "";
+        private RecipeOwnership recipeOwnership;
+        private bool searchFocused;
+        private Snapshot countedSnapshot;
+        private ProductionRecipeFilter recipeFilter;
+        private RecipeTypes recipeTypes = RecipeTypes.All;
+        private readonly Dictionary<uint, ProductionFormula[]> recipePages = new Dictionary<uint, ProductionFormula[]>();
+        private uint bookStation, bookLab, bookLevels, bookCategory, bookTotal, originalPage, waitingPage, queuedRecipe;
+        private ulong observedRevision, requestedRevision;
+        private bool loadingBook, restoringPage, selectingPage;
+        private float pageDeadline;
+        private string bookStatus = "";
+        private bool RecipePagesBusy => loadingBook || restoringPage || selectingPage;
+        /// Returns:
+        ///     bool: Whether every page of the current level-filtered learned recipe book is cached.
+        private bool WholeBookLoaded(ProductionView production) => production.PageSize > 0 && recipePages.Count ==
+            (production.TotalFormulas + production.PageSize - 1) / production.PageSize;
+        /// Returns:
+        ///     bool: Whether the manufacturing search field owns foreground keyboard input.
+        public bool InputFocused => open && !collapsed && selectedMode == 1 && searchFocused;
         private float CanvasWidth => Screen.width / flightHud.Scale;
         private float CanvasHeight => Screen.height / flightHud.Scale;
         public bool IsOpen => open;
@@ -26,12 +47,13 @@ namespace FortyTwoAndBeyond.Client
         { this.client = client; this.flightHud = flightHud; }
 
         /// <summary>Reset the overlay after logout or a station departure.</summary>
-        public void Close() { open = false; requestedMarkets.Clear(); }
+        public void Close() { open = false; searchFocused = false; requestedMarkets.Clear(); ResetRecipeBook(); }
 
         /// <summary>Select a directory service and request it after any contact dialogue closes.</summary>
         public void Open(uint mode)
         {
             if (mode < 1 || mode > 4) return;
+            if (selectedMode != mode) ResetRecipeBook();
             open = true; collapsed = false; selectedMode = mode; requestAt = 0;
             formulaScroll = detailScroll = Vector2.zero;
         }
@@ -40,11 +62,13 @@ namespace FortyTwoAndBeyond.Client
         public void Draw(Snapshot snapshot)
         {
             if (snapshot?.Station == null) { open = false; return; }
-            if (snapshot.Dialogue != null || !open) return;
+            if (snapshot.Dialogue != null || !open) { searchFocused = false; return; }
             if (wrappedBody == null)
             {
                 wrappedBody = new GUIStyle(flightHud.BodyStyle) { wordWrap = true };
                 wrappedSmall = new GUIStyle(flightHud.SmallStyle) { wordWrap = true };
+                searchStyle = new GUIStyle(GUI.skin.textField) { font = flightHud.BodyStyle.font,
+                    fontSize = 14, padding = new RectOffset(10, 8, 7, 5) };
             }
             if ((!snapshot.Production.Open || snapshot.Production.Mode != selectedMode) &&
                 Time.unscaledTime >= requestAt)
@@ -54,8 +78,9 @@ namespace FortyTwoAndBeyond.Client
             }
             Rect panel = SingleRoomStationHud.Workspace(CanvasWidth, CanvasHeight);
             if (collapsed) panel.height = 54;
-            flightHud.Panel(panel);
-            GUI.Label(new Rect(panel.x + 18, panel.y + 13, 340, 26),
+            panel = windowDrag.Handle(panel, CanvasWidth, CanvasHeight);
+            flightHud.Panel(panel); HudWindowDrag.DrawGrip(panel);
+            GUI.Label(new Rect(panel.x + 36, panel.y + 13, 322, 26),
                 "STATION WORKBENCH", flightHud.BodyStyle);
             if (GUI.Button(new Rect(panel.xMax - 324, panel.y + 12, 174, 29),
                 "COMPONENT MARKET", flightHud.ButtonStyle)) client.OpenComponentMarket();
@@ -74,16 +99,25 @@ namespace FortyTwoAndBeyond.Client
                     "Opening the station terminal…", flightHud.BodyStyle);
                 return;
             }
+            if (selectedMode == 1) UpdateRecipeBook(snapshot);
+            bool previousEnabled = GUI.enabled;
+            GUI.enabled = previousEnabled && !RecipePagesBusy;
             DrawLevelFilter(panel, snapshot.Production);
-            float contentTop = panel.y + 156;
-            float contentHeight = panel.height - 174;
+            GUI.enabled = previousEnabled;
+            if (selectedMode == 1) DrawRecipeFilters(panel, snapshot);
+            else searchFocused = false;
+            float filterHeight = selectedMode == 1 ? 146 : 0;
+            float contentTop = panel.y + 156 + filterHeight;
+            float contentHeight = panel.height - 174 - filterHeight;
             choicesWidth = (panel.width - 64) * .45f;
             GUILayout.BeginArea(new Rect(panel.x + 18, contentTop, choicesWidth, contentHeight));
             DrawChoices(snapshot);
             GUILayout.EndArea();
             GUILayout.BeginArea(new Rect(panel.x + 38 + choicesWidth, contentTop,
                 panel.width - choicesWidth - 56, contentHeight));
+            GUI.enabled = previousEnabled && !RecipePagesBusy;
             DrawQuote(snapshot);
+            GUI.enabled = previousEnabled;
             GUILayout.EndArea();
         }
 
@@ -135,6 +169,175 @@ namespace FortyTwoAndBeyond.Client
             }
         }
 
+        /// <summary>Discard a previous character, service or level-specific recipe cache.</summary>
+        private void ResetRecipeBook()
+        {
+            recipePages.Clear(); loadingBook = restoringPage = selectingPage = false;
+            bookStation = bookLab = bookLevels = bookCategory = bookTotal = queuedRecipe = 0;
+            observedRevision = requestedRevision = 0; bookStatus = "";
+        }
+
+        /// <summary>Cache only complete authoritative pages and advance one outstanding request at a time.</summary>
+        private void UpdateRecipeBook(Snapshot snapshot)
+        {
+            ProductionView production = snapshot.Production;
+            uint station = snapshot.Station.Id;
+            if (bookStation != station || bookLab != production.LabId || bookLevels != production.Filter ||
+                bookCategory != production.Category || bookTotal != production.TotalFormulas)
+            {
+                ResetRecipeBook(); bookStation = station; bookLab = production.LabId;
+                bookLevels = production.Filter; bookCategory = production.Category; bookTotal = production.TotalFormulas;
+                // A new native filter can precede its formula chunks. Require a fresh
+                // end-of-page marker before caching anything under the new book key.
+                observedRevision = production.PageRevision;
+            }
+            if (production.PageRevision != observedRevision)
+            {
+                observedRevision = production.PageRevision;
+                if (recipePages.TryGetValue(production.PageIndex, out ProductionFormula[] previous) &&
+                    !previous.Select(formula => formula.Template).SequenceEqual(production.Formulas.Select(formula => formula.Template)))
+                    recipePages.Clear(); // Learned formulas changed; other cached pages may have shifted too.
+                recipePages[production.PageIndex] = production.Formulas;
+                if (RecipePagesBusy && production.PageIndex == waitingPage && production.PageRevision > requestedRevision)
+                {
+                    if (restoringPage)
+                    { restoringPage = false; bookStatus = WholeBookLoaded(production) ? "All known recipes ready. Original recipe page restored." : bookStatus; }
+                    else if (selectingPage)
+                    {
+                        selectingPage = false;
+                        if (queuedRecipe == 0) bookStatus = "Recipe page ready.";
+                        else if (production.Formulas.Any(formula => formula.Template == queuedRecipe)) client.SelectProductionRecipe(queuedRecipe);
+                        else bookStatus = "That recipe is no longer on this page. Refresh your known recipes.";
+                        queuedRecipe = 0;
+                    }
+                    else if (loadingBook) RequestNextRecipePage(snapshot);
+                }
+            }
+            else if (recipePages.TryGetValue(production.PageIndex, out ProductionFormula[] current) &&
+                current.Select(formula => formula.Template).SequenceEqual(production.Formulas.Select(formula => formula.Template)))
+                recipePages[production.PageIndex] = production.Formulas;
+            if (RecipePagesBusy && Time.unscaledTime > pageDeadline)
+            {
+                if (restoringPage)
+                { restoringPage = false; bookStatus = "Recipe page restoration timed out. Use Previous / Next to choose a page."; }
+                else
+                { CancelRecipePages(snapshot); bookStatus = "Loading recipes timed out; restoring your original page…"; }
+            }
+        }
+
+        /// <summary>Load the learned recipe book using the existing bounded page requests.</summary>
+        private void BeginRecipePages(Snapshot snapshot)
+        {
+            if (snapshot.Production.TotalFormulas == 0) { bookStatus = "No known recipes match these levels."; return; }
+            originalPage = snapshot.Production.PageIndex;
+            recipePages.TryGetValue(originalPage, out ProductionFormula[] originalFormulas);
+            recipePages.Clear();
+            if (originalFormulas != null) recipePages[originalPage] = originalFormulas;
+            loadingBook = true; restoringPage = selectingPage = false; queuedRecipe = 0;
+            RequestNextRecipePage(snapshot);
+        }
+
+        /// <summary>Request the next missing page or restore the page that was open before browsing.</summary>
+        private void RequestNextRecipePage(Snapshot snapshot)
+        {
+            ProductionView production = snapshot.Production;
+            uint totalPages = production.PageSize == 0 ? 0 : (production.TotalFormulas + production.PageSize - 1) / production.PageSize;
+            for (uint page = 0; page < totalPages; page++)
+                if (!recipePages.ContainsKey(page))
+                {
+                    bookStatus = "Loading all known recipes… " + recipePages.Count + " / " + totalPages + " pages. You can cancel safely.";
+                    RequestRecipePage(snapshot, page); return;
+                }
+            loadingBook = false; restoringPage = true;
+            bookStatus = "All known recipes loaded; restoring your original page…";
+            RequestRecipePage(snapshot, originalPage);
+        }
+
+        /// <summary>Cancel loading or selection and restore the original page before enabling crafting.</summary>
+        private void CancelRecipePages(Snapshot snapshot)
+        {
+            loadingBook = selectingPage = false; queuedRecipe = 0; restoringPage = true;
+            bookStatus = "Loading cancelled; restoring your original page…";
+            RequestRecipePage(snapshot, originalPage);
+        }
+
+        /// <summary>Queue a page request and require a newer end-of-page snapshot before proceeding.</summary>
+        private void RequestRecipePage(Snapshot snapshot, uint page)
+        {
+            waitingPage = page; requestedRevision = snapshot.Production.PageRevision;
+            pageDeadline = Time.unscaledTime + 20;
+            client.SelectProductionPage(page);
+        }
+
+        /// <summary>Keep manual native paging available until the full recipe book has loaded.</summary>
+        private void BrowseRecipePage(Snapshot snapshot, uint page)
+        {
+            if (snapshot.Production.Mode != 1) { client.SelectProductionPage(page); return; }
+            originalPage = snapshot.Production.PageIndex; selectingPage = true; queuedRecipe = 0;
+            bookStatus = "Loading recipe page…"; RequestRecipePage(snapshot, page);
+        }
+
+        /// <summary>Load a cached formula's native page before submitting its normal recipe selection.</summary>
+        private void SelectCachedRecipe(Snapshot snapshot, uint template)
+        {
+            if (snapshot.Production.Formulas.Any(formula => formula.Template == template))
+            { client.SelectProductionRecipe(template); return; }
+            foreach (var page in recipePages)
+                if (page.Value.Any(formula => formula.Template == template))
+                {
+                    originalPage = snapshot.Production.PageIndex; selectingPage = true; queuedRecipe = template;
+                    bookStatus = "Opening the selected recipe…";
+                    RequestRecipePage(snapshot, page.Key); return;
+                }
+        }
+
+        /// <summary>Keep search and ownership local while preserving native level controls and recipe pages.</summary>
+        private void DrawRecipeFilters(Rect panel, Snapshot snapshot)
+        {
+            if (!ReferenceEquals(countedSnapshot, snapshot))
+            {
+                countedSnapshot = snapshot;
+                recipeFilter = new ProductionRecipeFilter(snapshot.Cargo, snapshot.Ammo, snapshot.Vault);
+            }
+            float x = panel.x + 18, width = panel.width - 36;
+            GUI.SetNextControlName("manufacturing-recipe-search");
+            string next = GUI.TextField(new Rect(x, panel.y + 151, width - 70, 31), recipeSearch, searchStyle);
+            searchFocused = GUI.GetNameOfFocusedControl() == "manufacturing-recipe-search";
+            if (next != recipeSearch) { recipeSearch = next; formulaScroll = Vector2.zero; }
+            if (recipeSearch.Length == 0)
+                GUI.Label(new Rect(x + 10, panel.y + 157, width - 100, 22), WholeBookLoaded(snapshot.Production) ? "Search all known recipe names…" : "Search recipe names on this page…", flightHud.SmallStyle);
+            if (GUI.Button(new Rect(x + width - 62, panel.y + 151, 62, 31), "Clear", flightHud.ButtonStyle))
+            { recipeSearch = ""; recipeOwnership = RecipeOwnership.All; recipeTypes = RecipeTypes.All; formulaScroll = Vector2.zero; GUI.FocusControl(""); searchFocused = false; }
+            string[] labels = { "All recipes", "Aboard · " + recipeFilter.AboardTypes + " types",
+                "Vault · " + recipeFilter.VaultTypes + " types", "Aboard + vault" };
+            for (int index = 0; index < labels.Length; index++)
+            {
+                Rect button = new Rect(x + index * width / 4, panel.y + 190, width / 4 - 6, 29);
+                if (GUI.Button(button, labels[index], flightHud.ButtonStyle))
+                { recipeOwnership = (RecipeOwnership)index; formulaScroll = Vector2.zero; }
+                if ((int)recipeOwnership == index)
+                    Accent(new Rect(button.x, button.yMax - 3, button.width, 3), new Color(.35f, .9f, 1f));
+            }
+            string[] typeNames = { "All types", "Ammo", "Components", "Devices", "Reactors", "Shields", "Engines", "Weapons", "Other" };
+            RecipeTypes[] categories = { RecipeTypes.All, RecipeTypes.Ammo, RecipeTypes.Components, RecipeTypes.Devices,
+                RecipeTypes.Reactors, RecipeTypes.Shields, RecipeTypes.Engines, RecipeTypes.Weapons, RecipeTypes.Other };
+            for (int index = 0; index < categories.Length; index++)
+            {
+                Rect button = new Rect(x + index % 5 * width / 5, panel.y + 227 + index / 5 * 32, width / 5 - 6, 27);
+                RecipeTypes category = categories[index];
+                bool active = category == RecipeTypes.All ? recipeTypes == RecipeTypes.All :
+                    recipeTypes != RecipeTypes.All && (recipeTypes & category) != 0;
+                if (GUI.Button(button, typeNames[index], flightHud.ButtonStyle))
+                {
+                    recipeTypes = category == RecipeTypes.All ? RecipeTypes.All :
+                        recipeTypes == RecipeTypes.All ? category : recipeTypes ^ category;
+                    formulaScroll = Vector2.zero;
+                }
+                if (active) Accent(new Rect(button.x, button.yMax - 3, button.width, 3), new Color(.91f, .73f, .39f));
+            }
+            GUI.Label(new Rect(x + width * .8f, panel.y + 262, width * .2f - 6, 24), "Combine types", flightHud.SmallStyle);
+        }
+
         /// <summary>List server-offered formulas or owned analyzer samples.</summary>
         private void DrawChoices(Snapshot snapshot)
         {
@@ -142,19 +345,33 @@ namespace FortyTwoAndBeyond.Client
             bool sampleMode = production.Mode == 2 || production.Mode == 3;
             GUILayout.Label(sampleMode ? "OWNED CARGO SAMPLES" : "AVAILABLE FORMULAS",
                 flightHud.BodyStyle);
-            if (!sampleMode && production.TotalFormulas > production.PageSize)
+            if (production.Mode == 1)
             {
                 GUILayout.BeginHorizontal();
-                GUI.enabled = production.PageIndex > 0;
-                if (GUILayout.Button("‹ Prev", flightHud.ButtonStyle, GUILayout.Width(76)))
-                { client.SelectProductionPage(production.PageIndex - 1); formulaScroll = Vector2.zero; }
+                GUILayout.Label(WholeBookLoaded(production) ? "ALL KNOWN RECIPES" : "CURRENT PAGE ONLY", wrappedSmall);
+                if (RecipePagesBusy)
+                {
+                    if (GUILayout.Button("Cancel", flightHud.ButtonStyle, GUILayout.Width(85))) CancelRecipePages(snapshot);
+                }
+                else if (GUILayout.Button(WholeBookLoaded(production) ? "Refresh recipes" : "Load all recipes", flightHud.ButtonStyle, GUILayout.Width(145)))
+                    BeginRecipePages(snapshot);
+                GUILayout.EndHorizontal();
+                if (!string.IsNullOrEmpty(bookStatus)) GUILayout.Label(bookStatus, wrappedSmall);
+            }
+            if (!sampleMode && production.TotalFormulas > production.PageSize &&
+                (production.Mode != 1 || !WholeBookLoaded(production)))
+            {
+                GUILayout.BeginHorizontal();
+                GUI.enabled = !RecipePagesBusy && production.PageIndex > 0;
+                if (GUILayout.Button("‹ Prev", flightHud.ButtonStyle, GUILayout.Width(62)))
+                { BrowseRecipePage(snapshot, production.PageIndex - 1); formulaScroll = Vector2.zero; }
                 GUI.enabled = true;
                 uint first = production.PageIndex * production.PageSize + 1;
                 uint last = first + (uint)production.Formulas.Length - 1;
                 GUILayout.Label($"{first}–{last} / {production.TotalFormulas}", flightHud.SmallStyle);
-                GUI.enabled = (production.PageIndex + 1) * production.PageSize < production.TotalFormulas;
-                if (GUILayout.Button("Next ›", flightHud.ButtonStyle, GUILayout.Width(76)))
-                { client.SelectProductionPage(production.PageIndex + 1); formulaScroll = Vector2.zero; }
+                GUI.enabled = !RecipePagesBusy && (production.PageIndex + 1) * production.PageSize < production.TotalFormulas;
+                if (GUILayout.Button("Next ›", flightHud.ButtonStyle, GUILayout.Width(62)))
+                { BrowseRecipePage(snapshot, production.PageIndex + 1); formulaScroll = Vector2.zero; }
                 GUI.enabled = true;
                 GUILayout.EndHorizontal();
             }
@@ -174,16 +391,36 @@ namespace FortyTwoAndBeyond.Client
             }
             else
             {
-                foreach (ProductionFormula formula in production.Formulas)
+                bool localFilters = production.Mode == 1;
+                ProductionFormula[] available = localFilters && WholeBookLoaded(production) ?
+                    recipePages.OrderBy(page => page.Key).SelectMany(page => page.Value).ToArray() : production.Formulas;
+                ProductionFormula[] choices = localFilters ? available.Where(formula =>
+                    recipeFilter.Matches(formula, production.Filter, recipeSearch, recipeOwnership, recipeTypes)).ToArray() : available;
+                if (localFilters)
+                    GUILayout.Label(choices.Length + " / " + available.Length +
+                        (WholeBookLoaded(production) ? " matches in all known recipes" : " matches on this page") + " · Aboard includes loaded rounds", wrappedSmall);
+                foreach (ProductionFormula formula in choices)
                 {
                     string label = $"L{formula.Level}  {formula.Name}";
+                    if (localFilters)
+                    {
+                        ulong aboard = recipeFilter.AboardQuantity(formula.Template), vault = recipeFilter.VaultQuantity(formula.Template);
+                        if (aboard > 0 || vault > 0) label += $"\nAboard {aboard:N0}  ·  Vault {vault:N0}";
+                    }
+                    GUI.enabled = !RecipePagesBusy;
                     if (DrawItemChoice(label, flightHud.ItemIcons.ForIcon(formula.IconId, formula.Type),
                         production.Target?.Template == formula.Template))
-                        client.SelectProductionRecipe(formula.Template);
+                    {
+                        if (localFilters) SelectCachedRecipe(snapshot, formula.Template);
+                        else client.SelectProductionRecipe(formula.Template);
+                    }
+                    GUI.enabled = true;
                 }
-                if (production.Formulas.Length == 0)
+                if (choices.Length == 0)
                     GUILayout.Label(production.Mode == 1 ?
-                        "No learned recipes match these levels." :
+                        (production.Formulas.Length == 0 ? "No learned recipes match these levels." :
+                        (WholeBookLoaded(production) ? "No known recipes match these combined filters. Clear filters to see every recipe." :
+                        "No matches on this page. Load all recipes, clear filters, or browse another page.")) :
                         "Carry refining materials to list available formulas.", flightHud.SmallStyle);
             }
             GUILayout.EndScrollView();
@@ -264,7 +501,7 @@ namespace FortyTwoAndBeyond.Client
                     production.Validity == 16 ? "Completed" :
                     production.Failure.Length > 0 ? production.Failure : "Waiting for server";
                 GUILayout.Label(result, production.Ready ? flightHud.SectionStyle : wrappedSmall);
-                GUI.enabled = production.Ready;
+                GUI.enabled = GUI.enabled && production.Ready && !RecipePagesBusy;
                 if (GUILayout.Button(production.Mode == 1 ? "MANUFACTURE ONE" :
                     production.Mode == 2 ? "ANALYZE SAMPLE" :
                     production.Mode == 3 ? "DISMANTLE SAMPLE" : "REFINE ONE",

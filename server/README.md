@@ -57,6 +57,26 @@ characters retain their purchased skill ranks. Recipe books can contain up to
 16,384 entries; the manufacturing list uses 500-slot pages so every learned recipe
 remains accessible. Changing category or level filters returns to page one.
 
+With the server stopped, refill every pilot's cargo with compatible ammunition:
+
+```sh
+server/target/release/beyond-server --state-dir server/state --refill-cargo-ammo --dry-run
+server/target/release/beyond-server --state-dir server/state --refill-cargo-ammo
+```
+
+This additive maintenance command targets five full cargo stacks per equipped
+launcher, preferring its loaded ammunition. It preserves fitted gear, magazines,
+credits, unrelated cargo and unknown inventory fields, writes each original
+`inventory.before-ammo-refill.json` backup once, and reports any cargo-space
+shortfall. Beam-only ships need no ammunition. Unsettled launch journals are
+reported and deferred. Transport checkpoints never replace the newer cargo on
+resume. Repeating the command does not add more when the target stock is present.
+
+Corpse loot is available immediately to the credited killer's current group.
+Existing first-open, public-timeout and killer-logout release rules still apply.
+Group membership never bypasses tractor range, cargo capacity, or another pilot's
+active collection claim; credits and item receipts still settle exactly once.
+
 The component market lists each station's purchasable component stock and looks
 up actual vendor offers for components and manufacturing ingredients. Quotes use
 the pilot's negotiation skill; buying and selling require a vendor in the current
@@ -87,6 +107,14 @@ default first start binds to loopback; use
 `./serverctl start --bind 192.168.47.1` for the local Windows VM. The command
 waits for readiness, prints the PID and log path, and never stops an unrelated
 process. The server log is `server/logs/server.log`.
+
+An error such as `Can't assign requested address` means the chosen IP is absent
+from the host, often because the VM's virtual network is stopped. Restore that
+network before retrying the saved VM address. For Mac-only play, explicitly use
+`./serverctrl start --bind 127.0.0.1` and connect the client to `127.0.0.1`; for
+remote clients choose an existing private LAN interface instead. Startup checks
+the address before provisioning devices and never silently substitutes an IP,
+because clients and sector handoffs need the advertised address to be reachable.
 
 For a stopped server, seed the nine public class demos with
 `server/target/debug/beyond-server --seed-demo-accounts --state-dir server/state`.
@@ -123,3 +151,55 @@ files with `python3 server/tools/fetch_reference.py`.
 Run `cargo test --locked --manifest-path server/Cargo.toml` for the Rust suite.
 Python tests live beside the tools. Protocol smoke tools also need the
 `beyond_protocol` package from `../protocol` and use disposable server state.
+
+
+Create Wormhole lands the caster and eligible nearby group members at the native
+weft in the destination sector (asset 1946), including same-sector casts. Arrival
+coordinates are part of the durable handoff journal. A missing weft rejects the
+cast before reactor energy is spent; gates and station launch retain their own
+arrival rules. Focused regression checks: `cargo test --manifest-path server/Cargo.toml wormhole`.
+
+
+`/d_clear` (or `/d_clear mobs`) removes living MOBs within 20 km of the pilot.
+All observers receive native despawn packets and selected targets are released.
+Removal persists without respawning, loot, or XP; stable actor slots preserve
+other MOB identities and combat receipts. `/d_spawn` creates fresh actors.
+Use `/d_clear buffs` for the former all-player buff/device-effect clearing action.
+
+`/d_aspawn [LEVEL 1..9] [COUNT 1..32]` creates real mineable asteroids 1 km ahead (default: one level-one asteroid). It uses imported asteroid assets and ore tables, broadcasts the nodes to nearby pilots, and persists them with depletion/respawn receipts across reconnects and restarts. Example: `/d_aspawn 5 3`.
+
+`/d_wh SECTOR_NAME_OR_ID` travels instantly to any hosted sector or station,
+without class, skill, reactor or discovery requirements. Names accept the same
+partial matches and abbreviations as `/d_travel` and `/d_jump` (which remain
+aliases). Examples: `/d_wh Saturn`, `/d_wh BBW`, `/d_wh 17051`.
+`/d_help` lists every developer command and its arguments in separate chat lines.
+
+Public MOB kills retain their authored equipment drop probabilities and always leave an item: if all rolls miss or a table is empty, the corpse contains ordinary salvage (Drone Scrap for mechanical MOBs, Chitin' Bits otherwise). Existing corpses retain their saved contents.
+
+Legacy startup retains the full initial reliable stream until START_ACK, including streams beyond 128 packets. Automatic startup retries skip sequence zero because the archived proxy treats it as a destructive reset; explicit client resend requests may still request zero. The server's TCP bridge closes on restart, and old Net7Proxy builds may crash on that closure; coordinate replacement with Windows users.
+
+Net7Proxy 2.46 with the launcher's `/POPT` option requires frames above 1,400
+bytes to use its native fragmentation contract: `0x2016` carries the first
+1,400 bytes, and `0x201a` carries successive fragments. Sending an entire larger
+frame in one UDP datagram silently loses its tail inside the proxy, even when
+the datagram reaches Windows intact. A missing initial player AUX then crashes
+the game while reading `RPGInfo.CombatLevel`. `reliable_transport.rs` applies
+this contract to startup and subsequent inventory updates; keep custom extension
+frames isolated. The installed binary supports these continuations even though
+the older archived proxy source does not describe them.
+
+Player-to-player Trade is available on living peers within 1 km of their hull
+surface, or visible avatars in the same station. Native verb6 opens both trade
+windows; six item offers and credit offers use the original client packets.
+Both pilots must confirm, and any offer edit clears both confirmations. Offered
+cargo is reserved in its original slots until the exchange commits. Disconnects,
+movement out of range, cargo changes, cancellation and expiry release the offers.
+No-trade items and trade goods cannot be offered; insufficient receiving cargo
+space rejects the whole exchange. A synced two-account decision journal recovers
+interrupted inventory-file publication without repeating the exchange.
+Use `PYTHONPATH=protocol python3 server/tools/smoke_trade.py --binary PATH_TO_SERVER`
+with Python3.10 or newer for a disposable two-client native protocol check.
+
+JSON persistence buffers serialization writes before flushing, syncing and
+renaming, preserving the commit boundary while reducing stalls under the game
+lock. The copied 54-mob benchmark reduced 34,783 file writes to two.

@@ -250,18 +250,17 @@ namespace FortyTwoAndBeyond.Client
             return valid;
         }
 
-        /// <returns>bool: Whether the original Create Wormhole sprite layers start.</returns>
+        /// <returns>bool: Whether both procedural wormhole surfaces use supported shaders.</returns>
         private static bool CheckWormhole()
         {
             var parent = new GameObject("Disposable wormhole probe");
             var visual = new NativeWormholeVisual(parent.transform);
             visual.Tick(Vector3.zero, Quaternion.identity);
-            ParticleSystem[] emitters = parent.GetComponentsInChildren<ParticleSystem>();
-            bool valid = visual.Active && emitters.Length == 3 &&
-                emitters.All(emitter => emitter.isPlaying) &&
-                Resources.Load<Texture2D>("LegacyEffects/tsg0206") != null;
+            MeshRenderer[] surfaces = parent.GetComponentsInChildren<MeshRenderer>();
+            bool valid = visual.Active && surfaces.Length == 2 &&
+                surfaces.All(surface => surface.sharedMaterial.shader.isSupported);
             visual.Dispose();
-            Debug.Log("Create Wormhole original emitters active=" + valid);
+            Debug.Log("Create Wormhole plasma surfaces active=" + valid);
             return valid;
         }
 

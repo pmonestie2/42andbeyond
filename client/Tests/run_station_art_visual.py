@@ -23,6 +23,8 @@ def run(unity: Path, compact: bool = False, motion: bool = False, batchmode: boo
     OUTPUT.mkdir(parents=True, exist_ok=True)
     suffix = "-compact" if compact else ""
     names = ["station-hangar.png", "station-concourse.png", "station-loadout.png"]
+    if recipes:
+        names.extend(["station-recipes.png", "station-recipe-filters.png"])
     if market:
         names.append("station-market.png")
     if motion:
@@ -95,7 +97,7 @@ def main() -> None:
     parser.add_argument("--compact", action="store_true", help="Capture a smaller Game View")
     parser.add_argument("--motion", action="store_true", help="Capture contact dialogue response")
     parser.add_argument("--batchmode", action="store_true", help="Run Unity without its interactive Editor window")
-    parser.add_argument("--recipes", action="store_true", help="Grant eligible recipes and check page two through the client")
+    parser.add_argument("--recipes", action="store_true", help="Verify all-known cache, combined filters, off-page selection and cancellation")
     parser.add_argument("--market", action="store_true", help="Verify local component stock, durable buy/sell and source overlay")
     args = parser.parse_args()
     run(args.unity, compact=args.compact, motion=args.motion, batchmode=args.batchmode, recipes=args.recipes, market=args.market)
